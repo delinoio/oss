@@ -1573,7 +1573,8 @@ fn reflection_alias_calls(ctx: &mut Ctx, access: Node) -> Option<Vec<Node>> {
     if symbol.is_nil() {
         return None;
     }
-    if ctx.checker.sym(symbol).declarations.len() != 1 {
+    if ctx.checker.sym(symbol).declarations.len() != 1 || !ctx.is_internal(symbol) {
+        // An exported alias is called by code the scan cannot see.
         return None;
     }
     let mut calls = Vec::new();
@@ -1629,7 +1630,7 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
     // Built-in constructors that application code lets escape as values; an
     // unknown receiver of a prototype write may be one of them.
     let mut escaping: HashSet<String> = HashSet::new();
-    let mut writes: Vec<(Node, Node, Member, Option<Node>)> = Vec::new();
+    let mut writes: Vec<(Node, Node, Member, Option<Node>, bool)> = Vec::new();
     // Executable code outside the application cannot be inspected, so any
     // runtime import of it may replace any built-in member at initialization.
     // Bundle mode rejects imports outside the bundle before planning.
@@ -1711,10 +1712,13 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
                                         let member = key
                                             .map(|k| literal_member(ctx, k))
                                             .unwrap_or(Member::Any);
-                                        writes.push((node, target, member, key));
+                                        writes.push((node, target, member, key, true));
                                     }
                                 }
                             } else if !direct {
+                                patches.add(Owner::Any, Member::Any);
+                            } else if writer == "set" && call.arguments().len() >= 4 {
+                                // The fourth argument receives the write.
                                 patches.add(Owner::Any, Member::Any);
                             } else if let Some(target) = call.arguments().first() {
                                 let key = matches!(
@@ -1725,7 +1729,7 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
                                 .flatten();
                                 let member =
                                     key.map(|k| literal_member(ctx, k)).unwrap_or(Member::Any);
-                                writes.push((node, target, member, key));
+                                writes.push((node, target, member, key, false));
                             }
                         }
                     }
@@ -1743,7 +1747,7 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
                         let key = node.argument_expression();
                         (literal_member(ctx, key), Some(key))
                     };
-                    writes.push((node, node.expression(), member, key));
+                    writes.push((node, node.expression(), member, key, false));
                 }
                 SyntaxKind::DeleteExpression => {
                     let target = skip_outer(node.expression());
@@ -1758,7 +1762,7 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
                             let key = target.argument_expression();
                             (literal_member(ctx, key), Some(key))
                         };
-                        writes.push((node, target.expression(), member, key));
+                        writes.push((node, target.expression(), member, key, false));
                     }
                 }
                 SyntaxKind::ModuleDeclaration
@@ -1814,13 +1818,13 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
 /// Adds the record of every deferred write to `patches`.
 fn classify_writes(
     ctx: &mut Ctx,
-    writes: &[(Node, Node, Member, Option<Node>)],
+    writes: &[(Node, Node, Member, Option<Node>, bool)],
     escaping: &HashSet<String>,
     mut patches: Patches,
     replaced: &local_receiver::Replaced,
 ) -> Patches {
     let mut symbol_keyed = false;
-    for (_, target, member, key) in writes {
+    for (_, target, member, key, strict) in writes {
         let member = member.clone();
         match write_owner(ctx, *target, replaced) {
             WriteOwner::App => {}
@@ -1843,6 +1847,9 @@ fn classify_writes(
                 }
             }
             WriteOwner::Opaque => patches.add(Owner::Any, member),
+            // An alias call is judged like the old conservative fallback: an
+            // unproven target may be any built-in.
+            WriteOwner::Unproven if *strict => patches.add(Owner::Any, member),
             WriteOwner::Unproven => {
                 patches.unproven.insert(member);
             }

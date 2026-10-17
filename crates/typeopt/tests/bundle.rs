@@ -265,6 +265,21 @@ fn keeps_intrinsics_beside_aliased_writers_with_hidden_targets() {
     }
 }
 
+/// A direct `Reflect.set` with a receiver, an exported alias and an alias call
+/// on an unproven target all keep the conservative record.
+#[test]
+fn keeps_intrinsics_beside_reflect_set_receivers_exported_and_unproven_aliases() {
+    for code in [
+        r#"const n=42;Reflect.set({},"String",String,globalThis);console.log(String(n)+"!");export{};"#,
+        r#"const n=42;const root=globalThis;var assign=Object.assign;assign(root,{String:String});console.log(String(n)+"!");export{};"#,
+        r#"const n=42;export const assign=Object.assign;console.log(String(n)+"!");"#,
+    ] {
+        let (temp, _) = run(&[("index.js", code)]);
+        let index = out(temp.path(), "index.js");
+        assert!(index.contains("String("), "{code}\n{index}");
+    }
+}
+
 /// A patched or unproven `Symbol.for` may return a string key.
 #[test]
 fn keeps_intrinsics_when_symbol_for_may_be_replaced() {
