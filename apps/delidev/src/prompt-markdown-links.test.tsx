@@ -423,3 +423,104 @@ it("shares one painted budget between links and skill ranges", async () => {
   expect(spanCount()).toBe(0);
   expect(input.value).toBe(skill(300) + link(257));
 });
+
+const SKILL = "$gone ";
+const skills = (count: number) => SKILL.repeat(count);
+const links = (count: number) => SMALL_LINK.repeat(count);
+const unavailableTokens = () =>
+  document.querySelectorAll(".skill-token-unavailable").length;
+const selectionOf = (input: HTMLTextAreaElement) => [
+  input.selectionStart,
+  input.selectionEnd,
+];
+
+it("keeps links plain while composing when skill ranges suppressed them", async () => {
+  // 128 painted skill ranges leave room for 128 links, so 129 stay plain.
+  const draft = skills(128) + links(129);
+  const input = view(draft, undefined, true);
+  await waitFor(() => expect(unavailableTokens()).toBe(128));
+  expect(collapsedLinks()).toBe(0);
+  select(input, draft.length);
+  fireEvent.compositionStart(input);
+  // Composition empties the skill analysis, but the display must not change.
+  expect(unavailableTokens()).toBe(0);
+  expect(collapsedLinks()).toBe(0);
+  expect(input.value).toBe(draft);
+  expect(selectionOf(input)).toEqual([draft.length, draft.length]);
+  type(input, `${draft}あ`);
+  expect(canonical()).toBe(`${draft}あ`);
+  expect(collapsedLinks()).toBe(0);
+  expect(input.value).toBe(`${draft}あ`);
+  expect(selectionOf(input)).toEqual([draft.length + 1, draft.length + 1]);
+  fireEvent.compositionEnd(input);
+  await waitFor(() => expect(unavailableTokens()).toBe(128));
+  expect(collapsedLinks()).toBe(0);
+  expect(input.value).toBe(`${draft}あ`);
+  expect(canonical()).toBe(`${draft}あ`);
+  expect(selectionOf(input)).toEqual([draft.length + 1, draft.length + 1]);
+});
+
+it("keeps collapsed links collapsed while composing and when composition ends", async () => {
+  const draft = skills(128) + links(128);
+  const collapsedDisplay = skills(128) + "x ".repeat(128);
+  const input = view(draft, undefined, true);
+  await waitFor(() => expect(unavailableTokens()).toBe(128));
+  expect(collapsedLinks()).toBe(128);
+  expect(input.value).toBe(collapsedDisplay);
+  select(input, collapsedDisplay.length);
+  fireEvent.compositionStart(input);
+  expect(collapsedLinks()).toBe(128);
+  expect(input.value).toBe(collapsedDisplay);
+  type(input, `${collapsedDisplay}あ`);
+  expect(canonical()).toBe(`${draft}あ`);
+  expect(collapsedLinks()).toBe(128);
+  fireEvent.compositionEnd(input);
+  await waitFor(() => expect(unavailableTokens()).toBe(128));
+  expect(collapsedLinks()).toBe(128);
+  expect(input.value).toBe(`${collapsedDisplay}あ`);
+  expect(canonical()).toBe(`${draft}あ`);
+});
+
+it("recomputes the link budget once composition ends and keeps the canonical caret", async () => {
+  // The skills are replaced while composing, so the budget grows only after
+  // composition ends and the links then collapse under a stable caret.
+  const draft = skills(128) + links(129);
+  const composed = `あ${links(129)}`;
+  const input = view(draft, undefined, true);
+  await waitFor(() => expect(unavailableTokens()).toBe(128));
+  expect(collapsedLinks()).toBe(0);
+  select(input, 0);
+  fireEvent.compositionStart(input);
+  type(input, composed);
+  expect(canonical()).toBe(composed);
+  expect(collapsedLinks()).toBe(0);
+  expect(input.value).toBe(composed);
+  select(input, composed.length);
+  fireEvent.compositionEnd(input);
+  await waitFor(() => expect(collapsedLinks()).toBe(129));
+  expect(canonical()).toBe(composed);
+  expect(input.value).toBe(`あ${"x ".repeat(129)}`);
+  expect(selectionOf(input)).toEqual([input.value.length, input.value.length]);
+});
+
+it("suppresses links only after composition ends when new skill ranges exhaust the budget", async () => {
+  const draft = links(256);
+  const collapsedDisplay = "x ".repeat(256);
+  const input = view(draft, undefined, true);
+  await waitFor(() => expect(collapsedLinks()).toBe(256));
+  expect(input.value).toBe(collapsedDisplay);
+  select(input, collapsedDisplay.length);
+  fireEvent.compositionStart(input);
+  type(input, `${collapsedDisplay}$gone `);
+  expect(canonical()).toBe(`${draft}$gone `);
+  // The new skill token is not painted, and the links stay collapsed.
+  expect(collapsedLinks()).toBe(256);
+  expect(input.value).toBe(`${collapsedDisplay}$gone `);
+  fireEvent.compositionEnd(input);
+  await waitFor(() => expect(unavailableTokens()).toBe(1));
+  // 256 links no longer fit beside one painted skill range.
+  expect(collapsedLinks()).toBe(0);
+  expect(input.value).toBe(`${draft}$gone `);
+  expect(canonical()).toBe(`${draft}$gone `);
+  expect(selectionOf(input)).toEqual([input.value.length, input.value.length]);
+});

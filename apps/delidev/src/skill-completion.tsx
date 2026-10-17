@@ -597,9 +597,17 @@ export function useSkillCompletion({
   // Links and skill ranges share one painted-range budget. Skill ranges are
   // already bounded by the analysis, so links yield: when they no longer fit in
   // the remainder, the whole draft is shown as plain source (no partial
-  // collapse) while the exact unavailable count stays reported.
-  const linkBudget =
+  // collapse) while the exact unavailable count stays reported. Composition
+  // empties the skill analysis, which would grow this remainder and collapse
+  // links under an IME that owns the selection, so the pre-composition budget
+  // is held until composition ends and the budget is then recomputed.
+  const currentLinkBudget =
     MAX_PAINTED_SKILL_RANGES - unavailable.length - selectedRanges.length;
+  const settledLinkBudget = useRef(currentLinkBudget);
+  if (!scanSuppressed) settledLinkBudget.current = currentLinkBudget;
+  const linkBudget = scanSuppressed
+    ? settledLinkBudget.current
+    : currentLinkBudget;
   const layout = useMemo(
     () => buildLayout(value, revealed, linkBudget),
     [value, revealed, linkBudget],
