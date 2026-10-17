@@ -73,6 +73,15 @@ func (s *Server) PutPlan(ctx context.Context, r *connect.Request[pb.PutPlanReque
 		} else if !canonical(v.Id) {
 			return invalid("invalid plan ID")
 		}
+		if !v.DefaultFree {
+			var currentDefault bool
+			if e := c.tx.QueryRow(c.ctx, "SELECT EXISTS(SELECT 1 FROM plans WHERE id=$1 AND is_default)", v.Id).Scan(&currentDefault); e != nil {
+				return e
+			}
+			if currentDefault {
+				return precondition("select a replacement default free plan before clearing this default")
+			}
+		}
 		if v.DefaultFree {
 			if _, e := c.tx.Exec(c.ctx, "UPDATE plans SET is_default=false WHERE is_default"); e != nil {
 				return e

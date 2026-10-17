@@ -1373,3 +1373,31 @@ func TestLiveWorkerRecoversFailedFinish(t *testing.T) {
 		t.Fatal("live recovery stranded or repeated charge", state, credits, calls, e)
 	}
 }
+
+func TestDefaultFreePlanCannotBeRemoved(t *testing.T) {
+	db, client, _ := setup(t)
+	ctx := context.Background()
+	bootstrap(t, client)
+	var plan pb.Plan
+	if e := db.Pool.QueryRow(ctx, "SELECT id::text,name,rank,free,is_default,postpaid FROM plans WHERE is_default").Scan(&plan.Id, &plan.Name, &plan.Rank, &plan.Free, &plan.DefaultFree, &plan.Postpaid); e != nil {
+		t.Fatal(e)
+	}
+	plan.DefaultFree = false
+	if _, e := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "test default protection", Plan: &plan}, "owner")); connect.CodeOf(e) != connect.CodeFailedPrecondition {
+		t.Fatal("default removal accepted", e)
+	}
+	replacement, e := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "replace default", Plan: &pb.Plan{Name: "replacement", Rank: 1, Free: true, DefaultFree: true}}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "update former default", Plan: &plan}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	var current string
+	if e = db.Pool.QueryRow(ctx, "SELECT id::text FROM plans WHERE is_default").Scan(&current); e != nil || current != replacement.Msg.Plan.Id {
+		t.Fatal("default lost", current, e)
+	}
+	if _, e = client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "member")); e != nil {
+		t.Fatal("new user bootstrap", e)
+	}
+}
