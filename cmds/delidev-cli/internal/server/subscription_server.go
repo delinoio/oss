@@ -327,7 +327,7 @@ func (s *Service) runServerSubscriptions(ctx context.Context) {
 				if next.usage {
 					if err := s.cleanupClaudeUsage(child, next.account); err != nil && child.Err() == nil {
 						result.failed = true
-						s.logger.WarnContext(child, "claude_usage_cleanup_pending", "usage_generation", next.operation, "code", domain.SafeError(err).Code)
+						s.logger.WarnContext(child, "claude_usage_cleanup_pending", "account_id", next.account, "code", domain.SafeError(err).Code)
 					}
 				} else if next.grokLogout {
 					s.runGrokLogout(child, next.account)

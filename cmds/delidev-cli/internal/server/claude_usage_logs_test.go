@@ -189,3 +189,60 @@ func TestClaudeUsageLogsFollowTheClosedStructuredContract(t *testing.T) {
 		t.Error("the backoff length in seconds was not logged with the closed failure")
 	}
 }
+
+// The background scanner retries owed usage cleanup and logs a removal failure
+// with the same closed vocabulary as every other usage event: only known keys,
+// an opaque account ID and a closed code.
+func TestClaudeUsageScannerCleanupFailureLogsOnlyTheClosedVocabulary(t *testing.T) {
+	f := newReadFixture(t, nil)
+	f.service.serverCleanupRetryBase = 20 * time.Millisecond
+	// The disconnect retires the credential, whose vault deletion is owed; the
+	// vault is down, so every attempt (the scanner's included) fails.
+	f.secrets.deleteError = errors.New("vault is busy at /subscription-runtime/secret-path")
+	generation := string(f.section().Generation)
+	if err := f.disconnect(generation); err == nil {
+		t.Fatal("the disconnect reported success while the vault deletion failed")
+	}
+	baseline := func() int {
+		f.secrets.mu.Lock()
+		defer f.secrets.mu.Unlock()
+		return f.secrets.deletes
+	}
+	before := baseline()
+	ctx, stop := context.WithCancel(domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice}))
+	done := make(chan struct{})
+	go func() { defer close(done); f.service.runServerSubscriptions(ctx) }()
+	defer func() { stop(); <-done }()
+	deadline := time.Now().Add(10 * time.Second)
+	for baseline() < before+2 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if baseline() < before+2 {
+		t.Fatal("the scanner never retried the owed cleanup")
+	}
+	stop()
+	<-done
+	text := f.logText()
+	if strings.Contains(text, "secret-path") || strings.Contains(text, "/subscription-runtime") {
+		t.Fatal("a scanner log line exposed a native path")
+	}
+	pending := 0
+	for _, record := range parseClaudeUsageLogs(t, text) {
+		message, _ := record["msg"].(string)
+		if message != "claude_usage_cleanup_pending" {
+			continue
+		}
+		pending++
+		for key, value := range record {
+			if !claudeUsageLogKeys[key] {
+				t.Fatalf("%s carries the unlisted attribute %q", message, key)
+			}
+			if id, isText := value.(string); isText && (key == "account_id" || key == "operation_id") && domain.ID(id).Validate() != nil {
+				t.Fatalf("%s: %s is not an opaque UUID-v7: %v", message, key, value)
+			}
+		}
+	}
+	if pending == 0 {
+		t.Fatal("the scanner did not log the failed usage cleanup")
+	}
+}
