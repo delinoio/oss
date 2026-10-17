@@ -183,10 +183,15 @@ func (s *Service) requestClaudeUsageRefresh(ctx context.Context, req *connect.Re
 		return fail(domain.InvalidSubscriptionObservation())
 	}
 	operation := domain.ID(m.RequestId)
+	// The expected revision is part of the durable receipt input, so a request
+	// ID reused with another revision is not an exact replay, and it fences both
+	// the admission and a coalesced claim against a stale row or Manage request.
 	input := struct {
 		Account, Connection, Generation domain.ID
+		Revision                        uint64
 		Actor                           domain.Principal
-	}{account, connection, generation, actor}
+	}{account, connection, generation, m.ExpectedRevision, actor}
+	fence := claudeUsageFence{connection: connection, generation: generation, revision: m.ExpectedRevision}
 	respond := func(replayed bool) (*connect.Response[pb.RequestSubscriptionObservationResponse], bool, error) {
 		r, err := s.accountRecord(ctx, account)
 		if err != nil {
@@ -199,7 +204,7 @@ func (s *Service) requestClaudeUsageRefresh(ctx context.Context, req *connect.Re
 	} else if replayed {
 		return respond(true)
 	}
-	_, err = s.admitClaudeUsageRead(ctx, account, operation, actor, claudeUsageTriggerExplicit, claudeUsageFence{connection: connection, generation: generation}, input)
+	_, err = s.admitClaudeUsageRead(ctx, account, operation, actor, claudeUsageTriggerExplicit, fence, input)
 	switch {
 	case err == nil:
 		s.logger.InfoContext(ctx, "claude_usage_refresh_accepted", "account_id", account, "operation_id", operation, "coalesced", false)
@@ -207,7 +212,7 @@ func (s *Service) requestClaudeUsageRefresh(ctx context.Context, req *connect.Re
 		// Single-flight: the running read answers this request too, but only
 		// after the request was validated and durably claimed, so an exact retry
 		// replays instead of starting another provider read.
-		if err := s.claimCoalescedClaudeUsageRefresh(ctx, account, operation, actor, claudeUsageFence{connection: connection, generation: generation}, input); err != nil {
+		if err := s.claimCoalescedClaudeUsageRefresh(ctx, account, operation, actor, fence, input); err != nil {
 			return fail(err)
 		}
 		s.logger.InfoContext(ctx, "claude_usage_refresh_accepted", "account_id", account, "operation_id", operation, "coalesced", true)
@@ -239,7 +244,7 @@ func (s *Service) claimCoalescedClaudeUsageRefresh(ctx context.Context, account,
 		return errClaudeUsageBusy
 	}
 	_, err = s.Store.Mutate(ctx, operation, "claude.usage.read.claim", input, func(tx *store.Tx) (any, error) {
-		_, a, err := claudeUsageAccountTx(tx, account, 0)
+		_, a, err := claudeUsageAccountTx(tx, account, fence.revision)
 		if err != nil {
 			return nil, err
 		}

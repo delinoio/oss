@@ -1560,3 +1560,94 @@ func TestClaudeUsageOtherAccountKindsKeepTheirObservationLane(t *testing.T) {
 		t.Fatal("the usage owner claimed a ChatGPT account")
 	}
 }
+
+// bumpAccountRevision commits a benign account write that changes neither the
+// connection, the execution generation nor the usage section.
+func (f *readFixture) bumpAccountRevision() {
+	f.t.Helper()
+	if _, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.usage.revision", nil, func(tx *store.Tx) (any, error) {
+		r, a, err := claudeUsageAccountTx(tx, f.account(), 0)
+		if err != nil {
+			return nil, err
+		}
+		return tx.Put(domain.AccountKind, r.ID, r.Revision, "", "", a)
+	}); err != nil {
+		f.t.Fatal(err)
+	}
+}
+
+// An explicit refresh is fenced by the account revision it observed: a stale row
+// or Manage request must not start a provider read after the account changed,
+// even though its connection and execution generation are unchanged.
+func TestClaudeUsageExplicitRefreshIsFencedByTheExpectedRevision(t *testing.T) {
+	f := newReadFixture(t, nil)
+	stale := f.refreshRequest(domain.NewID())
+	f.bumpAccountRevision()
+	_, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, stale))
+	if connectCode(err) != connect.CodeAborted && connectCode(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("a stale-revision refresh = %v, want a revision conflict", err)
+	}
+	f.await()
+	if f.provider.count() != 0 {
+		t.Fatalf("the stale refresh sent %d provider requests", f.provider.count())
+	}
+	if f.section().Refresh != domain.ClaudeUsageIdle {
+		t.Fatalf("the stale refresh left a claim: %+v", f.section())
+	}
+	// The current revision reads, and the same request ID with another revision
+	// is not an exact replay of the claimed request.
+	current := f.refreshRequest(domain.NewID())
+	if _, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, current)); err != nil {
+		t.Fatal(err)
+	}
+	f.await()
+	if f.provider.count() != 1 {
+		t.Fatalf("the current refresh sent %d provider requests", f.provider.count())
+	}
+	reused := f.refreshRequest(domain.ID(current.Mutation.RequestId))
+	if _, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, reused)); err == nil {
+		t.Fatal("a request ID reused with a different revision was treated as an exact replay")
+	}
+	f.await()
+	if f.provider.count() != 1 {
+		t.Fatalf("the reused request ID started another read: %d", f.provider.count())
+	}
+}
+
+// A stale request that would coalesce into a running read is fenced too: it is
+// refused before any receipt is written, and an exact retry with the current
+// revision is accepted.
+func TestClaudeUsageCoalescedRefreshIsFencedByTheExpectedRevision(t *testing.T) {
+	f := newReadFixture(t, nil)
+	started, release := make(chan struct{}), make(chan struct{})
+	var once, releaseOnce sync.Once
+	releaseRead := func() { releaseOnce.Do(func() { close(release) }) }
+	// A regression must fail the test instead of leaving the read blocked.
+	t.Cleanup(releaseRead)
+	f.provider.handler = func(int, *http.Request) (*http.Response, error) {
+		once.Do(func() { close(started) })
+		<-release
+		return usageResponse(200, usageBody), nil
+	}
+	stale := f.refreshRequest(domain.NewID())
+	if _, err := f.refresh(); err != nil {
+		t.Fatal(err)
+	}
+	<-started
+	// The running read already moved the account revision past the stale request.
+	if _, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, stale)); err == nil {
+		t.Fatal("a stale-revision request coalesced into the running read")
+	}
+	if _, replayed, err := f.service.Store.Replay(context.Background(), domain.ID(stale.Mutation.RequestId), "claude.usage.read.claim", nil); err == nil && replayed {
+		t.Fatal("a refused stale request left a durable claim")
+	}
+	current := f.refreshRequest(domain.ID(stale.Mutation.RequestId))
+	if _, err := f.client.RequestSubscriptionObservation(context.Background(), subscriptionRequest(f.service.Identity.Token, current)); err != nil {
+		t.Fatalf("the current-revision request was not accepted: %v", err)
+	}
+	releaseRead()
+	f.await()
+	if f.provider.count() != 1 {
+		t.Fatalf("coalescing sent %d provider requests", f.provider.count())
+	}
+}

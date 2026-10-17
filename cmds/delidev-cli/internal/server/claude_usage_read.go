@@ -73,8 +73,13 @@ func claudeUsagePaused() *domain.Error {
 }
 
 // claudeUsageFence is the optional execution-account fence of an explicit
-// refresh: the confirmed connection and execution generation.
-type claudeUsageFence struct{ connection, generation domain.ID }
+// refresh: the confirmed connection and execution generation, and the account
+// revision the request observed. A zero revision (a scheduled read) accepts any
+// current revision.
+type claudeUsageFence struct {
+	connection, generation domain.ID
+	revision               uint64
+}
 
 // claudeUsageRead is the immutable binding of one claimed read.
 type claudeUsageRead struct {
@@ -173,7 +178,7 @@ func (s *Service) admitClaudeUsageRead(ctx context.Context, account, operation d
 	}
 	read := &claudeUsageRead{run: run, ctx: runCtx, account: account, operation: operation, trigger: trigger, actor: actor, epoch: s.subscriptionServerEpoch()}
 	claimed, err := s.Store.Mutate(ctx, operation, "claude.usage.read.claim", receipt, func(tx *store.Tx) (any, error) {
-		r, a, err := claudeUsageAccountTx(tx, account, 0)
+		r, a, err := claudeUsageAccountTx(tx, account, fence.revision)
 		if err != nil {
 			return nil, err
 		}
