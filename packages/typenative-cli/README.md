@@ -9,7 +9,7 @@ TypeNative is an experimental React and TypeScript native framework under develo
 - `tn doctor --probe` also compiles and executes a fixed console program with ScriptC on the current desktop target. It deletes its temporary files. This does not test the generated React component.
 - Add `--json` for structured, uncolored diagnostics. Text diagnostics use ANSI color; set `NO_COLOR` to disable it.
 
-Use Node.js 24 or later for this CLI. Select ScriptC 0.3.5 explicitly. Supply `--scriptc` when the compiler is outside PATH. Install Rust/Cargo and the target SDK separately. Doctor checks selected commands; it does not certify SDK completeness, signing, runtime images or application compatibility. Each tool invocation has a 120-second timeout.
+Use Node.js 24 or later for this CLI. Select ScriptC 0.3.5 explicitly. Supply `--scriptc` when the compiler is outside PATH. Install Rust/Cargo and the target SDK separately. Doctor checks selected commands; it does not certify SDK completeness, signing, runtime images or application compatibility. Each tool invocation has a 120-second timeout. Native probe compilation and execution are asynchronous so SIGINT/SIGTERM can stop the child and await temporary-file cleanup. POSIX interruption also stops the child process group.
 
 The target identifiers are `macos-arm64`, `windows-x64`, `linux-x64`, `ios-arm64-simulator` and `android-arm64-emulator`. Only a matching desktop host can run the console probe. Mobile and cross-target prerequisite checks do not execute an application.
 
@@ -32,6 +32,7 @@ Diagnostics include versions, an invocation identifier, target, phase, elapsed t
 | `TN_HOST_UNSUPPORTED`            | Use the matching desktop target for a probe.                                             |
 | `TN_PROBE_COMPILE_FAILED`        | Check compiler installation, linker and SDK.                                             |
 | `TN_PROBE_ARTIFACT_INVALID`      | Reinstall the selected compiler; the output is absent or not a native executable header. |
+| `TN_PROBE_INTERRUPTED`           | The probe was interrupted; rerun it when ready.                                          |
 | `TN_PROBE_EXECUTION_FAILED`      | Check host execution permissions and toolchain compatibility.                            |
 | `TN_NATIVE_PIPELINE_UNAVAILABLE` | Native application execution is not implemented.                                         |
 | `TN_INTERNAL`                    | Report a sanitized reproduction through GitHub issues.                                   |

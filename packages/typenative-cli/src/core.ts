@@ -1,4 +1,4 @@
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -31,6 +31,7 @@ export enum Code {
   Execute = "TN_PROBE_EXECUTION_FAILED",
   Pipeline = "TN_NATIVE_PIPELINE_UNAVAILABLE",
   Internal = "TN_INTERNAL",
+  Interrupted = "TN_PROBE_INTERRUPTED",
 }
 
 export class DiagnosticError extends Error {
@@ -71,6 +72,58 @@ export const runTool: Runner = (command, args, cwd) => {
     failed: Boolean(result.error || result.signal),
   };
 };
+
+export type ProbeRunner = (
+  command: string,
+  args: string[],
+  cwd?: string,
+  signal?: AbortSignal,
+) => CommandResult | Promise<CommandResult>;
+
+// Probe children must not block signal handlers while compilation or execution
+// is running. On POSIX, stop the process group, including compiler helpers.
+export const runProbeTool: ProbeRunner = (command, args, cwd, signal) =>
+  new Promise((resolveResult) => {
+    if (signal?.aborted)
+      return resolveResult({ status: null, stdout: "", failed: true });
+    const child = spawn(command, args, {
+      cwd,
+      shell: false,
+      windowsHide: true,
+      detached: process.platform !== "win32",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let stdout = "";
+    let size = 0;
+    let failed = false;
+    const stop = () => {
+      failed = true;
+      if (!child.pid) return;
+      try {
+        if (process.platform !== "win32") process.kill(-child.pid, "SIGKILL");
+        else child.kill("SIGKILL");
+      } catch {
+        child.kill("SIGKILL");
+      }
+    };
+    const timer = setTimeout(stop, 120_000);
+    signal?.addEventListener("abort", stop, { once: true });
+    const capture = (data: Buffer, retain: boolean) => {
+      size += data.length;
+      if (size > 1024 * 1024) stop();
+      else if (retain) stdout += data.toString("utf8");
+    };
+    child.stdout.on("data", (data: Buffer) => capture(data, true));
+    child.stderr.on("data", (data: Buffer) => capture(data, false));
+    child.on("error", () => {
+      failed = true;
+    });
+    child.on("close", (status, killedBy) => {
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", stop);
+      resolveResult({ status, stdout, failed: failed || killedBy !== null });
+    });
+  });
 
 export function hostTarget(
   platform = process.platform,
@@ -162,15 +215,28 @@ export function isNativeExecutable(bytes: Uint8Array, target: Target): boolean {
 export async function probeNative(
   compiler: string,
   target: Target,
-  runner: Runner = runTool,
+  runner: ProbeRunner = runProbeTool,
 ) {
   if (target !== hostTarget())
     throw new DiagnosticError(
       Code.Host,
       "The native probe requires the current desktop target. Cross-platform execution is unverified.",
     );
-  const directory = await mkdtemp(join(tmpdir(), "typenative-probe-"));
+  const controller = new AbortController();
+  const interrupt = () => controller.abort();
+  process.on("SIGINT", interrupt);
+  process.on("SIGTERM", interrupt);
+  let directory: string | undefined;
+  const checkInterrupted = () => {
+    if (controller.signal.aborted)
+      throw new DiagnosticError(
+        Code.Interrupted,
+        "Native probe interrupted; temporary artifacts were removed.",
+      );
+  };
   try {
+    directory = await mkdtemp(join(tmpdir(), "typenative-probe-"));
+    checkInterrupted();
     const source = join(directory, "probe.ts");
     const artifact = join(
       directory,
@@ -179,11 +245,13 @@ export async function probeNative(
     await writeFile(source, 'console.log("typenative-native-probe-v1");\n', {
       flag: "wx",
     });
-    const compiled = runner(
+    const compiled = await runner(
       compiler,
       ["build", source, "--no-keep-llvm", "-o", artifact],
       directory,
+      controller.signal,
     );
+    checkInterrupted();
     if (compiled.failed || compiled.status !== 0)
       throw new DiagnosticError(
         Code.Compile,
@@ -203,7 +271,9 @@ export async function probeNative(
         Code.Artifact,
         "The probe output does not have the expected native executable header.",
       );
-    const executed = runner(artifact, [], directory);
+    checkInterrupted();
+    const executed = await runner(artifact, [], directory, controller.signal);
+    checkInterrupted();
     if (
       executed.failed ||
       executed.status !== 0 ||
@@ -219,7 +289,12 @@ export async function probeNative(
       bytes: bytes.length,
     };
   } finally {
-    await rm(directory, { recursive: true, force: true });
+    try {
+      if (directory) await rm(directory, { recursive: true, force: true });
+    } finally {
+      process.removeListener("SIGINT", interrupt);
+      process.removeListener("SIGTERM", interrupt);
+    }
   }
 }
 

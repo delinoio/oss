@@ -256,3 +256,49 @@ test("doctor rejects an explicitly empty target", () => {
     assert.equal(result.records[0].code, Code.Arguments);
   }
 });
+
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  test(
+    `probe cleans up after ${signal} during compilation`,
+    { skip: process.platform === "win32", timeout: 10000 },
+    async (t) => {
+      const { spawn } = await import("node:child_process");
+      const { chmod } = await import("node:fs/promises");
+      const { setTimeout: delay } = await import("node:timers/promises");
+      const root = await temporary(t);
+      const compiler = join(root, "scriptc");
+      const marker = join(root, "started");
+      await writeFile(
+        compiler,
+        '#!/bin/sh\nif [ "$1" = "--version" ]; then printf "0.3.5\\n"; else printf "%s" "$PWD" > "$TN_PROBE_MARKER"; exec sleep 30; fi\n',
+      );
+      await chmod(compiler, 0o755);
+      const child = spawn(
+        process.execPath,
+        [cli, "doctor", "--scriptc", compiler, "--probe", "--json"],
+        {
+          env: { ...process.env, TN_PROBE_MARKER: marker },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      t.after(() => child.kill("SIGKILL"));
+      let output = "";
+      child.stdout.on("data", (data) => {
+        output += data;
+      });
+      const ended = new Promise((resolve) =>
+        child.once("close", (code) => resolve(code)),
+      );
+      for (let i = 0; i < 200 && !existsSync(marker); i++) await delay(20);
+      assert.ok(existsSync(marker), "compiler started");
+      const scratch = await readFile(marker, "utf8");
+      child.kill(signal);
+      assert.equal(await ended, 1);
+      assert.equal(existsSync(scratch), false);
+      assert.equal(
+        JSON.parse(output.trim().split("\n").at(-1)).code,
+        Code.Interrupted,
+      );
+    },
+  );
+}
