@@ -2468,6 +2468,42 @@ func TestDisableAndCancelKeepOperatorRetriedChargeThroughBillingWindow(t *testin
 	}
 }
 
+func TestDeletionKeepsRejectionEvidenceOfOperatorRetriedSubscription(t *testing.T) {
+	for _, withdraw := range []bool{false, true} {
+		t.Run(fmt.Sprintf("withdraw=%t", withdraw), func(t *testing.T) {
+			db, client, _ := setup(t)
+			ctx := context.Background()
+			_, tenant := bootstrap(t, client)
+			job := key()
+			if _, e := db.Pool.Exec(ctx, `INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,attempts,error_category,available_at,created_at,updated_at) VALUES($1,$2,'subscription',$1::uuid::text,'{}','failed',1,'provider_rejected',now(),now(),now())`, job, tenant); e != nil {
+				t.Fatal(e)
+			}
+			if _, e := client.RetryJob(ctx, req(&pb.RetryJobRequest{RequestKey: key(), JobId: job, Reason: "provider recovered"}, "owner")); e != nil {
+				t.Fatal(e)
+			}
+			if state, attempts, category := autoTopupJob(t, db, job); state != "pending" || attempts != 0 || category != "provider_rejected" {
+				t.Fatal("retry fixture", state, attempts, category)
+			}
+			var e error
+			if withdraw {
+				_, e = client.Withdraw(ctx, req(&pb.WithdrawRequest{RequestKey: key()}, "owner"))
+			} else {
+				_, e = client.DeleteTenant(ctx, req(&pb.DeleteTenantRequest{RequestKey: key(), TenantId: tenant}, "owner"))
+			}
+			if e != nil {
+				t.Fatal(e)
+			}
+			if state, _, category := autoTopupJob(t, db, job); state != "done" || category != "provider_rejected" {
+				t.Fatal("retired retry lost its rejection evidence", state, category)
+			}
+			// The retired job cannot be revived by another operator retry.
+			if _, e = client.RetryJob(ctx, req(&pb.RetryJobRequest{RequestKey: key(), JobId: job, Reason: "retire check"}, "owner")); connect.CodeOf(e) != connect.CodeFailedPrecondition {
+				t.Fatal("retired intent was retried", e)
+			}
+		})
+	}
+}
+
 func TestDeletionStopsDefinitivelyRejectedSubscriptions(t *testing.T) {
 	for _, withdraw := range []bool{false, true} {
 		t.Run(fmt.Sprintf("withdraw=%t", withdraw), func(t *testing.T) {

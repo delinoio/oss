@@ -492,9 +492,10 @@ const unattemptedAutoTopUp = "kind='auto_topup' AND state='pending' AND attempts
 // provider definitively rejected without creating anything has nothing left to
 // reconcile. Both are stopped. All other incomplete subscription intents must be
 // reconciled before deletion can start. A stopped rejected job keeps its
-// provider_rejected category as failure evidence and becomes done, so an operator
-// retry cannot revive it. This runs under the same transaction lock as worker
-// claims and payment events.
+// provider_rejected category as failure evidence (including a rejected job that an
+// operator already moved back to pending) and becomes done, so an operator retry
+// cannot revive it. This runs under the same transaction lock as worker claims and
+// payment events.
 func (c *call) stopPendingSubscriptions(tenant, owner string) error {
 	var uncertain bool
 	if e := c.tx.QueryRow(c.ctx, `SELECT EXISTS(SELECT 1 FROM jobs j JOIN tenants t ON t.id=j.tenant_id WHERE (t.id::text=$1 OR (t.owner_id::text=$2 AND t.personal AND t.deleted_at IS NULL)) AND j.kind='subscription' AND j.state<>'done' AND NOT (j.state='pending' AND j.attempts=0 AND j.external_id='') AND NOT (j.state='failed' AND j.error_category='provider_rejected' AND j.external_id=''))`, tenant, owner).Scan(&uncertain); e != nil {
@@ -503,7 +504,7 @@ func (c *call) stopPendingSubscriptions(tenant, owner string) error {
 	if uncertain {
 		return precondition("reconcile the pending subscription before requesting deletion")
 	}
-	tag, e := c.tx.Exec(c.ctx, `UPDATE jobs j SET state='done',error_category=CASE WHEN j.state='failed' THEN j.error_category ELSE 'deletion_requested' END,updated_at=$3 FROM tenants t WHERE t.id=j.tenant_id AND (t.id::text=$1 OR (t.owner_id::text=$2 AND t.personal AND t.deleted_at IS NULL)) AND j.kind='subscription' AND j.external_id='' AND ((j.state='pending' AND j.attempts=0) OR (j.state='failed' AND j.error_category='provider_rejected'))`, tenant, owner, c.now)
+	tag, e := c.tx.Exec(c.ctx, `UPDATE jobs j SET state='done',error_category=CASE WHEN j.error_category='provider_rejected' THEN j.error_category ELSE 'deletion_requested' END,updated_at=$3 FROM tenants t WHERE t.id=j.tenant_id AND (t.id::text=$1 OR (t.owner_id::text=$2 AND t.personal AND t.deleted_at IS NULL)) AND j.kind='subscription' AND j.external_id='' AND ((j.state='pending' AND j.attempts=0) OR (j.state='failed' AND j.error_category='provider_rejected'))`, tenant, owner, c.now)
 	if e != nil {
 		return e
 	}

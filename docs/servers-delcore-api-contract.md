@@ -84,7 +84,7 @@ Authenticated users, registered M2M consumer services, tenant administrators and
 
 **Deletion and retention**
 
-- Tenant deletion stops new paid use and starts final settlement after the configured usage-reporting grace period. Deletion and withdrawal stop subscription intents that have never been attempted. They also stop subscription intents that the provider definitively rejected without creating a subscription, retiring them as done while retaining the rejection category so an operator retry cannot revive them. Previously attempted, incomplete subscription intents must be reconciled before deletion or withdrawal starts.
+- Tenant deletion stops new paid use and starts final settlement after the configured usage-reporting grace period. Deletion and withdrawal stop subscription intents that have never been attempted. They also stop subscription intents that the provider definitively rejected without creating a subscription, retiring them as done while retaining the rejection category, including for a rejected intent that an operator already moved back to pending, so an operator retry cannot revive them. Previously attempted, incomplete subscription intents must be reconciled before deletion or withdrawal starts.
 - Outstanding debt, disputes, or refundable purchased balances block deletion completion.
 - Operators refund remaining purchased credit through Paddle. Synchronize and verify the result before completing deletion.
 - After settlement and the configured deletion grace period, delete personal information and retain required accounting/audit records in de-identified form.
