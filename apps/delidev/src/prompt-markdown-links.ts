@@ -337,7 +337,7 @@ export interface CollapsedLink extends MarkdownLink {
 export interface PromptLayout {
   canonical: string;
   display: string;
-  links: MarkdownLink[];
+  links: readonly MarkdownLink[];
   collapsed: CollapsedLink[];
   /**
    * True when the parsed links exceeded the collapse budget, so the display is
@@ -431,6 +431,11 @@ export function freezeCollapse(layout: PromptLayout): FrozenCollapse {
  * revealed set) entirely, so neither the parse, the link count nor the limit
  * can change what is collapsed until the freeze is lifted. A frozen state for
  * a different draft is ignored.
+ *
+ * A held layout never scans the draft: its display and offset maps are derived
+ * from the retained link ranges alone, so each composed keystroke costs
+ * O(retained links) of map work with no Markdown parse. In that case `links`
+ * reports the retained ranges; the draft is parsed again once the freeze lifts.
  */
 export function buildLayout(
   canonical: string,
@@ -438,8 +443,8 @@ export function buildLayout(
   collapseLimit = Number.POSITIVE_INFINITY,
   frozen?: FrozenCollapse,
 ): PromptLayout {
-  const links = scanMarkdown(canonical).links;
   const hold = frozen?.canonical === canonical ? frozen : undefined;
+  const links = hold ? hold.links : scanMarkdown(canonical).links;
   const collapseSuppressed = hold
     ? hold.suppressed
     : links.length > collapseLimit;

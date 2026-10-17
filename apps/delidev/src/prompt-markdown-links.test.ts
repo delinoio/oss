@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   buildLayout,
   canonicalRangeForDisplay,
@@ -15,6 +15,7 @@ import {
   scanMarkdown,
   shiftStarts,
 } from "./prompt-markdown-links";
+import * as externalLinks from "./external-links";
 
 const URL = "https://example.com/a?b=1";
 const LINK = `[${URL}](${URL})`;
@@ -488,6 +489,57 @@ describe("editFrozenCollapse", () => {
         expected,
       );
       invariants(frozen.canonical, frozen);
+    }
+  });
+});
+
+describe("frozen composition scan budget", () => {
+  const COUNT = 256;
+  const draft = Array.from(
+    { length: COUNT },
+    (_, index) => `[l${index}](https://example.com/${index})`,
+  ).join(" ");
+
+  it("never rescans the draft while composing and scans once afterwards", () => {
+    // Every scan validates each of the 256 link destinations exactly once, so
+    // the validator call count is a direct scan counter.
+    const validate = vi.spyOn(externalLinks, "validHttpUrl");
+    try {
+      const initial = buildLayout(draft);
+      expect(initial.collapsed).toHaveLength(COUNT);
+      expect(validate).toHaveBeenCalledTimes(COUNT);
+      validate.mockClear();
+
+      // Compose a multi-character phrase after the last link, one display
+      // keystroke at a time, the way the composer handles each IME update.
+      let frozen = freezeCollapse(initial);
+      let display = initial.display;
+      for (const phrase of ["h", "ha", "han", "han[", "han[(", "han[(x"]) {
+        const previous = phrase.slice(0, -1);
+        const edit = {
+          start: display.length - previous.length,
+          end: display.length,
+          inserted: phrase,
+        };
+        const expected = display.slice(0, edit.start) + phrase;
+        frozen = editFrozenCollapse(frozen, edit);
+        const layout = buildLayout(frozen.canonical, [], Infinity, frozen);
+        layout.toCanonical(expected.length);
+        expect(layout.display).toBe(expected);
+        expect(layout.collapsed).toHaveLength(COUNT);
+        display = expected;
+      }
+      // An edit inside a collapsed label stays a held, scan-free edit too.
+      frozen = editFrozenCollapse(frozen, { start: 1, end: 1, inserted: "!" });
+      expect(frozen.links).toHaveLength(COUNT);
+      expect(validate).not.toHaveBeenCalled();
+
+      // Composition ends: the final draft is parsed exactly once.
+      const settled = buildLayout(frozen.canonical);
+      expect(validate).toHaveBeenCalledTimes(COUNT);
+      expect(settled.links.length).toBeGreaterThan(0);
+    } finally {
+      validate.mockRestore();
     }
   });
 });
