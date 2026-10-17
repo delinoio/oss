@@ -192,6 +192,14 @@
   margin-inline: 0;
   container-type: inline-size;
 }
+/* The configuration mapping form only wraps the mapping panel for submit
+   semantics. The panel keeps owning its own width cap (.transfer-panel below),
+   and the panel separators above also apply across the form boundary. */
+.settings-content[aria-label]
+  .settings-content-column
+  form.transfer-mapping-form {
+  max-width: none;
+}
 /* The encrypted Worker-network import form only adds submit semantics around
    controls that already spanned the section, so it keeps the section width
    instead of the 720px task-form cap above (and in settings-task.css). */
@@ -226,7 +234,9 @@
     .project-field-group,
     .agent-optional,
     .integration-section,
-    .transfer-panel + .transfer-panel
+    .transfer-panel + .transfer-panel,
+    .transfer-panel + .transfer-mapping-form > .transfer-panel,
+    .transfer-mapping-form + .transfer-panel
   ) {
   margin-top: 24px;
   padding-top: 24px;

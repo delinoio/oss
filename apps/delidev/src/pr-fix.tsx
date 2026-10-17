@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { useId } from "react";
 import {
@@ -222,9 +223,10 @@ function PRFixForm({
     !capability.error;
   return (
     <form
+      onKeyDown={guardEnterSubmission}
       aria-label={copy("pr-fix.manualPrFix_5b64d4")}
       onSubmit={(event) => {
-        event.preventDefault();
+        if (!consumeFormSubmit(event)) return;
         if (!blocked && uuid(project) && supported) send();
       }}
     >

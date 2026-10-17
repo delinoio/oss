@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { useSessionQuery as useQuery } from "./session-activity";
 import {
   formatDecimal,
@@ -121,8 +122,9 @@ function BudgetEditor({
   const blocked = mutation.busy || mutation.uncertain;
   return (
     <form
+      onKeyDown={guardEnterSubmission}
       onSubmit={(event) => {
-        event.preventDefault();
+        if (!consumeFormSubmit(event)) return;
         if (blocked || stale || readError || !current?.session) return;
         try {
           const budget = budgetInput(draft);

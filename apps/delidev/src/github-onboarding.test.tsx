@@ -36,6 +36,7 @@ import { App } from "./App";
 import { MutationIntents } from "./mutation";
 import { encode } from "./documents";
 import { githubDraftTokenFormURL } from "./github-opening";
+import { pressEnter } from "./test-form-enter";
 
 const native = vi.hoisted(() => ({
   invoke: vi.fn(async (_command: string, _args: unknown) => undefined),
@@ -741,6 +742,31 @@ it("focuses token first, verifies without an owner, then saves the explicit orga
       (_, v) => (typeof v === "bigint" ? String(v) : v),
     ),
   ).not.toContain("fixture-pat");
+});
+it("verifies and saves GitHub onboarding with plain Enter exactly like the Primary buttons", async () => {
+  const f = fixture();
+  render(f.view());
+  const token = await f.enter();
+  // A blank token keeps Verify disabled, so Enter starts nothing.
+  expect(pressEnter(token)).toBe(0);
+  fireEvent.change(token, { target: { value: "fixture-pat" } });
+  expect(pressEnter(token, { repeat: true })).toBe(0);
+  expect(pressEnter(token, { composing: true })).toBe(0);
+  expect(pressEnter(token, { keyCode: 229 })).toBe(0);
+  expect(f.inspect).not.toHaveBeenCalled();
+  expect(pressEnter(token)).toBe(1);
+  const name = (await screen.findByLabelText(
+    "Profile name",
+  )) as HTMLInputElement;
+  expect(f.inspect).toHaveBeenCalledTimes(1);
+  // Save stays disabled until the explicit owner exists.
+  expect(pressEnter(name)).toBe(0);
+  expect(f.save).not.toHaveBeenCalled();
+  fireEvent.change(name, { target: { value: "Team" } });
+  f.owner();
+  expect(pressEnter(name)).toBe(1);
+  await screen.findByRole("button", { name: "Manage Team" });
+  expect(f.save).toHaveBeenCalledTimes(1);
 });
 it("carries declared type/owner and preserves a manually edited name through Back and another verification", async () => {
   const f = fixture();

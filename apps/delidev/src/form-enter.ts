@@ -54,6 +54,13 @@ const SINGLE_LINE_INPUT_TYPES = new Set([
   "email",
   "password",
   "number",
+  // Date and time entry fields submit natively on Enter in browsers. The native
+  // picker popup is not part of the page, so it consumes its own Enter.
+  "date",
+  "datetime-local",
+  "month",
+  "time",
+  "week",
 ]);
 /** Input types whose Enter press activates or opens the control itself. */
 const NATIVE_ACTIVATION_INPUT_TYPES = new Set([

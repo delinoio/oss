@@ -207,3 +207,4 @@
 - Read scoped instructions in every affected domain, including cross-domain consumers.
 
 - `docs/project-typenative.md`: TypeNative native application framework project index.
+- [Delcore project](docs/project-delcore.md): shared server tenant, authorization and billing ownership.

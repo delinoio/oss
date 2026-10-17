@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { PersistentConnectionView } from "./connections-page";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
@@ -368,8 +369,9 @@ function LocalInstallationInspection({
     >
       <p>{copy("updates.inspectARetainedInstallationOnThis_28e7a3")}</p>
       <form
+        onKeyDown={guardEnterSubmission}
         onSubmit={(event) => {
-          event.preventDefault();
+          if (!consumeFormSubmit(event)) return;
           void inspect();
         }}
       >
@@ -647,8 +649,9 @@ export function Updates({
           ) : null}
           {machine ? (
             <form
+              onKeyDown={guardEnterSubmission}
               onSubmit={(event) => {
-                event.preventDefault();
+                if (!consumeFormSubmit(event)) return;
                 void read.refetch();
               }}
             >
@@ -699,8 +702,9 @@ export function Updates({
               <>
                 {" "}
                 <form
+                  onKeyDown={guardEnterSubmission}
                   onSubmit={(event) => {
-                    event.preventDefault();
+                    if (!consumeFormSubmit(event)) return;
                     void read.refetch();
                   }}
                 >

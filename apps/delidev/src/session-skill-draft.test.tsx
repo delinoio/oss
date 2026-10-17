@@ -253,6 +253,25 @@ it("accepts a skill before fixed Enter sends the original General Chat draft onc
   expect(f.enqueue).toHaveBeenCalledOnce();
 }, 10_000);
 
+it("keeps Shift+Enter and modified Enter out of the General Chat send owner", async () => {
+  const f = fixture();
+  render(<App transport={f.transport} />);
+  fireEvent.click(
+    await sidebar().findByRole("button", {
+      name: /General Chat Skill original/,
+    }),
+  );
+  const input = await currentSession().findByRole("textbox", {
+    name: "Message",
+  });
+  input.focus();
+  fireEvent.change(input, { target: { value: "line one" } });
+  for (const flags of [{ shiftKey: true }, { altKey: true }])
+    fireEvent.keyDown(input, { key: "Enter", ...flags });
+  expect(f.enqueue).not.toHaveBeenCalled();
+  expect(input).toHaveProperty("value", "line one");
+}, 10_000);
+
 it("keeps composition-confirmation Enter away from local and connection send owners", async () => {
   const f = fixture();
   render(<App transport={f.transport} />);

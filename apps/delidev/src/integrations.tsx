@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import {
   useProductLabels,
   PresentationKind,
@@ -254,10 +255,11 @@ function IntegrationEditor({
   }, [active]);
   return (
     <form
+      onKeyDown={guardEnterSubmission}
       id={formId}
       className="integration-editor"
       onSubmit={(event) => {
-        event.preventDefault();
+        if (!consumeFormSubmit(event)) return;
         if (blocked || stale || current.error) return;
         void save.send({
           mutation: {
@@ -646,9 +648,10 @@ function IntegrationConnection({
           ) : null}
         </Disclosure>
         <form
+          onKeyDown={guardEnterSubmission}
           id={tokenFormId}
           onSubmit={(event) => {
-            event.preventDefault();
+            if (!consumeFormSubmit(event)) return;
             void sendToken();
           }}
         >

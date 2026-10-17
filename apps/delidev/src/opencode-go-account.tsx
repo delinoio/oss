@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { useEffect, useId, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import {
@@ -209,9 +210,10 @@ export function OpenCodeGoAccount({
       ) : null}
       {!connected && !data.removal ? (
         <form
+          onKeyDown={guardEnterSubmission}
           id={formId}
           onSubmit={(event) => {
-            event.preventDefault();
+            if (!consumeFormSubmit(event)) return;
             submit();
           }}
         >

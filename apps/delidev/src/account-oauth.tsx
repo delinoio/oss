@@ -19,11 +19,13 @@ import {
   createContext,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
   type ReactNode,
 } from "react";
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { ConnectError, createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
 import {
@@ -934,6 +936,7 @@ export function AccountOAuth({
   const heading = useRef<HTMLHeadingElement>(null),
     view = flow.view;
   const [project, setProject] = useState("");
+  const formId = useId();
   useEffect(() => {
     if (visible) heading.current?.focus();
   }, [view?.provider.providerId, visible]);
@@ -988,6 +991,11 @@ export function AccountOAuth({
                       : copy("account-oauth.extra.dcf547440e7c");
   const leave = (fallback: boolean, callback: () => void) =>
     void flow.abandon(fallback, () => callback());
+  // The primary control and Enter share these exact conditions.
+  const canContinue =
+    metadataReady &&
+    Boolean(protocol) &&
+    (!gemini || /^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project));
   return (
     <section
       className="api-keys-view account-oauth-card desktop-wizard"
@@ -1007,53 +1015,68 @@ export function AccountOAuth({
             )
           : copy("account-oauth.completeSignInInYourBrowser_64e524")}
       </p>
-      {configuring ? (
-        <>
-          {gemini ? (
-            <p>{copy("account-oauth.useGoogleCloudProjectToPay_2b7c11")}</p>
-          ) : null}
-          <APIFormatChoice
-            profiles={formats}
-            value={protocol}
-            disabled={!metadataReady}
-            onChange={flow.selectProtocol}
-          />
-          {!selecting ? <p>{copy("account-oauth.legacyFormat")}</p> : null}
-          {formats.length === 0 ? (
-            <p role="alert">{copy("account-oauth.formatUnavailable")}</p>
-          ) : null}
-        </>
-      ) : (
-        <p>
-          {copy("account-oauth.approveAccessOnProviderDelidevWill_7f1c4a", {
-            v0: providerServiceName(view.provider),
-          })}
-        </p>
-      )}
-      {!metadataReady && configuring ? (
-        <p role="status">
-          {copy("account-settings.checkingTheCurrentProviderSettings_411acc")}
-        </p>
-      ) : null}
-      {configuring ? metadataProblem : null}
-      {!configuring && (flow.selectedProtocol || protocol) ? (
-        <p>
-          {copy("account-settings.apiFormat")}:{" "}
-          {apiFormatLabels[flow.selectedProtocol || (protocol as APIFormatId)]}
-        </p>
-      ) : null}
-      {configuring && gemini ? (
-        <label className="account-oauth-project">
-          {copy("account-oauth.googleCloudProjectId_4e7d2a")}
-          <input
-            value={project}
-            maxLength={30}
-            autoComplete="off"
-            spellCheck={false}
-            onChange={(event) => setProject(event.target.value)}
-          />
-        </label>
-      ) : null}
+      <form
+        id={formId}
+        noValidate
+        onKeyDown={guardEnterSubmission}
+        onSubmit={(event) => {
+          if (!consumeFormSubmit(event)) return;
+          if (configuring && canContinue)
+            flow.continueInBrowser(project, protocol);
+        }}
+      >
+        {configuring ? (
+          <>
+            {gemini ? (
+              <p>{copy("account-oauth.useGoogleCloudProjectToPay_2b7c11")}</p>
+            ) : null}
+            <APIFormatChoice
+              profiles={formats}
+              value={protocol}
+              disabled={!metadataReady}
+              onChange={flow.selectProtocol}
+            />
+            {!selecting ? <p>{copy("account-oauth.legacyFormat")}</p> : null}
+            {formats.length === 0 ? (
+              <p role="alert">{copy("account-oauth.formatUnavailable")}</p>
+            ) : null}
+          </>
+        ) : (
+          <p>
+            {copy("account-oauth.approveAccessOnProviderDelidevWill_7f1c4a", {
+              v0: providerServiceName(view.provider),
+            })}
+          </p>
+        )}
+        {!metadataReady && configuring ? (
+          <p role="status">
+            {copy("account-settings.checkingTheCurrentProviderSettings_411acc")}
+          </p>
+        ) : null}
+        {configuring ? metadataProblem : null}
+        {!configuring && (flow.selectedProtocol || protocol) ? (
+          <p>
+            {copy("account-settings.apiFormat")}:{" "}
+            {
+              apiFormatLabels[
+                flow.selectedProtocol || (protocol as APIFormatId)
+              ]
+            }
+          </p>
+        ) : null}
+        {configuring && gemini ? (
+          <label className="account-oauth-project">
+            {copy("account-oauth.googleCloudProjectId_4e7d2a")}
+            <input
+              value={project}
+              maxLength={30}
+              autoComplete="off"
+              spellCheck={false}
+              onChange={(event) => setProject(event.target.value)}
+            />
+          </label>
+        ) : null}
+      </form>
       {!configuring ? (
         <div
           className="account-oauth-progress"
@@ -1087,17 +1110,13 @@ export function AccountOAuth({
           }
         />
       ) : null}
-      <SettingsTaskActions>
+      <SettingsTaskActions form={configuring ? formId : undefined}>
         {configuring ? (
           <SettingsActionButton
             icon={SettingsActionIcon.Next}
             className="primary"
-            disabled={
-              !metadataReady ||
-              !protocol ||
-              (gemini && !/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(project))
-            }
-            onClick={() => flow.continueInBrowser(project, protocol)}
+            type="submit"
+            disabled={!canContinue}
           >
             {copy("account-oauth.continueInBrowser_7c2d9b")}
           </SettingsActionButton>
@@ -1111,6 +1130,7 @@ export function AccountOAuth({
           </SettingsActionButton>
         )}
         <SettingsTaskDismissButton
+          type="button"
           hidden={configuring}
           data-settings-task-cancel
           disabled={!inTask && ((busy && !view.problem) || !flow.canLeave)}
@@ -1120,6 +1140,7 @@ export function AccountOAuth({
         </SettingsTaskDismissButton>
         <SettingsActionButton
           icon={SettingsActionIcon.Back}
+          type="button"
           disabled={(busy && !view.problem) || !flow.canLeave}
           onClick={() => leave(false, back)}
         >

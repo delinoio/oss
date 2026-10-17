@@ -52,6 +52,12 @@ Record new implementation status, validation results and unresolved limits in pu
 
 ## Project Catalog
 
+### delcore
+
+- [Project index](project-delcore.md)
+- [Server contract](servers-delcore-api-contract.md)
+- [Protocol contract](protos-delcore-v1-contract.md)
+
 ### bundlewhy
 
 - [Project index](project-bundlewhy.md)

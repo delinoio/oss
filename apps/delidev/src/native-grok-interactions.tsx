@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { LocalizedText, copy, resolveMessage, useLocale } from "./localization";
 import {
@@ -507,11 +508,12 @@ function GrokResponse({
     closed || !submissionAllowed || mutation.busy || mutation.uncertain;
   return (
     <form
+      onKeyDown={guardEnterSubmission}
       aria-label={copy(
         "native-grok-interactions.respondToOriginalGrokRequest_84c3fd",
       )}
       onSubmit={(e) => {
-        e.preventDefault();
+        if (!consumeFormSubmit(e)) return;
         if (blocked || invalid) return;
         void mutation.send({
           mutation: {

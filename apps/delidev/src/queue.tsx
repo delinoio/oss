@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { actionTone, SettingsActionTone } from "./settings-action";
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { RetainedImages } from "./image-attachments";
@@ -479,8 +480,9 @@ function QueuedInputEditor({
   });
   return (
     <form
+      onKeyDown={guardEnterSubmission}
       onSubmit={(event) => {
-        event.preventDefault();
+        if (!consumeFormSubmit(event)) return;
         if (busy || skills.blocked || edit.revision !== current.revision)
           return;
         save(edit.prompt, skills.selections);

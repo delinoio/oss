@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import {
   useProductLabels,
   PresentationKind,
@@ -1521,6 +1522,7 @@ export function AgentWorkerSourceWizard({
 
   return (
     <form
+      onKeyDown={guardEnterSubmission}
       id={formID}
       ref={form}
       className="agent-configuration worker-wizard worker-source-wizard desktop-wizard"
@@ -1528,7 +1530,7 @@ export function AgentWorkerSourceWizard({
       noValidate
       onInvalidCapture={revealAgentInvalidControl}
       onSubmit={(event) => {
-        event.preventDefault();
+        if (!consumeFormSubmit(event)) return;
         if (!active || blocked || step === Step.Harness) return;
         if (step !== Step.Configure) {
           advance();

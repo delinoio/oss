@@ -14,6 +14,7 @@ import {
 } from "./disclosure";
 import { copy, useLocale } from "./localization";
 import { flushSync } from "react-dom";
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import {
   useCallback,
   useEffect,
@@ -346,7 +347,10 @@ export function ScheduleCreation({
           ref={root}
           noValidate
           onSubmit={(event) => {
-            event.preventDefault();
+            // Next (steps 1-3) and Create schedule (final step) are the only
+            // submit controls, so pointer, Enter and script submission advance
+            // exactly one step or create once.
+            if (!consumeFormSubmit(event)) return;
             if (step === 3) create();
             else next();
           }}
@@ -377,17 +381,7 @@ export function ScheduleCreation({
               cancel();
               return;
             }
-            if (
-              event.key === "Enter" &&
-              event.target instanceof HTMLInputElement &&
-              event.target.type !== "checkbox" &&
-              event.target.type !== "radio" &&
-              !event.nativeEvent.isComposing &&
-              event.keyCode !== 229
-            ) {
-              event.preventDefault();
-              if (step < 3) next();
-            }
+            guardEnterSubmission(event);
           }}
         >
           <div className="schedule-creation-scroll">
@@ -1007,12 +1001,8 @@ export function ScheduleCreation({
                   <button
                     key="next"
                     className="primary"
-                    type="button"
+                    type="submit"
                     disabled={blocked}
-                    onClick={(event) => {
-                      event.preventDefault();
-                      next();
-                    }}
                   >
                     {copy("schedule-creation.next")}
                   </button>

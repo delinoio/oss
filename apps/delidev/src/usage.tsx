@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { PresentationKind, useProductLabels } from "./product-identity-labels";
 import type { IdentityLabel } from "./product-identity";
 import { Disclosure, DisclosureSummary } from "./disclosure";
@@ -450,9 +451,10 @@ export function Usage({
           <span aria-hidden="true">{detectedTimeZone}</span>
         </span>
         <form
+          onKeyDown={guardEnterSubmission}
           className="sidebar-form usage-sidebar-form"
           onSubmit={(event) => {
-            event.preventDefault();
+            if (!consumeFormSubmit(event)) return;
           }}
         >
           <div className="usage-filter-scroll">

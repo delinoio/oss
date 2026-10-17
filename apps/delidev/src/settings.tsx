@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import {
   useProductLabels,
   PresentationKind,
@@ -1360,6 +1361,7 @@ export function ConfigurationEditor({
   return (
     <ResourceSelectionPending.Provider value={reportSelectionPending}>
       <form
+        onKeyDown={guardEnterSubmission}
         id={formId}
         ref={form}
         aria-label={inline ? copy("settings.projectDefaultsForm") : undefined}
@@ -1388,7 +1390,7 @@ export function ConfigurationEditor({
                   : undefined
         }
         onSubmit={(event) => {
-          event.preventDefault();
+          if (!consumeFormSubmit(event)) return;
           submit();
         }}
       >

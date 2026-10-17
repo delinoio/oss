@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import {
   useProductLabels,
   productResourceName,
@@ -587,9 +588,10 @@ export function MachineSettingsView({
         )
       ) : (
         <form
+          onKeyDown={guardEnterSubmission}
           id={formId}
           onSubmit={(event) => {
-            event.preventDefault();
+            if (!consumeFormSubmit(event)) return;
             if (!active || pending || stale || readError) return;
             void discovery.send({
               mutation: {

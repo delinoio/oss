@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import {
   useProductLabels,
   PresentationKind,
@@ -789,8 +790,9 @@ export function SessionForkProvider({
             </p>
             {!job ? (
               <form
+                onKeyDown={guardEnterSubmission}
                 onSubmit={(event) => {
-                  event.preventDefault();
+                  if (!consumeFormSubmit(event)) return;
                   void submit();
                 }}
               >

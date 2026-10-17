@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import {
   SettingsActionButton,
@@ -586,8 +587,9 @@ export function ScheduleEditor({
           : copy("schedules.newSchedule_3bfe90")}
       </h3>
       <form
+        onKeyDown={guardEnterSubmission}
         onSubmit={(event) => {
-          event.preventDefault();
+          if (!consumeFormSubmit(event)) return;
           void submit();
         }}
       >
