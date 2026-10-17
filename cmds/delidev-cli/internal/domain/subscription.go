@@ -96,6 +96,12 @@ type SubscriptionLease struct {
 	// owner and SubscriptionState.Members holds its execution members. A
 	// historical singleton lease omits it and keeps exclusive execution.
 	Shared bool `json:"shared,omitempty"`
+	// DirectStartup marks an EXECUTE lease granted for a claimed version-4
+	// direct-startup assignment. Such a lease never depended on the Runner
+	// Device's inspected installation inventory, so its readback, Finish and
+	// recovery cleanup do not require one either. A historical lease omits it
+	// and keeps the inspected-installation requirement.
+	DirectStartup bool `json:"direct_startup,omitempty"`
 	// CleanupUnconfirmed is set when the lease owner's Finish reported that its
 	// private credential cleanup was not confirmed. The lease then stays held and
 	// the account is fenced for recovery, and only the original owner (the same
@@ -211,6 +217,9 @@ func (s SubscriptionState) Validate(account Account) error {
 			if id.Validate() != nil {
 				return invalid()
 			}
+		}
+		if l.DirectStartup && l.Action != SubscriptionExecute {
+			return invalid()
 		}
 		if (l.ForkRevision != 0 || l.TitleRevision != 0) && (l.Action != SubscriptionExecute || l.ForkRevision != 0 && l.TitleRevision != 0) {
 			return invalid()

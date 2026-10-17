@@ -134,7 +134,12 @@ native content.
 The native Claude lane uses the same owner/member representation with its own
 negotiation. The server admits a negotiated execute Take as the founding owner or
 a joined member exactly as above, with no bundle for any member (this lane never
-delivers authentication bytes), and uses `MEMBER` and `OWNER` Finish scopes. An
+delivers authentication bytes), and uses `MEMBER` and `OWNER` Finish scopes. The
+owner and each member record whether their claimed assignment is a v4
+direct-startup execution (`direct_startup`, omitted for historical ones); only
+such a lease or member skips the inspected-installation requirement in Take,
+lease readback, Finish and recovery cleanup, and one historical holder keeps the
+whole set behind that requirement. An
 owner Finish carries the native identity commitment and confirmed cleanup that the
 singleton Finish carried; a member Finish carries neither and cannot confirm an
 identity. A fenced owner is cleaned only as one set through an owner-scope
