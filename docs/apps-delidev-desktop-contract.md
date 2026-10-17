@@ -4199,6 +4199,41 @@ through existing APIs, but need an account before wizard resaving. Retired model
 remain inert; affected Workers require explicit current account and model
 reconfiguration without rewriting historical executions.
 
+#### Compatible API source choices
+
+New and Edit Agent Worker account sources (every source group) list only enabled saved API providers that own at least
+one account the existing account picker could offer for the harness. The wizard
+asks `ListProviderInventory` for them with `enabled_only = true` and the typed
+`compatible_account_api_protocol` derived from the harness (Codex
+`OPENAI_RESPONSES`, Claude Code `ANTHROPIC_MESSAGES`, OpenCode and Grok Build
+`OPENAI_CHAT`); the server evaluates eligibility over complete state before
+ordering and pagination (see the
+[catalog contract](cmds-delidev-catalog-contract.md#compatible-account-provider-inventory-filter)).
+Only `useProviderPages` callers that pass the protocol send it; every other
+consumer (API Providers settings, Provider/Model settings, Usage prices) keeps the
+historical unfiltered request, so zero-account providers stay visible there.
+The filtered provider chain has its own pagination identity per protocol, so a
+harness change never reuses another harness's list.
+
+- Negotiation uses the response capability list, never the request, and covers
+  every accepted page of the chain, not only the latest response (a refresh during
+  a mixed-version rollout can mix filtered and unfiltered pages). A response
+  without `COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1` came from a server that
+  ignored the field, so its list is unfiltered: when any page of the chain lacks the
+  capability the wizard shows no API choices from the whole chain, stops paging it,
+  and shows **Update the server to list API providers
+  that have a compatible account for this harness.** (English and Korean) instead
+  of a list or the empty message. Subscription choices, drafts and Next/Back are
+  unaffected, and the wizard never falls back to an unfiltered API list.
+- A final empty first page of a filtered response shows **No enabled API provider
+  has a connected account that works with this harness.** with a pointer to AI API
+  Keys. A pending or failed read is never shown as emptiness.
+- A selected or saved API source that is no longer returned stays selected through
+  the existing retained-source fallback (the choice is labelled **retained source**
+  and is not offered as a new source). The wizard never switches the source or
+  deletes accounts, routes or drafts because of the filter; account selection,
+  validation, save and execution authority are unchanged.
+
 #### Worker wizard step indicator
 
 The four-item step indicator (Harness, Accounts, Model, Configure) is also
