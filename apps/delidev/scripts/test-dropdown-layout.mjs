@@ -60,6 +60,11 @@ const label = (language, english, korean) =>
 const families = [
   {
     id: "session-diff-options",
+    // Whether moving keyboard focus out of the popup dismisses it. The
+    // desktop contract documents this only for the owners that close on blur;
+    // the others stay open until Escape, an outside pointer press, the
+    // trigger or an action dismisses them.
+    focusOutDismisses: false,
     entry: "diff",
     anchored: true,
     ready: (page) => page.getByText("synthetic diff line 0").waitFor(),
@@ -81,6 +86,11 @@ const families = [
   },
   {
     id: "saved-connection-row-menu",
+    // Whether moving keyboard focus out of the popup dismisses it. The
+    // desktop contract documents this only for the owners that close on blur;
+    // the others stay open until Escape, an outside pointer press, the
+    // trigger or an action dismisses them.
+    focusOutDismisses: true,
     entry: "connections",
     anchored: true,
     ready: async (page) => {
@@ -99,6 +109,11 @@ const families = [
   },
   {
     id: "api-entry-more-panel",
+    // Whether moving keyboard focus out of the popup dismisses it. The
+    // desktop contract documents this only for the owners that close on blur;
+    // the others stay open until Escape, an outside pointer press, the
+    // trigger or an action dismisses them.
+    focusOutDismisses: false,
     entry: "api",
     anchored: true,
     ready: async (page) => {
@@ -116,6 +131,11 @@ const families = [
   },
   {
     id: "subscription-more-panel",
+    // Whether moving keyboard focus out of the popup dismisses it. The
+    // desktop contract documents this only for the owners that close on blur;
+    // the others stay open until Escape, an outside pointer press, the
+    // trigger or an action dismisses them.
+    focusOutDismisses: true,
     entry: "settings",
     anchored: true,
     query: "&subscriptionDetails=true",
@@ -433,11 +453,74 @@ try {
             await frames(page);
             await assertStable("keyboard open");
             await placement("keyboard open");
+            // Escape from inside the popup closes it and keeps the layout.
             await page.keyboard.press("Tab");
             await restoreScroll("tab");
             await assertStable("tab");
             await page.keyboard.press("Escape");
+            await assertClosed("tab escape");
             await restoreScroll("tab escape");
+            await assertStable("tab escape");
+            // Tab through every enabled item until focus leaves the popup.
+            // Each focused control is recorded, so the sequence provably
+            // reaches the whole popup; the layout stays put on every step.
+            await trigger.focus();
+            await page.keyboard.press("Enter");
+            await popup.waitFor();
+            await frames(page);
+            const tabbable = () =>
+              popup.evaluate(
+                (node, selector) =>
+                  [...node.querySelectorAll(selector)].filter(
+                    (item) => !item.disabled && item.tabIndex >= 0,
+                  ).length,
+                family.items,
+              );
+            const focusInside = () =>
+              popup.evaluate((node) => {
+                const active = document.activeElement;
+                if (!active || !node.contains(active)) return null;
+                // Identify a control by its position inside the popup.
+                return [...node.querySelectorAll("*")].indexOf(active);
+              });
+            const expected = await tabbable();
+            assert(expected > 0, `${state} tab sequence has enabled items`);
+            const reached = new Set();
+            const initial = await focusInside();
+            if (initial !== null) reached.add(initial);
+            let left = false;
+            for (let step = 0; step < expected + 4 && !left; step++) {
+              await page.keyboard.press("Tab");
+              await frames(page);
+              if ((await popup.count()) === 0) {
+                left = true;
+                break;
+              }
+              const position = await focusInside();
+              if (position === null) left = true;
+              else reached.add(position);
+              await restoreScroll(`tab step ${step}`);
+              await assertStable(`tab step ${step}`);
+            }
+            assert(left, `${state} focus leaves the popup after its last item`);
+            assert.equal(
+              reached.size,
+              expected,
+              `${state} Tab reached ${reached.size} of ${expected} enabled items`,
+            );
+            if (family.focusOutDismisses) {
+              await assertClosed("tab out");
+            } else {
+              // No focus-out dismissal is documented for this owner: the popup
+              // stays open and unmoved until the documented outside press.
+              assert.equal(await popup.count(), 1, `${state} stays open`);
+              await assertStable("tab out");
+              await page.mouse.click(1, height - 1);
+              await frames(page);
+              await assertClosed("tab out outside pointer");
+            }
+            await restoreScroll("tab out");
+            await assertStable("tab out");
             // Resize and owner scroll while open keep the popup reachable.
             await open();
             await page.setViewportSize({ width: width + 40, height });
