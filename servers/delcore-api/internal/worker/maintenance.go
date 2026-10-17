@@ -47,7 +47,7 @@ func (w *Worker) Maintain(ctx context.Context, now time.Time) error {
    AND NOT EXISTS(SELECT 1 FROM disputes WHERE tenant_id=t.id AND active)
    AND COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),0)<t.auto_threshold
    AND NOT EXISTS(SELECT 1 FROM jobs WHERE tenant_id=t.id AND kind='auto_topup' AND state IN ('pending','running','reconcile'))
-   AND COALESCE((SELECT sum((payload->>'amount')::numeric) FROM jobs WHERE tenant_id=t.id AND kind='auto_topup' AND created_at >= $1 AND (state<>'failed' OR error_category NOT IN ('provider_rejected','payment_failed','payment_method_required'))),0)+t.auto_amount<=t.auto_cap`, start)
+   AND COALESCE((SELECT sum((payload->>'amount')::numeric) FROM jobs WHERE tenant_id=t.id AND kind='auto_topup' AND created_at >= $1 AND (state<>'failed' OR error_category NOT IN ('provider_rejected','payment_failed','payment_method_required')) AND NOT (state='done' AND error_category IN ('auto_topup_disabled','subscription_canceled'))),0)+t.auto_amount<=t.auto_cap`, start)
 		if e != nil {
 			return e
 		}

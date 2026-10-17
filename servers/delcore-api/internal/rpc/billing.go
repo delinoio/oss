@@ -50,8 +50,18 @@ func (s *Server) SetAutoTopUp(ctx context.Context, r *connect.Request[pb.SetAuto
 			return e
 		}
 		if !q.Enabled {
-			_, e := c.tx.Exec(c.ctx, "UPDATE tenants SET auto_threshold=NULL,auto_amount=NULL,auto_cap=NULL WHERE id=$1", q.TenantId)
-			return e
+			if _, e := c.tx.Exec(c.ctx, "UPDATE tenants SET auto_threshold=NULL,auto_amount=NULL,auto_cap=NULL WHERE id=$1", q.TenantId); e != nil {
+				return e
+			}
+			// Queued charges carry their amount in the job payload, so disabling the
+			// setting must also end work that has never reached the provider. Running,
+			// reconciling, attempted and externally identified jobs stay untouched.
+			tag, e := c.tx.Exec(c.ctx, "UPDATE jobs SET state='done',error_category='auto_topup_disabled',updated_at=$2 WHERE tenant_id=$1 AND kind='auto_topup' AND state='pending' AND attempts=0 AND external_id=''", q.TenantId, c.now)
+			if e != nil {
+				return e
+			}
+			c.s.Log.InfoContext(c.ctx, "automatic top-up disabled", "correlation_id", c.correlation, "tenant_id", q.TenantId, "stopped_jobs", tag.RowsAffected())
+			return nil
 		}
 		threshold, e1 := accounting.Parse(q.Threshold)
 		amount, e2 := accounting.Parse(q.Amount)
@@ -469,17 +479,27 @@ func (s *Server) ListAudit(ctx context.Context, r *connect.Request[pb.ListAuditR
 	})
 }
 
-// A pending job with no attempts has never reached the provider. All other
-// incomplete subscription intents must be reconciled before deletion can start.
-// This runs under the same transaction lock as worker claims and payment events.
+// A pending job with no attempts has never reached the provider, and a job the
+// provider definitively rejected without creating anything has nothing left to
+// reconcile. Both are stopped. All other incomplete subscription intents must be
+// reconciled before deletion can start. A stopped rejected job keeps its
+// provider_rejected category as failure evidence and becomes done, so an operator
+// retry cannot revive it. This runs under the same transaction lock as worker
+// claims and payment events.
 func (c *call) stopPendingSubscriptions(tenant, owner string) error {
 	var uncertain bool
-	if e := c.tx.QueryRow(c.ctx, `SELECT EXISTS(SELECT 1 FROM jobs j JOIN tenants t ON t.id=j.tenant_id WHERE (t.id::text=$1 OR (t.owner_id::text=$2 AND t.personal AND t.deleted_at IS NULL)) AND j.kind='subscription' AND j.state<>'done' AND NOT (j.state='pending' AND j.attempts=0 AND j.external_id=''))`, tenant, owner).Scan(&uncertain); e != nil {
+	if e := c.tx.QueryRow(c.ctx, `SELECT EXISTS(SELECT 1 FROM jobs j JOIN tenants t ON t.id=j.tenant_id WHERE (t.id::text=$1 OR (t.owner_id::text=$2 AND t.personal AND t.deleted_at IS NULL)) AND j.kind='subscription' AND j.state<>'done' AND NOT (j.state='pending' AND j.attempts=0 AND j.external_id='') AND NOT (j.state='failed' AND j.error_category='provider_rejected' AND j.external_id=''))`, tenant, owner).Scan(&uncertain); e != nil {
 		return e
 	}
 	if uncertain {
 		return precondition("reconcile the pending subscription before requesting deletion")
 	}
-	_, e := c.tx.Exec(c.ctx, `UPDATE jobs j SET state='done',error_category='deletion_requested',updated_at=$3 FROM tenants t WHERE t.id=j.tenant_id AND (t.id::text=$1 OR (t.owner_id::text=$2 AND t.personal AND t.deleted_at IS NULL)) AND j.kind='subscription' AND j.state='pending' AND j.attempts=0 AND j.external_id=''`, tenant, owner, c.now)
-	return e
+	tag, e := c.tx.Exec(c.ctx, `UPDATE jobs j SET state='done',error_category=CASE WHEN j.state='failed' THEN j.error_category ELSE 'deletion_requested' END,updated_at=$3 FROM tenants t WHERE t.id=j.tenant_id AND (t.id::text=$1 OR (t.owner_id::text=$2 AND t.personal AND t.deleted_at IS NULL)) AND j.kind='subscription' AND j.external_id='' AND ((j.state='pending' AND j.attempts=0) OR (j.state='failed' AND j.error_category='provider_rejected'))`, tenant, owner, c.now)
+	if e != nil {
+		return e
+	}
+	if tag.RowsAffected() > 0 {
+		c.s.Log.InfoContext(c.ctx, "subscription intents stopped for deletion", "correlation_id", c.correlation, "stopped_jobs", tag.RowsAffected())
+	}
+	return nil
 }

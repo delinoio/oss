@@ -73,7 +73,7 @@ Authenticated users, registered M2M consumer services, tenant administrators and
 - Late usage uses the price applicable when it occurred and becomes an adjustment on the next bill, retaining its original period. Bound accepted lateness through operator configuration. Negative corrections remain durable in the ledger and offset subsequent usage charges, including across restarts. They do not reduce fixed subscription fees. On cancellation, operators refund any remaining usage overpayment in Paddle; synchronize the approved usage-line refund before completing deletion. Invoice-level payment offsets retain their source job and transaction item without inventing service attribution.
 - Purchased credits represent monetary balances and do not expire.
 - Support manual top-ups for all tenants. Automatic top-ups require an active Paddle subscription; tenants without one use manual top-ups. Automatic top-up settings require a threshold, amount, and monthly cap.
-- Permit only one in-flight automatic top-up per tenant. Suspend automatic top-ups after payment failure or an accepted subscription cancellation. Stop unattempted automatic top-up jobs when cancellation is accepted; reconcile any payment already in flight.
+- Permit only one in-flight automatic top-up per tenant. Suspend automatic top-ups after payment failure or an accepted subscription cancellation. Stop unattempted automatic top-up jobs when cancellation is accepted; reconcile any payment already in flight. Disabling automatic top-ups clears the settings and stops queued, unattempted automatic top-up jobs in the same transaction; running, reconciling, previously attempted and externally identified jobs continue. Jobs stopped by disabling or cancellation do not count toward the monthly cap.
 - A plan determines whether depleted credits cause blocking or postpaid continuation.
 - For plans without postpaid continuation, record already-incurred excess usage as negative credit balance, block subsequent paid use, and offset debt with the next top-up.
 - Explicitly document that post-execution reporting cannot prevent all concurrent overspend.
@@ -84,7 +84,7 @@ Authenticated users, registered M2M consumer services, tenant administrators and
 
 **Deletion and retention**
 
-- Tenant deletion stops new paid use and starts final settlement after the configured usage-reporting grace period. Deletion and withdrawal stop subscription intents that have never been attempted. Previously attempted, incomplete subscription intents must be reconciled before deletion or withdrawal starts.
+- Tenant deletion stops new paid use and starts final settlement after the configured usage-reporting grace period. Deletion and withdrawal stop subscription intents that have never been attempted. They also stop subscription intents that the provider definitively rejected without creating a subscription, retiring them as done while retaining the rejection category so an operator retry cannot revive them. Previously attempted, incomplete subscription intents must be reconciled before deletion or withdrawal starts.
 - Outstanding debt, disputes, or refundable purchased balances block deletion completion.
 - Operators refund remaining purchased credit through Paddle. Synchronize and verify the result before completing deletion.
 - After settlement and the configured deletion grace period, delete personal information and retain required accounting/audit records in de-identified form.

@@ -2161,3 +2161,280 @@ func TestFailedCancelJobDoesNotBlockDeletionAfterConfirmedCancellation(t *testin
 		t.Fatal("confirmed cancellation did not release deletion")
 	}
 }
+
+func TestDisablingAutoTopupStopsQueuedCharges(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	cfg.PaddleCreditProductID = "pro_fixture"
+	cfg.PaddleToken = "fixture"
+	org, e := client.CreateTenant(ctx, req(&pb.CreateTenantRequest{RequestKey: key(), Name: "Other organization"}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	other := org.Msg.Tenant.Id
+	for _, id := range []string{tenant, other} {
+		if _, e = db.Pool.Exec(ctx, "UPDATE tenants SET external_subscription_id='sub_'||left(id::text,8),external_customer_id='ctm_'||left(id::text,8),period_end=now()+interval '10 days' WHERE id=$1", id); e != nil {
+			t.Fatal(e)
+		}
+	}
+	enable := func(id string) {
+		t.Helper()
+		if _, e := client.SetAutoTopUp(ctx, req(&pb.SetAutoTopUpRequest{RequestKey: key(), TenantId: id, Enabled: true, Threshold: "5", Amount: "10", MonthlyCap: "10"}, "owner")); e != nil {
+			t.Fatal(e)
+		}
+	}
+	enable(tenant)
+	enable(other)
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	calls := 0
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		w.WriteHeader(http.StatusBadRequest)
+	}))
+	defer mock.Close()
+	cfg.PaddleURL = mock.URL
+	w := &worker.Worker{DB: db, Config: cfg, Provider: provider.New(cfg), Log: logger}
+	if e = w.Maintain(ctx, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+	manual := key()
+	if _, e = db.Pool.Exec(ctx, `INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,available_at,created_at,updated_at) VALUES($1,$2,'topup',$1::uuid::text,'{"amount":"10","minor_units":"1000","currency":"USD"}','pending',now()+interval '1 hour',now(),now())`, manual, tenant); e != nil {
+		t.Fatal(e)
+	}
+	var queued, otherQueued string
+	if e = db.Pool.QueryRow(ctx, "SELECT (SELECT id::text FROM jobs WHERE tenant_id=$1 AND kind='auto_topup'),(SELECT id::text FROM jobs WHERE tenant_id=$2 AND kind='auto_topup')", tenant, other).Scan(&queued, &otherQueued); e != nil {
+		t.Fatal("automatic top-ups were not queued", e)
+	}
+	disable := &pb.SetAutoTopUpRequest{RequestKey: key(), TenantId: tenant, Enabled: false}
+	for i := 0; i < 2; i++ {
+		// A repeated request and a replayed mutation key both succeed.
+		if _, e = client.SetAutoTopUp(ctx, req(disable, "owner")); e != nil {
+			t.Fatal("disable", i, e)
+		}
+	}
+	if _, e = client.SetAutoTopUp(ctx, req(&pb.SetAutoTopUpRequest{RequestKey: key(), TenantId: tenant, Enabled: false}, "owner")); e != nil {
+		t.Fatal("repeated disable", e)
+	}
+	jobState := func(id string) (string, string) {
+		t.Helper()
+		var state, category string
+		if e := db.Pool.QueryRow(ctx, "SELECT state,error_category FROM jobs WHERE id=$1", id).Scan(&state, &category); e != nil {
+			t.Fatal(e)
+		}
+		return state, category
+	}
+	if state, category := jobState(queued); state != "done" || category != "auto_topup_disabled" {
+		t.Fatal("queued charge survived disable", state, category)
+	}
+	if state, _ := jobState(manual); state != "pending" {
+		t.Fatal("manual top-up changed", state)
+	}
+	if state, _ := jobState(otherQueued); state != "pending" {
+		t.Fatal("another tenant's charge changed", state)
+	}
+	var threshold, amount, limit *string
+	if e = db.Pool.QueryRow(ctx, "SELECT auto_threshold::text,auto_amount::text,auto_cap::text FROM tenants WHERE id=$1", tenant).Scan(&threshold, &amount, &limit); e != nil || threshold != nil || amount != nil || limit != nil {
+		t.Fatal("settings were not cleared", e)
+	}
+	// The other tenant's charge is deferred so any provider call must come from the stopped job.
+	if _, e = db.Pool.Exec(ctx, "UPDATE jobs SET available_at=now()+interval '1 hour' WHERE id=$1", otherQueued); e != nil {
+		t.Fatal(e)
+	}
+	if e = w.Step(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if calls != 0 {
+		t.Fatal("disabled automatic charge reached the provider", calls)
+	}
+	if e = w.Maintain(ctx, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+	var created int
+	if e = db.Pool.QueryRow(ctx, "SELECT count(*) FROM jobs WHERE tenant_id=$1 AND kind='auto_topup'", tenant).Scan(&created); e != nil || created != 1 {
+		t.Fatal("disabled settings created a replacement charge", created, e)
+	}
+	// A job ended by disable does not consume the monthly cap, so the same month
+	// can still be charged after the setting is enabled again.
+	enable(tenant)
+	if e = w.Maintain(ctx, time.Now()); e != nil {
+		t.Fatal(e)
+	}
+	if e = db.Pool.QueryRow(ctx, "SELECT count(*) FROM jobs WHERE tenant_id=$1 AND kind='auto_topup'", tenant).Scan(&created); e != nil || created != 2 {
+		t.Fatal("stopped charge consumed the monthly cap", created, e)
+	}
+}
+
+func TestDisablingAutoTopupKeepsAttemptedCharges(t *testing.T) {
+	for _, tc := range []struct {
+		name, state, external string
+		attempts              int
+	}{
+		{"running", "running", "", 1},
+		{"reconcile", "reconcile", "", 1},
+		{"previously attempted", "pending", "", 1},
+		{"externally identified", "pending", "txn_known", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db, client, _ := setup(t)
+			ctx := context.Background()
+			_, tenant := bootstrap(t, client)
+			job := key()
+			if _, e := db.Pool.Exec(ctx, `INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,attempts,external_id,available_at,created_at,updated_at) VALUES($1,$2,'auto_topup',$1::uuid::text,'{"amount":"10","minor_units":"1000","currency":"USD"}',$3,$4,$5,now(),now(),now())`, job, tenant, tc.state, tc.attempts, tc.external); e != nil {
+				t.Fatal(e)
+			}
+			if _, e := client.SetAutoTopUp(ctx, req(&pb.SetAutoTopUpRequest{RequestKey: key(), TenantId: tenant, Enabled: false}, "owner")); e != nil {
+				t.Fatal(e)
+			}
+			var state, category string
+			if e := db.Pool.QueryRow(ctx, "SELECT state,error_category FROM jobs WHERE id=$1", job).Scan(&state, &category); e != nil || state != tc.state || category != "" {
+				t.Fatal("charge with possible provider work changed", state, category, e)
+			}
+		})
+	}
+}
+
+func TestDeletionStopsDefinitivelyRejectedSubscriptions(t *testing.T) {
+	for _, withdraw := range []bool{false, true} {
+		t.Run(fmt.Sprintf("withdraw=%t", withdraw), func(t *testing.T) {
+			db, client, cfg := setup(t)
+			ctx := context.Background()
+			_, tenant := bootstrap(t, client)
+			cfg.PaddleToken = "fixture"
+			job := key()
+			if _, e := db.Pool.Exec(ctx, `INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,available_at,created_at,updated_at) VALUES($1,$2,'subscription',$1::uuid::text,'{"plan_id":"pro","price_ids":["price"],"external_price_ids":["pri_rejected"],"timing":"prorated_immediately","return_url":"https://example.test/return"}',now(),now(),now())`, job, tenant); e != nil {
+				t.Fatal(e)
+			}
+			calls := 0
+			mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls++
+				w.WriteHeader(http.StatusUnprocessableEntity)
+			}))
+			defer mock.Close()
+			cfg.PaddleURL = mock.URL
+			w := &worker.Worker{DB: db, Config: cfg, Provider: provider.New(cfg), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+			if e := w.Step(ctx); e != nil {
+				t.Fatal(e)
+			}
+			state := func() (string, string) {
+				t.Helper()
+				var s, c string
+				if e := db.Pool.QueryRow(ctx, "SELECT state,error_category FROM jobs WHERE id=$1", job).Scan(&s, &c); e != nil {
+					t.Fatal(e)
+				}
+				return s, c
+			}
+			if s, c := state(); s != "failed" || c != "provider_rejected" || calls != 1 {
+				t.Fatal("rejection fixture", s, c, calls)
+			}
+			var e error
+			if withdraw {
+				_, e = client.Withdraw(ctx, req(&pb.WithdrawRequest{RequestKey: key()}, "owner"))
+			} else {
+				_, e = client.DeleteTenant(ctx, req(&pb.DeleteTenantRequest{RequestKey: key(), TenantId: tenant}, "owner"))
+			}
+			if e != nil {
+				t.Fatal("definitive rejection blocked deletion", e)
+			}
+			var deleting, withdrawing bool
+			if e = db.Pool.QueryRow(ctx, "SELECT t.deleting_at IS NOT NULL,u.withdrawing_at IS NOT NULL FROM tenants t JOIN users u ON u.id=t.owner_id WHERE t.id=$1", tenant).Scan(&deleting, &withdrawing); e != nil || !deleting || withdrawing != withdraw {
+				t.Fatal("deletion flags", deleting, withdrawing, e)
+			}
+			if s, c := state(); s != "done" || c != "provider_rejected" || calls != 1 {
+				t.Fatal("rejected intent not retired with its evidence", s, c, calls)
+			}
+			if _, e = client.RetryJob(ctx, req(&pb.RetryJobRequest{RequestKey: key(), JobId: job, Reason: "retire check"}, "owner")); connect.CodeOf(e) != connect.CodeFailedPrecondition {
+				t.Fatal("retired intent was retried", e)
+			}
+			if s, _ := state(); s != "done" {
+				t.Fatal("retry revived the intent", s)
+			}
+		})
+	}
+}
+
+func TestDeletionOnlyStopsRejectedSubscriptionsWithoutProviderIdentity(t *testing.T) {
+	for _, withdraw := range []bool{false, true} {
+		for _, tc := range []struct {
+			name, state, category, external string
+			attempts                        int
+			allowed                         bool
+		}{
+			{"rejected", "failed", "provider_rejected", "", 1, true},
+			{"rejected with identity", "failed", "provider_rejected", "sub_known", 1, false},
+			{"uncategorized failure", "failed", "", "", 1, false},
+			{"unknown payment outcome", "failed", "unknown_payment_outcome", "", 1, false},
+			{"retry exhausted", "failed", "retry_exhausted", "", 1, false},
+			{"payment mismatch", "failed", "payment_mismatch", "", 1, false},
+			{"running", "running", "", "", 1, false},
+			{"reconcile", "reconcile", "payment_ambiguous", "", 1, false},
+		} {
+			t.Run(fmt.Sprintf("withdraw=%t/%s", withdraw, tc.name), func(t *testing.T) {
+				db, client, _ := setup(t)
+				ctx := context.Background()
+				_, tenant := bootstrap(t, client)
+				job := key()
+				if _, e := db.Pool.Exec(ctx, "INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,error_category,attempts,external_id,available_at,created_at,updated_at) VALUES($1,$2,'subscription',$1::uuid::text,'{}',$3,$4,$5,$6,now(),now(),now())", job, tenant, tc.state, tc.category, tc.attempts, tc.external); e != nil {
+					t.Fatal(e)
+				}
+				var e error
+				if withdraw {
+					_, e = client.Withdraw(ctx, req(&pb.WithdrawRequest{RequestKey: key()}, "owner"))
+				} else {
+					_, e = client.DeleteTenant(ctx, req(&pb.DeleteTenantRequest{RequestKey: key(), TenantId: tenant}, "owner"))
+				}
+				var deleting, withdrawing bool
+				var state, category string
+				if err := db.Pool.QueryRow(ctx, "SELECT t.deleting_at IS NOT NULL,u.withdrawing_at IS NOT NULL,j.state,j.error_category FROM tenants t JOIN users u ON u.id=t.owner_id JOIN jobs j ON j.tenant_id=t.id WHERE j.id=$1", job).Scan(&deleting, &withdrawing, &state, &category); err != nil {
+					t.Fatal(err)
+				}
+				if tc.allowed {
+					if e != nil || !deleting || withdrawing != withdraw || state != "done" || category != tc.category {
+						t.Fatal("rejected intent blocked deletion", e, deleting, withdrawing, state, category)
+					}
+					return
+				}
+				if connect.CodeOf(e) != connect.CodeFailedPrecondition || deleting || withdrawing || state != tc.state || category != tc.category {
+					t.Fatal("uncertain intent did not block deletion", e, deleting, withdrawing, state, category)
+				}
+			})
+		}
+	}
+}
+
+func TestRejectedSubscriptionDoesNotUnblockUncertainIntent(t *testing.T) {
+	for _, withdraw := range []bool{false, true} {
+		t.Run(fmt.Sprintf("withdraw=%t", withdraw), func(t *testing.T) {
+			db, client, _ := setup(t)
+			ctx := context.Background()
+			_, tenant := bootstrap(t, client)
+			rejected, uncertain, unsent := key(), key(), key()
+			for _, row := range []struct{ id, state, category, dedup string }{{rejected, "failed", "provider_rejected", "rejected"}, {uncertain, "reconcile", "payment_ambiguous", "uncertain"}, {unsent, "pending", "", "unsent"}} {
+				attempts := 1
+				if row.id == unsent {
+					attempts = 0
+				}
+				if _, e := db.Pool.Exec(ctx, "INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,error_category,attempts,available_at,created_at,updated_at) VALUES($1,$2,'subscription',$3,'{}',$4,$5,$6,now(),now(),now())", row.id, tenant, row.dedup, row.state, row.category, attempts); e != nil {
+					t.Fatal(e)
+				}
+			}
+			var e error
+			if withdraw {
+				_, e = client.Withdraw(ctx, req(&pb.WithdrawRequest{RequestKey: key()}, "owner"))
+			} else {
+				_, e = client.DeleteTenant(ctx, req(&pb.DeleteTenantRequest{RequestKey: key(), TenantId: tenant}, "owner"))
+			}
+			if connect.CodeOf(e) != connect.CodeFailedPrecondition {
+				t.Fatal("uncertain intent did not block the combined transition", e)
+			}
+			var deleting, withdrawing bool
+			var rejectedState, unsentState string
+			if e = db.Pool.QueryRow(ctx, "SELECT t.deleting_at IS NOT NULL,u.withdrawing_at IS NOT NULL,(SELECT state FROM jobs WHERE id=$2),(SELECT state FROM jobs WHERE id=$3) FROM tenants t JOIN users u ON u.id=t.owner_id WHERE t.id=$1", tenant, rejected, unsent).Scan(&deleting, &withdrawing, &rejectedState, &unsentState); e != nil {
+				t.Fatal(e)
+			}
+			if deleting || withdrawing || rejectedState != "failed" || unsentState != "pending" {
+				t.Fatal("blocked transition changed intents", deleting, withdrawing, rejectedState, unsentState)
+			}
+		})
+	}
+}
