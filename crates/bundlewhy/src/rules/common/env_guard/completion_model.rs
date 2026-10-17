@@ -11,9 +11,19 @@
 //! matching `case`). It shares no code with the scan, so a rule that the scan
 //! gets wrong in one construct shows up as a differing program here.
 //!
-//! The abstraction is the one the scan documents: every evaluation of a
-//! non-literal expression may throw, a loop test is unknown (an endless loop
-//! has none or a literal `true`), and no state carries between iterations.
+//! The abstraction is the one the scan documents: evaluation may throw unless
+//! the form is on a short allowlist of forms that provably cannot (an empty
+//! statement, a lone literal, a declaration of a plain name with a literal or
+//! no initializer, a function declaration). Everything else may throw: calls,
+//! member access, identifiers, destructuring, `for`-`of` and `for`-`in` over
+//! anything (a literal included), `with`, spread, templates, `new`, class
+//! declarations and `using`. A loop test is unknown (an endless loop has none
+//! or a literal `true`), and no state carries between iterations.
+//!
+//! "May throw" over-approximates the engine for some forms (a `for`-`in` over
+//! `null` never throws), so the forms that were misjudged before
+//! (`let {x} = null`, `for (x of null)`, `with (null)`) are also pinned to the
+//! real behaviour by the table of `catch` rows in the parent module.
 
 use std::collections::HashSet;
 
@@ -39,10 +49,22 @@ enum LoopKind {
     Do,
     /// `do S while(true)`
     DoTrue,
+    /// `for(const a of y)`
+    ForOf,
+    /// `for(const a of null)`: acquiring the iterator throws.
+    ForOfLiteral,
+    /// `for(const {a} of y)`
+    ForOfPattern,
+    /// `for(const a in y)`
+    ForIn,
+    /// `for(const a in null)`
+    ForInLiteral,
+    /// `for(a of y)`
+    ForOfTarget,
 }
 
 impl LoopKind {
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 13] = [
         Self::While,
         Self::WhileTrue,
         Self::ForEver,
@@ -50,6 +72,12 @@ impl LoopKind {
         Self::ForTrue,
         Self::Do,
         Self::DoTrue,
+        Self::ForOf,
+        Self::ForOfLiteral,
+        Self::ForOfPattern,
+        Self::ForIn,
+        Self::ForInLiteral,
+        Self::ForOfTarget,
     ];
 
     fn endless(self) -> bool {
@@ -63,6 +91,161 @@ impl LoopKind {
     fn tests_first(self) -> bool {
         !matches!(self, Self::Do | Self::DoTrue)
     }
+}
+
+/// A simple statement with the abstract effect "may throw" or "cannot". The
+/// number given to [`Form::render`] keeps the declared names distinct.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Form {
+    // -- The allowlist: these cannot throw. ---------------------------------
+    /// `let a<n>=1;`
+    LiteralBinding,
+    /// `const a<n>=null;`
+    NullBinding,
+    /// `var a<n>='s',b<n>=true;`
+    LiteralBindings,
+    /// `var a<n>;`
+    EmptyBinding,
+    /// `1;`
+    LiteralStatement,
+    /// `function g<n>(a=f()){f()}`: the defaults run only when it is called.
+    FunctionDeclaration,
+    // -- Everything else may throw. -----------------------------------------
+    /// `let {a<n>}=null;`: destructuring a nullish value throws.
+    ObjectPatternNull,
+    /// `const {a<n>=1}=y;`
+    ObjectPattern,
+    /// `var [a<n>]=1;`: a number is not iterable.
+    ArrayPatternLiteral,
+    /// `let a<n>=y;`: `y` may be undeclared.
+    IdentifierBinding,
+    /// `let a<n>=1,{b<n>}=null;`: a later declarator throws.
+    PatternAfterLiteral,
+    /// `using a<n>=1;`: a number is not disposable.
+    UsingLiteral,
+    /// `[...null];`
+    SpreadArray,
+    /// `f(...null);`
+    SpreadArgument,
+    /// `new F(...1);`
+    SpreadNew,
+    /// `` `${y}`; ``
+    Template,
+    /// `` `${1}`; ``
+    TemplateLiteral,
+    /// `` t`x`; ``
+    TaggedTemplate,
+    /// `new F;`
+    New,
+    /// `y.z;`
+    Member,
+    /// `y;`
+    Identifier,
+    /// `y?.z;`
+    OptionalMember,
+    /// `({[y]:1});`
+    ComputedKey,
+    /// `class C<n>{[y](){}}`
+    ClassComputedKey,
+    /// `class C<n> extends y{}`
+    ClassHeritage,
+    /// `({a<n>}=null);`: assignment destructuring.
+    PatternAssignment,
+    /// `[a<n>]=null;`
+    ArrayPatternAssignment,
+}
+
+impl Form {
+    const ALL: [Self; 27] = [
+        Self::LiteralBinding,
+        Self::NullBinding,
+        Self::LiteralBindings,
+        Self::EmptyBinding,
+        Self::LiteralStatement,
+        Self::FunctionDeclaration,
+        Self::ObjectPatternNull,
+        Self::ObjectPattern,
+        Self::ArrayPatternLiteral,
+        Self::IdentifierBinding,
+        Self::PatternAfterLiteral,
+        Self::UsingLiteral,
+        Self::SpreadArray,
+        Self::SpreadArgument,
+        Self::SpreadNew,
+        Self::Template,
+        Self::TemplateLiteral,
+        Self::TaggedTemplate,
+        Self::New,
+        Self::Member,
+        Self::Identifier,
+        Self::OptionalMember,
+        Self::ComputedKey,
+        Self::ClassComputedKey,
+        Self::ClassHeritage,
+        Self::PatternAssignment,
+        Self::ArrayPatternAssignment,
+    ];
+
+    /// Whether the statement is on the allowlist of forms that cannot throw.
+    fn pure(self) -> bool {
+        matches!(
+            self,
+            Self::LiteralBinding
+                | Self::NullBinding
+                | Self::LiteralBindings
+                | Self::EmptyBinding
+                | Self::LiteralStatement
+                | Self::FunctionDeclaration
+        )
+    }
+
+    fn render(self, n: usize, out: &mut String) {
+        let text = match self {
+            Self::LiteralBinding => format!("let a{n}=1;"),
+            Self::NullBinding => format!("const a{n}=null;"),
+            Self::LiteralBindings => format!("var a{n}='s',b{n}=true;"),
+            Self::EmptyBinding => format!("var a{n};"),
+            Self::LiteralStatement => "1;".to_owned(),
+            Self::FunctionDeclaration => format!("function g{n}(a=f()){{f()}}"),
+            Self::ObjectPatternNull => format!("let {{a{n}}}=null;"),
+            Self::ObjectPattern => format!("const {{a{n}=1}}=y;"),
+            Self::ArrayPatternLiteral => format!("var [a{n}]=1;"),
+            Self::IdentifierBinding => format!("let a{n}=y;"),
+            Self::PatternAfterLiteral => format!("let a{n}=1,{{b{n}}}=null;"),
+            Self::UsingLiteral => format!("using a{n}=1;"),
+            Self::SpreadArray => "[...null];".to_owned(),
+            Self::SpreadArgument => "f(...null);".to_owned(),
+            Self::SpreadNew => "new F(...1);".to_owned(),
+            Self::Template => "`${y}`;".to_owned(),
+            Self::TemplateLiteral => "`${1}`;".to_owned(),
+            Self::TaggedTemplate => "t`x`;".to_owned(),
+            Self::New => "new F;".to_owned(),
+            Self::Member => "y.z;".to_owned(),
+            Self::Identifier => "y;".to_owned(),
+            Self::OptionalMember => "y?.z;".to_owned(),
+            Self::ComputedKey => "({[y]:1});".to_owned(),
+            Self::ClassComputedKey => format!("class C{n}{{[y](){{}}}}"),
+            Self::ClassHeritage => format!("class C{n} extends y{{}}"),
+            Self::PatternAssignment => format!("({{a{n}}}=null);"),
+            Self::ArrayPatternAssignment => format!("[a{n}]=null;"),
+        };
+        out.push_str(&text);
+    }
+}
+
+/// How a `catch` clause names the thrown value.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Param {
+    /// `catch{`
+    Absent,
+    /// `catch(e){`
+    Plain,
+    /// `catch({m}){`: destructuring the thrown value may throw.
+    Pattern,
+}
+
+impl Param {
+    const ALL: [Self; 3] = [Self::Absent, Self::Plain, Self::Pattern];
 }
 
 #[derive(Clone, Debug)]
@@ -88,13 +271,16 @@ enum Stmt {
     Continue(Option<usize>),
     /// `f();`
     Call,
+    /// A simple statement, numbered to keep its declared names distinct.
+    Form(Form, usize),
+    /// `with(null)S`
+    With(Box<Stmt>),
     /// `if(y)then else other`
     If(Box<Stmt>, Option<Box<Stmt>>),
     Block(Vec<Stmt>),
     Try {
         block: Vec<Stmt>,
-        /// `Some(true)` is `catch(e){}`, `Some(false)` is `catch{}`.
-        catch: Option<(bool, Vec<Stmt>)>,
+        catch: Option<(Param, Vec<Stmt>)>,
         finally: Option<Vec<Stmt>>,
     },
     Loop(LoopKind, Box<Stmt>),
@@ -120,7 +306,7 @@ fn any(stmt: &Stmt, test: &dyn Fn(&Stmt) -> bool) -> bool {
                     || catch.as_ref().is_some_and(|(_, list)| any_list(list))
                     || finally.as_ref().is_some_and(|list| any_list(list))
             }
-            Stmt::Loop(_, body) | Stmt::Labelled(_, body) => any(body, test),
+            Stmt::Loop(_, body) | Stmt::Labelled(_, body) | Stmt::With(body) => any(body, test),
             Stmt::Switch(clauses) => clauses.iter().any(|(_, list)| any_list(list)),
             _ => false,
         }
@@ -132,11 +318,28 @@ fn render_list(list: &[Stmt], out: &mut String) {
     }
 }
 
+/// The body of a loop, a label or an `else`: a declaration cannot stand alone
+/// there, so a simple form gets a block.
+fn render_body(stmt: &Stmt, out: &mut String) {
+    if matches!(stmt, Stmt::Form(..)) {
+        out.push('{');
+        render(stmt, out);
+        out.push('}');
+    } else {
+        render(stmt, out);
+    }
+}
+
 fn render_branch(stmt: &Stmt, out: &mut String) {
     // A nested `if` without `else` would capture a following `else`.
     if matches!(
         stmt,
-        Stmt::If(..) | Stmt::Loop(..) | Stmt::Labelled(..) | Stmt::Try { .. }
+        Stmt::If(..)
+            | Stmt::Loop(..)
+            | Stmt::Labelled(..)
+            | Stmt::Try { .. }
+            | Stmt::With(..)
+            | Stmt::Form(..)
     ) {
         out.push('{');
         render(stmt, out);
@@ -158,12 +361,17 @@ fn render(stmt: &Stmt, out: &mut String) {
         Stmt::Continue(None) => out.push_str("continue;"),
         Stmt::Continue(Some(label)) => out.push_str(&format!("continue L{label};")),
         Stmt::Call => out.push_str("f();"),
+        Stmt::Form(form, n) => form.render(*n, out),
+        Stmt::With(body) => {
+            out.push_str("with(null)");
+            render_branch(body, out);
+        }
         Stmt::If(then, other) => {
             out.push_str("if(y)");
             render_branch(then, out);
             if let Some(other) = other {
                 out.push_str("else ");
-                render(other, out);
+                render_body(other, out);
             }
         }
         Stmt::Block(list) => {
@@ -180,7 +388,11 @@ fn render(stmt: &Stmt, out: &mut String) {
             render_list(block, out);
             out.push('}');
             if let Some((binding, list)) = catch {
-                out.push_str(if *binding { "catch(e){" } else { "catch{" });
+                out.push_str(match binding {
+                    Param::Absent => "catch{",
+                    Param::Plain => "catch(e){",
+                    Param::Pattern => "catch({m}){",
+                });
                 render_list(list, out);
                 out.push('}');
             }
@@ -193,27 +405,51 @@ fn render(stmt: &Stmt, out: &mut String) {
         Stmt::Loop(kind, body) => match kind {
             LoopKind::While => {
                 out.push_str("while(y)");
-                render(body, out);
+                render_body(body, out);
             }
             LoopKind::WhileTrue => {
                 out.push_str("while(true)");
-                render(body, out);
+                render_body(body, out);
             }
             LoopKind::ForEver => {
                 out.push_str("for(;;)");
-                render(body, out);
+                render_body(body, out);
             }
             LoopKind::ForTest => {
                 out.push_str("for(;y;)");
-                render(body, out);
+                render_body(body, out);
             }
             LoopKind::ForTrue => {
                 out.push_str("for(;true;)");
-                render(body, out);
+                render_body(body, out);
+            }
+            LoopKind::ForOf => {
+                out.push_str("for(const a of y)");
+                render_body(body, out);
+            }
+            LoopKind::ForOfLiteral => {
+                out.push_str("for(const a of null)");
+                render_body(body, out);
+            }
+            LoopKind::ForOfPattern => {
+                out.push_str("for(const {a} of y)");
+                render_body(body, out);
+            }
+            LoopKind::ForIn => {
+                out.push_str("for(const a in y)");
+                render_body(body, out);
+            }
+            LoopKind::ForInLiteral => {
+                out.push_str("for(const a in null)");
+                render_body(body, out);
+            }
+            LoopKind::ForOfTarget => {
+                out.push_str("for(a of y)");
+                render_body(body, out);
             }
             LoopKind::Do | LoopKind::DoTrue => {
                 out.push_str("do ");
-                render(body, out);
+                render_body(body, out);
                 out.push_str(if *kind == LoopKind::Do {
                     "while(y);"
                 } else {
@@ -234,7 +470,7 @@ fn render(stmt: &Stmt, out: &mut String) {
         }
         Stmt::Labelled(label, body) => {
             out.push_str(&format!("L{label}:"));
-            render(body, out);
+            render_body(body, out);
         }
     }
 }
@@ -314,6 +550,14 @@ impl Explorer {
             Stmt::Break(label) => Completion::Break(*label),
             Stmt::Continue(label) => Completion::Continue(*label),
             Stmt::Call => self.evaluate().unwrap_or(Completion::Normal),
+            Stmt::Form(form, _) if form.pure() => Completion::Normal,
+            Stmt::Form(..) => self.evaluate().unwrap_or(Completion::Normal),
+            Stmt::With(body) => {
+                if let Some(thrown) = self.evaluate() {
+                    return thrown;
+                }
+                self.exec(body, &[])
+            }
             Stmt::If(then, other) => {
                 if let Some(thrown) = self.evaluate() {
                     return thrown;
@@ -337,9 +581,15 @@ impl Explorer {
                     return completion;
                 }
                 if completion == Completion::Throw
-                    && let Some((_, handler)) = catch
+                    && let Some((param, handler)) = catch
                 {
-                    completion = self.list(handler);
+                    // Destructuring the thrown value may throw as well.
+                    let bound = if *param == Param::Pattern {
+                        self.evaluate()
+                    } else {
+                        None
+                    };
+                    completion = bound.unwrap_or_else(|| self.list(handler));
                     if completion == Completion::Cut {
                         return completion;
                     }
@@ -530,6 +780,7 @@ struct Generator {
     rng: Rng,
     next_read: usize,
     next_label: usize,
+    next_name: usize,
 }
 
 impl Generator {
@@ -538,15 +789,21 @@ impl Generator {
             rng: Rng(seed),
             next_read: 0,
             next_label: 0,
+            next_name: 0,
         }
     }
 
     fn leaf(&mut self, scope: &Scope) -> Stmt {
         loop {
-            match self.rng.below(10) {
+            match self.rng.below(13) {
                 0 | 1 => {
                     self.next_read += 1;
                     return Stmt::ReturnRead(self.next_read);
+                }
+                10..=12 => {
+                    self.next_name += 1;
+                    let form = Form::ALL[self.rng.below(Form::ALL.len())];
+                    return Stmt::Form(form, self.next_name);
                 }
                 2 => return Stmt::ReturnLiteral,
                 3 => return Stmt::ReturnBare,
@@ -589,7 +846,7 @@ impl Generator {
         if depth == 0 {
             return self.leaf(scope);
         }
-        match self.rng.below(16) {
+        match self.rng.below(18) {
             0..=4 => self.leaf(scope),
             5 | 6 => {
                 let then = self.stmt(depth - 1, scope);
@@ -618,7 +875,9 @@ impl Generator {
                 }
                 Stmt::Switch(clauses)
             }
-            _ => self.labelled(depth, scope),
+            14 | 15 => self.labelled(depth, scope),
+            16 => Stmt::With(Box::new(self.stmt(depth - 1, scope))),
+            _ => self.loop_statement(depth, scope, &[]),
         }
     }
 
@@ -629,7 +888,10 @@ impl Generator {
             1 => (false, true),
             _ => (true, true),
         };
-        let catch = catch.then(|| (self.rng.chance(1, 2), self.list(depth - 1, scope)));
+        let catch = catch.then(|| {
+            let param = Param::ALL[self.rng.below(Param::ALL.len())];
+            (param, self.list(depth - 1, scope))
+        });
         let finally = finally.then(|| self.list(depth - 1, scope));
         Stmt::Try {
             block,
@@ -732,6 +994,9 @@ fn try_statement_combinations_follow_completion_records() {
                 Some(Box::new(Stmt::Throw)),
             )],
             vec![Stmt::Call, Stmt::Break(None)],
+            vec![Stmt::Form(Form::ObjectPatternNull, 0)],
+            vec![Stmt::Form(Form::LiteralBinding, 0)],
+            vec![Stmt::Loop(LoopKind::ForOfLiteral, Box::new(Stmt::Empty))],
         ]
     }
 
@@ -798,7 +1063,7 @@ fn try_statement_combinations_follow_completion_records() {
         programs.push(vec![
             Stmt::Try {
                 block: vec![],
-                catch: Some((true, vec![tail.clone()])),
+                catch: Some((Param::Plain, vec![tail.clone()])),
                 finally: None,
             },
             Stmt::Labelled(
@@ -823,7 +1088,7 @@ fn try_statement_combinations_follow_completion_records() {
                 }
                 let inner = Stmt::Try {
                     block: block.clone(),
-                    catch: catch.clone().map(|list| (true, list)),
+                    catch: catch.clone().map(|list| (Param::Plain, list)),
                     finally: finally.clone(),
                 };
                 count += check(contexts(inner).into_iter());
@@ -847,6 +1112,7 @@ fn nested_try_combinations_follow_completion_records() {
         vec![Stmt::ReturnLiteral],
         vec![Stmt::Call],
         vec![Stmt::If(Box::new(Stmt::Throw), None)],
+        vec![Stmt::Form(Form::ArrayPatternLiteral, 0)],
     ];
     let wrap = |inner: Vec<Stmt>, shape: usize| -> Vec<Stmt> {
         match shape {
@@ -856,7 +1122,7 @@ fn nested_try_combinations_follow_completion_records() {
             3 => vec![Stmt::Loop(LoopKind::While, Box::new(Stmt::Block(inner)))],
             _ => vec![Stmt::Try {
                 block: inner,
-                catch: Some((false, vec![])),
+                catch: Some((Param::Absent, vec![])),
                 finally: None,
             }],
         }
@@ -871,7 +1137,7 @@ fn nested_try_combinations_follow_completion_records() {
                     }
                     let inner = Stmt::Try {
                         block: inner_block.clone(),
-                        catch: inner_catch.map(|list| (true, list.clone())),
+                        catch: inner_catch.map(|list| (Param::Plain, list.clone())),
                         finally: inner_finally.cloned(),
                     };
                     // `break L2` needs the labelled block of shape 1.
@@ -900,6 +1166,83 @@ fn nested_try_combinations_follow_completion_records() {
         }
     }
     assert!(count > 1_000, "{count} programs");
+}
+
+/// Every simple form, as the body of a `try` block and of a `finally` block,
+/// in front of and behind a read, with each shape of `catch` parameter, alone
+/// and under each loop and `with`: the forms that cannot throw are exactly the
+/// allowlisted ones, whatever surrounds them.
+#[test]
+fn simple_forms_follow_completion_records() {
+    // A loop that may or may not run, one that never ends, a `do` loop and an
+    // iteration over a literal.
+    const LOOPS: [LoopKind; 4] = [
+        LoopKind::While,
+        LoopKind::ForEver,
+        LoopKind::Do,
+        LoopKind::ForOfLiteral,
+    ];
+    let mut count = 0;
+    for form in Form::ALL {
+        let stmt = Stmt::Form(form, 7);
+        let blocks = [
+            vec![stmt.clone()],
+            vec![stmt.clone(), Stmt::ReturnRead(1)],
+            vec![Stmt::ReturnRead(1), stmt.clone()],
+            vec![stmt.clone(), Stmt::Break(None)],
+        ];
+        for block in &blocks {
+            for param in Param::ALL {
+                for finally in [
+                    None,
+                    Some(vec![Stmt::ReturnRead(3)]),
+                    Some(vec![stmt.clone(), Stmt::ReturnLiteral]),
+                ] {
+                    let inner = Stmt::Try {
+                        block: block.clone(),
+                        catch: Some((param, vec![Stmt::ReturnRead(2)])),
+                        finally,
+                    };
+                    let mut programs = vec![
+                        vec![inner.clone(), Stmt::ReturnRead(4)],
+                        vec![Stmt::With(Box::new(inner.clone())), Stmt::ReturnRead(4)],
+                        vec![Stmt::Labelled(
+                            1,
+                            Box::new(Stmt::Block(vec![inner.clone(), Stmt::ReturnRead(4)])),
+                        )],
+                    ];
+                    for kind in LOOPS {
+                        programs.push(vec![
+                            Stmt::Loop(kind, Box::new(Stmt::Block(vec![inner.clone()]))),
+                            Stmt::ReturnRead(4),
+                        ]);
+                    }
+                    count += check(programs.into_iter());
+                }
+            }
+        }
+        // A form on its own, in a loop body, and in front of a `catch` that
+        // only a throw reaches.
+        for kind in LoopKind::ALL {
+            let body = Stmt::Block(vec![stmt.clone(), Stmt::Break(None)]);
+            count += check(
+                [
+                    vec![Stmt::Loop(kind, Box::new(body)), Stmt::ReturnRead(1)],
+                    vec![
+                        Stmt::Try {
+                            block: vec![Stmt::Loop(kind, Box::new(Stmt::Empty))],
+                            catch: Some((Param::Plain, vec![Stmt::ReturnRead(2)])),
+                            finally: None,
+                        },
+                        stmt.clone(),
+                        Stmt::ReturnRead(3),
+                    ],
+                ]
+                .into_iter(),
+            );
+        }
+    }
+    assert!(count > 4_000, "{count} programs");
 }
 
 /// The reference agrees with the rows of the documented rules.
@@ -932,10 +1275,30 @@ fn reference_semantics_match_known_completions() {
     assert_eq!(
         reads(vec![Stmt::Try {
             block: vec![Stmt::ReturnBare],
-            catch: Some((true, vec![Stmt::ReturnRead(1)])),
+            catch: Some((Param::Plain, vec![Stmt::ReturnRead(1)])),
             finally: None,
         }]),
         Vec::<usize>::new()
+    );
+    // Destructuring a nullish literal and iterating one throw, so the `catch`
+    // clause runs; a declaration of a plain name with a literal does not.
+    let guarded = |form: Form| {
+        reads(vec![Stmt::Try {
+            block: vec![Stmt::Form(form, 0)],
+            catch: Some((Param::Plain, vec![Stmt::ReturnRead(1)])),
+            finally: None,
+        }])
+    };
+    assert_eq!(guarded(Form::ObjectPatternNull), vec![1]);
+    assert_eq!(guarded(Form::SpreadArray), vec![1]);
+    assert_eq!(guarded(Form::LiteralBinding), Vec::<usize>::new());
+    assert_eq!(
+        reads(vec![Stmt::Try {
+            block: vec![Stmt::Loop(LoopKind::ForOfLiteral, Box::new(Stmt::Empty))],
+            catch: Some((Param::Plain, vec![Stmt::ReturnRead(1)])),
+            finally: None,
+        }]),
+        vec![1]
     );
     // The code after an endless loop is unreachable.
     assert_eq!(

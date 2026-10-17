@@ -585,8 +585,11 @@ struct Parser<'a> {
     nodes: Vec<Node<'a>>,
     /// Branch sites in source order of their operator.
     sites: Vec<(EnvGuard, Id)>,
-    /// An expression was evaluated by the statement being parsed, outside any
-    /// statement nested in it. Any evaluation may throw.
+    /// The statement being parsed, outside any statement nested in it, does
+    /// something that may throw. Evaluation may throw unless it is one of the
+    /// few forms that provably cannot: parsing an expression sets this flag
+    /// by default, and only the `*_pure` entry points below clear it again,
+    /// for a lone literal in a position that merely holds the value.
     evaluates: bool,
     /// The `break`/`continue` targets enclosing the cursor inside the current
     /// function body, innermost last.
@@ -887,6 +890,8 @@ impl<'a> Parser<'a> {
             }
             "with" => {
                 self.bump();
+                // The object is converted: `with (null)` throws.
+                self.evaluates = true;
                 self.parse_condition(None);
                 self.parse_statement()
             }
@@ -920,7 +925,7 @@ impl<'a> Parser<'a> {
                             && !(next.kind == TokenKind::Punct
                                 && matches!(next.text, ";" | "}")) =>
                     {
-                        self.parse_expr()
+                        self.parse_expr_pure()
                     }
                     _ => None,
                 };
@@ -1052,7 +1057,7 @@ impl<'a> Parser<'a> {
     }
 
     fn expression_statement(&mut self) -> Completion {
-        self.parse_expr();
+        self.parse_expr_pure();
         self.eat_punct(";");
         Completion::normal()
     }
@@ -1103,7 +1108,7 @@ impl<'a> Parser<'a> {
         if !self.eat_punct("(") {
             return;
         }
-        let condition = self.within(Self::parse_expr);
+        let condition = self.within(Self::parse_expr_pure);
         if let Some(guard) = guard {
             self.site(guard, condition);
         }
@@ -1119,19 +1124,32 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// `var`, `let` or `const` and its declarators.
+    /// `var`, `let`, `const` or `using` and its declarators.
+    ///
+    /// A declarator cannot throw only when it binds a plain name to a lone
+    /// literal (or has no initializer). A binding pattern destructures its
+    /// value (`let {x} = null` throws), and a `using` declaration checks that
+    /// its value is disposable (`using x = 1` throws).
     fn parse_declarations(&mut self) {
+        let using = self.is_word("using");
         self.bump();
         loop {
+            let mut plain = !using;
             match self.tok() {
                 Some(token) if token.kind == TokenKind::Word => self.bump(),
                 Some(token) if is_punct(Some(token), "[") || is_punct(Some(token), "{") => {
+                    plain = false;
+                    self.evaluates = true;
                     self.parse_primary();
                 }
                 _ => break,
             }
             if self.eat_punct("=") {
-                self.parse_assign();
+                if plain {
+                    self.parse_assign_pure();
+                } else {
+                    self.parse_assign();
+                }
             }
             if !self.eat_punct(",") {
                 break;
@@ -1181,11 +1199,15 @@ impl<'a> Parser<'a> {
             self.bump();
             self.parse_declarations();
         } else {
+            // The target of an assignment (`for (x of y)`) is evaluated too.
             self.parse_expr();
         }
         self.no_in = false;
         if self.is_word("of") || self.is_word("in") {
             self.bump();
+            // Acquiring the iterator, and every step of it, may throw,
+            // whatever the iterable is: `for (x of null)` throws.
+            self.evaluates = true;
             self.parse_expr();
             self.eat_punct(")");
         } else {
@@ -1194,13 +1216,13 @@ impl<'a> Parser<'a> {
             let test = if self.is_punct(";") || self.is_punct(")") {
                 None
             } else {
-                self.parse_expr()
+                self.parse_expr_pure()
             };
             self.site(EnvGuard::For, test);
             self.eat_punct(";");
             if !self.is_punct(")") {
                 let outer = std::mem::replace(&mut self.evaluates, false);
-                self.parse_expr();
+                self.parse_expr_pure();
                 update_throws = std::mem::replace(&mut self.evaluates, outer);
             }
             self.eat_punct(")");
@@ -1272,7 +1294,7 @@ impl<'a> Parser<'a> {
                 Some(token) if token.kind == TokenKind::Word && token.text == "case" => {
                     reachable = true;
                     self.bump();
-                    self.parse_expr();
+                    self.parse_expr_pure();
                     self.eat_punct(":");
                 }
                 Some(token) if token.kind == TokenKind::Word && token.text == "default" => {
@@ -1507,17 +1529,41 @@ impl<'a> Parser<'a> {
         last
     }
 
+    /// Evaluating an expression may throw. This is the default: only
+    /// [`Self::parse_assign_pure`] and [`Self::parse_expr_pure`] clear it.
     fn parse_assign(&mut self) -> Expr {
-        // Evaluating an expression may throw, unless it is a lone literal.
-        if !self.literal_operand() {
-            self.evaluates = true;
-        }
+        self.evaluates = true;
         if self.depth >= MAX_DEPTH {
             return self.skip_nested();
         }
         self.depth += 1;
         let expr = self.parse_assign_inner();
         self.depth -= 1;
+        expr
+    }
+
+    /// Parse an expression whose value is only stored or tested: a comma
+    /// expression where every operand is an allowlisted pure form.
+    fn parse_expr_pure(&mut self) -> Expr {
+        let mut last = self.parse_assign_pure();
+        while self.eat_punct(",") {
+            last = self.parse_assign_pure();
+        }
+        last
+    }
+
+    /// Parse an assignment expression whose value is only stored or tested.
+    /// The allowlist of expressions that provably cannot throw is a lone
+    /// literal. Where the value is consumed (destructured, iterated, spread,
+    /// converted by `with`) the caller must use [`Self::parse_assign`], which
+    /// treats even a literal as throwing.
+    fn parse_assign_pure(&mut self) -> Expr {
+        let pure = self.literal_operand();
+        let outer = self.evaluates;
+        let expr = self.parse_assign();
+        if pure {
+            self.evaluates = outer;
+        }
         expr
     }
 
@@ -1529,7 +1575,8 @@ impl<'a> Parser<'a> {
             return false;
         };
         let literal = match token.kind {
-            TokenKind::Number | TokenKind::Str => true,
+            TokenKind::Number => true,
+            TokenKind::Str => token.text.starts_with(['\'', '"']),
             TokenKind::Word => matches!(token.text, "true" | "false" | "null"),
             _ => false,
         };
@@ -4574,6 +4621,159 @@ mod tests {
                 "catch value without a finally",
                 "(function(){try{f()}catch(e){return process.env.FLAG}})()&&run()",
                 Some("and"),
+            ),
+            // A `catch` clause is reachable only when the `try` block may
+            // throw. Anything outside a short allowlist of forms that
+            // provably cannot throw may: destructuring, iteration, spread,
+            // `with`, templates, `new`, member access and identifiers.
+            (
+                "catch of a destructured nullish literal",
+                "(function(){try{let {x}=null}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of an array pattern over a literal",
+                "(function(){try{let [x]=1}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a const object pattern",
+                "(function(){try{const {x}=null}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a pattern with a default",
+                "(function(){try{var {x=1}=null}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a for-of over a nullish literal",
+                "(function(){try{for(const x of null){}}catch(e){return \
+                 process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a for-of over a number literal",
+                "(function(){try{for(const x of 1){}}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a for-in over a literal",
+                "(function(){try{for(const x in null){}}catch(e){return \
+                 process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a for-of with a pattern head",
+                "(function(){try{for(const {x} of 0){}}catch(e){return \
+                 process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a for-of with an assignment head",
+                "(function(){try{for(x of null){}}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a spread of a literal",
+                "(function(){try{[...null]}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a spread argument",
+                "(function(){try{f(...null)}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a template with an expression",
+                "(function(){try{`${a}`}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a tagged template",
+                "(function(){try{t`x`}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a with over a literal",
+                "(function(){try{with(null){}}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a using declaration over a literal",
+                "(function(){try{using x=1}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a class with a computed key",
+                "(function(){try{class C{[k](){}}}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a new expression",
+                "(function(){try{new C}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a member access",
+                "(function(){try{a.b}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of an identifier initializer",
+                "(function(){try{let x=y}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of an identifier statement",
+                "(function(){try{y}catch(e){return process.env.FLAG}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "catch of a try block with a plain literal declaration",
+                "(function(){try{let x=1}catch(e){return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "catch of a try block with a plain null declaration",
+                "(function(){try{const x=null}catch(e){return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "catch of a try block with an uninitialized declaration",
+                "(function(){try{var x}catch(e){return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "catch of a try block with a string declaration",
+                "(function(){try{let x='a',y=\"b\"}catch(e){return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "catch of a try block with a literal statement",
+                "(function(){try{1}catch(e){return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "catch of a try block with an empty statement",
+                "(function(){try{;}catch(e){return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "catch of a try block with a function declaration",
+                "(function(){try{function g(a=f()){f()}}catch(e){return \
+                 process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "catch of a try block with a literal condition",
+                "(function(){try{if(1){}}catch(e){return process.env.FLAG}})()&&run()",
+                None,
+            ),
+            (
+                "catch of a try block with a literal loop test",
+                "(function(){try{do{}while(0)}catch(e){return process.env.FLAG}})()&&run()",
+                None,
             ),
             (
                 "finally return of the read",
