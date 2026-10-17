@@ -1334,3 +1334,42 @@ func TestMismatchedAutomaticPaymentSuspendsCharges(t *testing.T) {
 		t.Fatal("mismatch triggered another charge", suspended, count, e)
 	}
 }
+
+func TestLiveWorkerRecoversFailedFinish(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	topup, e := client.RequestTopUp(ctx, req(&pb.RequestTopUpRequest{RequestKey: key(), TenantId: tenant, Amount: "10", ReturnUrl: cfg.ReturnURLs[0]}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = db.Pool.Exec(ctx, `CREATE FUNCTION fail_finish() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF OLD.state='running' THEN RAISE EXCEPTION 'simulated database write failure'; END IF; RETURN NEW; END $$; CREATE TRIGGER fail_finish BEFORE UPDATE ON jobs FOR EACH ROW EXECUTE FUNCTION fail_finish()`); e != nil {
+		t.Fatal(e)
+	}
+	calls := 0
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			calls++
+			io.WriteString(w, `{"data":{"id":"txn_live","status":"completed"}}`)
+			return
+		}
+		fmt.Fprintf(w, `{"data":[{"id":"txn_live","status":"completed","currency_code":"USD","custom_data":{"delcore_job_id":%q,"delcore_tenant_id":%q},"details":{"totals":{"subtotal":"1000"}}}]}`, topup.Msg.JobId, tenant)
+	}))
+	defer mock.Close()
+	cfg.PaddleURL = mock.URL
+	w := &worker.Worker{DB: db, Config: cfg, Provider: provider.New(cfg), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if e = w.Step(ctx); e == nil {
+		t.Fatal("finish fault was not exercised")
+	}
+	if _, e = db.Pool.Exec(ctx, "DROP TRIGGER fail_finish ON jobs"); e != nil {
+		t.Fatal(e)
+	}
+	if e = w.Step(ctx); e != nil {
+		t.Fatal(e)
+	}
+	var state string
+	var credits int
+	if e = db.Pool.QueryRow(ctx, "SELECT state,(SELECT count(*) FROM ledger WHERE tenant_id=$2 AND kind='credit') FROM jobs WHERE id=$1", topup.Msg.JobId, tenant).Scan(&state, &credits); e != nil || state != "done" || credits != 1 || calls != 1 {
+		t.Fatal("live recovery stranded or repeated charge", state, credits, calls, e)
+	}
+}

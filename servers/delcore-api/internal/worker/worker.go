@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/delinoio/oss/servers/delcore-api/internal/config"
@@ -17,6 +18,7 @@ import (
 )
 
 type Worker struct {
+	stepMu   sync.Mutex
 	DB       *postgres.Store
 	Provider *provider.Client
 	Config   config.Config
@@ -50,6 +52,13 @@ func (w *Worker) Run(ctx context.Context) error {
 	}
 }
 func (w *Worker) Step(ctx context.Context) error {
+	w.stepMu.Lock()
+	defer w.stepMu.Unlock()
+	// V1 has one serial worker. After the preceding Step returns, a running
+	// row is stranded by a failed local write, not an active provider request.
+	if e := w.Recover(ctx); e != nil {
+		return e
+	}
 	if e := w.Maintain(ctx, time.Now().UTC()); e != nil {
 		return e
 	}
