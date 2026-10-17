@@ -384,6 +384,12 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
     let mut problems: Vec<Problem> = Vec::new();
     let mut chunks = Vec::new();
     let mut failed_chunks = 0usize;
+    // Chunks made only of bundler-owned virtual helpers have no source-backed
+    // candidate a map could attribute; they are neither a problem nor a
+    // coverage penalty. Their generated-location findings stay available.
+    // The check runs while the loop still holds each chunk's own collected
+    // metadata, so it never searches the collection by file name.
+    let mut missing_maps: Vec<String> = Vec::new();
     for chunk in &collection.chunks {
         match Chunk::load(
             &input.build_dir,
@@ -392,7 +398,19 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             chunk.is_entry,
             &context_dir,
         ) {
-            Ok(loaded) => chunks.push(loaded),
+            Ok(loaded) => {
+                if loaded.map.is_none() {
+                    if collection.is_virtual_only_collected_chunk(chunk) {
+                        tracing::debug!(
+                            chunk = loaded.file.as_str(),
+                            "virtual-only helper chunk has no source map; not counted as missing"
+                        );
+                    } else {
+                        missing_maps.push(loaded.file.clone());
+                    }
+                }
+                chunks.push(loaded);
+            }
             Err(error) => {
                 failed_chunks += 1;
                 problems.push(problem(
@@ -402,20 +420,6 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
                     "Start a new run; do not modify the run directory while it is being analyzed.",
                 ));
             }
-        }
-    }
-    // Chunks made only of bundler-owned virtual helpers have no source-backed
-    // candidate a map could attribute; they are neither a problem nor a
-    // coverage penalty. Their generated-location findings stay available.
-    let mut missing_maps: Vec<String> = Vec::new();
-    for chunk in chunks.iter().filter(|chunk| chunk.map.is_none()) {
-        if collection.is_virtual_only_chunk(&chunk.file) {
-            tracing::debug!(
-                chunk = chunk.file.as_str(),
-                "virtual-only helper chunk has no source map; not counted as missing"
-            );
-        } else {
-            missing_maps.push(chunk.file.clone());
         }
     }
     if !missing_maps.is_empty() {
@@ -4971,6 +4975,49 @@ mod tests {
     }
 
     #[test]
+    fn many_mapless_chunks_are_classified_by_their_own_metadata() {
+        // Interleave exempt helper chunks and source-backed chunks without
+        // maps. Each chunk is classified from the metadata the load loop
+        // already holds, so the outcome depends only on that chunk and the
+        // warning keeps collection order.
+        const COUNT: usize = 150;
+        let leak = |text: String| -> &'static str { Box::leak(text.into_boxed_str()) };
+        let mut extra = Vec::new();
+        let mut expected = Vec::new();
+        for index in 0..COUNT {
+            extra.push(ExtraChunk {
+                file: leak(format!("assets/helper-{index:03}.js")),
+                code: HELPER_CODE,
+                modules: vec![PRELOAD_HELPER],
+                map: ExtraMap::Absent,
+            });
+            let backed = leak(format!("assets/backed-{index:03}.js"));
+            extra.push(ExtraChunk {
+                file: backed,
+                code: HELPER_CODE,
+                modules: vec![PRELOAD_HELPER, APP_MODULE],
+                map: ExtraMap::Absent,
+            });
+            expected.push(backed);
+        }
+        let fixture = vite_with_extra_chunks(&extra, |_| {});
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        let problems = missing_map_problems(analysis);
+        assert_eq!(problems.len(), 1);
+        assert_eq!(
+            problems[0].message,
+            format!("No usable source map for: {}", expected.join(", "))
+        );
+        assert!(!problems[0].message.contains("assets/helper-"));
+        let dce = dead_code_coverage(analysis);
+        assert!(
+            dce.note
+                .contains(&format!("{COUNT} chunk(s) have no usable source map"))
+        );
+    }
+
+    #[test]
     fn look_alike_virtual_chunk_keeps_the_map_requirement() {
         let custom = vec![ExtraChunk {
             file: "assets/custom-AAAA.js",
@@ -5335,11 +5382,24 @@ mod tests {
                 assert_eq!(built.bundler_choice(), choice, "{bundler:?}");
                 let expected = vite_expected && choice == Some(BundlerChoice::Vite);
                 assert_eq!(
-                    built.is_virtual_only_chunk("a.js"),
+                    built.is_virtual_only_collected_chunk(&built.chunks[0]),
                     expected,
                     "{name} with bundler {bundler:?}"
                 );
-                assert!(!built.is_virtual_only_chunk("b.js"), "{name}: unknown file");
+                // The predicate decides from the passed chunk's own metadata
+                // and never searches `Collection::chunks` by file name, so a
+                // chunk that is absent from the collection is classified by
+                // its modules alone.
+                let detached = crate::collect::CollectedChunk {
+                    file: "b.js".to_owned(),
+                    modules: built.chunks[0].modules.clone(),
+                    ..Default::default()
+                };
+                assert_eq!(
+                    built.is_virtual_only_collected_chunk(&detached),
+                    expected,
+                    "{name} with bundler {bundler:?}: detached chunk"
+                );
             }
         }
     }
