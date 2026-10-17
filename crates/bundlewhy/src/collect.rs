@@ -264,10 +264,13 @@ pub struct CollectedChunk {
     /// is different from a chunk that imports nothing (`Some` of an empty
     /// list).
     pub imports: Option<Vec<String>>,
-    /// The entries of `imports` that name an external module. `imports` mixes
-    /// emitted chunk files with external specifiers, and an external can share
-    /// its name with an emitted chunk, so an entry listed here is not a trusted
-    /// chunk edge. `None` when the adapter did not collect it.
+    /// The entries of `imports` that name an external module, or may name one.
+    /// `imports` mixes emitted chunk files with external specifiers, and an
+    /// external can share its name with an emitted chunk, so an entry listed
+    /// here is not a trusted chunk edge. When the build renders externals with
+    /// a function-valued `output.paths`, the adapter cannot recover the
+    /// rendered names and lists every `imports` entry. `None` when the adapter
+    /// did not collect it.
     pub external_imports: Option<Vec<String>>,
     /// Chunk files this chunk requests with a dynamic `import()`
     /// (`OutputChunk.dynamicImports`). `None` when the adapter did not collect

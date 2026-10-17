@@ -871,6 +871,9 @@ enum ChunkSearch {
 /// external import: Rolldown mixes both kinds in `OutputChunk.imports`, and an
 /// external named like an emitted chunk cannot be told apart from that chunk,
 /// so such an entry makes the search incomplete instead of becoming an edge.
+/// The adapter lists every entry when it cannot know the rendered external
+/// names (function-valued `output.paths`), so no static edge of such a chunk is
+/// followed; the chunk can still hold the target itself.
 /// An entry that names no emitted chunk is an external leaf and cannot hold the
 /// target.
 ///
@@ -2422,6 +2425,40 @@ mod ineffective_dynamic_import_tests {
                 expected: RequesterOutcome::Unknown,
             },
             Cell {
+                name: "every static import marked possibly external is not an edge",
+                requesters: &["a.js"],
+                targets: &["c.js"],
+                // The adapter lists every `imports` entry when output.paths is a
+                // function: an entry that names an emitted chunk cannot be told
+                // from an external rendered under the same string.
+                graph: vec![
+                    chunk_with_externals("a.js", &["b.js"], &["b.js"]),
+                    chunk_with_externals("b.js", &["c.js"], &["c.js"]),
+                    chunk_with_externals("c.js", &[], &[]),
+                ],
+                expected: RequesterOutcome::Unknown,
+            },
+            Cell {
+                name: "possibly external imports still allow a same-chunk proof",
+                requesters: &["a.js"],
+                targets: &["a.js"],
+                graph: vec![
+                    chunk_with_externals("a.js", &["vendor.js", "react"], &["vendor.js", "react"]),
+                    chunk_with_externals("vendor.js", &[], &[]),
+                ],
+                expected: RequesterOutcome::Proven(vec![route("a.js", &["a.js"])]),
+            },
+            Cell {
+                name: "possibly external imports that name no emitted chunk are leaves",
+                requesters: &["a.js"],
+                targets: &["c.js"],
+                graph: vec![
+                    chunk_with_externals("a.js", &["react"], &["react"]),
+                    chunk("c.js", Some(&[])),
+                ],
+                expected: RequesterOutcome::SeparateChunk,
+            },
+            Cell {
                 name: "known limit: an external rendered under another string is followed",
                 requesters: &["a.js"],
                 targets: &["vendor.js"],
@@ -2879,6 +2916,61 @@ mod ineffective_dynamic_import_tests {
             ..Collection::default()
         };
         assert!(run(&collection).is_empty());
+    }
+
+    /// The lists an adapter writes when `output.paths` is a function: every
+    /// static import is possibly an external rendered under that string.
+    fn function_paths_collection(external_vendor: bool) -> Collection {
+        let imports = ["vendor.js"];
+        let externals: &[&str] = if external_vendor { &imports } else { &[] };
+        Collection {
+            modules: vec![
+                module("src/entry.js", &[], &[], &["entry.js"]),
+                module(
+                    "src/shared.js",
+                    &["src/other.js"],
+                    &["src/entry.js"],
+                    &["vendor.js"],
+                ),
+            ],
+            chunks: vec![
+                chunk_with_externals("entry.js", &imports, externals),
+                chunk("vendor.js", Some(&[])),
+            ],
+            ..Collection::default()
+        }
+    }
+
+    #[test]
+    fn function_paths_collision_never_becomes_a_confirmed_route() {
+        // Ordinary internal edge: confirmed.
+        let drafts = run(&function_paths_collection(false));
+        assert_eq!(drafts.len(), 1);
+        assert_eq!(drafts[0].status, EvidenceStatus::Confirmed);
+
+        // The same lists with the entry marked possibly external: no
+        // source-only finding.
+        let ambiguous = function_paths_collection(true);
+        assert!(run(&ambiguous).is_empty());
+
+        // A matching engine log still reports the module, and the importer is
+        // named as neither reported nor ruled out (never as unaffected).
+        let mut with_log = ambiguous;
+        with_log.logs.push(engine_log("src/shared.js"));
+        let drafts = run(&with_log);
+        assert_eq!(drafts.len(), 1);
+        let details = evidence_details(&drafts[0]);
+        assert!(
+            details[0].contains("neither reported nor ruled out"),
+            "{details:?}"
+        );
+        assert!(!details[0].contains("not affected"), "{details:?}");
+        let graph = drafts[0]
+            .evidence
+            .iter()
+            .find(|e| e.provenance == "emitted chunk graph")
+            .unwrap();
+        assert_eq!(graph.status, EvidenceStatus::Unavailable);
     }
 
     /// The traversal polls the signal before expanding each chunk, so a dense

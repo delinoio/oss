@@ -7,54 +7,129 @@ import {
   applyFinalChunkGraph,
   chunkCodeDigest,
   chunkGraphFields,
-  externalImportNames,
+  externalImportIdentity,
   finalCodeMatches,
   finalPlacementMatches,
 } from "./vite.mjs";
 
-test("externalImportNames covers the id and its output.paths replacement", () => {
+/** Identity of externals whose rendered names are known. */
+const known = (names = []) => ({
+  names: new Set(names),
+  renderedNamesUnknown: false,
+});
+
+/** A function that counts its calls. */
+const forbiddenCall = () => {
+  let calls = 0;
+  const paths = () => {
+    calls += 1;
+    return "vendor.js";
+  };
+  return { paths, calls: () => calls };
+};
+
+test("externalImportIdentity reads a record and never calls a function", () => {
   const cells = [
-    { name: "no paths", ids: ["react"], paths: undefined, expected: ["react"] },
+    {
+      name: "no paths",
+      ids: ["react"],
+      paths: undefined,
+      names: ["react"],
+      unknown: false,
+    },
+    {
+      name: "null paths",
+      ids: ["react"],
+      paths: null,
+      names: ["react"],
+      unknown: false,
+    },
     {
       name: "record",
       ids: ["react"],
       paths: { react: "vendor.js" },
-      expected: ["react", "vendor.js"],
+      names: ["react", "vendor.js"],
+      unknown: false,
     },
     {
-      name: "function",
+      name: "record entry for a module that is not external",
       ids: ["react"],
-      paths: (id) => `cdn/${id}`,
-      expected: ["react", "cdn/react"],
+      paths: { vue: "vue.js" },
+      names: ["react"],
+      unknown: false,
     },
     {
-      name: "throwing function",
-      ids: ["react"],
-      paths: () => {
-        throw new Error("boom");
-      },
-      expected: ["react"],
-    },
-    {
-      name: "non-string replacement",
+      name: "record with a non-string replacement",
       ids: ["react"],
       paths: { react: 1 },
-      expected: ["react"],
+      names: ["react"],
+      unknown: false,
+    },
+    {
+      name: "inherited members are not replacements",
+      ids: ["constructor", "toString", "__proto__"],
+      paths: {},
+      names: ["constructor", "toString", "__proto__"],
+      unknown: false,
+    },
+    {
+      name: "empty external set with a record",
+      ids: [],
+      paths: { react: "vendor.js" },
+      names: [],
+      unknown: false,
+    },
+    {
+      name: "array is not a documented shape",
+      ids: ["react"],
+      paths: ["vendor.js"],
+      names: ["react"],
+      unknown: true,
+    },
+    {
+      name: "string is not a documented shape",
+      ids: ["react"],
+      paths: "vendor.js",
+      names: ["react"],
+      unknown: true,
     },
   ];
   for (const cell of cells) {
+    const identity = externalImportIdentity(cell.ids, cell.paths);
     assert.deepEqual(
-      [...externalImportNames(cell.ids, cell.paths)].sort(),
-      [...cell.expected].sort(),
+      [...identity.names].sort(),
+      [...cell.names].sort(),
       cell.name,
     );
+    assert.equal(identity.renderedNamesUnknown, cell.unknown, cell.name);
   }
+
+  // A stateful function answers differently on every call. It is never
+  // called, whatever the external ids are, so a replayed answer cannot name an
+  // external that the output does not contain.
+  const spy = forbiddenCall();
+  const identity = externalImportIdentity(["react", "vue"], spy.paths);
+  assert.equal(spy.calls(), 0, "function paths is not called");
+  assert.equal(identity.renderedNamesUnknown, true);
+  assert.deepEqual([...identity.names].sort(), ["react", "vue"]);
+
+  // The same holds for a function that would throw, and without externals.
+  const throwing = externalImportIdentity(["react"], () => {
+    throw new Error("must not be called");
+  });
+  assert.equal(throwing.renderedNamesUnknown, true);
+  assert.deepEqual([...throwing.names], ["react"]);
+  assert.equal(
+    externalImportIdentity([], () => "x").renderedNamesUnknown,
+    true,
+    "no external module is still unknown: external detection is not trusted to prove absence",
+  );
 });
 
-test("chunkGraphFields marks rewritten externals", () => {
+test("chunkGraphFields marks rewritten externals of a record", () => {
   const fields = chunkGraphFields(
     { imports: ["vendor.js", "dep.js"], dynamicImports: ["lazy.js"] },
-    externalImportNames(["react"], { react: "vendor.js" }),
+    externalImportIdentity(["react"], { react: "vendor.js" }),
   );
   assert.deepEqual(fields, {
     imports: ["vendor.js", "dep.js"],
@@ -77,6 +152,52 @@ const snapshotCodeOf = (collection) =>
       chunkCodeDigest({ code: originalCode(chunk.file) }),
     ]),
   );
+
+test("chunkGraphFields never calls a stateful output.paths function", () => {
+  // The bundler rendered `react` as `vendor.js` (the first call), which is also
+  // an emitted chunk file. A second call would answer `cdn/react` and the
+  // collision would go unnoticed.
+  let calls = 0;
+  const paths = (id) => (calls++ === 0 ? "vendor.js" : `cdn/${id}`);
+  const identity = externalImportIdentity(["react"], paths);
+  assert.equal(calls, 0);
+  const fields = chunkGraphFields(
+    { imports: ["vendor.js", "dep.js", "react"], dynamicImports: [] },
+    identity,
+  );
+  assert.equal(calls, 0, "collecting the fields does not call paths");
+  assert.deepEqual(fields.imports, ["vendor.js", "dep.js", "react"]);
+  // Every static entry is ambiguous, including the ones that look internal.
+  assert.deepEqual(fields.externalImports, ["vendor.js", "dep.js", "react"]);
+});
+
+test("chunkGraphFields with an unknown identity keeps a chunk without imports clean", () => {
+  const identity = externalImportIdentity(["react"], () => "x");
+  assert.deepEqual(chunkGraphFields({}, identity), {
+    imports: [],
+    externalImports: [],
+    dynamicImports: [],
+  });
+  assert.deepEqual(
+    chunkGraphFields({ dynamicImports: ["lazy.js"] }, identity),
+    { imports: [], externalImports: [], dynamicImports: ["lazy.js"] },
+    "dynamic imports are not marked",
+  );
+});
+
+test("chunkGraphFields with a record keeps ordinary internal edges", () => {
+  const fields = chunkGraphFields(
+    { imports: ["shared.js", "react"], dynamicImports: [] },
+    externalImportIdentity(["react"], { react: "cdn/react" }),
+  );
+  assert.deepEqual(fields.externalImports, ["react"]);
+  // A record colliding with an emitted chunk file stays ambiguous.
+  const collision = chunkGraphFields(
+    { imports: ["vendor.js", "shared.js"], dynamicImports: [] },
+    externalImportIdentity(["react"], { react: "vendor.js" }),
+  );
+  assert.deepEqual(collision.externalImports, ["vendor.js"]);
+});
 
 /** A chunk of the finished build; `modules` are the ids it holds. */
 const finalChunk = (fileName, imports, modules = [], dynamicImports = []) => ({
@@ -130,7 +251,7 @@ test("applyFinalChunkGraph takes the finished bundle or drops the lists", () => 
       applyFinalChunkGraph(
         collection,
         cell.result,
-        new Set(),
+        known(),
         snapshotCodeOf(collection),
       ),
       cell.matches,
@@ -256,7 +377,7 @@ test("applyFinalChunkGraph drops every list when module placement changed", () =
       applyFinalChunkGraph(
         collection,
         { output: cell.output },
-        new Set(),
+        known(),
         snapshotCodeOf(collection),
       ),
       false,
@@ -300,7 +421,7 @@ test("applyFinalChunkGraph keeps the final lists when module membership is uncha
     applyFinalChunkGraph(
       collection,
       { output },
-      new Set(["react"]),
+      known(["react"]),
       snapshotCodeOf(collection),
     ),
     true,
@@ -314,6 +435,67 @@ test("applyFinalChunkGraph keeps the final lists when module membership is uncha
   assert.deepEqual(lazy.dynamicImports, []);
 });
 
+test("applyFinalChunkGraph marks every import ambiguous for a function output.paths", () => {
+  // `vendor.js` is both an emitted chunk and the string an external was
+  // rendered as; the function cannot be asked again, so the final lists carry
+  // every static entry as possibly external.
+  const collection = snapshotCollection();
+  const output = [
+    finalChunk(
+      "entry.js",
+      ["vendor.js", "shared.js"],
+      ["requester"],
+      ["shared.js"],
+    ),
+    finalChunk("shared.js", [], ["target"]),
+    finalChunk("lazy.js", [], []),
+  ];
+  let calls = 0;
+  const paths = () => {
+    calls += 1;
+    return "unused";
+  };
+  const identity = externalImportIdentity(["react"], paths);
+  assert.equal(
+    applyFinalChunkGraph(
+      collection,
+      { output },
+      identity,
+      snapshotCodeOf(collection),
+    ),
+    true,
+  );
+  assert.equal(calls, 0);
+  const [entry, shared, lazy] = collection.chunks;
+  assert.deepEqual(entry.imports, ["vendor.js", "shared.js"]);
+  assert.deepEqual(entry.externalImports, ["vendor.js", "shared.js"]);
+  assert.deepEqual(entry.dynamicImports, ["shared.js"]);
+  assert.deepEqual(shared.externalImports, []);
+  assert.deepEqual(lazy.externalImports, []);
+});
+
+test("applyFinalChunkGraph keeps the unchanged-membership check for a function output.paths", () => {
+  const collection = snapshotCollection();
+  const output = [
+    finalChunk("entry.js", ["shared.js"], ["requester", "extra"]),
+    finalChunk("shared.js", [], ["target"]),
+    finalChunk("lazy.js", [], []),
+  ];
+  const identity = externalImportIdentity(["react"], () => "x");
+  assert.equal(
+    applyFinalChunkGraph(
+      collection,
+      { output },
+      identity,
+      snapshotCodeOf(collection),
+    ),
+    false,
+  );
+  for (const chunk of collection.chunks) {
+    for (const field of listFields) assert.equal(chunk[field], undefined);
+  }
+});
+
 test("applyFinalChunkGraph ignores the order of modules inside a chunk", () => {
   const collection = {
     chunks: [{ file: "a.js", modules: ["x", "y"], imports: ["stale.js"] }],
@@ -323,7 +505,7 @@ test("applyFinalChunkGraph ignores the order of modules inside a chunk", () => {
     applyFinalChunkGraph(
       collection,
       { output },
-      new Set(),
+      known(),
       snapshotCodeOf(collection),
     ),
     true,
@@ -354,7 +536,7 @@ test("applyFinalChunkGraph invalidates a same-chunk snapshot when the target mov
     applyFinalChunkGraph(
       collection,
       { output },
-      new Set(),
+      known(),
       snapshotCodeOf(collection),
     ),
     false,
@@ -419,7 +601,7 @@ test("applyFinalChunkGraph drops every list when a chunk's code changed after th
       applyFinalChunkGraph(
         collection,
         { output },
-        new Set(),
+        known(),
         snapshotCodeOf(collection),
       ),
       false,
@@ -446,7 +628,7 @@ test("applyFinalChunkGraph drops the lists when the snapshot has no code digests
   for (const snapshotCode of [undefined, null, new Map(), {}]) {
     const collection = snapshotCollection();
     assert.equal(
-      applyFinalChunkGraph(collection, { output }, new Set(), snapshotCode),
+      applyFinalChunkGraph(collection, { output }, known(), snapshotCode),
       false,
     );
     assert.equal(collection.chunks[0].imports, undefined);

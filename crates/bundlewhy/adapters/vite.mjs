@@ -25,7 +25,7 @@ import {
 } from "./common.mjs";
 
 export const ADAPTER_ID = "bundlewhy-collector-vite";
-export const ADAPTER_VERSION = "4";
+export const ADAPTER_VERSION = "5";
 
 /** Plugins that the adapter adds; they are not part of the project's config. */
 const BUNDLEWHY_PLUGIN_NAMES = new Set([
@@ -254,43 +254,60 @@ export function configFileIdentityPlugin(configFile, dependencies = []) {
 }
 
 /**
- * Names under which an emitted chunk can list an external module in its
- * `imports`: the module id and, when `output.paths` is configured, the string
- * that replaces the id in the generated code. `paths` is a record or a
- * function in Rolldown. Both names are returned so that a rewritten external
- * is recognised whichever form the chunk list carries; a name shared with an
- * emitted chunk is then treated as ambiguous by the Rust side.
+ * How an external module can be named in the `imports` of an emitted chunk.
+ *
+ * `names` holds the module id and, for a record-valued `output.paths`, the
+ * string that replaces the id in the generated code. A record is plain data, so
+ * reading it is stable. A function-valued `output.paths` is never called here:
+ * the bundler called it while it rendered the chunks, a stateful function can
+ * answer differently when it is called again, and a replayed answer would
+ * name an external that the output does not contain (and miss the one it does).
+ * The rendered names of such a build are therefore unknown, which
+ * `renderedNamesUnknown` records. Any other non-record value (a string, an
+ * array, a number) is not a documented `output.paths` shape and is read the
+ * same way.
+ *
+ * The caller must treat every `imports` entry as possibly external when
+ * `renderedNamesUnknown` is true; see `chunkGraphFields`.
  */
-export function externalImportNames(externalIds, paths) {
+export function externalImportIdentity(externalIds, paths) {
   const names = new Set(externalIds);
+  if (paths === undefined || paths === null) {
+    return { names, renderedNamesUnknown: false };
+  }
+  if (typeof paths !== "object" || Array.isArray(paths)) {
+    return { names, renderedNamesUnknown: true };
+  }
   for (const id of externalIds) {
-    let rendered;
-    try {
-      rendered =
-        typeof paths === "function"
-          ? paths(id)
-          : paths !== null && typeof paths === "object"
-            ? paths[id]
-            : undefined;
-    } catch {
-      // A throwing user function cannot be evaluated again here; the id alone
-      // is still recorded.
-      rendered = undefined;
-    }
+    // Own properties only: `paths.constructor` and similar inherited members
+    // are not a replacement.
+    if (!Object.hasOwn(paths, id)) continue;
+    const rendered = paths[id];
     if (typeof rendered === "string") names.add(rendered);
   }
-  return names;
+  return { names, renderedNamesUnknown: false };
 }
 
 /**
  * The chunk-graph fields of one emitted chunk: static imports, the imports
  * that refer to an external module, and dynamic imports.
+ *
+ * `imports` mixes emitted chunk files with external specifiers, and an
+ * external can be rendered under a string that equals an emitted chunk file.
+ * When the rendered names are known, `externalImports` lists the entries that
+ * match an external name. When they are unknown (`renderedNamesUnknown`), an
+ * entry that names an emitted chunk cannot be told from an external rendered
+ * under the same string, so every entry is listed: the analysis then follows no
+ * static edge of this chunk and reads the search as incomplete (Unknown). The
+ * other entries name no emitted chunk and are external leaves either way.
  */
-export function chunkGraphFields(chunk, externalNames) {
+export function chunkGraphFields(chunk, externalIdentity) {
   const imports = [...(chunk.imports ?? [])];
   return {
     imports,
-    externalImports: imports.filter((name) => externalNames.has(name)),
+    externalImports: externalIdentity.renderedNamesUnknown
+      ? [...imports]
+      : imports.filter((name) => externalIdentity.names.has(name)),
     dynamicImports: [...(chunk.dynamicImports ?? [])],
   };
 }
@@ -391,7 +408,7 @@ export function finalPlacementMatches(snapshotChunks, finalChunks) {
 export function applyFinalChunkGraph(
   collection,
   buildResult,
-  externalNames,
+  externalIdentity,
   snapshotCode,
 ) {
   const results = Array.isArray(buildResult) ? buildResult : [buildResult];
@@ -416,7 +433,7 @@ export function applyFinalChunkGraph(
     if (matches) {
       Object.assign(
         chunk,
-        chunkGraphFields(finalChunks.get(chunk.file), externalNames),
+        chunkGraphFields(finalChunks.get(chunk.file), externalIdentity),
       );
     }
   }
@@ -562,7 +579,10 @@ function collectorPlugin(state) {
           if (this.getModuleInfo(id)?.code === null) externalIds.add(id);
         }
 
-        state.externalNames = externalImportNames(externalIds, options?.paths);
+        state.externalIdentity = externalImportIdentity(
+          externalIds,
+          options?.paths,
+        );
         const chunks = [];
         const assets = [];
         const codeDigests = new Map();
@@ -597,9 +617,11 @@ function collectorPlugin(state) {
             // chunk, dynamic imports are requested later. `imports` mixes
             // emitted chunk files with external specifiers, so
             // `externalImports` names the entries that refer to an external
-            // module (by id or by its `output.paths` replacement). The lists
-            // are replaced by the finished build's bundle after `build()`.
-            ...chunkGraphFields(output, state.externalNames),
+            // module (by id or by its record `output.paths` replacement; every
+            // entry when `output.paths` is a function, whose rendered names
+            // are not recoverable). The lists are replaced by the finished
+            // build's bundle after `build()`.
+            ...chunkGraphFields(output, state.externalIdentity),
           });
         }
         state.collection = { modules: [...modules.values()], chunks, assets };
@@ -638,7 +660,7 @@ await runAdapter(async (request) => {
     collection: null,
     outputs: 0,
     renderStarts: 0,
-    externalNames: new Set(),
+    externalIdentity: { names: new Set(), renderedNamesUnknown: false },
     snapshotCode: new Map(),
     warnings: [],
     logs: [],
@@ -791,7 +813,7 @@ await runAdapter(async (request) => {
   const finalGraph = applyFinalChunkGraph(
     state.collection,
     buildResult,
-    state.externalNames,
+    state.externalIdentity,
     state.snapshotCode,
   );
   if (!finalGraph) {
@@ -801,6 +823,13 @@ await runAdapter(async (request) => {
       message:
         "The finished build's chunks, their module membership or their generated code differ from the snapshot; chunk import data is omitted",
     });
+  }
+
+  if (finalGraph && state.externalIdentity.renderedNamesUnknown) {
+    progress(
+      "collecting",
+      "output.paths is not a record, so rendered external names are unknown; static chunk imports are not used as proof",
+    );
   }
 
   const resolved = state.resolved ?? {};
