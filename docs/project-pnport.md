@@ -82,6 +82,12 @@ Run PnP-unaware subprocesses against an installed Yarn 4 dependency graph withou
 - Apps: `apps/public-docs/docs/pnport`, the consolidated public guides at `https://oss.delino.io/pnport`, describing verified stable 0.1.2 availability with unresolved macOS and full-acceptance limits, and distinguishing the immutable experimental preview from stable distribution.
 - The public `/pnport/preview-testing` guide owns reproducible Turbopack and TypeScript 7 `tsc` commands for external preview testers, with exact published pnport/compiler versions and known platform and acceptance limits.
 
+The separate `.github/workflows/pnport-windows.yml` workflow owns native Windows
+x64/arm64 development checks on affected PRs and manual dispatch. It reuses the
+package-owned development matrix and source/installed-archive validator under
+[the repository workflow contract](repository-workflow-contract.md#pnport-windows-development-checks).
+These checks do not authorize Windows releases or replace complete acceptance.
+
 ## Domain Contract Documents
 
 - [Rust foundation](crates-pnport-foundation.md)

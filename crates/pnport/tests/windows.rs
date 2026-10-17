@@ -142,6 +142,37 @@ fn launch_worker(
     Ok((cwd, image))
 }
 
+/// Symbolize only repository code locations from a failed native probe. No
+/// application memory or native payload is read or retained.
+fn symbolize_failure(output: &std::process::Output) {
+    if output.status.success() {
+        return;
+    }
+    let image = PathBuf::from(env!("CARGO_BIN_EXE_pnport")).with_file_name("pnport_preload.dll");
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    for line in stderr.lines().filter(|line| {
+        line.contains("windows_exception_frame") && line.contains("module=pnport_preload.dll")
+    }) {
+        let Some(offset) = line
+            .split_whitespace()
+            .find_map(|field| field.strip_prefix("offset=0x"))
+        else {
+            continue;
+        };
+        if !offset.chars().all(|value| value.is_ascii_hexdigit()) {
+            continue;
+        }
+        if let Ok(symbols) = Command::new("llvm-symbolizer.exe")
+            .arg("--relative-address")
+            .arg(format!("--obj={}", image.display()))
+            .arg(format!("0x{offset}"))
+            .output()
+        {
+            eprintln!("{}", String::from_utf8_lossy(&symbols.stdout));
+        }
+    }
+}
+
 fn binary() -> PathBuf {
     std::env::var_os("PNPORT_TEST_BINARY")
         .map(PathBuf::from)
@@ -807,6 +838,28 @@ fn completion_port_directory_queries(root: &Path) {
     }
     unsafe { CloseHandle(synchronous) };
 
+    // Run the native control before the first intentional rejection starts
+    // the supervisor's shutdown grace interval. Its asynchronous completion
+    // wait must report its own timeout instead of being killed mid-control.
+    {
+        // A native-backed directory (no merged entries) keeps the native
+        // syscall.
+        let plain = root.join("plain");
+        fs::create_dir_all(&plain).unwrap();
+        fs::write(plain.join("file.txt"), b"plain").unwrap();
+        let native = open(&plain, true);
+        let port = associate(native);
+        assert!(!port.is_null(), "native association failed");
+        for api in apis {
+            let status = query(native, api, Some(port));
+            assert!(status >= 0, "{api:?} native status {status:#x}");
+        }
+        unsafe {
+            CloseHandle(native);
+            CloseHandle(port);
+        }
+    }
+
     // Repeat so a reopened handle that reuses the numeric value starts clean.
     for round in 0..2 {
         let directory = open(root, true);
@@ -942,21 +995,6 @@ fn completion_port_directory_queries(root: &Path) {
         CloseHandle(original_container_port);
     }
 
-    // A native-backed directory (no merged entries) keeps the native syscall.
-    let plain = root.join("plain");
-    fs::create_dir_all(&plain).unwrap();
-    fs::write(plain.join("file.txt"), b"plain").unwrap();
-    let native = open(&plain, true);
-    let port = associate(native);
-    assert!(!port.is_null(), "native association failed");
-    for api in apis {
-        let status = query(native, api, Some(port));
-        assert!(status >= 0, "{api:?} native status {status:#x}");
-    }
-    unsafe {
-        CloseHandle(native);
-        CloseHandle(port);
-    }
     fs::write(root.join("completion-done.txt"), b"done").unwrap();
 }
 
@@ -1055,6 +1093,7 @@ fn relative_applications_resolve_against_the_caller_directory() {
         .env(WORK, &work)
         .output()
         .unwrap();
+    symbolize_failure(&output);
     assert!(
         output.status.success(),
         "application resolution failed {:?}: {} {}",
@@ -1161,6 +1200,12 @@ fn node_filesystem_crypto_loopback_and_replacement_environment() {
     let fixture = fixture(false);
     let root = fixture.path().join("project 한글 space");
     let node = std::env::var_os("PNPORT_TEST_NODE").unwrap_or_else(|| "node".into());
+    let node = if Path::new(&node).is_absolute() {
+        PathBuf::from(node)
+    } else {
+        pnport::executable::find_on_path(&node, std::env::var_os("PATH").as_deref(), &root)
+            .expect("native Node executable is required")
+    };
     let script = r#"
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -1202,6 +1247,7 @@ server.listen(0, '127.0.0.1', () => {
         .current_dir(&root)
         .output()
         .unwrap();
+    symbolize_failure(&output);
     assert!(
         output.status.success(),
         "Node native fixture failed {:?}: {} {}",
