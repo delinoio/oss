@@ -52,8 +52,68 @@ index 0499223f..851a927e 100644
        lowerer.unsupported(
          "SC1090",
          node,
+diff --git a/packages/compiler/src/frontend/lowering/lower-calls.ts b/packages/compiler/src/frontend/lowering/lower-calls.ts
+index 1ad34f32..7f69e1c1 100644
+--- a/packages/compiler/src/frontend/lowering/lower-calls.ts
++++ b/packages/compiler/src/frontend/lowering/lower-calls.ts
+@@ -199,9 +199,38 @@ import {
+ 
+ const ZLIB_STREAM_METHODS: ReadonlySet<string> = new Set(["flush", "params", "close", "reset"]);
+ 
++const CALLABLE_ERROR_NAMES = new Set([
++  "Error",
++  "EvalError",
++  "RangeError",
++  "ReferenceError",
++  "SyntaxError",
++  "TypeError",
++  "URIError",
++]);
++
+ export function lowerCall(lowerer: Lowerer, expr: ts.CallExpression): IrExpr {
+   const loc = locOf(expr);
+ 
++  // Standard Error constructors are callable without `new`. Preserve the
++  // same native error class and message/cause conversion as construction;
++  // a source binding named Error must still use normal function dispatch.
++  if (
++    ts.isIdentifier(expr.expression) &&
++    CALLABLE_ERROR_NAMES.has(expr.expression.text) &&
++    lowerer.isStdlibGlobal(expr.expression, expr.expression.text)
++  ) {
++    const info = lowerer.builtinErrorInfoOf(lowerer.resolveValueSymbol(expr.expression));
++    if (info)
++      return {
++        kind: "libCall",
++        fn: "error.newOptions",
++        args: lowerer.errorConstructorArgs(expr.arguments, loc, expr),
++        type: { kind: "object", className: info.def.name },
++        loc,
++      };
++  }
++
+   // Object's checker return type is `any`. Claim known object inputs
+   // before generic checked-dynamic dispatch tries to load the constructor.
+   if (
+diff --git a/packages/compiler/src/frontend/lowering/lower-stmts.test.ts b/packages/compiler/src/frontend/lowering/lower-stmts.test.ts
+index 322b21b2..f901a409 100644
+--- a/packages/compiler/src/frontend/lowering/lower-stmts.test.ts
++++ b/packages/compiler/src/frontend/lowering/lower-stmts.test.ts
+@@ -25,7 +25,11 @@ function context(source: string, filename = "writes.js") {
+     )
+       assignments.push(node);
+   });
+-  const lowerer = new Lowerer({ getTypeChecker: () => ({}) } as ts.Program, file, []);
++  const lowerer = new Lowerer(
++    { getTypeChecker: () => ({ isTypeAssignableTo: () => true }) } as unknown as ts.Program,
++    file,
++    [],
++  );
+   const symbols = new Map<ts.Node, ts.Symbol>();
+   const resolve = vi
+     .spyOn(lowerer, "resolveValueSymbol")
 diff --git a/packages/compiler/src/frontend/lowering/lower-stmts.ts b/packages/compiler/src/frontend/lowering/lower-stmts.ts
-index 850af3e6..a14e7a3e 100644
+index 850af3e6..a16ebe92 100644
 --- a/packages/compiler/src/frontend/lowering/lower-stmts.ts
 +++ b/packages/compiler/src/frontend/lowering/lower-stmts.ts
 @@ -957,6 +957,12 @@ function varBindingType(lowerer: Lowerer, nameNode: ts.Identifier): IrType | nul
@@ -87,7 +147,7 @@ index 850af3e6..a14e7a3e 100644
        if (
          !ts.isBinaryExpression(node) ||
          node.operatorToken.kind < ts.SyntaxKind.FirstAssignment ||
-@@ -5051,10 +5065,11 @@ export function jsBindingHasOpenWrites(lowerer: Lowerer, decl: ts.VariableDeclar
+@@ -5051,10 +5065,15 @@ export function jsBindingHasOpenWrites(lowerer: Lowerer, decl: ts.VariableDeclar
      writes = indexed;
      lowerer.jsBindingWritesByOwner.set(owner, writes);
    }
@@ -99,15 +159,27 @@ index 850af3e6..a14e7a3e 100644
 +    ts.isForInStatement(node)
 +      ? lowerer.resolveValueSymbol(node.initializer as ts.Identifier) === symbol
 +      : lowerer.resolveValueSymbol(node.left as ts.Identifier) === symbol &&
-+        (lowerer.typeOf(node.right).flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0,
++        ((lowerer.typeOf(node.right).flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0 ||
++          !lowerer.checker.isTypeAssignableTo(
++            lowerer.typeOf(node.right),
++            lowerer.typeOf(decl.name),
++          )),
    );
  }
  
 diff --git a/packages/compiler/src/frontend/lowering/lowerer.ts b/packages/compiler/src/frontend/lowering/lowerer.ts
-index 0fff3c86..5076e6c8 100644
+index 0fff3c86..acbe0357 100644
 --- a/packages/compiler/src/frontend/lowering/lowerer.ts
 +++ b/packages/compiler/src/frontend/lowering/lowerer.ts
-@@ -1555,7 +1555,10 @@ export class Lowerer {
+@@ -503,6 +503,7 @@ import {
+   predeclareForwardCapture,
+   predeclareForwardFnDecl,
+   predeclareForwardVar,
++  jsBindingHasOpenWrites,
+   lowerStmt,
+   lowerVarStatement,
+   lowerDestructuringDecl,
+@@ -1555,7 +1556,10 @@ export class Lowerer {
    }
    /** Syntactic writes indexed once per JS scope. Symbol and RHS type
     * checks remain contextual to each binding probe. */
@@ -119,12 +191,27 @@ index 0fff3c86..5076e6c8 100644
    /** TRAP bindings: declarations whose initializer provably throws before
     * producing a value (its chain roots at an ambient-undefined name —
     * ambientUndefVarRootOf). Module init unwinds at the declaration, so no
+@@ -5802,6 +5806,14 @@ export class Lowerer {
+             if (global) global.type = promoted;
+           }
+         }
++        // Open JS writes already require a dynamic slot. Optional-read
++        // promotion must not narrow it back to the initializer's shape.
++        if (jsBindingHasOpenWrites(this, node)) {
++          this.runtimeOptionalBindingTypes.set(symbol, DYN);
++          const global = this.globalsBySymbol.get(symbol);
++          if (global) global.type = DYN;
++          return;
++        }
+         const fields = settledFields(recordFlows.bindingClass(symbol), optionalFields.get(symbol));
+         if (!dynamicObjectEntryRows.has(symbol) && !optionalSymbols.has(symbol) && !fields) return;
+         const current = this.mapTypeOf(this.typeOf(node.name));
 diff --git a/packages/compiler/src/frontend/strict-arguments.test.ts b/packages/compiler/src/frontend/strict-arguments.test.ts
 new file mode 100644
-index 00000000..93a85781
+index 00000000..6120708b
 --- /dev/null
 +++ b/packages/compiler/src/frontend/strict-arguments.test.ts
-@@ -0,0 +1,120 @@
+@@ -0,0 +1,135 @@
 +import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 +import { execFileSync } from "node:child_process";
 +import { tmpdir } from "node:os";
@@ -190,6 +277,24 @@ index 00000000..93a85781
 +
 +const nativeCases = [
 +  [
++    "mixed scalar and object",
++    '"use strict"; function run() { var value = 1; value = {x: 2}; console.log(value.x); value = "text"; console.log(value); } run();',
++  ],
++
++  [
++    "global for-in optional read",
++    '"use strict"; for (key in {a: 1}) console.log(key); var key = {x: 1}; console.log(key.x);',
++  ],
++  [
++    "callable Error",
++    '"use strict"; console.log(Error("message").message); console.log(TypeError("type").name); console.log(Error().message);',
++  ],
++  [
++    "shadowed Error",
++    '"use strict"; function invoke(Error) { return Error("value"); } console.log(invoke(function(value) { return "local:" + value; }));',
++  ],
++
++  [
 +    "file strict arguments",
 +    '"use strict"; function read(value) { value = 9; return arguments[0]; } console.log(read(3));',
 +  ],
@@ -219,22 +324,19 @@ index 00000000..93a85781
 +      const entry = join(directory, "entry.cjs");
 +      const output = join(directory, process.platform === "win32" ? "app.exe" : "app");
 +      writeFileSync(entry, source);
-+      let buildEntry = entry;
-+      if (_name.includes("for-in")) {
-+        const pkg = join(directory, "node_modules", "loop-fixture");
-+        mkdirSync(pkg, { recursive: true });
-+        writeFileSync(
-+          join(pkg, "package.json"),
-+          JSON.stringify({ name: "loop-fixture", main: "index.js" }),
-+        );
-+        writeFileSync(join(pkg, "index.js"), source);
-+        buildEntry = join(directory, "main.ts");
-+        writeFileSync(buildEntry, 'import "loop-fixture";');
-+      }
++      const pkg = join(directory, "node_modules", "native-fixture");
++      mkdirSync(pkg, { recursive: true });
++      writeFileSync(
++        join(pkg, "package.json"),
++        JSON.stringify({ name: "native-fixture", main: "index.js" }),
++      );
++      writeFileSync(join(pkg, "index.js"), source);
++      const buildEntry = join(directory, "main.ts");
++      writeFileSync(buildEntry, 'import "native-fixture";');
 +      const result = await compile(buildEntry, {
 +        outDir: directory,
 +        outPath: output,
-+        npmStatic: ["loop-fixture"],
++        npmStatic: ["native-fixture"],
 +      });
 +      expect(result.ok, JSON.stringify(result)).toBe(true);
 +      const expected = execFileSync(process.execPath, [entry], { encoding: "utf8" });

@@ -5,7 +5,9 @@ The manifest pins ScriptC source and the patch digest. `LICENSE-ScriptC` preserv
 ## Patch scope
 
 - Strict CommonJS functions need unmapped `arguments` just as strict ES module functions do. Recognize local and inherited directive prologues and class strictness. Preserve refusal of sloppy functions, late string expressions, escaped strings and unrelated directives. Remove this patch when the selected upstream revision implements the same semantics with native regression coverage.
-- JavaScript `for (key in object)` writes strings to its binding. A later numeric `var key` initializer must not restrict that hoisted binding to numbers. Index these writes by resolved symbol, retain a dynamic slot for unannotated JavaScript bindings, and preserve typed declarations. This applies to minified React `cloneElement` and equivalent JavaScript. Remove this patch when upstream preserves these writes, including captured bindings, with native regression coverage.
+- JavaScript `for (key in object)` writes strings to its binding. A later numeric `var key` initializer must not restrict that hoisted binding to numbers. Index these writes by resolved symbol, retain a dynamic slot for unannotated JavaScript bindings, and preserve typed declarations. Also retain dynamic storage for assignments incompatible with a JavaScript initializer's inferred type. Optional-read analysis must not narrow those slots back to the initial shape. This applies to minified React `cloneElement` and equivalent JavaScript. Remove this patch when upstream preserves these writes, including captured bindings, with native regression coverage.
+
+- Standard `Error`, `EvalError`, `RangeError`, `ReferenceError`, `SyntaxError`, `TypeError` and `URIError` constructors are callable without `new`. Lower those calls through the existing native error constructor, while preserving calls to shadowed source bindings. Remove this patch when upstream provides equivalent native construction and regression coverage.
 
 ## Prepare a compiler checkout
 
@@ -26,4 +28,4 @@ pnpm exec vitest run packages/compiler/src/frontend/strict-arguments.test.ts pac
 
 The native cases need a built host runtime and code-generation helper. They compare compiled output with Node.js reference output. They do not establish TypeNative platform acceptance or full React support. Preserve compiler failures; do not translate a passing source analysis into a native pass.
 
-These patches do not resolve conditional CommonJS export forwarding or development React's wrapped exports. The unmodified public React entry point remains the baseline for the existing `test:native` gate. A direct production-file probe is diagnostic evidence only and must not replace that gate. Do not publish a TypeNative release on the strength of that subset.
+These patches do not resolve conditional CommonJS export forwarding, development React's wrapped exports, or the remaining development React dispatcher lowering fences. The unmodified public React entry point remains the baseline for the existing `test:native` gate. A direct production-file probe is diagnostic evidence only and must not replace that gate. Do not publish a TypeNative release on the strength of that subset.
