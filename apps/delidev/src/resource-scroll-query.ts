@@ -24,6 +24,7 @@ export function useResourceScrollQuery(
   providerId = "",
   validate?: (row: Resource) => boolean,
   retainPayloadOnSuspend = false,
+  refetchInBackground = false,
 ) {
   const request = useCallback(
     (token: string) => ({
@@ -85,6 +86,7 @@ export function useResourceScrollQuery(
     active,
     query.refresh,
     interval,
+    refetchInBackground,
   );
   return query;
 }

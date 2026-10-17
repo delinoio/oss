@@ -378,32 +378,7 @@ it("refreshes reached pages atomically without discovering an unseen tail", asyn
     "tail",
   ]);
 });
-it("refreshes saved reads at sixty seconds only while visible but not in app use", async () => {
-  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-  const focus = vi.spyOn(document, "hasFocus").mockReturnValue(false);
-  const f = mount(() => ({ resources: [resource("Personal")] }));
-  await screen.findByRole("button", { name: /Personal/ });
-  expect(f.requests).toHaveBeenCalledOnce();
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(59999);
-  });
-  expect(f.requests).toHaveBeenCalledOnce();
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(1);
-  });
-  expect(f.requests).toHaveBeenCalledTimes(2);
-  const visibility = vi
-    .spyOn(document, "visibilityState", "get")
-    .mockReturnValue("hidden");
-  fireEvent(document, new Event("visibilitychange"));
-  await act(async () => {
-    await vi.advanceTimersByTimeAsync(120000);
-  });
-  expect(f.requests).toHaveBeenCalledTimes(2);
-  visibility.mockRestore();
-  focus.mockRestore();
-});
-it("rereads accepted saved ranges every thirty seconds only while the app is in use", async () => {
+it("rereads accepted saved ranges every thirty seconds regardless of window focus or visibility", async () => {
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
   const f = mount(() => ({ resources: [resource("Personal")] }));
@@ -423,17 +398,28 @@ it("rereads accepted saved ranges every thirty seconds only while the app is in 
   expect(f.requests).toHaveBeenCalledTimes(3);
   // Rereads reuse the accepted range: no unseen tail page is requested.
   expect(f.requests.mock.calls.every((call) => call[0] === "")).toBe(true);
-  // Blur returns to the slower visible-only cadence.
+  // Blur keeps the same cadence without resetting the running interval.
   focus.mockReturnValue(false);
   fireEvent(windowThis(), new Event("blur"));
   await act(async () => {
-    await vi.advanceTimersByTimeAsync(59999);
+    await vi.advanceTimersByTimeAsync(29999);
   });
   expect(f.requests).toHaveBeenCalledTimes(3);
   await act(async () => {
     await vi.advanceTimersByTimeAsync(1);
   });
   expect(f.requests).toHaveBeenCalledTimes(4);
+  // A hidden (minimized) document keeps reading at the same cadence.
+  const visibility = vi
+    .spyOn(document, "visibilityState", "get")
+    .mockReturnValue("hidden");
+  fireEvent(document, new Event("visibilitychange"));
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+  });
+  expect(f.requests).toHaveBeenCalledTimes(34);
+  expect(f.requests.mock.calls.every((call) => call[0] === "")).toBe(true);
+  visibility.mockRestore();
   focus.mockRestore();
 });
 it("rereads only accepted ranges when saved subscription inventory is invalidated", async () => {
@@ -1322,7 +1308,8 @@ describe("paid credits while saved reads are paused", () => {
     // Pausing never admits another saved read.
     expect(f.requests).toHaveBeenCalledOnce();
   });
-  it("keeps accepted credits without a failure label while the document is hidden", async () => {
+  it("keeps reading and showing accepted credits without a failure label while the document is hidden", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     const f = mount(() => ({ resources: [withCredits()] }), true, true);
     const { popup } = await openPersonal();
     const times = paidTimes(popup);
@@ -1330,6 +1317,36 @@ describe("paid credits while saved reads are paused", () => {
       .spyOn(document, "visibilityState", "get")
       .mockReturnValue("hidden");
     fireEvent(document, new Event("visibilitychange"));
+    expect(
+      within(popup)
+        .getByRole("button", { name: "Recheck saved quota evidence" })
+        .hasAttribute("disabled"),
+    ).toBe(false);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30000);
+    });
+    expect(f.requests).toHaveBeenCalledTimes(2);
+    expect(
+      within(popup).queryByText(/Refresh failed; retained observation/),
+    ).toBeNull();
+    expect(within(popup).getByText("60,961.11")).toBeTruthy();
+    expect(paidTimes(popup)).toEqual(times);
+    visibility.mockRestore();
+  });
+  it("keeps ageing retained credits to stale while the server is stopping", async () => {
+    let stopping = false;
+    const f = mount(
+      () => ({ resources: [withCredits()] }),
+      true,
+      true,
+      () => stopping,
+    );
+    const { popup } = await openPersonal();
+    const paidStatus = () =>
+      popup.querySelector(".subscription-paid-observation")?.textContent ?? "";
+    expect(paidStatus()).toMatch(/^Observed/);
+    stopping = true;
+    await refreshStatus(f);
     await waitFor(() =>
       expect(
         within(popup)
@@ -1337,63 +1354,20 @@ describe("paid credits while saved reads are paused", () => {
           .hasAttribute("disabled"),
       ).toBe(true),
     );
+    // Only the wall clock advances; no saved read is admitted by the pause.
+    const real = Date.now.bind(Date);
+    const clock = vi
+      .spyOn(Date, "now")
+      .mockImplementation(() => real() + 301000);
+    await waitFor(() => expect(paidStatus()).toMatch(/^Stale observation/), {
+      timeout: 3000,
+    });
     expect(
       within(popup).queryByText(/Refresh failed; retained observation/),
     ).toBeNull();
-    expect(within(popup).getByText("60,961.11")).toBeTruthy();
-    expect(paidTimes(popup)).toEqual(times);
     expect(f.requests).toHaveBeenCalledOnce();
-    visibility.mockRestore();
+    clock.mockRestore();
   });
-  it.each([
-    { name: "the server is stopping", pause: "stopping" },
-    { name: "the document is hidden", pause: "hidden" },
-  ])(
-    "keeps ageing retained credits to stale while $name",
-    async ({ pause }) => {
-      let stopping = false;
-      const f = mount(
-        () => ({ resources: [withCredits()] }),
-        true,
-        true,
-        () => stopping,
-      );
-      const { popup } = await openPersonal();
-      const paidStatus = () =>
-        popup.querySelector(".subscription-paid-observation")?.textContent ??
-        "";
-      expect(paidStatus()).toMatch(/^Observed/);
-      const visibility = vi.spyOn(document, "visibilityState", "get");
-      if (pause === "stopping") {
-        stopping = true;
-        await refreshStatus(f);
-      } else {
-        visibility.mockReturnValue("hidden");
-        fireEvent(document, new Event("visibilitychange"));
-      }
-      await waitFor(() =>
-        expect(
-          within(popup)
-            .getByRole("button", { name: "Recheck saved quota evidence" })
-            .hasAttribute("disabled"),
-        ).toBe(true),
-      );
-      // Only the wall clock advances; no saved read is admitted by the pause.
-      const real = Date.now.bind(Date);
-      const clock = vi
-        .spyOn(Date, "now")
-        .mockImplementation(() => real() + 301000);
-      await waitFor(() => expect(paidStatus()).toMatch(/^Stale observation/), {
-        timeout: 3000,
-      });
-      expect(
-        within(popup).queryByText(/Refresh failed; retained observation/),
-      ).toBeNull();
-      expect(f.requests).toHaveBeenCalledOnce();
-      clock.mockRestore();
-      visibility.mockRestore();
-    },
-  );
   it("keeps the failure label for a real saved-read failure through a later pause", async () => {
     let failed = false;
     let stopping = false;

@@ -147,7 +147,7 @@ it("waits a full thirty seconds, then sends one fresh UUID-v7 batch per tick", a
   expect(ids.every(isEntityId)).toBe(true);
 });
 
-it("stops on blur or hide, never catches up, and waits a fresh thirty seconds on return", async () => {
+it("keeps its thirty-second cadence through blur, hide and minimize for fifteen minutes", async () => {
   for (const mode of ["blur", "hide"] as const) {
     const f = fixture();
     const mounted = await mount(f.view());
@@ -155,33 +155,37 @@ it("stops on blur or hide, never catches up, and waits a fresh thirty seconds on
     act(() =>
       setForeground(mode === "blur" ? { focus: false } : { hide: true }),
     );
-    await advance(120000);
-    expect(f.requests).toHaveLength(0);
-    act(() => setForeground({ focus: true, hide: false }));
-    await advance(29999);
+    // The first request still lands at the original thirty-second mark.
+    await advance(9999);
     expect(f.requests).toHaveLength(0);
     await advance(1);
     expect(f.requests).toHaveLength(1);
+    await advance(15 * 60 * 1000 - 30000);
+    expect(f.requests).toHaveLength(30);
+    expect(new Set(f.requests.map((request) => request.requestId)).size).toBe(
+      30,
+    );
     mounted.unmount();
   }
 });
 
-it("restarts one full wait after focus returns from a missed blur", async () => {
+it("neither resets a running cadence nor sends an immediate duplicate when focus returns", async () => {
   const f = fixture();
   await mount(f.view());
-  focused = false;
+  act(() => setForeground({ focus: false }));
   await advance(30000);
-  expect(f.requests).toHaveLength(0);
-  focused = true;
-  fireEvent(window, new Event("focus"));
-  await advance(15000);
-  fireEvent(window, new Event("focus"));
-  await advance(14999);
-  expect(f.requests).toHaveLength(0);
-  await advance(1);
   expect(f.requests).toHaveLength(1);
-  await advance(30000);
+  await advance(10000);
+  act(() => setForeground({ focus: true }));
+  await advance(0);
+  expect(f.requests).toHaveLength(1);
+  fireEvent(window, new Event("focus"));
+  await advance(19999);
+  expect(f.requests).toHaveLength(1);
+  await advance(1);
   expect(f.requests).toHaveLength(2);
+  await advance(30000);
+  expect(f.requests).toHaveLength(3);
 });
 
 it("sends nothing while disconnected, unsupported or stopping, and restarts its wait on readiness", async () => {

@@ -794,9 +794,10 @@ it("keeps the Claude server-update notice off unavailable ChatGPT row and Refres
   expect(disconnect.getAttribute("title") ?? "").not.toMatch(claudeUpdate);
 });
 
-it("rereads accepted account pages every thirty seconds in app use without unseen-page discovery", async () => {
+it("rereads accepted account pages every thirty seconds, even when blurred or hidden, without unseen-page discovery", async () => {
   vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
   const focus = vi.spyOn(document, "hasFocus").mockReturnValue(true);
+  let visibility: ReturnType<typeof vi.spyOn> | undefined;
   try {
     const f = fixture({ list: true });
     render(<f.Harness />);
@@ -811,6 +812,23 @@ it("rereads accepted account pages every thirty seconds in app use without unsee
       await vi.advanceTimersByTimeAsync(1);
     });
     expect(reads()).toBeGreaterThan(initial);
+    // Blur and a hidden (minimized) document keep the same cadence.
+    focus.mockReturnValue(false);
+    visibility = vi
+      .spyOn(document, "visibilityState", "get")
+      .mockReturnValue("hidden");
+    fireEvent(window, new Event("blur"));
+    fireEvent(document, new Event("visibilitychange"));
+    const afterFirst = reads();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(30000);
+    });
+    expect(reads()).toBeGreaterThan(afterFirst);
+    const beforeLong = reads();
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(15 * 60 * 1000);
+    });
+    expect(reads() - beforeLong).toBeGreaterThanOrEqual(30);
     // Rereads reuse the accepted range and never discover the unseen next page.
     expect(
       f.list.mock.calls.some(
@@ -818,6 +836,7 @@ it("rereads accepted account pages every thirty seconds in app use without unsee
       ),
     ).toBe(false);
   } finally {
+    visibility?.mockRestore();
     focus.mockRestore();
     vi.useRealTimers();
   }
