@@ -36,6 +36,7 @@ import {
 } from "./destination-window-test-support";
 import { Surface } from "./surface";
 import { i18n } from "./localization";
+import { pressEnter } from "./test-form-enter";
 import { MachineSettings } from "./machine-settings";
 import {
   RunnerRemediationProvider,
@@ -2139,6 +2140,36 @@ it("validates each wizard step, retains drafts through Back and Edit, and only R
   expect(globalThis.document.activeElement).toBe(name);
   expect(screen.queryByRole("button", { name: "Create schedule" })).toBeNull();
   expect(value.save).not.toHaveBeenCalled();
+});
+it("advances exactly one schedule step per plain Enter and creates once from the review step", async () => {
+  const value = fixture();
+  render(
+    value.view(<ScheduleEditor active saved={() => {}} cancel={() => {}} />),
+  );
+  const name = screen.getByLabelText("Schedule name");
+  const stepOf = () =>
+    Number(
+      globalThis.document
+        .querySelector("[data-authoring-step]:not([hidden])")
+        ?.getAttribute("data-authoring-step") ?? 3,
+    );
+  // An invalid step keeps its place and focuses the original validation target.
+  expect(pressEnter(name)).toBe(1);
+  expect(stepOf()).toBe(0);
+  expect(globalThis.document.activeElement).toBe(name);
+  await fillCreation(value);
+  goStep(0);
+  expect(pressEnter(name, { repeat: true })).toBe(0);
+  expect(pressEnter(name, { composing: true })).toBe(0);
+  expect(pressEnter(name, { keyCode: 229 })).toBe(0);
+  expect(pressEnter(name, { shiftKey: true })).toBe(0);
+  expect(stepOf()).toBe(0);
+  expect(pressEnter(name)).toBe(1);
+  expect(stepOf()).toBe(1);
+  goStep(3);
+  expect(value.save).not.toHaveBeenCalled();
+  fireEvent.submit(name.closest("form")!);
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
 });
 it("opens the Execution step and collapsed overrides for an invalid reference", async () => {
   const value = fixture();
