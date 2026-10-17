@@ -358,7 +358,14 @@ export function ProjectCreationWizard({
       guardEnterSubmission(event);
       return;
     }
-    if (blocked || !active || !visible || step === Step.Restrictions) return;
+    // An inactive, hidden or blocked wizard must not submit natively either: its
+    // Next and Save controls are not all disabled by those states, so the browser
+    // would otherwise click one and advance a wizard nobody is looking at.
+    if (blocked || !active || !visible) {
+      event.preventDefault();
+      return;
+    }
+    if (step === Step.Restrictions) return;
     if (step === Step.Repositories ? validRepositories : configured) return;
     event.preventDefault();
     validate();
@@ -385,6 +392,7 @@ export function ProjectCreationWizard({
           // only submit path, so pointer, Enter and script submission advance
           // exactly one step or save once.
           if (!consumeFormSubmit(event)) return;
+          if (blocked || !active || !visible) return;
           if (step === Step.Restrictions) {
             if (!saveDisabled && validate()) submit();
             return;

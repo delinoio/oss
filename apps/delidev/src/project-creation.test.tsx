@@ -1121,3 +1121,58 @@ it("keeps wizard Enter inside the active nested registration dialog", async () =
   await waitFor(() => expect(value.registrationSave).toHaveBeenCalledTimes(1));
   expect(value.save).not.toHaveBeenCalled();
 });
+
+it("neither advances nor submits an inactive or hidden wizard with Enter", async () => {
+  const value = fixture(),
+    submit = vi.fn();
+  function Harness({ active, visible }: { active: boolean; visible: boolean }) {
+    const [data, change] = useState<Document>({
+      name: "",
+      repositories: [],
+      primary_repository: "",
+      agents: { configured: false, ids: [] },
+      accounts: { configured: false, ids: [] },
+    });
+    return (
+      <ProjectCreation
+        data={data}
+        change={change}
+        active={active}
+        visible={visible}
+        blocked={false}
+        busy={false}
+        saveDisabled={false}
+        submit={submit}
+        cancel={() => {}}
+        cancelDisabled={false}
+        uncertain={false}
+        retry={() => {}}
+      />
+    );
+  }
+  const view = render(value.view(<Harness active visible />));
+  await waitFor(() => expect(document.activeElement).toBe(search()));
+  await choose("oss");
+  const form = search().form as HTMLFormElement;
+  for (const state of [
+    { active: false, visible: true },
+    { active: true, visible: false },
+    { active: false, visible: false },
+  ]) {
+    view.rerender(value.view(<Harness {...state} />));
+    search().focus();
+    // The keydown is cancelled, so the browser never clicks Next.
+    expect(pressEnter(search())).toBe(0);
+    expect(
+      fireEvent.keyDown(search(), { key: "Enter", code: "Enter", keyCode: 13 }),
+    ).toBe(false);
+    // A script or pointer submission is refused by the same state guard.
+    fireEvent.submit(form);
+    expect(screen.queryByRole("textbox", { name: "Project name" })).toBeNull();
+  }
+  expect(submit).not.toHaveBeenCalled();
+  // The same Enter advances exactly one step once the wizard is current again.
+  view.rerender(value.view(<Harness active visible />));
+  expect(pressEnter(search())).toBe(1);
+  expect(screen.getByRole("textbox", { name: "Project name" })).toBeTruthy();
+});

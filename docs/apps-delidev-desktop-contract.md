@@ -969,7 +969,9 @@ A wizard is one form owner whose single primary control changes with the step.
   disabled only because the step is invalid (for example Project creation with no
   repository or an invalid Name), the wizard stays on that step, shows the original
   problem and focuses the original validation target without mutating anything. A
-  blocked, pending, uncertain or inactive wizard ignores Enter entirely.
+  blocked, pending, uncertain, hidden or inactive wizard ignores Enter entirely: the keydown
+  is cancelled so the browser never clicks Next or Save, and a stray submit event is refused
+  by the same state guard.
 - Held, composing (`isComposing` or keyCode 229), modified and already-handled Enter
   never advance. An open completion list, combobox or picker consumes Enter first.
   Checkboxes, radios, selects and the Restrictions step controls keep their native
