@@ -107,10 +107,13 @@ Merged `FileIdBothDirectoryInformation` and `FileIdFullDirectoryInformation`
 records carry the native file reference number (the 64-bit volume file index)
 of the backing object each entry represents, including `.`, `..` and virtual
 additions. Hard links share one number, and reparse points are followed like the
-entry's other metadata. A failed identity lookup returns the adapter's typed
-status instead of a zero identifier. Other record classes, chaining, alignment
-and cursor behavior are unchanged. Byte-layout checks run in the native Windows
-fixture; ReFS 128-bit identifiers are not represented.
+entry's other metadata. Enumeration never requires per-entry open access for any
+record class: an entry the caller can list but not open (for example because of
+its ACL) keeps its record with a zero file ID (no identifier) instead of failing
+the listing. Failed metadata still returns the adapter's typed status. Other
+record classes, chaining, alignment and cursor behavior are unchanged.
+Byte-layout checks run in the native Windows fixture; ReFS 128-bit identifiers
+are not represented.
 Unclassified disk-device namespaces and lossily encoded Detours DLL paths also
 fail explicitly. These limits remain part of complete Windows acceptance.
 

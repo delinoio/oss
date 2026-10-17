@@ -952,8 +952,9 @@ fn completion_port_directory_queries(root: &Path) {
 
 /// Reads ID-bearing merged directory records through both native query APIs
 /// and compares every `FileId` with the identity of a native open of the same
-/// entry. `root` lists a physical `.pnp.cjs`, a hard-link pair and the virtual
-/// `node_modules` entry, plus `.` and `..`.
+/// entry. `root` lists a physical `.pnp.cjs`, a hard-link pair, a
+/// `restricted.txt` whose attribute access the caller may be denied, and the
+/// virtual `node_modules` entry, plus `.` and `..`.
 fn directory_file_ids(root: &Path) {
     use std::{collections::BTreeMap, ffi::c_void, os::windows::ffi::OsStringExt};
 
@@ -1039,17 +1040,30 @@ fn directory_file_ids(root: &Path) {
         assert_ne!(handle, INVALID_HANDLE_VALUE, "open {path:?}");
         handle
     }
-    /// The file reference number reported by a native open of `path`.
-    fn native_id(path: &Path) -> u64 {
-        let handle = open(path, FILE_READ_ATTRIBUTES);
+    /// The file reference number reported by a native open of `path`, or
+    /// `None` when the caller cannot open the entry for its attributes.
+    fn native_id(path: &Path) -> Option<u64> {
+        let wide = pnport_core::windows::wide(path).unwrap();
+        let handle = unsafe {
+            CreateFileW(
+                wide.as_ptr(),
+                FILE_READ_ATTRIBUTES,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                FILE_FLAG_BACKUP_SEMANTICS,
+                std::ptr::null_mut(),
+            )
+        };
+        if handle == INVALID_HANDLE_VALUE {
+            return None;
+        }
         let mut information: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
-        assert_ne!(
-            unsafe { GetFileInformationByHandle(handle, &mut information) },
-            0,
-            "identity of {path:?}"
-        );
+        let read = unsafe { GetFileInformationByHandle(handle, &mut information) };
         unsafe { CloseHandle(handle) };
-        (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow)
+        (read != 0).then(|| {
+            (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow)
+        })
     }
     /// One query. Returns the status and the bytes written.
     fn query(
@@ -1185,6 +1199,7 @@ fn directory_file_ids(root: &Path) {
                 "..",
                 "source.txt",
                 "linked.txt",
+                "restricted.txt",
                 "dependency.zip",
                 ".pnp.cjs",
                 "node_modules",
@@ -1192,14 +1207,21 @@ fn directory_file_ids(root: &Path) {
                 assert!(ids.contains_key(name), "{api:?} class {class} lacks {name}");
             }
             // Every record carries the identity of a native open of its entry,
-            // including `.`, `..` and the virtual `node_modules` addition.
+            // including `.`, `..` and the virtual `node_modules` addition. The
+            // only entry the caller may be unable to open is the restricted
+            // one, which keeps its record with a zero id instead of failing
+            // the listing.
             for (name, id) in &ids {
-                assert_ne!(*id, 0, "{api:?} class {class} {name} has a zero id");
-                assert_eq!(
-                    *id,
-                    native_id(&expected_path(name)),
-                    "{api:?} class {class} {name}"
-                );
+                match native_id(&expected_path(name)) {
+                    Some(expected) => {
+                        assert_ne!(*id, 0, "{api:?} class {class} {name} has a zero id");
+                        assert_eq!(*id, expected, "{api:?} class {class} {name}");
+                    }
+                    None => {
+                        assert_eq!(name, "restricted.txt", "{api:?} class {class} {name}");
+                        assert_eq!(*id, 0, "{api:?} class {class} unopenable {name}");
+                    }
+                }
             }
             assert_eq!(
                 ids["source.txt"], ids["linked.txt"],
@@ -1301,11 +1323,7 @@ fn directory_file_ids(root: &Path) {
                     ".." => root.to_path_buf(),
                     other => plain.join(other),
                 };
-                assert_eq!(
-                    id,
-                    Some(native_id(&path)),
-                    "{api:?} class {class} native {name}"
-                );
+                assert_eq!(id, native_id(&path), "{api:?} class {class} native {name}");
             }
         }
     }
@@ -1415,7 +1433,28 @@ fn merged_directory_records_carry_native_file_ids() {
     let fixture = fixture(false);
     let root = fixture.path().join("project 한글 space");
     let cache = fixture.path().join("private-cache");
+    // Deny the attribute read of one listed entry so enumeration meets an
+    // entry it can list but may not be able to open. Whether the deny entry
+    // blocks the open depends on the account, so the child compares each
+    // record with what a native open of the entry actually reports.
+    let restricted = root.join("restricted.txt");
+    fs::write(&restricted, b"restricted").unwrap();
+    let acl = |arguments: &[&str]| {
+        let output = Command::new("icacls")
+            .arg(&restricted)
+            .args(arguments)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "icacls {arguments:?} failed: {} {}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    };
+    acl(&["/deny", "*S-1-1-0:(RA)"]);
     let output = run(&root, &cache, "file-ids").output().unwrap();
+    acl(&["/remove:d", "*S-1-1-0"]);
     assert!(
         output.status.success(),
         "file id fixture failed {:?}: {} {}",

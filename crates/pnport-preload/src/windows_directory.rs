@@ -25,6 +25,10 @@ use super::*;
 const BOTH_FILE_ID_OFFSET: usize = 96;
 const FULL_FILE_ID_OFFSET: usize = 72;
 
+/// File identifier reported when the backing object cannot be opened for its
+/// identity. Zero means no identifier.
+const UNAVAILABLE_FILE_ID: u64 = 0;
+
 struct Item {
     name: Vec<u16>,
     metadata: fs::Metadata,
@@ -87,8 +91,8 @@ fn file_id(path: &Path) -> std::io::Result<u64> {
     Ok((u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow))
 }
 
-/// Reads the metadata and file reference number of one listed entry. A failed
-/// lookup returns `failure` instead of a fabricated identity.
+/// Reads the metadata and file reference number of one listed entry. Failed
+/// metadata returns `failure`; an unopenable entry reports no identifier.
 fn item(name: Vec<u16>, path: &Path, failure: NTSTATUS) -> std::result::Result<Item, NTSTATUS> {
     let metadata = fs::metadata(path).map_err(|error| {
         tracing::debug!(
@@ -99,15 +103,17 @@ fn item(name: Vec<u16>, path: &Path, failure: NTSTATUS) -> std::result::Result<I
         );
         failure
     })?;
-    let file_id = file_id(path).map_err(|error| {
+    // An entry the caller can list but not open keeps its record and reports
+    // no identifier instead of failing the whole enumeration.
+    let file_id = file_id(path).unwrap_or_else(|error| {
         tracing::debug!(
-            action = "windows_directory_file_id_failed",
+            action = "windows_directory_file_id_unavailable",
             path = %path.display(),
             %error,
             "Could not read the file reference number for a merged directory entry"
         );
-        failure
-    })?;
+        UNAVAILABLE_FILE_ID
+    });
     Ok(Item {
         name,
         metadata,
