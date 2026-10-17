@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import "./claude-usage-tracking.css";
 import {
+  Fragment,
   useEffect,
   useId,
   useMemo,
@@ -813,8 +814,15 @@ function ClaudeUsageSection({ model }: { model: ClaudeUsageModel }) {
     ClaudeUsageView.Backoff,
     ClaudeUsageView.RefreshFailed,
   ].includes(view);
-  const retry = (operation: RetainedControl) =>
-    operation.uncertain ? (
+  // Every uncertain retained mutation must keep a retry control whatever view
+  // the lifecycle has advanced to, because the pending state disables every
+  // other action until the original request is resolved. Views render the
+  // retries that suit them; the section adds the rest after the body.
+  const rendered = new Set<RetainedControl>();
+  const retry = (operation: RetainedControl) => {
+    if (!operation.uncertain) return null;
+    rendered.add(operation);
+    return (
       <SettingsActionButton
         icon={SettingsActionIcon.Retry}
         type="button"
@@ -823,7 +831,8 @@ function ClaudeUsageSection({ model }: { model: ClaudeUsageModel }) {
       >
         {copy("claude-usage.retryOriginal")}
       </SettingsActionButton>
-    ) : null;
+    );
+  };
   const connectAction = (
     label:
       | "claude-usage.connect"
@@ -1259,6 +1268,16 @@ function ClaudeUsageSection({ model }: { model: ClaudeUsageModel }) {
         ) : null;
   }
 
+  const stranded = (
+    [
+      ["start", model.start],
+      ["code", model.code],
+      ["confirm", model.confirm],
+      ["cancel", model.cancel],
+      ["disconnect", model.disconnect],
+      ["observe", model.observe],
+    ] as const
+  ).filter(([, operation]) => operation.uncertain && !rendered.has(operation));
   return (
     <section
       className="claude-usage"
@@ -1269,6 +1288,13 @@ function ClaudeUsageSection({ model }: { model: ClaudeUsageModel }) {
         {copy("claude-usage.title")}
       </h3>
       {body}
+      {stranded.length ? (
+        <div className="actions claude-usage-actions">
+          {stranded.map(([name, operation]) => (
+            <Fragment key={name}>{retry(operation)}</Fragment>
+          ))}
+        </div>
+      ) : null}
       {model.progressProblem && model.progressError ? (
         <p role="alert">{copy("claude-usage.statusUnconfirmed")}</p>
       ) : null}

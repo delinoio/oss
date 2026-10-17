@@ -1539,3 +1539,35 @@ it("does not block actions on a delayed progress reply that is behind the docume
   await new Promise((resolve) => setTimeout(resolve, 300));
   expect(cancel.disabled).toBe(false);
 });
+
+it("keeps the original start retry visible after the lifecycle advances past not-connected", async () => {
+  const value = mount({ progress: waitingProgress() });
+  value.start.mockImplementationOnce(() => {
+    throw new ConnectError("response lost", Code.Unavailable);
+  });
+  const section = await state(ClaudeUsageView.NotConnected);
+  const connect = within(section).getByRole("button", {
+    name: "Connect usage account",
+  });
+  await waitFor(() =>
+    expect((connect as HTMLButtonElement).disabled).toBe(false),
+  );
+  fireEvent.click(connect);
+  await screen.findByRole("button", { name: "Retry original request" });
+  // The server committed the original start although its response was lost.
+  value.set({
+    connection: "connecting",
+    generation,
+    operation: operation("waiting"),
+  });
+  await state(ClaudeUsageView.Waiting);
+  const retry = await screen.findByRole("button", {
+    name: "Retry original request",
+  });
+  fireEvent.click(retry);
+  await waitFor(() => expect(value.start).toHaveBeenCalledTimes(2));
+  const [first, second] = value.start.mock.calls.map(
+    (call) => call[0] as unknown as { mutation: { requestId: string } },
+  );
+  expect(second.mutation.requestId).toBe(first.mutation.requestId);
+});
