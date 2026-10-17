@@ -20,6 +20,8 @@ import {
   type Resource,
 } from "@delinoio/delidev-api-client";
 import { encode } from "./documents";
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
+import { pressEnter } from "./test-form-enter";
 import {
   readBranchInventory,
   StartingBranches,
@@ -658,4 +660,30 @@ it("settles an enclosing page entrance before the fixed popup opens", async () =
   expect(document.querySelector(".starting-branch-popup")).not.toBeNull();
   expect(settled).toHaveBeenCalled();
   host.remove();
+});
+
+it("consumes Enter for the branch combobox before an enclosing form owner submits", async () => {
+  const f = fixture(),
+    change = vi.fn(),
+    submitted = vi.fn();
+  render(
+    <form
+      noValidate
+      onKeyDown={guardEnterSubmission}
+      onSubmit={(event) => {
+        if (consumeFormSubmit(event)) submitted();
+      }}
+    >
+      {f.view([], change)}
+      <button type="submit">Save</button>
+    </form>,
+  );
+  const input = screen.getByRole("combobox", { name: "Starting branch" });
+  fireEvent.focus(input);
+  await screen.findByRole("option", { name: "main" });
+  // The completion list owns Enter whether or not an option is highlighted.
+  expect(pressEnter(input)).toBe(0);
+  expect(pressEnter(input, { composing: true })).toBe(0);
+  expect(pressEnter(input, { keyCode: 229 })).toBe(0);
+  expect(submitted).not.toHaveBeenCalled();
 });

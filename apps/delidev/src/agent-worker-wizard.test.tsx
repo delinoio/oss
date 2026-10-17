@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Protocol 2 retires Model-resource discovery/revision fixtures. These cases
 // cover inline source/native IDs and retain account, draft and receipt guards.
+import { pressEnter } from "./test-form-enter";
 import { Fragment, StrictMode } from "react";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
@@ -429,6 +430,33 @@ it("blocks invalid exact IDs before save and reveals Model", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Next" }));
   expect(screen.getByRole("heading", { name: "Model", level: 3 })).toBeTruthy();
   expect(f.save).not.toHaveBeenCalled();
+});
+it("advances one Agent Worker step per plain Enter after the model picker releases it and saves once", async () => {
+  const f = fixture();
+  render(f.view());
+  const input = await accounts(f);
+  fireEvent.change(input, { target: { value: "typed-exact" } });
+  fireEvent.focus(input);
+  fireEvent.keyDown(input, { key: "ArrowDown" });
+  // An open suggestion list owns Enter; the wizard stays on Model.
+  expect(input.getAttribute("aria-expanded")).toBe("true");
+  expect(pressEnter(input)).toBe(0);
+  expect(screen.getByRole("heading", { name: "Model", level: 3 })).toBeTruthy();
+  fireEvent.keyDown(input, { key: "Escape" });
+  expect(pressEnter(input, { repeat: true })).toBe(0);
+  expect(pressEnter(input, { composing: true })).toBe(0);
+  expect(pressEnter(input, { keyCode: 229 })).toBe(0);
+  expect(f.save).not.toHaveBeenCalled();
+  expect(pressEnter(input)).toBe(1);
+  await screen.findByRole("heading", { name: "Configure", level: 3 });
+  expect(f.save).not.toHaveBeenCalled();
+  const name = screen.getByLabelText("Name") as HTMLInputElement;
+  fireEvent.change(name, { target: { value: "Inline Worker" } });
+  expect(pressEnter(name, { repeat: true })).toBe(0);
+  expect(pressEnter(name, { composing: true })).toBe(0);
+  expect(f.save).not.toHaveBeenCalled();
+  expect(pressEnter(name)).toBe(1);
+  await waitFor(() => expect(f.save).toHaveBeenCalledTimes(1));
 });
 it("ignores composing Enter in the native model picker", async () => {
   const f = fixture();
