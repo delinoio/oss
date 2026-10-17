@@ -31,6 +31,7 @@ import { ManagedSubscriptionAccount } from "./subscription-accounts";
 import {
   claudeUsageAuthorizationURL,
   claudeUsageRowIdentity,
+  progressTerminal,
 } from "./claude-usage-tracking";
 import {
   ClaudeUsageCapability,
@@ -1409,3 +1410,52 @@ it("returns keyboard focus to the section heading when the focused control disap
   const heading = screen.getByRole("heading", { name: "Usage tracking" });
   await waitFor(() => expect(document.activeElement).toBe(heading));
 }, 15000);
+
+it("keeps polling after an unspecified progress response and shows the later valid one", async () => {
+  let calls = 0;
+  const value = mount({
+    usage: {
+      connection: "connecting",
+      generation,
+      operation: operation("waiting"),
+    },
+    progress: () => {
+      calls += 1;
+      return calls === 1
+        ? {
+            state: ClaudeUsageLoginState.UNSPECIFIED,
+            operationId,
+            usageGeneration: generation,
+          }
+        : waitingProgress({ codeRequested: true })();
+    },
+  });
+  await waitFor(() => expect(value.progress.mock.calls.length).toBe(1));
+  // The unspecified reply is an invalid retryable read, not the end of polling.
+  await waitFor(() =>
+    expect(value.progress.mock.calls.length).toBeGreaterThan(1),
+  );
+  await screen.findByLabelText("Approval code");
+  expect(value.cancel).not.toHaveBeenCalled();
+});
+
+it("classifies only the closed final login states as terminal progress", () => {
+  for (const finalState of [
+    ClaudeUsageLoginState.LINKED,
+    ClaudeUsageLoginState.CANCELED,
+    ClaudeUsageLoginState.EXPIRED,
+    ClaudeUsageLoginState.UNSUPPORTED,
+    ClaudeUsageLoginState.RECOVERY_REQUIRED,
+    ClaudeUsageLoginState.FAILED,
+  ])
+    expect(progressTerminal(finalState)).toBe(true);
+  for (const open of [
+    undefined,
+    ClaudeUsageLoginState.UNSPECIFIED,
+    ClaudeUsageLoginState.PREPARING,
+    ClaudeUsageLoginState.WAITING,
+    ClaudeUsageLoginState.AWAITING_CONFIRMATION,
+    99 as ClaudeUsageLoginState,
+  ])
+    expect(progressTerminal(open)).toBe(false);
+});

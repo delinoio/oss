@@ -161,12 +161,20 @@ function useClaudeUsageProgress(request: {
   return result;
 }
 
+/**
+ * Only the closed final login states end polling. An unspecified or
+ * unrecognized state is an incomplete or incompatible reply, so the read is
+ * retried instead of being treated as the end of the login.
+ */
 export const progressTerminal = (value?: ClaudeUsageLoginState) =>
   value !== undefined &&
-  ![
-    ClaudeUsageLoginState.PREPARING,
-    ClaudeUsageLoginState.WAITING,
-    ClaudeUsageLoginState.AWAITING_CONFIRMATION,
+  [
+    ClaudeUsageLoginState.LINKED,
+    ClaudeUsageLoginState.CANCELED,
+    ClaudeUsageLoginState.EXPIRED,
+    ClaudeUsageLoginState.UNSUPPORTED,
+    ClaudeUsageLoginState.RECOVERY_REQUIRED,
+    ClaudeUsageLoginState.FAILED,
   ].includes(value);
 
 interface Binding {
