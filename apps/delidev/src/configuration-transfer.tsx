@@ -823,6 +823,7 @@ export function ConfigurationTransfer({
       {loaded ? (
         <form
           id={mappingFormId}
+          className="transfer-mapping-form"
           noValidate
           onKeyDown={guardEnterSubmission}
           onSubmit={(event) => {

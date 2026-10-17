@@ -982,6 +982,9 @@ A wizard is one form owner whose single primary control changes with the step.
   changes) follow this contract. The Gemini sign-in project field continues in the
   browser only when the Continue in browser control would be enabled. Enter in the
   multiline configuration JSON field inserts a newline.
+  The mapping form (`form.transfer-mapping-form`) only wraps the mapping panel: it adds no
+  width cap, the panel keeps its own cap, and the panel separators also apply across the form
+  boundary.
 - A nested dialog opened from an owner (Add repository over Project creation, the GitHub
   repository chooser, confirmations) owns its own form and Enter. React delivers events
   from portaled descendants through the component tree, so every owner claims only a
