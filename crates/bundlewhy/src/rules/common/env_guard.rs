@@ -556,9 +556,6 @@ struct Parser<'a> {
     /// The `break`/`continue` targets enclosing the cursor inside the current
     /// function body, innermost last.
     jumps: Vec<Jump<'a>>,
-    /// The `finally` blocks being parsed inside the current function body,
-    /// innermost last.
-    finals: Vec<Final>,
 }
 
 /// A statement that a `break` or `continue` can target.
@@ -572,12 +569,28 @@ enum Jump<'a> {
     Label(&'a str),
 }
 
-/// A `finally` block being parsed.
-struct Final {
-    /// Number of enclosing jump targets that sit outside the block.
-    base: usize,
-    /// A `break` or `continue` leaves the block for a target outside it.
-    escaped: bool,
+/// A completion that leaves the statement it appears in and has not been
+/// overridden by the `finally` block of an enclosing `try`.
+#[derive(Clone, Copy, Debug)]
+enum Exit {
+    /// A `return`, an uncaught `throw`, or a `break` or `continue` whose
+    /// target is unknown: it leaves every enclosing `finally` block.
+    Function,
+    /// A `break` or `continue` whose target is the jump target at this index
+    /// of [`Parser::jumps`]: it leaves a block only when the block sits inside
+    /// the target.
+    Jump(usize),
+}
+
+impl Exit {
+    /// Whether the completion leaves a block that has `base` jump targets
+    /// outside it.
+    fn leaves(self, base: usize) -> bool {
+        match self {
+            Exit::Function => true,
+            Exit::Jump(target) => target < base,
+        }
+    }
 }
 
 /// What the `return` statements of one function body produced.
@@ -585,8 +598,10 @@ struct Final {
 struct Returns {
     /// Returned expressions that can carry a read.
     values: Vec<Id>,
-    /// Number of `return` and `throw` statements, with or without a value.
-    statements: usize,
+    /// The reachable completions that leave the statement being parsed, in
+    /// source order: every `return`, uncaught `throw`, `break` and `continue`
+    /// except those that a `finally` block of an enclosing `try` overrides.
+    exits: Vec<Exit>,
     /// Nesting count of `try` blocks with a `catch` clause being parsed: a
     /// `throw` there is caught and does not leave its `finally` block.
     caught: usize,
@@ -629,7 +644,6 @@ impl<'a> Parser<'a> {
             abrupt: false,
             dead: 0,
             jumps: Vec::new(),
-            finals: Vec::new(),
         }
     }
 
@@ -808,7 +822,7 @@ impl<'a> Parser<'a> {
                 if self.dead == 0
                     && let Some(frame) = self.returns.last_mut()
                 {
-                    frame.statements += 1;
+                    frame.exits.push(Exit::Function);
                     frame.values.extend(value);
                 }
                 self.abrupt = true;
@@ -824,7 +838,7 @@ impl<'a> Parser<'a> {
                     && let Some(frame) = self.returns.last_mut()
                     && frame.caught == 0
                 {
-                    frame.statements += 1;
+                    frame.exits.push(Exit::Function);
                 }
                 self.abrupt = true;
                 self.eat_punct(";");
@@ -887,8 +901,10 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// A reachable `break` or `continue` leaves every enclosing `finally`
-    /// block that sits inside its target.
+    /// Record a reachable `break` or `continue`. It leaves every enclosing
+    /// `finally` block that sits inside its target. A target that cannot be
+    /// resolved is taken to leave all of them, the direction in which no read
+    /// is reported.
     fn record_jump(&mut self, is_continue: bool, label: Option<&str>) {
         let target = self.jumps.iter().rposition(|jump| match (jump, label) {
             (Jump::Label(name), Some(label)) => *name == label,
@@ -896,13 +912,8 @@ impl<'a> Parser<'a> {
             (Jump::Switch, None) => !is_continue,
             _ => false,
         });
-        let Some(target) = target else {
-            return;
-        };
-        for block in &mut self.finals {
-            if target < block.base {
-                block.escaped = true;
-            }
+        if let Some(frame) = self.returns.last_mut() {
+            frame.exits.push(target.map_or(Exit::Function, Exit::Jump));
         }
     }
 
@@ -951,12 +962,10 @@ impl<'a> Parser<'a> {
         let outer = (std::mem::take(&mut self.dead), self.abrupt);
         // A `break` or `continue` cannot cross a function boundary.
         let jumps = std::mem::take(&mut self.jumps);
-        let finals = std::mem::take(&mut self.finals);
         if self.is_punct("{") {
             self.within(Self::parse_block);
         }
         self.jumps = jumps;
-        self.finals = finals;
         (self.dead, self.abrupt) = outer;
         self.returns.pop().unwrap_or_default().values
     }
@@ -1089,10 +1098,15 @@ impl<'a> Parser<'a> {
     /// Only a completion that leaves the `finally` block replaces them: a
     /// `throw` inside a `try` block that has a `catch` clause is caught there
     /// and does not count, and a `break` or `continue` counts only when its
-    /// target lies outside the `finally` block.
+    /// target lies outside the `finally` block. A completion that a nested
+    /// `finally` block overrides never leaves it, so the nested `try` drops its
+    /// pending completions along with its values.
     fn parse_try(&mut self) {
         self.bump();
-        let start = self.returns.last().map_or(0, |frame| frame.values.len());
+        let (start, exits) = self
+            .returns
+            .last()
+            .map_or((0, 0), |frame| (frame.values.len(), frame.exits.len()));
         let caught = self.try_block_is_caught();
         self.set_caught(caught, 1);
         self.within(Self::parse_block);
@@ -1103,21 +1117,19 @@ impl<'a> Parser<'a> {
             }
             self.within(Self::parse_block);
         }
-        let (middle, statements) = self
+        let (middle, pending) = self
             .returns
             .last()
-            .map_or((0, 0), |frame| (frame.values.len(), frame.statements));
+            .map_or((0, 0), |frame| (frame.values.len(), frame.exits.len()));
         if self.eat_word("finally") {
-            self.finals.push(Final {
-                base: self.jumps.len(),
-                escaped: false,
-            });
+            let base = self.jumps.len();
             self.within(Self::parse_block);
-            let escaped = self.finals.pop().is_some_and(|block| block.escaped);
-            if let Some(frame) = self.returns.last_mut()
-                && (frame.statements > statements || escaped)
-            {
-                frame.values.drain(start..middle);
+            if let Some(frame) = self.returns.last_mut() {
+                let pending = pending.min(frame.exits.len());
+                if frame.exits[pending..].iter().any(|exit| exit.leaves(base)) {
+                    frame.values.drain(start..middle);
+                    frame.exits.drain(exits.min(pending)..pending);
+                }
             }
         }
     }
@@ -4446,6 +4458,95 @@ mod tests {
                 "(function(){for(;;){try{return \
                  process.env.FLAG}finally{cleanup()}break}})()&&run()",
                 Some("and"),
+            ),
+            (
+                "finally nested finally overrides a break with a local break",
+                "(function(){outer:for(;;){try{return \
+                 process.env.FLAG}finally{local:for(;;){try{break outer}finally{break \
+                 local}}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally nested finally overrides a continue with a local break",
+                "(function(){outer:for(;;){try{return \
+                 process.env.FLAG}finally{local:for(;;){try{continue outer}finally{break \
+                 local}}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally nested finally overrides a break in a catch block",
+                "(function(){outer:for(;;){try{return \
+                 process.env.FLAG}finally{local:{try{f()}catch(e){break outer}finally{break \
+                 local}}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally nested finally overrides a return",
+                "(function(){try{return process.env.FLAG}finally{local:{try{return \
+                 1}finally{break local}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally nested finally overrides a throw",
+                "(function(){try{return process.env.FLAG}finally{local:{try{throw e}finally{break \
+                 local}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally nested finally overrides an escape through a middle try",
+                "(function(){outer:for(;;){try{return process.env.FLAG}finally{a:{try{try{break \
+                 outer}finally{cleanup()}}finally{break a}}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally nested finally overrides one escape of several",
+                "(function(){outer:for(;;){try{return process.env.FLAG}finally{a:{try{if(x)break \
+                 outer;else break a}finally{break a}}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally nested finally does not override a break",
+                "(function(){outer:for(;;){try{return process.env.FLAG}finally{try{break \
+                 outer}finally{cleanup()}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally nested finally does not override a break in a catch block",
+                "(function(){outer:for(;;){try{return \
+                 process.env.FLAG}finally{try{f()}catch(e){break \
+                 outer}finally{cleanup()}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally nested finally escapes after its own override",
+                "(function(){outer:for(;;){try{return \
+                 process.env.FLAG}finally{local:for(;;){try{break local}finally{break \
+                 outer}}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally nested finally overrides with a return",
+                "(function(){outer:for(;;){try{return process.env.FLAG}finally{try{break \
+                 outer}finally{return 1}}}})()&&run()",
+                None,
+            ),
+            (
+                "finally escape follows an overridden one",
+                "(function(){outer:for(;;){try{return process.env.FLAG}finally{a:{try{break \
+                 outer}finally{break a}}break outer}}})()&&run()",
+                None,
+            ),
+            (
+                "finally nested overriding stays inside a deeper finally",
+                "(function(){outer:for(;;){try{return \
+                 process.env.FLAG}finally{try{f()}finally{a:{try{break outer}finally{break \
+                 a}}}}}})()&&run()",
+                Some("and"),
+            ),
+            (
+                "finally break to an unknown label",
+                "(function(){try{return process.env.FLAG}finally{break missing}})()&&run()",
+                None,
             ),
             // A constructor call ignores a primitive result.
             (
