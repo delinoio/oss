@@ -103,6 +103,13 @@ function useClock(enabled: boolean) {
  */
 function useClaudeUsageProgress(request: {
   enabled: boolean;
+  /**
+   * The capability read has settled without error. Polling pauses (without
+   * dropping the last reply) while it refetches, because a retained successful
+   * response must not start or continue a read the refreshed server may no
+   * longer support.
+   */
+  settled: boolean;
   accountId: string;
   operationId: string;
   usageGeneration: string;
@@ -116,12 +123,13 @@ function useClaudeUsageProgress(request: {
     data?: GetClaudeUsageLoginProgressResponse;
     error?: unknown;
   }>({});
-  const { enabled, accountId, operationId, usageGeneration } = request;
+  const { enabled, settled, accountId, operationId, usageGeneration } = request;
   useEffect(() => {
     if (!enabled) {
       setResult({});
       return;
     }
+    if (!settled) return;
     let canceled = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = async () => {
@@ -149,7 +157,7 @@ function useClaudeUsageProgress(request: {
       canceled = true;
       if (timer) clearTimeout(timer);
     };
-  }, [client, enabled, accountId, operationId, usageGeneration]);
+  }, [client, enabled, settled, accountId, operationId, usageGeneration]);
   return result;
 }
 
@@ -285,6 +293,7 @@ export function useClaudeUsageTracking(options: ClaudeUsageTrackingOptions): {
       capability === ClaudeUsageCapability.Available &&
       lifecycle &&
       Boolean(operation),
+    settled,
     accountId,
     operationId: operation?.id ?? "",
     usageGeneration: usage?.generation ?? "",

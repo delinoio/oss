@@ -520,6 +520,41 @@ it("focuses the single write-only approval-code input and submits the code exact
   expect(value.submit).toHaveBeenCalledTimes(1);
 });
 
+it("pauses login progress polling while the capability status refetches and keeps the last reply", async () => {
+  const value = mount({
+    usage: {
+      connection: "connecting",
+      generation,
+      operation: operation("waiting"),
+    },
+    progress: waitingProgress({ codeRequested: true }),
+  });
+  const input = (await screen.findByLabelText(
+    "Approval code",
+  )) as HTMLInputElement;
+  await waitFor(() => expect(value.progress).toHaveBeenCalled());
+  let release: () => void = () => undefined;
+  value.status.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        release = () => resolve({ capabilities: available });
+      }) as never,
+  );
+  const before = value.status.mock.calls.length;
+  void value.client.invalidateQueries();
+  await waitFor(() => expect(value.status.mock.calls.length).toBe(before + 1));
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  const calls = value.progress.mock.calls.length;
+  // A retained successful status must not keep polling while it refetches.
+  await new Promise((resolve) => setTimeout(resolve, 1400));
+  expect(value.progress.mock.calls.length).toBe(calls);
+  expect(screen.getByLabelText("Approval code")).toBe(input);
+  release();
+  await waitFor(() =>
+    expect(value.progress.mock.calls.length).toBeGreaterThan(calls),
+  );
+});
+
 it("submits the approval code with plain Enter exactly once and ignores held or composing Enter", async () => {
   const value = mount({
     usage: {
