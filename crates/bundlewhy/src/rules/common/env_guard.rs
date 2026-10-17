@@ -614,9 +614,13 @@ enum Jump<'a> {
 /// overridden by the `finally` block of an enclosing `try`.
 #[derive(Clone, Copy, Debug)]
 enum Exit {
-    /// A `return`, an uncaught `throw`, or a `break` or `continue` whose
-    /// target is unknown: it leaves every enclosing `finally` block.
+    /// A `return`, or a `break` or `continue` whose target is unknown: it
+    /// leaves every enclosing `finally` block.
     Function,
+    /// A `throw` that no `catch` clause seen so far handles: it leaves every
+    /// enclosing `finally` block until a `catch` clause of an enclosing `try`
+    /// block handles it.
+    Throw,
     /// A `break` or `continue` whose target is the jump target at this index
     /// of [`Parser::jumps`]: it leaves a block only when the block sits inside
     /// the target.
@@ -628,7 +632,7 @@ impl Exit {
     /// outside it.
     fn leaves(self, base: usize) -> bool {
         match self {
-            Exit::Function => true,
+            Exit::Function | Exit::Throw => true,
             Exit::Jump(target) => target < base,
         }
     }
@@ -640,12 +644,10 @@ struct Returns {
     /// Returned expressions that can carry a read.
     values: Vec<Id>,
     /// The reachable completions that leave the statement being parsed, in
-    /// source order: every `return`, uncaught `throw`, `break` and `continue`
-    /// except those that a `finally` block of an enclosing `try` overrides.
+    /// source order: every `return`, `throw`, `break` and `continue` except
+    /// those that a `finally` block or a `catch` clause of an enclosing `try`
+    /// consumes.
     exits: Vec<Exit>,
-    /// Nesting count of `try` blocks with a `catch` clause being parsed: a
-    /// `throw` there is caught and does not leave its `finally` block.
-    caught: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -874,12 +876,12 @@ impl<'a> Parser<'a> {
                 if self.tok().is_some_and(|next| !next.newline) {
                     self.parse_expr();
                 }
-                // Like a `return`, a `throw` completes the function abruptly.
+                // A `throw` leaves every `finally` block up to the `catch`
+                // clause that handles it; `parse_try` removes it there.
                 if self.dead == 0
                     && let Some(frame) = self.returns.last_mut()
-                    && frame.caught == 0
                 {
-                    frame.exits.push(Exit::Function);
+                    frame.exits.push(Exit::Throw);
                 }
                 self.abrupt = true;
                 self.eat_punct(";");
@@ -1178,11 +1180,18 @@ impl<'a> Parser<'a> {
             .returns
             .last()
             .map_or((0, 0), |frame| (frame.values.len(), frame.exits.len()));
-        let caught = self.try_block_is_caught();
-        self.set_caught(caught, 1);
         self.within(Self::parse_block);
-        self.set_caught(caught, -1);
         if self.eat_word("catch") {
+            // The `catch` clause handles every `throw` that leaves the `try`
+            // block, however deeply nested and whatever `finally` block it
+            // crossed on the way. It still overrode the completions of those
+            // nested `finally` blocks first.
+            if let Some(frame) = self.returns.last_mut() {
+                let tail = frame.exits.split_off(exits.min(frame.exits.len()));
+                frame
+                    .exits
+                    .extend(tail.into_iter().filter(|exit| !matches!(exit, Exit::Throw)));
+            }
             if self.is_punct("(") {
                 self.parse_call_arguments();
             }
@@ -1202,21 +1211,6 @@ impl<'a> Parser<'a> {
                     frame.exits.drain(exits.min(pending)..pending);
                 }
             }
-        }
-    }
-
-    /// Whether the `try` block at the cursor is followed by a `catch` clause.
-    fn try_block_is_caught(&self) -> bool {
-        let close = self.close.get(self.pos).copied().unwrap_or(usize::MAX);
-        self.is_punct("{")
-            && close != usize::MAX
-            && is_word(self.tokens.get(close + 1).copied(), "catch")
-    }
-
-    /// Enter (`+1`) or leave (`-1`) a `try` block whose `throw` is caught.
-    fn set_caught(&mut self, caught: bool, delta: isize) {
-        if caught && let Some(frame) = self.returns.last_mut() {
-            frame.caught = frame.caught.saturating_add_signed(delta);
         }
     }
 
@@ -4817,6 +4811,101 @@ mod tests {
         ];
         for &(shape, code, expected) in rows {
             assert_eq!(flag_guard(code), expected, "{shape}: {code}");
+        }
+    }
+
+    /// Completion tracking of `try`, `catch`, `finally`, `switch` clauses and
+    /// labelled statements. Each row is the body of a `finally` block that
+    /// runs while `return process.env.FLAG` is pending inside the loop
+    /// `outer`; the read is guarded (`Some("and")`) when that block does not
+    /// replace the pending return.
+    #[test]
+    fn finally_completion_rows() {
+        let rows: &[(&str, &str, Option<&str>)] = &[
+            // A `throw` that leaves a nested `finally` block overrides its
+            // pending completion even when a surrounding `catch` handles it.
+            (
+                "caught throw overrides a nested break",
+                "try{try{break outer}finally{throw 1}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "caught throw overrides a nested continue",
+                "try{try{continue outer}finally{throw 1}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "caught throw overrides a nested return",
+                "try{try{return 1}finally{throw 1}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "caught throw overrides a nested throw",
+                "try{try{throw 0}finally{throw 1}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "caught throw overrides a break in a catch block",
+                "try{try{f()}catch(e){break outer}finally{throw 1}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "caught throw crosses a middle finally block",
+                "try{try{try{break outer}finally{throw 1}}finally{cleanup()}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "caught throw crosses a middle try block",
+                "try{try{try{break outer}finally{throw 1}}catch(e){}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "caught throw in a labelled block",
+                "a:{try{try{break outer}finally{throw 1}}catch(_){}}",
+                Some("and"),
+            ),
+            (
+                "caught throw in a nested loop",
+                "for(;;){try{try{break outer}finally{throw 1}}catch(_){}break}",
+                Some("and"),
+            ),
+            (
+                "caught throw with no pending completion",
+                "try{try{throw 1}finally{cleanup()}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "caught throw in a catch block of the handling try",
+                "try{try{break outer}finally{throw 1}}catch(_){throw 2}",
+                None,
+            ),
+            (
+                "caught throw handled for a pending break only by the outer catch",
+                "try{try{break outer}finally{cleanup()}}catch(_){}",
+                None,
+            ),
+            (
+                "caught throw followed by a break",
+                "try{try{break outer}finally{throw 1}}catch(_){}break outer",
+                None,
+            ),
+            (
+                "throw in the finally block of the handling try",
+                "try{try{f()}finally{throw 1}}catch(_){}finally{throw 2}",
+                None,
+            ),
+            (
+                "throw in a try block without a catch beside a caught one",
+                "try{try{throw 1}catch(_){}}finally{cleanup()}try{throw 2}finally{cleanup()}",
+                None,
+            ),
+        ];
+        for &(shape, finally_body, expected) in rows {
+            let code = format!(
+                "(function(){{outer:for(;;){{try{{return \
+                 process.env.FLAG}}finally{{{finally_body}}}}}}})()&&run()"
+            );
+            assert_eq!(flag_guard(&code), expected, "{shape}: {code}");
         }
     }
 
