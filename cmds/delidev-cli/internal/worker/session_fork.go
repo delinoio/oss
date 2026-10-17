@@ -211,6 +211,9 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	processConfig := process.Config{Directory: filepath.Join(manager.Root, "processes"), OwnerID: owner, Executable: executable, Cwd: manifest.PrimaryPath, Env: sourceEnv, Logger: logger}
 	phase = forkSourceInspectionUnproved
 	sourceConfig := codex.Config{RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, FrameProfile: forkFrameProfile(assignment.Configuration.Subscription, input.Purpose), ManagedAuthentication: assignment.Configuration.Subscription, ImageRoot: config.Root, ImageMachineID: job.MachineID, Mode: codex.ThreadProtocol, Version: installation.Version, Home: sourceHome, Process: processConfig}
+	if assignment.NativeOpenRouterTools && input.Purpose != domain.SidechatFork {
+		sourceConfig.FrameProfile = retainedHistoryFrameProfile(assignment)
+	}
 	if input.Purpose == domain.SidechatFork {
 		sourceConfig.Sidechat = codex.ReadOnlySidechatV1
 		sourceConfig.ManagedAuthentication = assignment.Configuration.Subscription
@@ -319,6 +322,9 @@ func forkSession(ctx context.Context, config Config, owner domain.ID, job domain
 	// an Open failure cannot justify deleting it through pre-native rollback.
 	phase = forkChildNativePossible
 	nativeConfig := codex.Config{RevertHistory: checkpoint.Native.PaginatedHistory, ManagedForkHistory: assignment.Configuration.Subscription && input.Purpose == domain.IndependentFork, FrameProfile: forkFrameProfile(assignment.Configuration.Subscription, input.Purpose), ImageRoot: config.Root, ImageMachineID: job.MachineID, ImageInputDeclared: assignment.Configuration.ImageInputDeclared, Mode: codex.ThreadProtocol, Version: installation.Version, Home: childHome, API: &codex.APIConfig{ServerOrigin: config.execution.Credential.Endpoint, Token: apiproxy.TokenPrefix + rawToken}, Process: processConfig}
+	if assignment.NativeOpenRouterTools && input.Purpose != domain.SidechatFork {
+		nativeConfig.FrameProfile = retainedHistoryFrameProfile(assignment)
+	}
 	if input.Purpose != domain.SidechatFork {
 		nativeConfig.OrdinaryTools = ordinaryTools
 	}

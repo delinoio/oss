@@ -23,6 +23,7 @@ const executionTokenEnv = "DELIDEV_EXECUTION_TOKEN"
 // token. It is never a provider key, user-editable native config or persisted
 // document. The owning Worker registers its digest before calling Open.
 type APIConfig struct {
+	OpenRouterTools  bool   `json:"-"`
 	ServerOrigin     string `json:"-"`
 	Token            string `json:"-"`
 	TitleProfile     bool   `json:"-"`
@@ -37,9 +38,10 @@ type APIConfig struct {
 // Retain only non-secret configuration after launch. The process owner receives
 // the token through its private environment, never argv or a config file.
 type apiBinding struct {
-	endpoint string
-	title    bool
-	proxied  bool
+	openRouterTools bool
+	endpoint        string
+	title           bool
+	proxied         bool
 }
 
 func configureAPI(config *Config) (*apiBinding, error) {
@@ -99,6 +101,15 @@ func configureAPI(config *Config) (*apiBinding, error) {
 	// policy can outrank them, so verifyAPI also checks the effective merged
 	// authority before thread creation/resume, without changing that policy.
 	provider := `{name="DeliDev",base_url=` + strconv.Quote(binding.endpoint) + `,env_key="` + executionTokenEnv + `",wire_api="responses",requires_openai_auth=false,supports_websockets=false,supports_standalone_web_search=false}`
+	if config.API.OpenRouterTools {
+		if binding.title || config.Sidechat != "" {
+			return nil, apiConfigMismatch("tool-profile")
+		}
+		binding.openRouterTools = true
+
+		provider = strings.Replace(provider, "supports_standalone_web_search=false", "supports_standalone_web_search=true", 1)
+		config.Process.Args = append(config.Process.Args, "-c", "features.standalone_web_search=true", "-c", `web_search="live"`)
+	}
 	if binding.title {
 		provider = strings.TrimSuffix(provider, "}") + ",request_max_retries=0,stream_max_retries=0}"
 	}
@@ -190,16 +201,32 @@ func (a *apiBinding) validateConfig(config map[string]json.RawMessage) error {
 	if a.title && (provider.RequestRetries == nil || *provider.RequestRetries != 0 || provider.StreamRetries == nil || *provider.StreamRetries != 0) {
 		return apiConfigMismatch("native-retries")
 	}
+	expectedName := "DeliDev"
 	for _, field := range []struct{ name, got, expected string }{
-		{"provider-name", provider.Name, "DeliDev"}, {"provider-endpoint", provider.BaseURL, a.endpoint}, {"provider-environment", provider.EnvKey, executionTokenEnv}, {"provider-protocol", provider.WireAPI, "responses"},
+		{"provider-name", provider.Name, expectedName}, {"provider-endpoint", provider.BaseURL, a.endpoint}, {"provider-environment", provider.EnvKey, executionTokenEnv}, {"provider-protocol", provider.WireAPI, "responses"},
 	} {
 		if field.got != field.expected {
 			return apiConfigMismatch(field.name)
 		}
 	}
-	for _, flag := range []*bool{provider.RequiresOpenAIAuth, provider.SupportsWebsockets, provider.SupportsWebSearch} {
+	for _, flag := range []*bool{provider.RequiresOpenAIAuth, provider.SupportsWebsockets} {
 		if flag == nil || *flag {
 			return apiConfigMismatch("transport")
+		}
+	}
+	if provider.SupportsWebSearch == nil || *provider.SupportsWebSearch != a.openRouterTools {
+		return apiConfigMismatch("tool-profile")
+	}
+	if a.openRouterTools {
+		var features map[string]json.RawMessage
+		var standalone bool
+		var imageGeneration *bool
+		var mode string
+		if json.Unmarshal(config["features"], &features) != nil || json.Unmarshal(features["standalone_web_search"], &standalone) != nil || !standalone || json.Unmarshal(config["web_search"], &mode) != nil || mode != "live" {
+			return apiConfigMismatch("tool-profile")
+		}
+		if json.Unmarshal(features["image_generation"], &imageGeneration) != nil || imageGeneration == nil || *imageGeneration {
+			return apiConfigMismatch("image-tool-profile")
 		}
 	}
 	// config/read serializes all optional native provider fields as null. Only

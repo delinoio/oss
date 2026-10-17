@@ -124,23 +124,24 @@ const (
 )
 
 type threadParams struct {
-	RawEvents                  bool           `json:"experimentalRawEvents,omitempty"`
-	ThreadID                   domain.ID      `json:"threadId,omitempty"`
-	Model                      string         `json:"model"`
-	ModelProvider              string         `json:"modelProvider"`
-	Cwd                        string         `json:"cwd"`
-	WorkspaceRoots             []string       `json:"runtimeWorkspaceRoots,omitempty"`
-	DeveloperInstructions      string         `json:"developerInstructions,omitempty"`
-	ApprovalPolicy             ApprovalPolicy `json:"approvalPolicy,omitempty"`
-	ApprovalsReviewer          string         `json:"approvalsReviewer"`
-	Sandbox                    string         `json:"sandbox,omitempty"`
-	Permissions                string         `json:"permissions,omitempty"`
-	ServiceTier                string         `json:"serviceTier,omitempty"`
-	Config                     map[string]any `json:"config,omitempty"`
-	ExcludeTurns               *bool          `json:"excludeTurns,omitempty"`
-	HistoryMode                HistoryMode    `json:"historyMode,omitempty"`
-	Ephemeral                  *bool          `json:"ephemeral,omitempty"`
-	AllowProviderModelFallback *bool          `json:"allowProviderModelFallback,omitempty"`
+	DynamicTools               []json.RawMessage `json:"dynamicTools,omitempty"`
+	RawEvents                  bool              `json:"experimentalRawEvents,omitempty"`
+	ThreadID                   domain.ID         `json:"threadId,omitempty"`
+	Model                      string            `json:"model"`
+	ModelProvider              string            `json:"modelProvider"`
+	Cwd                        string            `json:"cwd"`
+	WorkspaceRoots             []string          `json:"runtimeWorkspaceRoots,omitempty"`
+	DeveloperInstructions      string            `json:"developerInstructions,omitempty"`
+	ApprovalPolicy             ApprovalPolicy    `json:"approvalPolicy,omitempty"`
+	ApprovalsReviewer          string            `json:"approvalsReviewer"`
+	Sandbox                    string            `json:"sandbox,omitempty"`
+	Permissions                string            `json:"permissions,omitempty"`
+	ServiceTier                string            `json:"serviceTier,omitempty"`
+	Config                     map[string]any    `json:"config,omitempty"`
+	ExcludeTurns               *bool             `json:"excludeTurns,omitempty"`
+	HistoryMode                HistoryMode       `json:"historyMode,omitempty"`
+	Ephemeral                  *bool             `json:"ephemeral,omitempty"`
+	AllowProviderModelFallback *bool             `json:"allowProviderModelFallback,omitempty"`
 }
 
 func unsupportedSettings() *domain.Error {
@@ -316,6 +317,9 @@ func (c *Client) bindThread(ctx context.Context, requestID, threadID domain.ID, 
 	params, err := settings.params()
 	if err != nil {
 		return result, err
+	}
+	if method == startThread && c.api != nil && c.api.openRouterTools {
+		params.DynamicTools = openRouterImageTools()
 	}
 	if c.codeReviewModel != "" {
 		// ThreadStartParams cannot combine a named permission profile with its

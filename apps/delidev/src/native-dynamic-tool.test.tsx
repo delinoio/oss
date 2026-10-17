@@ -131,3 +131,17 @@ test("rejects raw arguments, media locators, mixed unions and invalid identity",
   ])
     expect(dynamicTool(content)).toBeUndefined();
 });
+
+test("preserves a selected backend reply without showing unavailable", () => {
+  const selected = {
+    ...tool,
+    reply: { ...tool.reply, unavailable: false, delivery: "transmitted" },
+  };
+  expect(dynamicTool(selected)).not.toBeNull();
+  render(<NativeDynamicTool content={selected} />);
+  expect(
+    screen.queryByText("This dynamic tool is unavailable in DeliDev."),
+  ).toBeNull();
+  expect(screen.getByText("Reply delivery: Transmitted")).toBeTruthy();
+  expect(screen.getByText("Native request: Open")).toBeTruthy();
+});

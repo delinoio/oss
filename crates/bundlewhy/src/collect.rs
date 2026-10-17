@@ -73,8 +73,8 @@ impl Collection {
         BundlerChoice::from_str(&self.bundler, false).ok()
     }
 
-    /// True when this is a Vite collection and the emitted chunk `file` lists
-    /// at least one module and every listed module is a Vite-owned virtual
+    /// True when this is a Vite collection and the collected `chunk` lists at
+    /// least one module and every listed module is a Vite-owned virtual
     /// helper with no source file. Such a chunk has no original source a map
     /// could attribute, so a missing map cannot hide a source-backed
     /// candidate. Only Vite collections qualify: Rspack and unsupported
@@ -83,13 +83,13 @@ impl Collection {
     /// bundler-owned and keep the map requirement for every chunk. Unknown ids,
     /// ids outside the verified helper table, modules with a file path and
     /// chunks with no listed modules are all treated as source-backed.
-    pub fn is_virtual_only_chunk(&self, file: &str) -> bool {
+    ///
+    /// The caller passes the chunk's own metadata, so classifying many chunks
+    /// never searches `self.chunks` by file name.
+    pub fn is_virtual_only_collected_chunk(&self, chunk: &CollectedChunk) -> bool {
         if self.bundler_choice() != Some(BundlerChoice::Vite) {
             return false;
         }
-        let Some(chunk) = self.chunks.iter().find(|chunk| chunk.file == file) else {
-            return false;
-        };
         !chunk.modules.is_empty()
             && chunk.modules.iter().all(|id| {
                 VITE_OWNED_VIRTUAL_IDS.contains(&id.as_str())

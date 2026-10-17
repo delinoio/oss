@@ -65,6 +65,7 @@ func (c *CodexEventPublisher) dynamicToolsSettled() bool {
 // Only immutable original ownership and reply intent enter this journal.
 // Native arguments, locators and outputs remain in private native history.
 type dynamicReplyJournal struct {
+	Backend          dynamicBackendKind          `json:"backend,omitempty"`
 	WireID           json.RawMessage             `json:"wire_id"`
 	Version          uint32                      `json:"version"`
 	ServerID         domain.ID                   `json:"server_id"`
@@ -89,7 +90,23 @@ type nativeDynamicResponder interface {
 	ReplyDynamicUnavailable(context.Context, domain.ID, domain.ID, domain.ID, func() error) (domain.DynamicToolReply, error)
 }
 
+type dynamicBackendKind string
+
+const openRouterImageDynamicBackend dynamicBackendKind = "openrouter-image"
+
+type dynamicReplySender func(context.Context, domain.ID, domain.ID, domain.ID, func() error) (domain.DynamicToolReply, error)
+
 func (c *CodexEventPublisher) deliverDynamicUnavailable(ctx, publicationCtx context.Context, event codex.Event, client nativeDynamicResponder) error {
+	return c.deliverDynamicReply(ctx, publicationCtx, event, client, "", client.ReplyDynamicUnavailable)
+}
+
+func (c *CodexEventPublisher) deliverOpenRouterImage(ctx, publicationCtx context.Context, event codex.Event, client *codex.Client, backend func(context.Context, json.RawMessage) (string, error)) error {
+	return c.deliverDynamicReply(ctx, publicationCtx, event, client, openRouterImageDynamicBackend, func(ctx context.Context, token, turn, claim domain.ID, commit func() error) (domain.DynamicToolReply, error) {
+		return client.ReplyDynamicImage(ctx, token, turn, claim, commit, backend)
+	})
+}
+
+func (c *CodexEventPublisher) deliverDynamicReply(ctx, publicationCtx context.Context, event codex.Event, client nativeDynamicResponder, backend dynamicBackendKind, send dynamicReplySender) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if ctx.Err() != nil {
@@ -103,6 +120,9 @@ func (c *CodexEventPublisher) deliverDynamicUnavailable(ctx, publicationCtx cont
 		return publicationUncertain()
 	}
 	original := *retained.Tool.Request
+	if backend != "" && (backend != openRouterImageDynamicBackend || !c.publisher.input.NativeOpenRouterTools || original.Identity.Namespace == nil || *original.Identity.Namespace != "delidev_image" || original.Identity.Tool != "imagegen") {
+		return publicationUncertain()
+	}
 	wireID, err := client.DynamicRequestID(ctx, original.Token)
 	if err != nil {
 		return err
@@ -122,7 +142,7 @@ func (c *CodexEventPublisher) deliverDynamicUnavailable(ctx, publicationCtx cont
 	requestAttempt := filepath.Join(byRequest, dynamicJournalKey(string(original.IDKind)+":"+original.IDValue)+".json")
 	attempt := filepath.Join(byCall, dynamicJournalKey(event.ItemID))
 	path := filepath.Join(attempt, "reply.json")
-	journal := dynamicReplyJournal{WireID: wireID, Version: 1, ServerID: config.Credential.ServerID, DeviceID: config.Credential.DeviceID, MachineID: config.Credential.MachineID, InstanceID: config.Instance, JobID: c.publisher.job, Revision: c.publisher.state.Revision, AssignmentDigest: c.publisher.state.AssignmentDigest, SessionID: c.publisher.input.SessionID, ExecutionID: c.publisher.execution, ThreadID: c.thread, TurnID: c.turn, CallID: event.ItemID, Request: original, ClaimID: domain.NewID(), State: responsePrepared}
+	journal := dynamicReplyJournal{Backend: backend, WireID: wireID, Version: 1, ServerID: config.Credential.ServerID, DeviceID: config.Credential.DeviceID, MachineID: config.Credential.MachineID, InstanceID: config.Instance, JobID: c.publisher.job, Revision: c.publisher.state.Revision, AssignmentDigest: c.publisher.state.AssignmentDigest, SessionID: c.publisher.input.SessionID, ExecutionID: c.publisher.execution, ThreadID: c.thread, TurnID: c.turn, CallID: event.ItemID, Request: original, ClaimID: domain.NewID(), State: responsePrepared}
 	// Publish a complete immutable owner document as the first uniqueness claim.
 	// A crash before the call journal exists remains inspectable and fences send.
 	if err := claimDynamicReplyOwner(requestAttempt, journal); err != nil {
@@ -137,13 +157,17 @@ func (c *CodexEventPublisher) deliverDynamicUnavailable(ctx, publicationCtx cont
 	if writeJSON(path, journal) != nil {
 		return publicationUncertain()
 	}
-	bounded, cancel := context.WithTimeout(ctx, 15*time.Second)
-	reply, sendErr := client.ReplyDynamicUnavailable(bounded, original.Token, c.turn, journal.ClaimID, func() error {
+	replyBudget := 15 * time.Second
+	if backend != "" {
+		replyBudget = 15 * time.Minute
+	}
+	bounded, cancel := context.WithTimeout(ctx, replyBudget)
+	reply, sendErr := send(bounded, original.Token, c.turn, journal.ClaimID, func() error {
 		journal.State = responseSendIntent
 		return writeJSON(path, journal)
 	})
 	cancel()
-	if reply.Token != original.Token || reply.ClaimID != journal.ClaimID || !reply.Unavailable {
+	if reply.Token != original.Token || reply.ClaimID != journal.ClaimID || reply.Unavailable != (backend == "") {
 		return publicationUncertain()
 	}
 	journal.State = responseObserved
@@ -184,7 +208,7 @@ func (c *CodexEventPublisher) recoverDynamicReply(publicationCtx context.Context
 	if err != nil || verified.State != responseObserved {
 		return publicationUncertain()
 	}
-	return c.publishDynamicReply(publicationCtx, event, retained, verified, domain.DynamicToolReply{Token: verified.Request.Token, ClaimID: verified.ClaimID, Delivery: verified.Delivery, Unavailable: true}, nil)
+	return c.publishDynamicReply(publicationCtx, event, retained, verified, domain.DynamicToolReply{Token: verified.Request.Token, ClaimID: verified.ClaimID, Delivery: verified.Delivery, Unavailable: verified.Backend == ""}, nil)
 }
 
 func (c *CodexEventPublisher) publishDynamicReply(publicationCtx context.Context, event codex.Event, retained dynamicToolPublication, journal dynamicReplyJournal, reply domain.DynamicToolReply, sendErr error) error {
@@ -226,7 +250,7 @@ func inspectDynamicReplyJournal(path string, expected dynamicReplyJournal) (dyna
 		return dynamicReplyJournal{}, publicationUncertain()
 	}
 	var saved dynamicReplyJournal
-	if domain.Decode(raw, &saved) != nil || saved.Version != 1 || !bytesEqualDynamicWire(saved.WireID, expected.WireID) || !dynamicWireMatchesRequest(saved.WireID, saved.Request) || saved.ServerID != expected.ServerID || saved.DeviceID != expected.DeviceID || saved.MachineID != expected.MachineID || saved.InstanceID != expected.InstanceID || saved.JobID != expected.JobID || saved.Revision != expected.Revision || saved.AssignmentDigest != expected.AssignmentDigest || saved.SessionID != expected.SessionID || saved.ExecutionID != expected.ExecutionID || saved.ThreadID != expected.ThreadID || saved.TurnID != expected.TurnID || saved.CallID != expected.CallID || saved.ClaimID != expected.ClaimID || saved.Request.Token != expected.Request.Token || saved.Request.IDKind != expected.Request.IDKind || saved.Request.IDValue != expected.Request.IDValue || !reflect.DeepEqual(saved.Request.Identity, expected.Request.Identity) || saved.Request.Validate() != nil || saved.ClaimID.Validate() != nil {
+	if domain.Decode(raw, &saved) != nil || saved.Version != 1 || saved.Backend != expected.Backend || (saved.Backend != "" && saved.Backend != openRouterImageDynamicBackend) || !bytesEqualDynamicWire(saved.WireID, expected.WireID) || !dynamicWireMatchesRequest(saved.WireID, saved.Request) || saved.ServerID != expected.ServerID || saved.DeviceID != expected.DeviceID || saved.MachineID != expected.MachineID || saved.InstanceID != expected.InstanceID || saved.JobID != expected.JobID || saved.Revision != expected.Revision || saved.AssignmentDigest != expected.AssignmentDigest || saved.SessionID != expected.SessionID || saved.ExecutionID != expected.ExecutionID || saved.ThreadID != expected.ThreadID || saved.TurnID != expected.TurnID || saved.CallID != expected.CallID || saved.ClaimID != expected.ClaimID || saved.Request.Token != expected.Request.Token || saved.Request.IDKind != expected.Request.IDKind || saved.Request.IDValue != expected.Request.IDValue || !reflect.DeepEqual(saved.Request.Identity, expected.Request.Identity) || saved.Request.Validate() != nil || saved.ClaimID.Validate() != nil {
 		return dynamicReplyJournal{}, publicationUncertain()
 	}
 	if saved.State != responsePrepared && saved.State != responseSendIntent && saved.State != responseObserved {

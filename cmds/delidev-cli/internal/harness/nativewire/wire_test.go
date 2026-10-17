@@ -598,3 +598,28 @@ func TestOriginalImageObservationTransportBounds(t *testing.T) {
 		})
 	}
 }
+
+func TestImageDynamicReplyKeepsOtherResponseBounds(t *testing.T) {
+	image := newConnection(ProfileImage, func() {}, nil, nil)
+	event := Event{Kind: ServerRequest, Method: "item/tool/call", ID: json.RawMessage(`7`), Token: domain.NewID()}
+	result := map[string]string{"original": strings.Repeat("x", MaxFrame+1)}
+	if _, err := image.resultEnvelope(event, result, MaxFrame); err == nil {
+		t.Fatal("ordinary response gained image capacity")
+	}
+	raw, err := image.resultEnvelope(event, result, image.frameLimit())
+	var decoded envelope
+	if err != nil || domain.DecodeBounded(raw, &decoded, image.frameLimit()) != nil {
+		t.Fatal("selected image response was not encodable", err)
+	}
+	calls := 0
+	for _, profile := range []Profile{ProfileCodex, ProfileJSONRPC} {
+		c := newConnection(profile, func() {}, nil, nil)
+		if err := c.ReplyGeneratedImage(context.Background(), event, func() (any, error) { calls++; return result, nil }); err == nil {
+			t.Fatal("unselected connection acquired image reply")
+		}
+	}
+	event.Method = "item/commandExecution/requestApproval"
+	if err := image.ReplyGeneratedImage(context.Background(), event, func() (any, error) { calls++; return result, nil }); err == nil || calls != 0 {
+		t.Fatal("non-tool arrival invoked image producer")
+	}
+}
