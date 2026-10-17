@@ -36,7 +36,7 @@ Use structured `tracing` events with versions, build identifier, target, phase, 
 
 ## Build and Test
 
-Run root `cargo test` after Rust changes. Test the full SDK behavior and failure scenarios described in the [SDK acceptance contract](packages-typenative-foundation.md#build-and-test). Require actual execution on macOS arm64, Windows x64, Linux x64, iOS arm64 simulator and Android arm64 emulator. Record unavailable platforms as unverified. Derive OS minima from pinned SDKs and dependencies, and publish only validated combinations. Physical-device acceptance and store/signing automation are excluded.
+Run root `cargo test` after Rust changes. Test the full SDK behavior and failure scenarios described in the [SDK acceptance contract](packages-typenative-foundation.md#build-and-test). Implement macOS arm64, Windows x64, Linux x64, iOS arm64 simulator and Android arm64 emulator targets. Five-platform execution acceptance is omitted for the initial experimental release; record native execution, accessibility and Korean IME acceptance as unverified. This exception does not waive native functional tests or permit missing target implementation. Derive OS minima from pinned SDKs and dependencies. Experimental releases may list implemented combinations as unverified, but must not claim platform acceptance. Physical-device acceptance and store/signing automation are excluded.
 
 Measure startup, memory, distribution size, UI update and development update durations without numerical thresholds. Record exact source revisions, commands, results and unperformed checks outside source contracts. Preserve affected CI selection and exclude macOS runners from PRs, main pushes and affected manual runs; use permitted local or owning-release acceptance.
 

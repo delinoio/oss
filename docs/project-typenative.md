@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build an experimental native application framework for TypeScript developers using React and TSX with HTML elements and CSS, ScriptC native compilation, and Blitz rendering. Development and distribution applications must not embed a JavaScript engine. Completion requires functional and platform acceptance, with no fixed deadline or numerical performance thresholds.
+Build an experimental native application framework for TypeScript developers using React and TSX with HTML elements and CSS, ScriptC native compilation, and Blitz rendering. Development and distribution applications must not embed a JavaScript engine. Completion requires functional implementation and automated validation, with no fixed deadline or numerical performance thresholds. The initial experimental release omits five-platform execution acceptance; this exception does not waive implementation or functional tests.
 
 ## Project ID
 
@@ -23,7 +23,7 @@ Build an experimental native application framework for TypeScript developers usi
 
 The TypeScript SDK/renderer/CLI and Rust host are explicit exceptions to the default Go language. Application storage is local to the application rather than Cloudflare R2 because offline native persistence is part of the API contract. Node.js is permitted only for tooling. ScriptC compiles application code in both modes. The full stable public client-side React 19.3.1 core API is required; React DOM, server-only APIs, RSC and experimental APIs are excluded.
 
-The target identifiers are `macos-arm64`, `windows-x64`, `linux-x64`, `ios-arm64-simulator` and `android-arm64-emulator`. Supported combinations require recorded execution acceptance. Dependency metadata, compilation and package creation alone do not establish support. Preserve process identity and compatible React state during native component updates. Upstream gaps require implementation, never a JavaScript-engine fallback or a silent reduction in React support.
+The target identifiers are `macos-arm64`, `windows-x64`, `linux-x64`, `ios-arm64-simulator` and `android-arm64-emulator`. Validated combinations require recorded execution acceptance. The initial 0.x release may publish implemented target combinations as unverified, with that status explicit in public compatibility documentation. Dependency metadata, compilation and package creation alone do not establish support. Preserve process identity and compatible React state during native component updates. Upstream gaps require implementation, never a JavaScript-engine fallback or a silent reduction in React support.
 
 Installation-ready packages and host launches share the immutable UUID v7 `applicationId` defined by the SDK contract. Package identity and application storage must preserve it across updates and rollbacks.
 
