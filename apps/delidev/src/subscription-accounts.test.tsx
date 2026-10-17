@@ -204,3 +204,100 @@ it("keeps cached subscription rows and the remaining account error after partial
   f.view.unmount();
   f.client.clear();
 });
+
+it("labels Claude usage windows and identifies the manually linked usage account on its row", async () => {
+  const observed = new Date(Date.now() - 60_000).toISOString();
+  const claude = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.ACCOUNT,
+    schemaVersion: 2,
+    revision: 2n,
+    documentJson: encode({
+      alias: "Linked Claude",
+      type: "subscription",
+      subscription_service: "claude",
+      enabled: true,
+      health: "ready",
+      connection: { id: newRequestId() },
+      quota: [
+        {
+          id: "five_hour",
+          comparison_group: "claude",
+          blocking: false,
+          remaining: 0.75,
+          observed_at: observed,
+          state: "observed",
+        },
+        {
+          id: "seven_day",
+          comparison_group: "claude",
+          blocking: false,
+          remaining: 0.5,
+          observed_at: observed,
+          state: "observed",
+        },
+      ],
+      subscription: {
+        claude_credential: "server-token",
+        generation: newRequestId(),
+        claude_usage: {
+          connection: "linked",
+          generation: newRequestId(),
+          identity: { email: "alex@example.com", commitment: "ab".repeat(32) },
+          published: true,
+          linked_at: observed,
+          last_success_at: observed,
+          windows: [
+            {
+              id: "five_hour",
+              remaining: 0.75,
+              observed_at: observed,
+            },
+            {
+              id: "seven_day",
+              remaining: 0.5,
+              observed_at: observed,
+            },
+          ],
+        },
+      },
+    }),
+  });
+  const transport = createRouterTransport((router) => {
+    router.service(SystemService, {
+      getStatus: () => ({
+        capabilities: [SystemCapability.SUBSCRIPTION_SERVICE_ACCOUNTS_V1],
+      }),
+    });
+    router.service(ResourceService, {
+      listResources: () => ({ resources: [claude] }),
+    });
+  });
+  render(
+    <TransportProvider transport={transport}>
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <SettingsLifetime>
+          {() => (
+            <MutationIntents>
+              <SubscriptionAccounts
+                active
+                editAccount={vi.fn()}
+                deleteAccount={vi.fn()}
+              />
+            </MutationIntents>
+          )}
+        </SettingsLifetime>
+      </QueryClientProvider>
+    </TransportProvider>,
+  );
+  const article = await screen.findByRole("article", { name: "Linked Claude" });
+  expect(article.textContent).toMatch(/5-hour limit/);
+  expect(article.textContent).toMatch(/7-day limit/);
+  expect(article.textContent).toMatch(/75% remaining/);
+  expect(article.textContent).toMatch(/Usage account: alex@example.com/);
+  expect(article.textContent).toMatch(/Linked manually/);
+});

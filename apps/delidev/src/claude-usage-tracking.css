@@ -1,0 +1,138 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+/* Usage tracking section of Manage Claude. Semantic tokens only, 8px corners and
+   the shared 40px outlined actions; wraps at 320px and 200% zoom. */
+.claude-usage {
+  container-type: inline-size;
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  margin-block: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.claude-usage > * {
+  min-width: 0;
+  margin: 0;
+}
+.claude-usage h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+.claude-usage h3:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.claude-usage h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.claude-usage p {
+  margin: 0;
+}
+.claude-usage-note {
+  color: var(--muted);
+  font-size: 12px;
+}
+.claude-usage-status {
+  font-weight: 600;
+}
+.claude-usage-status[data-tone="success"] {
+  color: var(--success-text);
+}
+.claude-usage-status[data-tone="warning"] {
+  color: var(--warning-text);
+}
+.claude-usage-status[data-tone="danger"] {
+  color: var(--danger-text);
+}
+.claude-usage-identity,
+.claude-usage-diagnostic {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.claude-usage-identity > div,
+.claude-usage-diagnostic > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.claude-usage-identity dt,
+.claude-usage-diagnostic dt {
+  color: var(--muted);
+  font-size: 12px;
+}
+.claude-usage-identity dd,
+.claude-usage-diagnostic dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.claude-usage-account {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-muted);
+}
+.claude-usage-account > div {
+  display: grid;
+  flex: 1 1 200px;
+  gap: 8px;
+  min-width: 0;
+}
+.claude-usage-quotas {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+.claude-usage-code {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+.claude-usage-code input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 40px;
+  border-radius: 8px;
+}
+.claude-usage-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+.claude-usage-actions:empty {
+  display: none;
+}
+.subscription-usage-account {
+  margin: 4px 0 0;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+@container (width < 360px) {
+  .claude-usage-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .claude-usage-actions > button {
+    width: 100%;
+  }
+  .claude-usage-account > button {
+    flex: 1 1 100%;
+  }
+}

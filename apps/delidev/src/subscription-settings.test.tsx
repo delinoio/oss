@@ -1002,3 +1002,17 @@ it("selects artwork from the explicit brand only, never the alias or provider na
       ?.getAttribute("data-harness"),
   ).toBe("codex");
 });
+
+it("identifies a manually linked Claude usage account on its row only when supplied", () => {
+  const linked = {
+    ...row("claude", [window("five_hour", 0.75), window("seven_day", 0.5)]),
+    usageAccount: "alex@example.com",
+  };
+  const { rerender } = render(view([linked]));
+  const article = screen.getByRole("article", { name: "Claude Work" });
+  expect(within(article).getByText(/Usage account:/)).toBeTruthy();
+  expect(within(article).getByText("alex@example.com")).toBeTruthy();
+  expect(within(article).getByText(/Linked manually/)).toBeTruthy();
+  rerender(view([row("claude", [window("five_hour", 0.75)])]));
+  expect(screen.queryByText(/Linked manually/)).toBeNull();
+});

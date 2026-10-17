@@ -37,6 +37,7 @@ import {
 import { subscriptionCatalog, SubscriptionBrand } from "./subscription-catalog";
 import { Harness } from "./configuration-fields";
 import { HarnessMark } from "./harness-mark";
+import "./claude-usage-tracking.css";
 
 export enum QuotaObservationState {
   Observed = "observed",
@@ -93,6 +94,8 @@ export interface SubscriptionAccountRow {
   /** An explicit verified native identity is required; editable names are insufficient. */
   brand?: SubscriptionBrand;
   maskedIdentity?: string;
+  /** Reviewed OAuth identity of a manually linked Claude usage connection. */
+  usageAccount?: string;
   connection: SubscriptionConnectionState;
   health: string;
   windows: readonly SubscriptionQuotaWindow[];
@@ -264,7 +267,7 @@ function ProviderMark({ brand }: { brand?: SubscriptionBrand }) {
   );
 }
 
-function QuotaWindow({
+export function QuotaWindow({
   window,
   now,
   active,
@@ -490,6 +493,16 @@ export function SubscriptionRow({
                     ? copy("subscription-settings.authenticationRevoked_e049fb")
                     : copy("subscription-settings.accountFailed_d5a3c3")}
               </span>
+            ) : null}
+            {account.usageAccount ? (
+              <p className="subscription-usage-account">
+                <LocalizedText
+                  id="claude-usage.rowAccount"
+                  components={{
+                    s0: <span>{account.usageAccount}</span>,
+                  }}
+                />
+              </p>
             ) : null}
           </div>
         </div>
