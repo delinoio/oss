@@ -84,6 +84,12 @@ Correction and undo state:
 - Clear transient state when target, caret or selection changes, except for the caret and text transition that the engine's own replacement causes (including a change in word length), which is recorded as the expected post-replacement state; any other external edit or caret movement clears the state, the next word starts, correction is paused or permission is lost. Keep only the state needed for the current word and immediate restoration, in memory only.
 - Do not retry failed corrections automatically. On partial replacement failure, restore the original only when the current target and text still match the expected intermediate state; otherwise stop without further writes.
 
+Input-event adapter:
+
+- Directly typed words, their key sequence and their provenance come from a per-platform input-event adapter behind a trait, separate from the accessibility adapter. It is a listen-only observer of key events for the current OS user session; it never injects, modifies or suppresses events.
+- The adapter reports each event with its physical key, modifier state and whether it is a typed key, or a paste or programmatic insertion signal. When provenance cannot be established, treat the text as not directly typed and skip it (`pasted` or `programmatic`).
+- It runs only while correction is active, permissions are granted, and the focused control is classified as editable and not protected. Key events from protected, unknown or excluded targets are discarded without buffering. Buffered keys exist only in memory for the current word, are cleared at the context and permission boundaries, and are never logged. Missing input-monitoring permission is reported through application status and keeps correction inactive.
+
 Accessibility adapters:
 
 - Use platform accessibility APIs to identify the focused editable control, inspect the relevant text range and replace it. Never read or correct password or protected fields.
@@ -94,6 +100,18 @@ Accessibility adapters:
 Manual candidates:
 
 - A candidate list contains the original and each enabled-language candidate with its validation result. A layout-convertible but invalid candidate is selectable and labeled as not recognized by the dictionary.
+- Each candidate carries a closed validation state:
+
+```ts
+enum CandidateValidation {
+  Recognized = "recognized",
+  NotRecognized = "not-recognized",
+  ValidatorUnavailable = "validator-unavailable",
+}
+```
+
+`NotRecognized` candidates are selectable and labeled as not recognized by the dictionary. `ValidatorUnavailable` candidates are shown with a distinct "could not be checked" label, never as not recognized, and are selectable explicitly. The label never relies on color alone.
+
 - Revalidate the target before applying a manual choice. Switching applications or changing the target invalidates the list.
 
 ## Storage

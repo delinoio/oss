@@ -27,7 +27,7 @@ enum SettingsSection {
 ```
 
 - General: correction status with pause and resume, enabled languages (both on by default), login startup (off by default), UI language and theme.
-- Excluded Apps: empty state, app selection, list and removal.
+- Excluded Apps: empty state, app selection, list and removal. Persist each exclusion by a stable application identity, never by display name or a mutable path alone: macOS bundle identifier, Windows AppUserModelID when present otherwise the executable's full path, and Linux X11 `WM_CLASS` class together with the desktop-entry ID when available. Match on the identity key; the display name is presentation only. When the identity changes or cannot be resolved, do not silently drop the entry: keep it listed as unresolved and keep correction off for a target whose identity cannot be established.
 - Shortcuts: key capture for the manual-candidate shortcut, unassigned by default, with registration and conflict errors that show the reason.
 - Updates: current version, manual check, available update, consent, progress and failures.
 - Diagnostics and Help: error codes, open-log-folder, delete-logs, localized help and a GitHub Issues link. Help covers installation, permissions, supported layouts, correction, undo, manual candidates, exclusions, privacy, updates, troubleshooting and log deletion.
@@ -54,7 +54,7 @@ Updates and distribution:
 
 ## Storage
 
-- Store settings locally for the current OS user. Preserve them across updates and manual recovery. Never silently replace unreadable settings or user configuration.
+- Store settings locally for the current OS user. Preserve them across updates and manual recovery. Settings use a versioned format with a `schemaVersion` field. A newer release writes only changes that older supported releases can read, or first writes a backup of the previous file (`settings.v<N>.bak`) before migrating, so manual reinstallation of a previous signed package can restore it. An older binary that finds a newer unreadable schema leaves the file untouched, runs with defaults in memory, reports the reason in status, and offers restore from the backup. Never silently replace unreadable settings or user configuration.
 - Never persist input text, reconstructed candidates, document content, window titles or correction history.
 - Logs: retain at most seven days and at most 10 MiB total, deleting the oldest logs when either limit is exceeded. Settings provide log deletion and log-folder access.
 
