@@ -5,10 +5,15 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
+	"io"
+	"log/slog"
 	"net/http"
+	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -569,6 +574,342 @@ func TestGrokExecutionServerRestartIsRecoveredByTheOriginalWorkerOnly(t *testing
 	}
 	if _, a := f.record(); a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Health != domain.AccountReady {
 		t.Fatal("the original Worker's cleanup did not release the account")
+	}
+}
+
+// replaceInstance attaches a new Worker process on the Worker's machine, as a
+// reattach does. It does not run the asynchronous lost-Worker fence, so the
+// lease is still unfenced afterwards.
+func (f *grokFixture) replaceInstance(w grokExecWorker) domain.ID {
+	f.t.Helper()
+	next := domain.NewID()
+	if _, err := f.service.Store.Mutate(context.Background(), domain.NewID(), "fixture.grok-replace-instance", nil, func(tx *store.Tx) (any, error) {
+		return nil, tx.SetWorkerInstance(w.machine, next, time.Now().UTC())
+	}); err != nil {
+		f.t.Fatal(err)
+	}
+	return next
+}
+
+// A Finish from a replaced Worker instance is held to the cleanup-only recovery
+// even before the asynchronous lost-Worker fence has run: it can neither report
+// success nor publish a rotated bundle, and the original owner can still settle
+// its cleanup.
+func TestGrokExecutionReplacedInstanceFinishIsCleanupOnlyBeforeTheAsyncFence(t *testing.T) {
+	f := newGrokFixture(t)
+	generation := f.login("synthetic-principal-1")
+	w := f.prepareGrokExecution(domain.ManagedGrokSubscriptionsV1)
+	lease, err := f.takeExecution(w, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.replaceInstance(w)
+	if _, a := f.record(); a.Subscription.RecoveryRequired || a.Subscription.Lease == nil {
+		t.Fatal("the fixture ran the asynchronous fence")
+	}
+	rotated := domain.NewID()
+	if _, err := f.finishExecution(w, lease, rotated, f.grokRotatedEnvelope(rotated), true, true, true); err == nil {
+		t.Fatal("a replaced instance published a rotated bundle")
+	}
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, true, false, true); err == nil {
+		t.Fatal("a replaced instance reported execution success")
+	}
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, false, false, false); err == nil {
+		t.Fatal("a replaced instance reported an unconfirmed cleanup")
+	}
+	_, a := f.record()
+	if a.Subscription.Generation != generation || a.Subscription.Lease == nil {
+		t.Fatal("a refused report changed the generation or released the lease")
+	}
+	if refs := f.references(); len(refs) != 1 || !refs[generation] {
+		t.Fatal("a refused report left a staged generation")
+	}
+	other := f.addGrokWorker(domain.ManagedGrokSubscriptionsV1)
+	if _, err := f.finishExecution(other, lease, domain.NewID(), nil, false, false, true); err == nil {
+		t.Fatal("a foreign Worker settled the lease")
+	}
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, false, false, true); err != nil {
+		t.Fatal(err)
+	}
+	_, a = f.record()
+	if a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Subscription.Generation != generation || a.Health != domain.AccountReady {
+		t.Fatal("cleanup-only recovery did not release the account on its usable generation")
+	}
+}
+
+// A report refused because its instance was replaced persists the recovery fence
+// itself. The asynchronous lost-Worker fence may not have run yet (or its single
+// attempt may have failed), and an unfenced lease would keep every new Take busy
+// while the recovery watch ignored it.
+func TestGrokExecutionReplacedInstanceRefusalPersistsTheRecoveryFence(t *testing.T) {
+	for _, tc := range []struct {
+		name                      string
+		refresh, success, cleanup bool
+	}{
+		{"rotated bundle", true, true, true},
+		{"execution success", false, true, true},
+		{"unconfirmed cleanup", false, false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newGrokFixture(t)
+			generation := f.login("synthetic-principal-1")
+			w := f.prepareGrokExecution(domain.ManagedGrokSubscriptionsV1)
+			lease, err := f.takeExecution(w, domain.NewID())
+			if err != nil {
+				t.Fatal(err)
+			}
+			f.replaceInstance(w)
+			request := domain.NewID()
+			var bundle []byte
+			if tc.refresh {
+				bundle = f.grokRotatedEnvelope(request)
+			}
+			if _, err := f.finishExecution(w, lease, request, bundle, tc.success, tc.refresh, tc.cleanup); err == nil {
+				t.Fatal("a replaced instance was accepted")
+			}
+			_, a := f.record()
+			if !a.Subscription.RecoveryRequired || a.Health != domain.AccountFailed || a.Subscription.Lease == nil || a.Subscription.Generation != generation {
+				t.Fatal("the refusal left the lease held without the recovery fence")
+			}
+			if _, err := f.finishExecution(w, lease, domain.NewID(), nil, false, false, true); err != nil {
+				t.Fatal(err)
+			}
+			if _, a := f.record(); a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Health != domain.AccountReady {
+				t.Fatal("the original owner could not settle the fenced lease")
+			}
+		})
+	}
+}
+
+// finishHook calls on for every log record, so a test can act at an exact point
+// of the Finish flow.
+type finishHook struct {
+	slog.Handler
+	on func(message string)
+}
+
+func (h finishHook) Enabled(context.Context, slog.Level) bool { return true }
+func (h finishHook) Handle(_ context.Context, r slog.Record) error {
+	h.on(r.Message)
+	return nil
+}
+func (h finishHook) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return finishHook{h.Handler.WithAttrs(attrs), h.on}
+}
+func (h finishHook) WithGroup(name string) slog.Handler {
+	return finishHook{h.Handler.WithGroup(name), h.on}
+}
+
+// A cleanup-only report validated against a still-unfenced lease is the
+// unverified-exit report: it can only fence the lease. When the instance is
+// replaced between that validation and the settlement commit the report is
+// refused like every other one validated as the current owner's, and the fence
+// is persisted, so the next fully validated cleanup-only report releases the
+// lease instead of the first one being acknowledged as final.
+func TestGrokExecutionCleanupOnlyReportOnALateReplacementIsRefused(t *testing.T) {
+	f := newGrokFixture(t)
+	generation := f.login("synthetic-principal-1")
+	w := f.prepareGrokExecution(domain.ManagedGrokSubscriptionsV1)
+	lease, err := f.takeExecution(w, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	replaced := false
+	f.service.logger = slog.New(finishHook{slog.NewJSONHandler(io.Discard, nil), func(message string) {
+		if message == "grok_subscription_finish_validated" && !replaced {
+			replaced = true
+			f.replaceInstance(w)
+		}
+	}})
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, false, false, true); err == nil {
+		t.Fatal("a cleanup-only report was acknowledged after its instance was replaced")
+	}
+	if !replaced {
+		t.Fatal("the instance was not replaced during the Finish")
+	}
+	_, a := f.record()
+	if !a.Subscription.RecoveryRequired || a.Health != domain.AccountFailed || a.Subscription.Lease == nil || a.Subscription.Generation != generation {
+		t.Fatal("the refused report left no recovery fence on the held lease")
+	}
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, false, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, a := f.record(); a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Health != domain.AccountReady || a.Subscription.Generation != generation {
+		t.Fatal("the cleanup-only report did not release the lease")
+	}
+}
+
+// breakWorkerInstanceReads makes every read of the machine's current Worker
+// instance fail with a storage error, the way a transient database failure
+// does, without replacing the instance. The returned function repairs the row.
+func (f *grokFixture) breakWorkerInstanceReads() (restore func()) {
+	f.t.Helper()
+	db, err := sql.Open("sqlite", filepath.Join(f.service.Store.Root(), "state.sqlite"))
+	if err != nil {
+		f.t.Fatal(err)
+	}
+	var seen int64
+	if err := db.QueryRow("SELECT last_seen FROM worker_instances").Scan(&seen); err != nil {
+		f.t.Fatal(err)
+	}
+	if _, err := db.Exec("UPDATE worker_instances SET last_seen='unreadable'"); err != nil {
+		f.t.Fatal(err)
+	}
+	return func() {
+		if _, err := db.Exec("UPDATE worker_instances SET last_seen=?", seen); err != nil {
+			f.t.Fatal(err)
+		}
+		db.Close()
+	}
+}
+
+// recordLogs records the message of every log record of the service.
+func (f *grokFixture) recordLogs(also func(message string)) func() []string {
+	var mu sync.Mutex
+	var messages []string
+	f.service.logger = slog.New(finishHook{slog.NewJSONHandler(io.Discard, nil), func(message string) {
+		mu.Lock()
+		messages = append(messages, message)
+		mu.Unlock()
+		if also != nil {
+			also(message)
+		}
+	}})
+	return func() []string {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(messages)
+	}
+}
+
+// A failed Worker-instance lookup is not a replacement. When the first read of
+// the instance fails, the report is neither accepted nor refused as a
+// replacement: the request aborts before anything is fenced, so the lease stays
+// held and unfenced for the same owner's retry.
+func TestGrokExecutionInstanceLookupFailureAbortsFinishWithoutFencing(t *testing.T) {
+	f := newGrokFixture(t)
+	generation := f.login("synthetic-principal-1")
+	w := f.prepareGrokExecution(domain.ManagedGrokSubscriptionsV1)
+	lease, err := f.takeExecution(w, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	messages := f.recordLogs(nil)
+	restore := f.breakWorkerInstanceReads()
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, true, false, true); err == nil {
+		t.Fatal("a Finish was accepted although the Worker instance could not be read")
+	}
+	restore()
+	_, a := f.record()
+	if a.Subscription.Lease == nil || a.Subscription.RecoveryRequired || a.Health == domain.AccountFailed || a.Subscription.Generation != generation {
+		t.Fatal("a failed instance lookup fenced or released the lease")
+	}
+	if slices.Contains(messages(), "grok_subscription_replacement_fenced") || slices.Contains(messages(), "grok_subscription_finish_refused") {
+		t.Fatal("a failed instance lookup was handled as a replacement")
+	}
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, true, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, a := f.record(); a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Health != domain.AccountReady {
+		t.Fatal("the retried Finish did not release the lease once the instance could be read")
+	}
+}
+
+// The same holds when the instance can be read at validation but not inside the
+// settlement transaction: the settlement does not commit and is not treated as a
+// replacement, so the instance-wide lost-Worker fence is never persisted for a
+// storage failure. The ordinary post-validation owner fence still holds the
+// lease for the original cleanup-only recovery, as for every other settlement
+// failure, and that report releases it.
+func TestGrokExecutionInstanceLookupFailureWhileSettlingIsNotAReplacement(t *testing.T) {
+	f := newGrokFixture(t)
+	generation := f.login("synthetic-principal-1")
+	w := f.prepareGrokExecution(domain.ManagedGrokSubscriptionsV1)
+	lease, err := f.takeExecution(w, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var restore func()
+	messages := f.recordLogs(func(message string) {
+		if message == "grok_subscription_finish_validated" && restore == nil {
+			restore = f.breakWorkerInstanceReads()
+		}
+	})
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, true, false, true); err == nil {
+		t.Fatal("a Finish was accepted although the Worker instance could not be read while settling")
+	}
+	if restore == nil {
+		t.Fatal("the settlement was not reached")
+	}
+	restore()
+	got := messages()
+	if slices.Contains(got, "grok_subscription_replacement_fenced") || slices.Contains(got, "grok_subscription_replacement_fence_unconfirmed") || slices.Contains(got, "grok_subscription_finish_refused") {
+		t.Fatal("a failed instance lookup was handled as a replacement")
+	}
+	if !slices.Contains(got, "grok_subscription_finish_instance_lookup_failed") {
+		t.Fatal("the failed lookup was not logged")
+	}
+	_, a := f.record()
+	if a.Subscription.Lease == nil || a.Subscription.Generation != generation {
+		t.Fatal("a failed settlement released the lease or changed the generation")
+	}
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, false, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, a := f.record(); a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Health != domain.AccountReady || a.Subscription.Generation != generation {
+		t.Fatal("the original owner could not settle the lease")
+	}
+}
+
+// Recovery from a replaced instance restores readiness only while the stored
+// generation still opens, as for every other fence.
+func TestGrokExecutionReplacedInstanceRecoveryKeepsAnUnusableGenerationFailed(t *testing.T) {
+	f := newGrokFixture(t)
+	generation := f.login("synthetic-principal-1")
+	w := f.prepareGrokExecution(domain.ManagedGrokSubscriptionsV1)
+	lease, err := f.takeExecution(w, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.replaceInstance(w)
+	delete(f.secrets.values, credentials.Ref{Owner: f.input.AccountID, ID: generation, Purpose: credentials.AccountLogin})
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, false, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, a := f.record(); a.Subscription.Lease != nil || a.Health != domain.AccountFailed {
+		t.Fatal("recovery restored readiness on a credential that no longer opens")
+	}
+}
+
+// The instance can be replaced between the Finish validation and the settlement
+// commit, while the rotated bundle is being staged. The settlement checks the
+// instance again inside its own transaction.
+func TestGrokExecutionInstanceReplacedWhileStagingRefusesTheRefresh(t *testing.T) {
+	f := newGrokFixture(t)
+	generation := f.login("synthetic-principal-1")
+	w := f.prepareGrokExecution(domain.ManagedGrokSubscriptionsV1)
+	lease, err := f.takeExecution(w, domain.NewID())
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.secrets.afterPut = func() { f.replaceInstance(w) }
+	rotated := domain.NewID()
+	if _, err := f.finishExecution(w, lease, rotated, f.grokRotatedEnvelope(rotated), true, true, true); err == nil {
+		t.Fatal("a refresh was published after its instance was replaced")
+	}
+	f.secrets.afterPut = nil
+	_, a := f.record()
+	if a.Subscription.Generation != generation || a.Subscription.Lease == nil || !a.Subscription.RecoveryRequired {
+		t.Fatal("the refused refresh changed the generation or left no recovery obligation")
+	}
+	if refs := f.references(); len(refs) != 1 || !refs[generation] {
+		t.Fatal("the refused refresh left its staged generation")
+	}
+	if _, err := f.finishExecution(w, lease, domain.NewID(), nil, false, false, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, a := f.record(); a.Subscription.Lease != nil || a.Subscription.RecoveryRequired || a.Health != domain.AccountReady {
+		t.Fatal("the original owner could not settle the lease")
 	}
 }
 

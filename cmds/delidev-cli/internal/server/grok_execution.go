@@ -65,6 +65,18 @@ func (s *Service) grokExecutionLeaseView(ctx context.Context, tx *store.Tx, id, 
 	return r, a, *l, nil
 }
 
+// workerInstanceReplaced reports whether the machine's current Worker instance
+// differs from the one that owns the lease. Unlike currentInstance it does not
+// fold a failed lookup into the answer: a storage error is returned as an error
+// so it can never be mistaken for a replacement, which fences the lease.
+func workerInstanceReplaced(tx *store.Tx, machine, instance domain.ID) (bool, error) {
+	current, _, err := tx.WorkerInstance(machine)
+	if err != nil {
+		return false, err
+	}
+	return current != instance, nil
+}
+
 // grokExecuteLease reports whether the account currently holds the named Execute
 // lease. A lease that is gone or of another action returns false, so a replayed
 // Finish of a released lease reaches the receipt replay of the shared Finish.
@@ -290,8 +302,28 @@ func (s *Service) finishGrokExecution(ctx context.Context, req *connect.Request[
 	c := req.Header().Get(rpc.CorrelationHeader)
 	m := req.Msg.Mutation
 	owned := false
+	// replaced reports that the machine's current Worker instance is no longer
+	// the lease owner. The asynchronous lost-Worker fence may not have run yet,
+	// so Finish decides this itself instead of waiting for it, and it persists
+	// that fence itself when it refuses a report because of the replacement.
+	replaced := false
 	defer func() {
-		if returned != nil && owned {
+		if returned == nil {
+			return
+		}
+		fenced := false
+		if replaced {
+			// The same fence the lost-Worker callback records, so a refused report
+			// never leaves the lease held without the recovery obligation (new Takes
+			// would stay busy while the recovery watch ignored the unfenced lease).
+			if err := s.retainLostSubscriptionLeases(domain.ID(req.Msg.MachineId), domain.ID(req.Msg.InstanceId), true); err != nil {
+				s.logger.Warn("grok_subscription_replacement_fence_unconfirmed", "phase", grokExecutionPhase, "account_id", m.Id, "lease_id", req.Msg.LeaseId, "code", domain.SafeError(err).Code)
+			} else {
+				fenced = true
+				s.logger.Info("grok_subscription_replacement_fenced", "phase", grokExecutionPhase, "account_id", m.Id, "lease_id", req.Msg.LeaseId)
+			}
+		}
+		if owned && !fenced {
 			if err := s.markSubscriptionRecovery(domain.ID(m.Id)); err != nil {
 				s.logger.Warn("grok_subscription_recovery_unconfirmed", "phase", grokExecutionPhase, "account_id", m.Id, "code", domain.SafeError(err).Code)
 			}
@@ -314,7 +346,17 @@ func (s *Service) finishGrokExecution(ctx context.Context, req *connect.Request[
 				return err
 			}
 			_, original, _, err = s.grokExecutionLeaseView(ctx, tx, input.Account, input.Lease, input.Machine, input.Instance, true)
-			return err
+			if err != nil {
+				return err
+			}
+			// A failed lookup aborts the request: only a verified mismatch is a
+			// replacement, so replaced stays false and nothing is fenced for it.
+			changed, err := workerInstanceReplaced(tx, input.Machine, input.Instance)
+			if err != nil {
+				return err
+			}
+			replaced = changed
+			return nil
 		})
 		if err != nil {
 			return nil, rpc.Error(err, c)
@@ -332,9 +374,12 @@ func (s *Service) finishGrokExecution(ctx context.Context, req *connect.Request[
 		// lease, so it is held to the cleanup-only recovery like any other fence and
 		// can neither publish a rotated bundle nor report success.
 		staleEpoch := lease.Epoch != s.subscriptionServerEpoch()
-		recoveryFence := state.RecoveryRequired && (!lease.CleanupUnconfirmed || cleanupOnly || staleEpoch)
+		// A replaced Worker instance lost the lease like a restart did: it may only
+		// settle the cleanup of its own private home, never report success or
+		// publish a rotated bundle, even before the asynchronous fence is recorded.
+		recoveryFence := state.RecoveryRequired && (!lease.CleanupUnconfirmed || cleanupOnly || staleEpoch) || replaced
 		if state.Generation != input.Generation || lease.Generation != input.Generation || lease.Revision != input.Revision || recoveryFence && (!input.Cleanup || input.Success || input.Refresh || len(req.Msg.Bundle) != 0) {
-			s.logger.WarnContext(ctx, "grok_subscription_finish_refused", "phase", grokExecutionPhase, "account_id", input.Account, "lease_id", input.Lease, "recovery_fence", recoveryFence)
+			s.logger.WarnContext(ctx, "grok_subscription_finish_refused", "phase", grokExecutionPhase, "account_id", input.Account, "lease_id", input.Lease, "recovery_fence", recoveryFence, "replaced_instance", replaced)
 			return nil, rpc.Error(subscriptionDenied(), c)
 		}
 		if !state.RecoveryRequired && lease.Epoch != s.subscriptionServerEpoch() {
@@ -347,6 +392,7 @@ func (s *Service) finishGrokExecution(ctx context.Context, req *connect.Request[
 			return nil, rpc.Error(subscriptionDenied(), c)
 		}
 		owned = true
+		s.logger.DebugContext(ctx, "grok_subscription_finish_validated", "phase", grokExecutionPhase, "account_id", input.Account, "lease_id", input.Lease, "recovery_fence", recoveryFence, "replaced_instance", replaced, "success", input.Success, "refresh", input.Refresh, "cleanup_confirmed", input.Cleanup)
 		credentialUsable := false
 		if recoveryFence {
 			credentialUsable = s.grokCredentialUsable(ctx, input.Account, input.Generation)
@@ -403,11 +449,28 @@ func (s *Service) finishGrokExecution(ctx context.Context, req *connect.Request[
 			if err != nil {
 				return nil, err
 			}
+			// A failed lookup aborts the settlement without marking a replacement, so
+			// the instance-wide fence is only ever persisted for a verified mismatch.
+			replacedNow, err := workerInstanceReplaced(tx, input.Machine, input.Instance)
+			if err != nil {
+				s.logger.WarnContext(ctx, "grok_subscription_finish_instance_lookup_failed", "phase", grokExecutionPhase, "account_id", input.Account, "lease_id", input.Lease, "code", domain.SafeError(err).Code)
+				return nil, err
+			}
 			state := a.Subscription
 			if state.RecoveryRequired != original.Subscription.RecoveryRequired || state.Generation != input.Generation || state.Lease.Revision != input.Revision || !state.RecoveryRequired && state.Lease.Epoch != s.subscriptionServerEpoch() {
 				return nil, subscriptionDenied()
 			}
 			switch {
+			case replacedNow && !recoveryFence:
+				// The instance was replaced after the report was validated as the
+				// current owner's, whatever it carries: a cleanup-only report that
+				// found the lease unfenced is the unverified-exit report and would
+				// only fence it. Refuse it whole: the staged generation is retired and
+				// the lease is fenced here for the original cleanup-only recovery,
+				// which a fully validated report then settles.
+				replaced = true
+				s.logger.WarnContext(ctx, "grok_subscription_finish_refused", "phase", grokExecutionPhase, "account_id", input.Account, "lease_id", input.Lease, "recovery_fence", recoveryFence, "replaced_instance", true)
+				return nil, subscriptionDenied()
 			case !input.Cleanup:
 				// Keep the lease and the old generation denied. The original owner
 				// reports the private cleanup again.
