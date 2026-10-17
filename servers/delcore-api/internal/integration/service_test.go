@@ -2961,6 +2961,85 @@ func TestTenantBlockedReflectsExpiredPeriod(t *testing.T) {
 	}
 }
 
+func TestExpiredPeriodQueuesBlockingNotice(t *testing.T) {
+	f := newSubscriptionOrderFixture(t)
+	ctx := context.Background()
+	f.pay(t)
+	if _, e := f.db.Pool.Exec(ctx, "UPDATE users SET email='owner@example.test' WHERE id=$1", f.userID); e != nil {
+		t.Fatal(e)
+	}
+	end := time.Now().UTC().Truncate(time.Microsecond).Add(24 * time.Hour)
+	if _, e := f.db.Pool.Exec(ctx, "UPDATE tenants SET period_start=$2,period_end=$3 WHERE id=$1", f.tenant, end.AddDate(0, -1, 0), end); e != nil {
+		t.Fatal(e)
+	}
+	notice := func(reason string) (bool, int) {
+		t.Helper()
+		var active bool
+		if e := f.db.Pool.QueryRow(ctx, "SELECT COALESCE((SELECT active FROM billing_notices WHERE tenant_id=$1 AND reason=$2),false)", f.tenant, reason).Scan(&active); e != nil {
+			t.Fatal(e)
+		}
+		var sent int
+		if e := f.db.Pool.QueryRow(ctx, "SELECT count(*) FROM jobs WHERE tenant_id=$1 AND kind='email' AND dedup_key LIKE $2", f.tenant, "notice:%:"+reason+":%").Scan(&sent); e != nil {
+			t.Fatal(e)
+		}
+		return active, sent
+	}
+	maintain := func(now time.Time) {
+		t.Helper()
+		if e := f.w.Maintain(ctx, now); e != nil {
+			t.Fatal(e)
+		}
+	}
+	maintain(end.Add(-time.Microsecond))
+	if active, sent := notice("period_expired"); active || sent != 0 {
+		t.Fatal("notice before the period ended", active, sent)
+	}
+	maintain(end)
+	maintain(end.Add(time.Hour))
+	if active, sent := notice("period_expired"); !active || sent != 1 {
+		t.Fatal("expired period queued no single notice", active, sent)
+	}
+	if active, _ := notice("renewal"); active {
+		t.Fatal("expiry was reported as a payment failure")
+	}
+	var text string
+	if e := f.db.Pool.QueryRow(ctx, "SELECT payload->>'text' FROM jobs WHERE tenant_id=$1 AND kind='email' AND dedup_key LIKE 'notice:%:period_expired:%'", f.tenant).Scan(&text); e != nil || strings.Contains(strings.ToLower(text), "failed") {
+		t.Fatal("expiry notice claims a payment failure", text, e)
+	}
+	// A confirmed payment failure keeps its own notice and replaces the expiry one.
+	if _, e := f.db.Pool.Exec(ctx, "UPDATE tenants SET renewal_failed=true WHERE id=$1", f.tenant); e != nil {
+		t.Fatal(e)
+	}
+	maintain(end.Add(2 * time.Hour))
+	if active, _ := notice("period_expired"); active {
+		t.Fatal("expiry notice stayed active beside the payment failure")
+	}
+	if active, sent := notice("renewal"); !active || sent != 1 {
+		t.Fatal("payment failure notice missing", active, sent)
+	}
+	// A matching confirmed renewal clears the expiry notice.
+	if _, e := f.db.Pool.Exec(ctx, "UPDATE tenants SET renewal_failed=false WHERE id=$1", f.tenant); e != nil {
+		t.Fatal(e)
+	}
+	renewal := f.transaction
+	renewal.ID = "txn_renewal"
+	renewal.Origin = "subscription_recurring"
+	renewal.BillingPeriod.StartsAt = end
+	renewal.BillingPeriod.EndsAt = end.AddDate(0, 1, 0)
+	if e := f.w.ApplyTransaction(ctx, renewal, end); e != nil {
+		t.Fatal(e)
+	}
+	maintain(end.Add(3 * time.Hour))
+	if active, _ := notice("period_expired"); active {
+		t.Fatal("expiry notice survived the renewal")
+	}
+	// A later expiry of the renewed period notifies again.
+	maintain(end.AddDate(0, 1, 0).Add(time.Hour))
+	if active, sent := notice("period_expired"); !active || sent != 2 {
+		t.Fatal("later expiry did not notify again", active, sent)
+	}
+}
+
 func TestFreePlanAuthorizationIgnoresPeriodEnd(t *testing.T) {
 	f := newSubscriptionOrderFixture(t)
 	ctx := context.Background()
