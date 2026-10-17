@@ -43,6 +43,7 @@ import {
   type ClaudeUsageProjection,
 } from "./claude-usage-state";
 import { document, object, text } from "./documents";
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { validInstallationVersion } from "./harness-version";
 import { LocalizedText, copy, useLocale } from "./localization";
 import { useRetainedMutation } from "./mutation";
@@ -893,8 +894,9 @@ function ClaudeUsageSection({ model }: { model: ClaudeUsageModel }) {
           {model.codeRequested || model.codeSubmitted ? (
             <form
               className="claude-usage-code"
+              onKeyDown={guardEnterSubmission}
               onSubmit={(event) => {
-                event.preventDefault();
+                if (!consumeFormSubmit(event)) return;
                 const value = code.current?.value ?? "";
                 if (!value || busy || model.codeSubmitted) return;
                 if (model.submitCode(value)) {

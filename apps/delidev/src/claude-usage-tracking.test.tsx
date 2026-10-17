@@ -42,6 +42,7 @@ import { MutationIntents } from "./mutation";
 import { SettingsLifetime } from "./settings-lifetime";
 import { SettingsDialogSize, SettingsTaskDialog } from "./settings-task";
 import { encode } from "./documents";
+import { pressEnter } from "./test-form-enter";
 
 // The two-second account read and the polls are slower than the default wait.
 configure({ asyncUtilTimeout: 5000 });
@@ -517,6 +518,54 @@ it("focuses the single write-only approval-code input and submits the code exact
   await waitFor(() => expect(input.disabled).toBe(true));
   fireEvent.click(screen.getByRole("button", { name: "Submit code" }));
   expect(value.submit).toHaveBeenCalledTimes(1);
+});
+
+it("submits the approval code with plain Enter exactly once and ignores held or composing Enter", async () => {
+  const value = mount({
+    usage: {
+      connection: "connecting",
+      generation,
+      operation: operation("waiting"),
+    },
+    progress: waitingProgress({ codeRequested: true }),
+  });
+  const input = (await screen.findByLabelText(
+    "Approval code",
+  )) as HTMLInputElement;
+  await waitFor(() => expect(input.disabled).toBe(false));
+  fireEvent.change(input, { target: { value: "code-789" } });
+  for (const press of [
+    { composing: true },
+    { keyCode: 229 },
+    { repeat: true },
+    { shiftKey: true },
+    { ctrlKey: true },
+    { altKey: true },
+    { metaKey: true },
+  ])
+    expect(pressEnter(input, press)).toBe(0);
+  expect(value.submit).not.toHaveBeenCalled();
+  expect(input.value).toBe("code-789");
+  expect(pressEnter(input)).toBe(1);
+  await waitFor(() => expect(value.submit).toHaveBeenCalledTimes(1));
+  expect(input.value).toBe("");
+});
+
+it("does not send a blank approval code with Enter", async () => {
+  const value = mount({
+    usage: {
+      connection: "connecting",
+      generation,
+      operation: operation("waiting"),
+    },
+    progress: waitingProgress({ codeRequested: true }),
+  });
+  const input = (await screen.findByLabelText(
+    "Approval code",
+  )) as HTMLInputElement;
+  await waitFor(() => expect(input.disabled).toBe(false));
+  pressEnter(input);
+  expect(value.submit).not.toHaveBeenCalled();
 });
 
 it("rejects an invalid approval code locally and keeps the input", async () => {
