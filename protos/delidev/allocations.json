@@ -15401,6 +15401,20 @@
       "declaration": "ListProviderInventoryRequest",
       "member": "compatible_account_api_protocol",
       "number": 5
+    },
+    {
+      "pr": 4154,
+      "kind": "enum",
+      "declaration": "SystemCapability",
+      "member": "SYSTEM_CAPABILITY_CODEX_OPENROUTER_TOOLS_V1",
+      "number": 108
+    },
+    {
+      "pr": 4154,
+      "kind": "enum",
+      "declaration": "WorkerCapability",
+      "member": "WORKER_CAPABILITY_CODEX_OPENROUTER_TOOLS_V1",
+      "number": 73
     }
   ],
   "rpcReservations": [

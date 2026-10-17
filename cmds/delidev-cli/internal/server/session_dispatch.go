@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/apiproxy"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/domain"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/harness/codex"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/providers"
@@ -379,6 +380,25 @@ func checkedExecutionAssignmentUnsized(tx *store.Tx, sr store.Record, session do
 	input.Version, input.Startup, input.Installation = 4, selection, domain.Installation{}
 	input.NativeDynamicTools = input.Configuration.Harness == domain.Codex && input.Configuration.SidechatPolicy == "" && slices.Contains(machine.WorkerCapabilities, domain.CodexDynamicToolsV1)
 	input.NativeImageGeneration = input.Configuration.Harness == domain.Codex && input.Configuration.Subscription && input.Configuration.SidechatPolicy == "" && slices.Contains(machine.WorkerCapabilities, domain.NativeImageGenerationV1)
+	priorOpenRouterTools := input.NativeOpenRouterTools
+	input.NativeOpenRouterTools = false
+	if (input.Continuation == nil && input.Fork == nil || priorOpenRouterTools) && input.NativeDynamicTools && !input.Configuration.Subscription && slices.Contains(machine.WorkerCapabilities, domain.CodexOpenRouterToolsV1) && slices.Contains(machine.WorkerCapabilities, domain.NativeImageGenerationV1) {
+		accountRow, accountErr := tx.Get(domain.AccountKind, input.AccountID)
+		if accountErr != nil {
+			return empty, accountErr
+		}
+		account, accountErr := store.Decode[domain.Account](accountRow)
+		if accountErr != nil {
+			return empty, accountErr
+		}
+		provider, providerErr := accountAPIProvider(tx, account)
+		if providerErr != nil {
+			return empty, providerErr
+		}
+		if apiproxy.OpenRouterToolProvider(provider) {
+			input.NativeOpenRouterTools, input.NativeImageGeneration = true, true
+		}
+	}
 	input.Preparation, input.Manifest = job.Input, job.Output
 	if err := requireNamedPreparation(machine, input.Preparation); err != nil {
 		return empty, err
@@ -406,6 +426,9 @@ func checkedHistoricalExecutionSource(tx *store.Tx, sr store.Record, session dom
 }
 
 func checkedExecutionSourceWith(tx *store.Tx, sr store.Record, session domain.Session, machine domain.Machine, input domain.ExecutionJobInput, owns func(domain.ExecutionJobInput) bool) error {
+	if input.NativeOpenRouterTools && !slices.Contains(machine.WorkerCapabilities, domain.CodexOpenRouterToolsV1) {
+		return executionEventConflict()
+	}
 	if input.NativeDynamicTools && !slices.Contains(machine.WorkerCapabilities, domain.CodexDynamicToolsV1) {
 		return executionEventConflict()
 	}

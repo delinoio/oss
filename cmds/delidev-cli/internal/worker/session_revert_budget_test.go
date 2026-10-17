@@ -75,6 +75,10 @@ func TestRetainedHistoryFrameProfileFollowsOriginalImageGeneration(t *testing.T)
 		{"original-generation", original(func(*domain.ExecutionJobInput) {}), codex.ImageHistoryFrameProfile},
 		{"no-generation", original(func(i *domain.ExecutionJobInput) { i.NativeImageGeneration = false }), codex.DefaultFrameProfile},
 		{"api-account", original(func(i *domain.ExecutionJobInput) { i.Configuration.Subscription = false }), codex.DefaultFrameProfile},
+		{"selected-openrouter", original(func(i *domain.ExecutionJobInput) {
+			i.Configuration.Subscription = false
+			i.NativeOpenRouterTools = true
+		}), codex.ImageHistoryFrameProfile},
 		{"sidechat", original(func(i *domain.ExecutionJobInput) { i.Configuration.SidechatPolicy = domain.CodexReadOnlySidechatV1 }), codex.DefaultFrameProfile},
 		{"other-harness", original(func(i *domain.ExecutionJobInput) { i.Configuration.Harness = domain.ClaudeCode }), codex.DefaultFrameProfile},
 	} {

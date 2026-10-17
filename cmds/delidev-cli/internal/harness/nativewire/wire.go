@@ -412,20 +412,20 @@ func (c *Connection) Reply(ctx context.Context, event Event, result any) error {
 	if err != nil || event.Kind != ServerRequest {
 		return domain.Fail(domain.InvalidArgument, "A native server request is required.", "Reply to the original pending interaction.")
 	}
-	raw, err := c.resultEnvelope(event, result)
+	raw, err := c.resultEnvelope(event, result, MaxFrame)
 	if err != nil {
 		return err
 	}
 	return c.replyEnvelope(ctx, event, key, raw)
 }
 
-func (c *Connection) resultEnvelope(event Event, result any) ([]byte, error) {
+func (c *Connection) resultEnvelope(event Event, result any, limit int) ([]byte, error) {
 	resultJSON, err := json.Marshal(result)
 	if err != nil {
 		return nil, domain.Fail(domain.InvalidArgument, "Invalid native response.", "Use the original interaction's typed response schema.")
 	}
 	raw, err := json.Marshal(envelope{JSONRPC: c.jsonrpc, ID: event.ID, Result: resultJSON})
-	if err != nil || len(raw) > MaxFrame {
+	if err != nil || len(raw) > limit {
 		return nil, domain.Fail(domain.ResourceExhausted, "Native response exceeds its bound.", "Reduce the response size.")
 	}
 	return raw, nil
@@ -436,6 +436,20 @@ func (c *Connection) resultEnvelope(event Event, result any) ([]byte, error) {
 // A stale, canceled or replaced arrival never invokes it. Once claimed, even a
 // production/encoding failure retains uncertainty and cannot authorize resampling.
 func (c *Connection) ReplyGenerated(ctx context.Context, event Event, produce func() (any, error)) error {
+	return c.replyGenerated(ctx, event, produce, MaxFrame)
+}
+
+// ReplyGeneratedImage admits the existing image frame bound in the reverse
+// direction for an original dynamic-tool arrival only. Ordinary approvals,
+// questions and all unselected connections keep their original response bound.
+func (c *Connection) ReplyGeneratedImage(ctx context.Context, event Event, produce func() (any, error)) error {
+	if c.profile != ProfileImage || event.Method != "item/tool/call" {
+		return domain.Fail(domain.Unsupported, "The native connection has no dynamic image response profile.", "Use the original selected image tool arrival.")
+	}
+	return c.replyGenerated(ctx, event, produce, c.frameLimit())
+}
+
+func (c *Connection) replyGenerated(ctx context.Context, event Event, produce func() (any, error), limit int) error {
 	key, err := idKey(event.ID)
 	if err != nil || event.Kind != ServerRequest || event.Token.Validate() != nil || produce == nil {
 		return domain.Fail(domain.InvalidArgument, "The original native server request is required.", "Retain its exact request and arrival identity before responding.")
@@ -452,9 +466,9 @@ func (c *Connection) ReplyGenerated(ctx context.Context, event Event, produce fu
 		c.fail(uncertain())
 		return uncertain()
 	}
-	raw, err := c.resultEnvelope(event, result)
+	raw, err := c.resultEnvelope(event, result, limit)
 	var checked envelope
-	if err != nil || domain.Decode(raw, &checked) != nil {
+	if err != nil || domain.DecodeBounded(raw, &checked, limit) != nil {
 		c.fail(uncertain())
 		return uncertain()
 	}
@@ -624,69 +638,73 @@ func idKey(raw json.RawMessage) (string, error) {
 	}
 	return "", protocolFailure()
 }
+func (c *Connection) rejectProtocol(reason string) error {
+	c.logger.Warn("native_protocol_rejected", "profile", c.profile, "reason", reason)
+	return protocolFailure()
+}
 func (c *Connection) receive(raw []byte) error {
 	if !c.protected.Safe(raw) {
 		return domain.Fail(domain.PermissionDenied, "The native protocol reflected protected runtime authority.", "Stop and reconcile the original runtime without publishing its private output.")
 	}
 	var message envelope
 	if err := domain.DecodeBounded(raw, &message, c.frameLimit()); err != nil {
-		return protocolFailure()
+		return c.rejectProtocol("envelope")
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil || fields == nil {
-		return protocolFailure()
+		return c.rejectProtocol("object")
 	}
 	_, hasMethod := fields["method"]
 	_, hasResult := fields["result"]
 	_, hasError := fields["error"]
 	_, hasParams := fields["params"]
 	if message.JSONRPC != "" && message.JSONRPC != "2.0" {
-		return protocolFailure()
+		return c.rejectProtocol("jsonrpc-version")
 	}
 	if c.jsonrpc != "" {
 		if string(fields["jsonrpc"]) != `"2.0"` {
-			return protocolFailure()
+			return c.rejectProtocol("jsonrpc-required")
 		}
 		for key := range fields {
 			switch key {
 			case "jsonrpc", "id", "method", "params", "result", "error":
 			default:
-				return protocolFailure()
+				return c.rejectProtocol("jsonrpc-extra-field")
 			}
 		}
 		if hasError {
 			var errorFields map[string]json.RawMessage
 			if json.Unmarshal(fields["error"], &errorFields) != nil {
-				return protocolFailure()
+				return c.rejectProtocol("error-object")
 			}
 			for key := range errorFields {
 				if key != "code" && key != "message" && key != "data" {
-					return protocolFailure()
+					return c.rejectProtocol("error-extra-field")
 				}
 			}
 		}
 	}
 	if message.EmittedAtMS != nil && (*message.EmittedAtMS < 0 || *message.EmittedAtMS > 253402300799999) {
-		return protocolFailure()
+		return c.rejectProtocol("emitted-time")
 	}
 	key := ""
 	if len(message.ID) > 0 {
 		var err error
 		key, err = idKey(message.ID)
 		if err != nil {
-			return err
+			return c.rejectProtocol("request-id")
 		}
 	}
 	if hasMethod {
 		if domain.Text(message.Method, "native method", 256, true) != nil || hasResult || hasError {
-			return protocolFailure()
+			return c.rejectProtocol("notification-shape")
 		}
 		event := Event{Kind: Notification, Method: message.Method, Params: message.Params, EmittedAtMS: message.EmittedAtMS, size: len(raw)}
 		c.mu.Lock()
 		defer c.mu.Unlock()
 		if key != "" {
 			if _, exists := c.incoming[key]; exists {
-				return protocolFailure()
+				return c.rejectProtocol("duplicate-arrival")
 			}
 			if len(c.incoming) >= maxPending {
 				return domain.Fail(domain.ResourceExhausted, "Too many pending native interactions.", "Resolve or cancel existing native interactions before resuming.")
@@ -697,7 +715,7 @@ func (c *Connection) receive(raw []byte) error {
 		return c.queueLocked(event)
 	}
 	if key == "" || hasParams || hasResult == hasError || (hasError && (message.Error == nil || message.Error.Code == nil || message.Error.Message == nil)) {
-		return protocolFailure()
+		return c.rejectProtocol("response-shape")
 	}
 	response := Response{Result: message.Result}
 	if message.Error != nil {
@@ -708,7 +726,7 @@ func (c *Connection) receive(raw []byte) error {
 	defer c.mu.Unlock()
 	p, exists := c.pending[key]
 	if !exists {
-		return protocolFailure()
+		return c.rejectProtocol("orphan-response")
 	}
 	delete(c.pending, key)
 	if p.abandoned {

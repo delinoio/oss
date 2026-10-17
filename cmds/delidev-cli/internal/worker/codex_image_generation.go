@@ -57,7 +57,7 @@ func (c *CodexEventPublisher) publishImageGeneration(ctx context.Context, event 
 // The profile never enables image generation, so the later clients stay
 // non-generating and recovery needs no credentials.
 func retainedHistoryFrameProfile(original domain.ExecutionJobInput) codex.FrameProfile {
-	if original.NativeImageGeneration && original.Configuration.Harness == domain.Codex && original.Configuration.Subscription && original.Configuration.SidechatPolicy == "" {
+	if original.NativeImageGeneration && (original.Configuration.Subscription || original.NativeOpenRouterTools) && original.Configuration.Harness == domain.Codex && original.Configuration.SidechatPolicy == "" {
 		return codex.ImageHistoryFrameProfile
 	}
 	return codex.DefaultFrameProfile

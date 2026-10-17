@@ -11,28 +11,29 @@ import (
 // arrives separately through an authenticated digest-only grant registration;
 // upstream credentials and raw execution tokens never belong in this document.
 type ExecutionJobInput struct {
-	SidechatRetry       *SidechatRetryExecution    `json:"sidechat_retry,omitempty"`
-	ContextRevision     uint64                     `json:"context_revision,omitempty"`
-	Retry               *ExecutionStartupRetry     `json:"retry,omitempty"`
-	Startup             *ExecutionStartupSelection `json:"startup,omitempty"`
-	Fork                *ForkExecution             `json:"fork,omitempty"`
-	Version             uint32                     `json:"version"`
-	SessionID           ID                         `json:"session_id"`
-	MachineID           ID                         `json:"machine_id"`
-	ExecutionID         ID                         `json:"execution_id"`
-	InputID             ID                         `json:"input_id"`
-	ThreadRequestID     ID                         `json:"thread_request_id"`
-	TurnRequestID       ID                         `json:"turn_request_id"`
-	Configuration       ExecutionConfiguration     `json:"configuration"`
-	ConfigurationDigest string                     `json:"configuration_digest"`
-	AccountID           ID                         `json:"account_id"`
-	ConnectionID        ID                         `json:"connection_id"`
-	Input               SessionInput               `json:"input"`
-	Installation        Installation               `json:"installation"`
-	Preparation         json.RawMessage            `json:"preparation"`
-	Manifest            json.RawMessage            `json:"manifest"`
-	Remediation         *PRFixExecution            `json:"remediation,omitempty"`
-	Continuation        *ExecutionContinuation     `json:"continuation,omitempty"`
+	NativeOpenRouterTools bool                       `json:"native_openrouter_tools,omitempty"`
+	SidechatRetry         *SidechatRetryExecution    `json:"sidechat_retry,omitempty"`
+	ContextRevision       uint64                     `json:"context_revision,omitempty"`
+	Retry                 *ExecutionStartupRetry     `json:"retry,omitempty"`
+	Startup               *ExecutionStartupSelection `json:"startup,omitempty"`
+	Fork                  *ForkExecution             `json:"fork,omitempty"`
+	Version               uint32                     `json:"version"`
+	SessionID             ID                         `json:"session_id"`
+	MachineID             ID                         `json:"machine_id"`
+	ExecutionID           ID                         `json:"execution_id"`
+	InputID               ID                         `json:"input_id"`
+	ThreadRequestID       ID                         `json:"thread_request_id"`
+	TurnRequestID         ID                         `json:"turn_request_id"`
+	Configuration         ExecutionConfiguration     `json:"configuration"`
+	ConfigurationDigest   string                     `json:"configuration_digest"`
+	AccountID             ID                         `json:"account_id"`
+	ConnectionID          ID                         `json:"connection_id"`
+	Input                 SessionInput               `json:"input"`
+	Installation          Installation               `json:"installation"`
+	Preparation           json.RawMessage            `json:"preparation"`
+	Manifest              json.RawMessage            `json:"manifest"`
+	Remediation           *PRFixExecution            `json:"remediation,omitempty"`
+	Continuation          *ExecutionContinuation     `json:"continuation,omitempty"`
 	// Frozen admission owns all output intents, including unpublished native calls.
 	NativeDynamicTools    bool `json:"native_dynamic_tools,omitempty"`
 	NativeImageGeneration bool `json:"native_image_generation,omitempty"`
@@ -131,7 +132,10 @@ func (i ExecutionJobInput) Validate() error {
 	if i.NativeDynamicTools && (i.Configuration.Harness != Codex || i.Configuration.SidechatPolicy != "") {
 		return Fail(Unsupported, "This assignment cannot observe original Codex dynamic tools.", "Preserve the negotiated original root execution owner.")
 	}
-	if i.NativeImageGeneration && (i.Configuration.Harness != Codex || !i.Configuration.Subscription || i.Configuration.SidechatPolicy != "") {
+	if i.NativeOpenRouterTools && (i.Configuration.Harness != Codex || i.Configuration.Subscription || i.Configuration.SidechatPolicy != "" || !i.NativeImageGeneration || !i.NativeDynamicTools) {
+		return Fail(Unsupported, "This assignment cannot use OpenRouter native tools.", "Preserve the negotiated original root API execution profile.")
+	}
+	if i.NativeImageGeneration && (i.Configuration.Harness != Codex || !i.Configuration.Subscription && !i.NativeOpenRouterTools || i.Configuration.SidechatPolicy != "") {
 		return Fail(Unsupported, "This assignment cannot generate native images.", "Preserve the original managed OpenAI execution profile.")
 	}
 	if err := i.ValidateImages(); err != nil {
