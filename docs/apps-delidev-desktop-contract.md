@@ -4057,10 +4057,13 @@ historical unfiltered request, so zero-account providers stay visible there.
 The filtered provider chain has its own pagination identity per protocol, so a
 harness change never reuses another harness's list.
 
-- Negotiation uses the response capability list, never the request. A response
+- Negotiation uses the response capability list, never the request, and covers
+  every accepted page of the chain, not only the latest response (a refresh during
+  a mixed-version rollout can mix filtered and unfiltered pages). A response
   without `COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1` came from a server that
-  ignored the field, so its list is unfiltered: the wizard shows no API choices
-  from it, stops paging it, and shows **Update the server to list API providers
+  ignored the field, so its list is unfiltered: when any page of the chain lacks the
+  capability the wizard shows no API choices from the whole chain, stops paging it,
+  and shows **Update the server to list API providers
   that have a compatible account for this harness.** (English and Korean) instead
   of a list or the empty message. Subscription choices, drafts and Next/Back are
   unaffected, and the wizard never falls back to an unfiltered API list.

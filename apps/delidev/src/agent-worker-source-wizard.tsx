@@ -278,14 +278,7 @@ function SourceGroup({
     false,
     harnessProtocol,
   );
-  // Older servers ignore the request field and return every enabled provider,
-  // so only a response that advertises the capability proves the list filtered.
-  const compatibleFilter =
-    providers.data === undefined
-      ? undefined
-      : providers.data.capabilities.includes(
-          ProviderInventoryCapability.COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1,
-        );
+  const compatibleFilter = providers.compatibleFilter;
   const provider = useQuery(
     ResourceQuery.getResource,
     {

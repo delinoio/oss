@@ -58,6 +58,13 @@ interface Options {
   initial?: Resource;
   /** Handles inventory reads after the first so a refresh can stall or fail. */
   later?: (request: ListProviderInventoryRequest) => Promise<never> | void;
+  /** Scripts each page of a chain: the provider indexes, the continuation and
+   * whether that single response advertises the compatible-account filter. */
+  pages?: (request: ListProviderInventoryRequest) => {
+    indexes: number[];
+    next: string;
+    advertised: boolean;
+  };
 }
 
 function fixture(options: Options = {}) {
@@ -98,6 +105,26 @@ function fixture(options: Options = {}) {
       const pending = options.later?.(request);
       if (pending) return pending;
     }
+    const scripted = options.pages?.(request);
+    if (scripted)
+      return {
+        entries: scripted.indexes.map((index) => ({
+          providerId: providers[index].id,
+          provider: providers[index],
+          displayName: names.get(providers[index].id)!,
+          enabled: true,
+        })),
+        nextPageToken: scripted.next,
+        capabilities: [
+          ProviderInventoryCapability.ACCOUNT_PROVIDER_FILTER,
+          ProviderInventoryCapability.ACCOUNT_TYPE_FILTER,
+          ...(scripted.advertised
+            ? [
+                ProviderInventoryCapability.COMPATIBLE_ACCOUNT_API_PROTOCOL_FILTER_V1,
+              ]
+            : []),
+        ],
+      };
     const ids = eligible(request.compatibleAccountApiProtocol);
     return {
       entries: (filtered || request.pageToken === ""
@@ -235,6 +262,66 @@ it("withholds the unfiltered list and shows update guidance on an older server",
   // The hidden unfiltered chain is never paged.
   await new Promise((resolve) => setTimeout(resolve, 50));
   expect(f.requests.every((request) => request.pageToken === "")).toBe(true);
+});
+
+/** A two-page provider chain whose pages advertise the filter per `advertised`. */
+function chain(advertised: { current: boolean[] }) {
+  return fixture({
+    pages: (request) => {
+      const index = request.pageToken ? 1 : 0;
+      return {
+        indexes: [index],
+        next: index ? "" : "page-1",
+        advertised: advertised.current[index],
+      };
+    },
+  });
+}
+const loadMore = async () =>
+  fireEvent.click(await screen.findByRole("button", { name: /Load more/ }));
+const apiOptions = (picker: HTMLElement) =>
+  optionIds(picker).filter((id) => id?.startsWith("api:"));
+
+it("offers every provider when each page of the chain advertises the filter", async () => {
+  const f = chain({ current: [true, true] });
+  const picker = await openSource("Codex");
+  await loadMore();
+  await waitFor(() =>
+    expect(apiOptions(picker)).toEqual([
+      `api:${f.providers[0].id}`,
+      `api:${f.providers[1].id}`,
+    ]),
+  );
+  expect(screen.queryByText(/Update the server/)).toBeNull();
+});
+
+it("withholds the whole chain when a later page was served without the filter", async () => {
+  const f = chain({ current: [true, false] });
+  const picker = await openSource("Codex");
+  await waitFor(() =>
+    expect(apiOptions(picker)).toEqual([`api:${f.providers[0].id}`]),
+  );
+  await loadMore();
+  await screen.findByText(/Update the server to list API providers/);
+  expect(apiOptions(picker)).toEqual([]);
+  expect(optionIds(picker).some((id) => id?.startsWith("subscription:"))).toBe(
+    true,
+  );
+  expect(screen.queryByText(/No enabled API provider/)).toBeNull();
+});
+
+it("withholds the whole chain when a refresh serves an earlier page without the filter", async () => {
+  const advertised = { current: [true, true] };
+  const f = chain(advertised);
+  const picker = await openSource("Codex");
+  await loadMore();
+  await waitFor(() => expect(apiOptions(picker)).toHaveLength(2));
+  // The last response still advertises the filter, but the first does not.
+  advertised.current = [false, true];
+  void f.client.invalidateQueries();
+  await screen.findByText(/Update the server to list API providers/);
+  expect(apiOptions(picker)).toEqual([]);
+  expect(screen.queryByText(/No enabled API provider/)).toBeNull();
 });
 
 it("keeps subscription selection and the draft usable on an older server", async () => {
