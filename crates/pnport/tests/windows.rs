@@ -964,8 +964,8 @@ fn directory_file_ids(root: &Path) {
         },
         Storage::FileSystem::{
             CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
-            FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES,
-            FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY, FILE_SHARE_DELETE, FILE_SHARE_READ,
+            FILE_SHARE_WRITE, OPEN_EXISTING,
         },
         System::{Threading::GetCurrentProcess, IO::IO_STATUS_BLOCK},
     };
@@ -1042,12 +1042,19 @@ fn directory_file_ids(root: &Path) {
     }
     /// The file reference number reported by a native open of `path`, or
     /// `None` when the caller cannot open the entry for its attributes.
+    ///
+    /// The reference handle mirrors the production open exactly: zero desired
+    /// access (the implicit attribute read), backup semantics and the full
+    /// share mode. Requesting any explicit access such as
+    /// `FILE_READ_ATTRIBUTES` could fail where the production open succeeds
+    /// (or the reverse) once an ACL denies that right, which would make the
+    /// test expect a zero id that production never returns.
     fn native_id(path: &Path) -> Option<u64> {
         let wide = pnport_core::windows::wide(path).unwrap();
         let handle = unsafe {
             CreateFileW(
                 wide.as_ptr(),
-                FILE_READ_ATTRIBUTES,
+                0,
                 FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                 std::ptr::null(),
                 OPEN_EXISTING,
