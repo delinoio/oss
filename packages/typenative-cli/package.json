@@ -20,10 +20,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "test": "pnpm build && node --test test/*.test.mjs",
-    "prepack": "pnpm build"
+    "prepack": "pnpm build",
+    "test:native": "pnpm build && node test/native-react.mjs"
   },
   "devDependencies": {
     "@types/node": "24.10.1",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "react": "19.3.1",
+    "@types/react": "19.2.14"
   }
 }

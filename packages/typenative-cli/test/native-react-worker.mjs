@@ -1,0 +1,156 @@
+import { readNativeArtifact } from "./native-artifact.mjs";
+import { attachProbeCancellation } from "./native-cancellation.mjs";
+import { createHash, randomUUID } from "node:crypto";
+import { mkdtemp, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
+import { isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { hostTarget, runProbeTool, Target, versions } from "../dist/core.js";
+
+import { createNativeResult, finalizeNativeResult } from "./native-result.mjs";
+
+import { hasCompilerDiagnostics } from "./native-diagnostics.mjs";
+
+const start = performance.now();
+const buildId = randomUUID();
+const target = hostTarget();
+const require = createRequire(import.meta.url);
+let compiler = process.env.TN_SCRIPTC || "scriptc";
+if (!isAbsolute(compiler) && /[/\\]/.test(compiler))
+  compiler = resolve(compiler);
+let directory;
+let phase = "prerequisites";
+let outcome;
+const controller = new AbortController();
+const detachCancellation = attachProbeCancellation(controller);
+async function run(command, args, cwd) {
+  const result = await runProbeTool(command, args, cwd, controller.signal);
+  if (controller.signal.aborted) throw new Error("TN_PROBE_INTERRUPTED");
+  return result;
+}
+function report(status, details = {}) {
+  outcome = createNativeResult(
+    status,
+    {
+      schemaVersion: 1,
+      buildId,
+      check: "react-core-subset",
+      versions,
+      target: target ?? null,
+      phase,
+      fullReactConformance: "unverified",
+      rendererAcceptance: "unverified",
+      engineAbsence: "unverified",
+    },
+    details,
+  );
+}
+try {
+  if (!target) throw new Error("TN_HOST_UNSUPPORTED");
+  const version = await run(compiler, ["--version"]);
+  if (
+    version.failed ||
+    version.status !== 0 ||
+    version.stdout.trim() !== versions.scriptc
+  ) {
+    throw new Error("TN_COMPILER_UNAVAILABLE_OR_MISMATCHED");
+  }
+  if (require("react/package.json").version !== versions.react)
+    throw new Error("TN_REACT_VERSION_MISMATCH");
+  directory = await mkdtemp(join(tmpdir(), "typenative-react-"));
+  const source = fileURLToPath(
+    new URL("fixtures/react-core.ts", import.meta.url),
+  );
+  const artifact = join(
+    directory,
+    target === Target.Windows ? "react-probe.exe" : "react-probe",
+  );
+  phase = "compile";
+  const result = await run(compiler, [
+    "build",
+    source,
+    "--npm-static",
+    "react",
+    "--print",
+    "diagnostics",
+    "--no-keep-llvm",
+    "-o",
+    artifact,
+  ]);
+  let diagnostics;
+  try {
+    diagnostics = JSON.parse(result.stdout);
+  } catch {
+    throw new Error("TN_COMPILER_DIAGNOSTICS_INVALID");
+  }
+  if (
+    diagnostics.schema !== "scriptc-diagnostics" ||
+    diagnostics.schemaVersion !== 1 ||
+    diagnostics.compilerVersion !== versions.scriptc
+  ) {
+    throw new Error("TN_COMPILER_DIAGNOSTICS_INVALID");
+  }
+  if (
+    result.failed ||
+    result.status !== 0 ||
+    diagnostics.success !== true ||
+    hasCompilerDiagnostics(diagnostics)
+  ) {
+    // Only expose compiler codes and numeric locations for this fixed fixture.
+    // Raw compiler messages can include installation paths and source content.
+    report("failed", {
+      code: "TN_REACT_COMPILE_FAILED",
+      diagnostics: (Array.isArray(diagnostics.diagnostics)
+        ? diagnostics.diagnostics
+        : []
+      ).map((item) => ({
+        code:
+          typeof item?.code === "string" && /^SC\d+$/.test(item.code)
+            ? item.code
+            : "UNKNOWN",
+        fixture: item?.file === source ? "react-core.ts" : null,
+        line: Number.isInteger(item?.line) ? item.line : null,
+        column: Number.isInteger(item?.column) ? item.column : null,
+      })),
+    });
+  } else {
+    const bytes = await readNativeArtifact(artifact, target);
+    phase = "execute";
+    const executed = await run(artifact, [], directory);
+    if (
+      executed.failed ||
+      executed.status !== 0 ||
+      executed.stdout.trim() !== "typenative-react-core-probe-v1"
+    ) {
+      throw new Error("TN_REACT_EXECUTION_FAILED");
+    }
+    report("passed", {
+      bytes: bytes.length,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+    });
+  }
+} catch (error) {
+  const code =
+    error instanceof Error && /^TN_[A-Z_]+$/.test(error.message)
+      ? error.message
+      : "TN_NATIVE_PROBE_FAILED";
+  report("failed", { code });
+} finally {
+  const result = await finalizeNativeResult(outcome, async () => {
+    if (directory) await rm(directory, { recursive: true, force: true });
+  });
+  if (controller.signal.aborted && result.phase !== "cleanup") {
+    result.status = "failed";
+    result.code = "TN_PROBE_INTERRUPTED";
+  }
+  detachCancellation();
+  if (process.connected) process.disconnect();
+  process.stdout.write(
+    JSON.stringify({
+      ...result,
+      durationMs: Math.round(performance.now() - start),
+    }) + "\n",
+  );
+  process.exitCode = result.status === "passed" ? 0 : 1;
+}
