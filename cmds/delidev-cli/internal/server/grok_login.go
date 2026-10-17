@@ -346,26 +346,44 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 	s.registerGrokLogin(original.ID, cancel)
 	defer s.unregisterGrokLogin(original.ID)
 	var cancelSeen atomic.Bool
+	// watchFailure holds the safe code of an operational watcher read failure. It
+	// is distinct from cancelSeen: only an explicit denial proves a cancellation.
+	var watchFailure atomic.Pointer[domain.Code]
 	watched := make(chan struct{})
 	go func() {
 		defer close(watched)
 		ticker := time.NewTicker(grokLoginPollInterval)
 		defer ticker.Stop()
 		for {
+			denied := false
 			err := s.Store.Read(ctx, func(tx *store.Tx) error {
+				if s.grokLoginWatchFault != nil {
+					if e := s.grokLoginWatchFault(); e != nil {
+						return e
+					}
+				}
 				_, a, err := grokSubscriptionAccount(tx, id, 0)
 				if err != nil {
 					return err
 				}
 				st := a.Subscription
 				if st == nil || st.RecoveryRequired || st.Pending == nil || st.Pending.ID != original.ID || st.Pending.Canceled || subscriptionActorValid(tx, original.Actor) != nil {
+					denied = true
 					return subscriptionDenied()
 				}
 				return nil
 			})
 			if err != nil {
 				if ctx.Err() == nil {
-					cancelSeen.Store(true)
+					if denied {
+						cancelSeen.Store(true)
+					} else {
+						// A storage or decode failure says nothing about the operator's
+						// intent: keep it distinct from a cancellation.
+						code := domain.SafeError(err).Code
+						watchFailure.Store(&code)
+						s.logger.WarnContext(ctx, "grok_login_watcher_read_failed", "phase", grokLoginPhase, "operation_id", original.ID, "correlation_id", original.ID, "code", code)
+					}
 				}
 				cancel()
 				return
@@ -385,6 +403,14 @@ func (s *Service) runGrokLogin(parent context.Context, id domain.ID) {
 	}
 	cancel()
 	<-watched
+	// A watcher read failure before the exchange claim is a failure, not a
+	// cancellation. The interrupted flow reports CANCELED only because the
+	// watcher stopped it; a claimed flow is already RECOVERY and an elapsed
+	// deadline stays EXPIRED. The settlement still maps a durable cancellation or
+	// revoked initiator to CANCELED.
+	if code := watchFailure.Load(); code != nil && !cancelSeen.Load() && out.state == domain.SubscriptionCanceled {
+		out = grokLoginOutcome{state: domain.SubscriptionFailed, reason: subscription.GrokReasonCallback, code: *code}
+	}
 	// Deadline and cancellation are classified after the exchange stopped.
 	if out.state == domain.SubscriptionFailed && out.code == "" {
 		out.code = grokReasonCode(out.reason)

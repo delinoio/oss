@@ -329,6 +329,15 @@ Lifecycle of one runner:
    shutdown, restart) settles RECOVERY_REQUIRED: the account stays fenced and the
    code is never sent again.
    Before the claim, cancellation settles CANCELED and the deadline EXPIRED.
+   Only an explicit denial observed by the cancellation watcher (a canceled
+   pending operation, a revoked initiator or a pending mismatch) is a cancellation.
+   An operational watcher read or decode failure before the claim stops the flow,
+   sends no token request, closes the loopback listener and settles FAILED with a
+   LOGIN `GrokDiagnostic` carrying the sanitized storage error code and the
+   operation id as correlation id (structured log `grok_login_watcher_read_failed`
+   with the code only). A durable cancellation or revoked initiator at settlement
+   still wins as CANCELED, an elapsed deadline stays EXPIRED, and a failed
+   settlement keeps the recovery fence. The device-code login shares this watcher.
 5. Success follows the Finish-equivalent server settlement: the sealed
    `GrokBundle` envelope is staged in the protected vault as the new
    `AccountLogin` generation, the keyed identity commitment is checked for
