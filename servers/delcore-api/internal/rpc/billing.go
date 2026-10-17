@@ -30,7 +30,10 @@ func (s *Server) RequestTopUp(ctx context.Context, r *connect.Request[pb.Request
 			return e
 		}
 		if t.Deleting {
-			return precondition("tenant is deleting")
+			balance, err := accounting.Parse(t.CreditBalance)
+			if err != nil || balance.Cmp(accounting.Zero()) >= 0 {
+				return precondition("deleting tenants can only top up to recover credit debt")
+			}
 		}
 		o.JobId, e = c.job(q.TenantId, "topup", "request:"+q.RequestKey, map[string]any{"amount": d.String(), "minor_units": units.String(), "currency": c.s.Config.Currency, "return_url": q.ReturnUrl})
 		return e
@@ -53,9 +56,12 @@ func (s *Server) SetAutoTopUp(ctx context.Context, r *connect.Request[pb.SetAuto
 		if e1 != nil || e2 != nil || e3 != nil || threshold.Cmp(accounting.Zero()) < 0 || amount.Cmp(accounting.Zero()) <= 0 || cap.Cmp(amount) < 0 || !amount.IsMinorExact(c.s.Config.MinorUnits) {
 			return invalid("invalid automatic top-up settings")
 		}
-		_, e := c.tx.Exec(c.ctx, "UPDATE tenants SET auto_threshold=$2,auto_amount=$3,auto_cap=$4,auto_suspended=false WHERE id=$1 AND deleting_at IS NULL", q.TenantId, threshold.String(), amount.String(), cap.String())
+		tag, e := c.tx.Exec(c.ctx, "UPDATE tenants SET auto_threshold=$2,auto_amount=$3,auto_cap=$4,auto_suspended=false WHERE id=$1 AND deleting_at IS NULL", q.TenantId, threshold.String(), amount.String(), cap.String())
 		if e != nil {
 			return e
+		}
+		if tag.RowsAffected() != 1 {
+			return precondition("tenant is deleting")
 		}
 		return c.audit(q.TenantId, "billing.auto_topup", "")
 	})
@@ -192,6 +198,14 @@ func (s *Server) CancelSubscription(ctx context.Context, r *connect.Request[pb.C
 	return run(s, ctx, r, o, func(c *call) error {
 		if e := c.require(r.Msg.TenantId, pb.Role_ROLE_BILLING); e != nil {
 			return e
+		}
+		var subscription string
+		var pending bool
+		if e := c.tx.QueryRow(c.ctx, "SELECT external_subscription_id,EXISTS(SELECT 1 FROM jobs WHERE tenant_id=t.id AND kind IN ('subscription','cancel') AND state IN ('pending','running','reconcile')) FROM tenants t WHERE id=$1", r.Msg.TenantId).Scan(&subscription, &pending); e != nil {
+			return e
+		}
+		if subscription == "" || pending {
+			return precondition("an active subscription without a pending change is required")
 		}
 		id, e := c.job(r.Msg.TenantId, "cancel", "request:"+r.Msg.RequestKey, map[string]any{"effective_from": "next_billing_period"})
 		o.JobId = id

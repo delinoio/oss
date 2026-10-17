@@ -217,7 +217,8 @@ func TestSampleClientAndAccounting(t *testing.T) {
 	if _, e = db.Pool.Exec(ctx, "UPDATE ledger SET amount=0 WHERE tenant_id=$1", tenant); e == nil {
 		t.Fatal("ledger update accepted")
 	}
-	topup, e := client.RequestTopUp(ctx, req(&pb.RequestTopUpRequest{RequestKey: key(), TenantId: tenant, Amount: "10", ReturnUrl: cfg.ReturnURLs[0]}, "owner"))
+	topupRequest := &pb.RequestTopUpRequest{RequestKey: key(), TenantId: tenant, Amount: "10", ReturnUrl: cfg.ReturnURLs[0]}
+	topup, e := client.RequestTopUp(ctx, req(topupRequest, "owner"))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -269,6 +270,9 @@ func TestSampleClientAndAccounting(t *testing.T) {
 	}
 	if _, e = client.AcceptOwnership(ctx, req(&pb.AcceptOwnershipRequest{RequestKey: key(), TenantId: tenant, TransferId: transfer.Msg.TransferId}, "member")); e != nil {
 		t.Fatal(e)
+	}
+	if _, e = client.RequestTopUp(ctx, req(topupRequest, "owner")); connect.CodeOf(e) != connect.CodePermissionDenied {
+		t.Fatal("cached mutation bypassed revoked billing role", e)
 	}
 	if _, e = client.RemoveMember(ctx, req(&pb.RemoveMemberRequest{RequestKey: key(), TenantId: tenant, UserId: member.Msg.UserId}, "member")); connect.CodeOf(e) != connect.CodeFailedPrecondition {
 		t.Fatal("last owner left", e)
@@ -784,5 +788,106 @@ func TestEmailRetriesPersistAndRecover(t *testing.T) {
 	}
 	if e := db.Pool.QueryRow(ctx, "SELECT state FROM jobs WHERE id=$1", jobID).Scan(&state); e != nil || state != "done" {
 		t.Fatal("email recovery", state, e)
+	}
+}
+
+func TestMonthlyRoundingIncludesPurchasedCredits(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	bootstrap(t, client)
+	svc, e := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "register fractional meter", Service: &pb.Service{Name: "fractional", ClientId: "service", Capabilities: []string{"execute"}, Scopes: []string{"usage:write"}}}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "register meter", Meter: &pb.Meter{ServiceId: svc.Msg.Service.Id, Name: "units"}}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	var plan string
+	if e = db.Pool.QueryRow(ctx, "SELECT id::text FROM plans WHERE is_default").Scan(&plan); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = client.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "fractional unit price", Price: &pb.Price{PlanId: plan, ServiceId: svc.Msg.Service.Id, Meter: "units", UnitPrice: "0.006", Included: "0", Currency: "USD"}}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	org, e := client.CreateTenant(ctx, req(&pb.CreateTenantRequest{RequestKey: key(), Name: "Rounding"}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	tenant := org.Msg.Tenant.Id
+	if _, e = db.Pool.Exec(ctx, "INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2,'credit',1,$1::uuid::text,now())", key(), tenant); e != nil {
+		t.Fatal(e)
+	}
+	now := time.Now().UTC()
+	closeAt := time.Date(now.Year(), now.Month()+1, 1, 0, 0, 0, 0, time.UTC).Add(time.Second)
+	w := &worker.Worker{DB: db, Config: cfg, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	for i := 0; i < 2; i++ {
+		if _, e = client.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: &pb.Usage{TenantId: tenant, ServiceId: svc.Msg.Service.Id, Meter: "units", Quantity: "1", EventKey: key(), OccurredAt: timestamppb.New(now)}}, "service")); e != nil {
+			t.Fatal(e)
+		}
+		if e = w.Maintain(ctx, closeAt); e != nil {
+			t.Fatal(e)
+		}
+		var balance string
+		if e = db.Pool.QueryRow(ctx, "SELECT sum(amount)::text FROM ledger WHERE tenant_id=$1", tenant).Scan(&balance); e != nil {
+			t.Fatal(e)
+		}
+		amount, e := accounting.Parse(balance)
+		if e != nil || amount.String() != "0.99" {
+			t.Fatal("monthly total must round once, including prepaid usage", balance, e)
+		}
+	}
+}
+
+func TestRetentionPreservesReplayTombstones(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	bootstrap(t, client)
+	svc, e := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "retention service", Service: &pb.Service{Name: "retention", ClientId: "service", Capabilities: []string{"execute"}, Scopes: []string{"usage:write"}}}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "retention meter", Meter: &pb.Meter{ServiceId: svc.Msg.Service.Id, Name: "units"}}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	var plan string
+	if e = db.Pool.QueryRow(ctx, "SELECT id::text FROM plans WHERE is_default").Scan(&plan); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = client.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "retention price", Price: &pb.Price{PlanId: plan, ServiceId: svc.Msg.Service.Id, Meter: "units", UnitPrice: "0", Included: "0", Currency: "USD"}}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	org, e := client.CreateTenant(ctx, req(&pb.CreateTenantRequest{RequestKey: key(), Name: "Retention"}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	tenant := org.Msg.Tenant.Id
+	report, e := client.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: &pb.Usage{TenantId: tenant, ServiceId: svc.Msg.Service.Id, Meter: "units", Quantity: "1", EventKey: key(), OccurredAt: timestamppb.Now()}}, "service"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = client.DeleteTenant(ctx, req(&pb.DeleteTenantRequest{RequestKey: key(), TenantId: tenant}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	cfg.DeletionGraceSeconds = 1
+	cfg.RawUsageRetentionSeconds = 3600
+	cfg.AccountingRetentionSeconds = 3600
+	cfg.AuditRetentionSeconds = 3600
+	w := &worker.Worker{DB: db, Config: cfg, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	future := time.Now().UTC().Add(48 * time.Hour)
+	if e = w.Maintain(ctx, future); e != nil {
+		t.Fatal(e)
+	}
+	var count int
+	if e = db.Pool.QueryRow(ctx, "SELECT count(*) FROM usage_events WHERE id=$1", report.Msg.UsageId).Scan(&count); e != nil || count != 1 {
+		t.Fatal("accounting retention removed evidence early", count, e)
+	}
+	if e = w.Maintain(ctx, future.Add(2*time.Hour)); e != nil {
+		t.Fatal(e)
+	}
+	if e = db.Pool.QueryRow(ctx, "SELECT count(*) FROM usage_events WHERE id=$1", report.Msg.UsageId).Scan(&count); e != nil || count != 0 {
+		t.Fatal("expired usage not removed", count, e)
+	}
+	if e = db.Pool.QueryRow(ctx, "SELECT count(*) FROM usage_replay WHERE event_id=$1", report.Msg.UsageId).Scan(&count); e != nil || count != 1 {
+		t.Fatal("replay identity lost", count, e)
 	}
 }

@@ -74,8 +74,8 @@ func (c Config) Validate() error {
 		return errors.New("invalid currency configuration")
 	}
 	for _, n := range []int{c.TimeoutSeconds, c.RetryLimit, c.RetrySeconds, c.RequestsPerMinute, c.InvitationSeconds, c.UsageLatenessSeconds, c.ReportingGraceSeconds, c.DeletionGraceSeconds, c.RawUsageRetentionSeconds, c.AccountingRetentionSeconds, c.AuditRetentionSeconds, c.WebhookRetentionSeconds, c.BacklogAlert, c.SettlementAlertSeconds} {
-		if n <= 0 {
-			return errors.New("all policy limits must be explicitly positive")
+		if n <= 0 || n > 100*365*24*60*60 {
+			return errors.New("policy limits must be explicitly positive and no greater than 100 years in seconds")
 		}
 	}
 	if c.TimeoutSeconds > 120 || c.MaxPayloadBytes < 1024 || c.MaxPayloadBytes > 16<<20 || c.RetryLimit > 100 {

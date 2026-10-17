@@ -1987,6 +1987,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Check API formatting, vet, builds, and unit tests
+        id: delcore-unit
         run: node scripts/ci/run-affected.mjs @delinoio/delcore-api ci:format ci:vet ci:build ci:unit
         env:
           FORCE_RUN: "true"
@@ -2020,15 +2021,40 @@ jobs:
           exit 1
 
       - name: Run PostgreSQL migration and integration tests
+        id: delcore-integration
         run: node scripts/ci/run-affected.mjs @delinoio/delcore-api ci:integration
         env:
           DELCORE_TEST_DATABASE_URL: postgres://delcore:delcore@127.0.0.1:5432/delcore_api_test?sslmode=disable
           FORCE_RUN: "true"
 
       - name: Validate OCI runtime and backup recovery
+        id: delcore-oci
         run: node scripts/ci/run-affected.mjs @delinoio/delcore-api ci:oci
         env:
           FORCE_RUN: "true"
+
+      - name: Record validation boundary
+        if: ${{ always() }}
+        env:
+          SOURCE_REVISION: ${{ github.sha }}
+          UNIT_RESULT: ${{ steps.delcore-unit.outcome }}
+          INTEGRATION_RESULT: ${{ steps.delcore-integration.outcome }}
+          OCI_RESULT: ${{ steps.delcore-oci.outcome }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { mkdirSync, writeFileSync } from 'node:fs';
+          mkdirSync('.turbo', { recursive: true });
+          writeFileSync('.turbo/delcore-validation.json', JSON.stringify({
+            sourceRevision: process.env.SOURCE_REVISION,
+            checks: [
+              { command: 'node scripts/ci/run-affected.mjs @delinoio/delcore-api ci:format ci:vet ci:build ci:unit', result: process.env.UNIT_RESULT },
+              { command: 'node scripts/ci/run-affected.mjs @delinoio/delcore-api ci:integration', result: process.env.INTEGRATION_RESULT },
+              { command: 'node scripts/ci/run-affected.mjs @delinoio/delcore-api ci:oci', result: process.env.OCI_RESULT }
+            ],
+            unperformed: ['Live Logto, Paddle and Cloudflare account acceptance', 'Production deployment and image publication'],
+            boundary: 'Disposable PostgreSQL, generated Connect clients, mocked providers and local OCI execution'
+          }, null, 2));
+          NODE
 
       - name: Stop PostgreSQL
         if: ${{ always() }}
@@ -2053,7 +2079,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: turbo-delcore-api-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: .turbo/runs/*.json
+          path: |
+            .turbo/runs/*.json
+            .turbo/delcore-validation.json
           if-no-files-found: ignore
 
   devhud-api:

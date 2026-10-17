@@ -307,7 +307,7 @@ func (w *Worker) adjustmentEvent(ctx context.Context, tx pgx.Tx, event provider.
 		prior = "0"
 	}
 	effect := "0"
-	if v.Status == "approved" && (v.Action == "refund" || v.Action == "chargeback") && (kind == "topup" || kind == "auto_topup") {
+	if v.Status == "approved" && (v.Action == "refund" || v.Action == "chargeback") {
 		amount, e := accounting.Parse(v.Totals.Subtotal)
 		if e != nil || amount.Cmp(accounting.Zero()) < 0 {
 			return errors.New("invalid adjustment amount")
@@ -322,7 +322,7 @@ func (w *Worker) adjustmentEvent(ctx context.Context, tx pgx.Tx, event provider.
 		other, _ := accounting.Parse(already)
 		total, _ := accounting.Parse(principal)
 		reversed, _ := accounting.Parse(effect)
-		if reversed.Add(other).Cmp(total) > 0 {
+		if (kind == "topup" || kind == "auto_topup") && reversed.Add(other).Cmp(total) > 0 {
 			return errors.New("adjustment exceeds purchased principal")
 		}
 	}
@@ -336,7 +336,12 @@ func (w *Worker) adjustmentEvent(ctx context.Context, tx pgx.Tx, event provider.
 	current, _ := accounting.Parse(effect)
 	delta := old.Sub(current)
 	if delta.Cmp(accounting.Zero()) != 0 {
-		if _, e = tx.Exec(ctx, "INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2,'refund',$3,$4,$5) ON CONFLICT(source_key) DO NOTHING", id(), tenant, delta.String(), "adjustment:"+v.ID+":"+event.OccurredAt.Format(time.RFC3339Nano), event.OccurredAt); e != nil {
+		ledgerKind := "payment_refund"
+		if kind == "topup" || kind == "auto_topup" {
+			ledgerKind = "refund"
+		}
+		// Recurring and invoice refunds are payment history, not purchased credit.
+		if _, e = tx.Exec(ctx, "INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2,$6,$3,$4,$5) ON CONFLICT(source_key) DO NOTHING", id(), tenant, delta.String(), "adjustment:"+v.ID+":"+event.OccurredAt.Format(time.RFC3339Nano), event.OccurredAt, ledgerKind); e != nil {
 			return e
 		}
 	}

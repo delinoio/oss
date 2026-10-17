@@ -75,6 +75,7 @@ func TestOCI(t *testing.T) {
 	}
 	cfg["database_url"] = "postgres://postgres:fixture-only@127.0.0.1:5432/delcore?sslmode=disable"
 	cfg["issuer"] = "http://127.0.0.1:8099"
+	cfg["paddle_url"] = "http://127.0.0.1:8099"
 	cfg["listen"] = "127.0.0.1:8080"
 	cfg["timeout_seconds"] = 5
 	raw, e = json.Marshal(cfg)
@@ -108,6 +109,43 @@ func TestOCI(t *testing.T) {
 		t.Fatal("application did not start")
 	}
 	mustFail(args...) // The database lock rejects another instance.
+	// Force a process death after the mock provider accepts a charge but before
+	// the worker receives or records the response. The fixture stays alive.
+	run("exec", name, "psql", "-U", "postgres", "-d", "delcore", "-v", "ON_ERROR_STOP=1", "-c", `
+INSERT INTO users VALUES('01900000-0000-7000-8000-000000000001','fixture','fixture','fixture@example.test',NULL);
+INSERT INTO plans VALUES('01900000-0000-7000-8000-000000000002','free',0,true,true,false);
+INSERT INTO tenants(id,name,personal,owner_id,plan_id,period_start,period_end) VALUES('01900000-0000-7000-8000-000000000003','Fixture',true,'01900000-0000-7000-8000-000000000001','01900000-0000-7000-8000-000000000002',now(),now()+interval '1 month');
+INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,available_at,created_at,updated_at) VALUES('01900000-0000-7000-8000-000000000004','01900000-0000-7000-8000-000000000003','topup','crash-fixture','{"amount":"10","minor_units":"1000","currency":"USD","return_url":"https://consumer.example.invalid/delcore/return"}',now(),now(),now());`)
+	accepted := false
+	for i := 0; i < 50; i++ {
+		if exec.Command("docker", "exec", name, "test", "-f", "/tmp/delcore-payment-created").Run() == nil {
+			accepted = true
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !accepted {
+		t.Fatal("fixture payment was not accepted")
+	}
+	run("kill", app)
+	if state := run("exec", name, "psql", "-U", "postgres", "-d", "delcore", "-Atc", "SELECT state FROM jobs WHERE dedup_key='crash-fixture'"); state != "running" {
+		t.Fatal("crash did not interrupt the response window", state)
+	}
+	run("start", app)
+	recovered := false
+	for i := 0; i < 30; i++ {
+		if run("exec", name, "psql", "-U", "postgres", "-d", "delcore", "-Atc", "SELECT state FROM jobs WHERE dedup_key='crash-fixture'") == "done" {
+			recovered = true
+			break
+		}
+		time.Sleep(time.Second)
+	}
+	if !recovered {
+		t.Fatal("payment was not reconciled after process death")
+	}
+	if balance := run("exec", name, "psql", "-U", "postgres", "-d", "delcore", "-Atc", "SELECT sum(amount) FROM ledger WHERE kind='credit'"); balance != "10" {
+		t.Fatal("recovered credit", balance)
+	}
 	run("stop", "--time", "15", app)
 	if code := run("inspect", "--format", "{{.State.ExitCode}}", app); code != "0" {
 		t.Fatal("unclean shutdown", code)

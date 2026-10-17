@@ -78,6 +78,30 @@ func (w *Worker) settle(ctx context.Context, tx pgx.Tx, now time.Time) error {
 		return e
 	}
 	for tenant, b := range batches {
+		// Meter totals have already been rounded in roundUsage. Purchased credit
+		// allocations may be fractional while other periods remain open. Carry
+		// that fraction across invoices by rounding cumulative tenant receivables.
+		var cumulativeText, paidText string
+		if e = tx.QueryRow(ctx, `SELECT (-COALESCE(sum(l.amount),0))::text,COALESCE((SELECT sum(billed_minor) FROM settlements WHERE tenant_id=$1),0)::text FROM ledger l JOIN tenants t ON t.id=l.tenant_id WHERE l.tenant_id=$1 AND l.kind='postpaid' AND (l.period_end<=$2 OR t.deleting_at<$3)`, tenant, now, now.Add(-time.Duration(w.Config.ReportingGraceSeconds)*time.Second)).Scan(&cumulativeText, &paidText); e != nil {
+			return e
+		}
+		cumulative, e := accounting.Parse(cumulativeText)
+		if e != nil {
+			return e
+		}
+		units, e := cumulative.MinorUnits(w.Config.MinorUnits)
+		if e != nil {
+			return e
+		}
+		paid, ok := new(big.Int).SetString(paidText, 10)
+		if !ok {
+			return accounting.ErrDecimal
+		}
+		units.Sub(units, paid)
+		if len(b.lines) > 0 {
+			b.lines[0].units.Add(b.lines[0].units, new(big.Int).Sub(units, b.units))
+		}
+		b.units = units
 		// A net credit remains an adjustment for the next bill. Do not request a
 		// provider refund or discard its original service and period attribution.
 		if b.units.Sign() < 0 {

@@ -105,7 +105,13 @@ func run[Q any, R any](s *Server, ctx context.Context, req *connect.Request[Q], 
 				return e
 			}
 			if withdrawing != nil {
-				return precondition("withdrawal is pending")
+				// Withdrawal blocks new registration and use, but the existing owner
+				// must retain narrowly scoped access to settle outstanding balances.
+				switch any(req.Msg).(type) {
+				case *pb.GetTenantRequest, *pb.ListLedgerRequest, *pb.ListUsageRequest, *pb.ListBillingHistoryRequest, *pb.RequestTopUpRequest, *pb.CancelSubscriptionRequest, *pb.WithdrawRequest:
+				default:
+					return precondition("withdrawal is pending")
+				}
 			}
 			c.actor = "user:" + c.user
 			var personal, configured bool
@@ -132,6 +138,9 @@ func run[Q any, R any](s *Server, ctx context.Context, req *connect.Request[Q], 
 				}
 				if len(cached) == 0 {
 					return precondition("cached response was removed under retention policy")
+				}
+				if e := c.authorizeReplay(any(req.Msg)); e != nil {
+					return e
 				}
 				return proto.Unmarshal(cached, any(out).(proto.Message))
 			}
@@ -301,4 +310,32 @@ func nonempty(s string, max int) error {
 		return invalid(fmt.Sprintf("value must contain 1 to %d bytes", max))
 	}
 	return nil
+}
+
+// Cached mutation results do not bypass current operator, service or tenant roles.
+func (c *call) authorizeReplay(request any) error {
+	if operator, ok := request.(interface{ GetReason() string }); ok {
+		return c.operator(operator.GetReason())
+	}
+	switch request.(type) {
+	case *pb.ReportUsageRequest, *pb.CorrectUsageRequest:
+		return c.serviceScope("usage:write")
+	}
+	scoped, ok := request.(interface{ GetTenantId() string })
+	if !ok {
+		if c.user == "" {
+			return forbidden()
+		}
+		return nil
+	}
+	switch request.(type) {
+	case *pb.SetMemberRolesRequest, *pb.RemoveMemberRequest, *pb.CreateInvitationRequest, *pb.RevokeInvitationRequest, *pb.SetGroupRequest, *pb.DeleteGroupRequest:
+		return c.require(scoped.GetTenantId(), pb.Role_ROLE_ADMIN)
+	case *pb.RequestTopUpRequest, *pb.SetAutoTopUpRequest, *pb.ChangeSubscriptionRequest, *pb.CancelSubscriptionRequest:
+		return c.require(scoped.GetTenantId(), pb.Role_ROLE_BILLING)
+	case *pb.DeleteTenantRequest, *pb.TransferOwnershipRequest:
+		return c.require(scoped.GetTenantId())
+	default:
+		return c.member(scoped.GetTenantId())
+	}
 }

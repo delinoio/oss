@@ -119,3 +119,6 @@ func (d Decimal) IsMinorExact(places int) bool {
 	}
 	return d.Cmp(Decimal{units, places}) == 0
 }
+
+// FromMinor converts a provider integer without using binary floating point.
+func FromMinor(units *big.Int, places int) Decimal { return Decimal{new(big.Int).Set(units), places} }

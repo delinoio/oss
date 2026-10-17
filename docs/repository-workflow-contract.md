@@ -805,4 +805,4 @@ The formatting job reuses the shared Node setup, frozen script-disabled install,
 
 ## Delcore validation
 
-The affected `delcore-api` Ubuntu job runs Go formatting, vet, build, unit tests and real PostgreSQL integration tests through the package-owned uncached tasks. Missing `DELCORE_TEST_DATABASE_URL` fails integration tests. Retain the default affected manual mode and existing release gates. OCI builds use the delcore Dockerfile without publishing an image. See [the server contract](servers-delcore-api-contract.md).
+The affected `delcore-api` Ubuntu job runs Go formatting, vet, build, unit tests and real PostgreSQL integration tests through the package-owned uncached tasks. Missing `DELCORE_TEST_DATABASE_URL` fails integration tests. Retain the default affected manual mode and existing release gates. OCI tests use the delcore Dockerfile to verify non-root startup, schema rejection, graceful shutdown and disposable backup restore without publishing an image. The job preserves source revision, commands, outcomes and unperformed account checks as a validation artifact. See [the server contract](servers-delcore-api-contract.md).
