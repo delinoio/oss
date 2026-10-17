@@ -21,6 +21,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type KeyboardEvent,
   type ReactNode,
 } from "react";
 import { useQueryClient } from "@tanstack/react-query";
@@ -38,6 +39,11 @@ import {
   useLocale,
   useProductMessage,
 } from "./localization";
+import {
+  classifyEnterSubmission,
+  consumeFormSubmit,
+  guardEnterSubmission,
+} from "./form-enter";
 import { useProjectRepositoryCatalog } from "./project-repositories";
 import { kindNames } from "./configuration-fields";
 import { MutationIntents } from "./mutation";
@@ -343,6 +349,20 @@ export function ProjectCreationWizard({
     setValidationField(undefined);
     setStep(step + 1);
   };
+  // Plain Enter in an eligible input runs the form's primary control once. While
+  // that control is disabled by an invalid step the browser submits nothing, so
+  // reveal and focus the original validation target without any mutation.
+  const enter = (event: KeyboardEvent<HTMLFormElement>) => {
+    const block = classifyEnterSubmission(event);
+    if (block !== undefined) {
+      guardEnterSubmission(event);
+      return;
+    }
+    if (blocked || !active || !visible || step === Step.Restrictions) return;
+    if (step === Step.Repositories ? validRepositories : configured) return;
+    event.preventDefault();
+    validate();
+  };
   const selected = (editable: boolean) => (
     <ProjectRepositoryOrder
       ids={ids}
@@ -358,11 +378,18 @@ export function ProjectCreationWizard({
         id={formId}
         ref={form}
         className="project-editor project-creation desktop-wizard"
+        noValidate
+        onKeyDown={enter}
         onSubmit={(event) => {
-          event.preventDefault();
-          // Enter in search/name fields must never bypass the explicit wizard steps.
-          if (step === Step.Restrictions && !saveDisabled && validate())
-            submit();
+          // The single primary control (Next on steps 1 and 2, Save on step 3) is the
+          // only submit path, so pointer, Enter and script submission advance
+          // exactly one step or save once.
+          if (!consumeFormSubmit(event)) return;
+          if (step === Step.Restrictions) {
+            if (!saveDisabled && validate()) submit();
+            return;
+          }
+          next();
         }}
       >
         <ol
@@ -704,8 +731,9 @@ export function ProjectCreationWizard({
               {copy("settings.retryTheSameConfiguration_630088")}
             </SettingsActionButton>
           ) : null}
-          {/* Keep the submit button separate: a browser can run the click's default
-          action after React turns the clicked Next button into a submit button. */}
+          {/* Keep Next and Save as separate keyed submit controls: a browser can run
+          the click's default action after React swaps the clicked control, so the
+          Save control must be a new element and never the clicked Next button. */}
           {step === Step.Restrictions ? (
             <SettingsActionButton
               icon={SettingsActionIcon.Save}
@@ -720,16 +748,12 @@ export function ProjectCreationWizard({
             <SettingsActionButton
               icon={SettingsActionIcon.Next}
               key="next"
-              type="button"
+              type="submit"
               className="primary"
               disabled={
                 blocked ||
                 (step === Step.Repositories ? !validRepositories : !configured)
               }
-              onClick={(event) => {
-                event.preventDefault();
-                next();
-              }}
             >
               {copy("project-creation.next")}
             </SettingsActionButton>

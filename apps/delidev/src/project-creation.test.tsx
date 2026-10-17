@@ -35,6 +35,7 @@ import {
 import { MutationIntents } from "./mutation";
 import { encode, type Document } from "./documents";
 import { i18n, SupportedLanguage } from "./localization";
+import { pressEnter } from "./test-form-enter";
 
 function reorder(position: number) {
   const grip = screen.getAllByRole("button", { name: /^Move repository/ })[
@@ -214,8 +215,12 @@ it("defaults the first primary, permits an explicit override, preserves configur
     (screen.getByRole("button", { name: "Next" }) as HTMLButtonElement)
       .disabled,
   ).toBe(false);
-  fireEvent.submit(name().form!);
+  expect(pressEnter(name())).toBe(1);
   expect(value.save).not.toHaveBeenCalled();
+  expect(document.activeElement).toBe(
+    screen.getByRole("heading", { name: "Usage restrictions" }),
+  );
+  previous();
   fireEvent.change(primary(), { target: { value: value.rows[1].id } });
   next();
   expect(value.save).not.toHaveBeenCalled();
@@ -1017,4 +1022,102 @@ it("returns a confirmed name collision to the retained name step and permits cor
   expect(JSON.parse(new TextDecoder().decode(request.documentJson)).name).toBe(
     "Beta",
   );
+});
+
+it("advances exactly one wizard step per plain Enter and saves once on the final step", async () => {
+  const value = fixture();
+  render(value.view());
+  await waitFor(() => expect(document.activeElement).toBe(search()));
+  await choose("oss");
+  // Held, composing, modified and legacy-IME Enter never advance.
+  expect(pressEnter(search(), { repeat: true })).toBe(0);
+  expect(pressEnter(search(), { composing: true })).toBe(0);
+  expect(pressEnter(search(), { keyCode: 229 })).toBe(0);
+  expect(pressEnter(search(), { shiftKey: true })).toBe(0);
+  expect(pressEnter(search(), { ctrlKey: true })).toBe(0);
+  expect(screen.queryByRole("textbox", { name: "Project name" })).toBeNull();
+  expect(pressEnter(search())).toBe(1);
+  expect(name().value).toBe("oss");
+  expect(document.activeElement).toBe(name());
+  expect(screen.queryByRole("searchbox")).toBeNull();
+  // The same Enter on the next step advances once more, never twice.
+  expect(pressEnter(name(), { repeat: true })).toBe(0);
+  expect(pressEnter(name())).toBe(1);
+  expect(
+    screen.getByRole("heading", { name: "Usage restrictions" }),
+  ).toBeTruthy();
+  expect(document.activeElement).toBe(
+    screen.getByRole("heading", { name: "Usage restrictions" }),
+  );
+  expect(value.save).not.toHaveBeenCalled();
+  // Checkboxes on the final step are not single-line inputs, so Enter is inert.
+  const restrict = screen.getByRole("checkbox", {
+    name: "Restrict agent workers",
+  });
+  expect(pressEnter(restrict)).toBe(0);
+  expect(value.save).not.toHaveBeenCalled();
+  // The final step saves once through the form's own submission.
+  const form = restrict.closest("form")!;
+  fireEvent.submit(form);
+  fireEvent.submit(form);
+  await waitFor(() => expect(value.save).toHaveBeenCalledTimes(1));
+  expect(
+    JSON.parse(
+      new TextDecoder().decode(value.save.mock.calls[0][0].documentJson),
+    ).repositories,
+  ).toEqual([value.rows[0].id]);
+});
+
+it("keeps an invalid wizard step in place and focuses its original validation target on Enter", async () => {
+  const value = fixture();
+  render(value.view());
+  await waitFor(() => expect(document.activeElement).toBe(search()));
+  // No repository selected: Enter reveals the original problem without advancing.
+  expect(pressEnter(search())).toBe(0);
+  expect(
+    screen.getByText(
+      "Select at least one repository, with no duplicates and at most 1,000 entries.",
+    ),
+  ).toBeTruthy();
+  expect(document.activeElement).toBe(search());
+  expect(screen.queryByRole("textbox", { name: "Project name" })).toBeNull();
+  await choose("oss");
+  expect(pressEnter(search())).toBe(1);
+  // A blank name keeps the Configure step and focuses the name field.
+  fireEvent.change(name(), { target: { value: "   " } });
+  (document.activeElement as HTMLElement).blur();
+  expect(pressEnter(name())).toBe(0);
+  expect(document.activeElement).toBe(name());
+  expect(
+    screen.getAllByText("Enter a project name of at most 256 UTF-8 bytes.", {
+      selector: "[role=alert]",
+    }).length,
+  ).toBeGreaterThan(0);
+  expect(
+    screen.queryByRole("heading", { name: "Usage restrictions" }),
+  ).toBeNull();
+  fireEvent.change(name(), { target: { value: "Valid" } });
+  expect(pressEnter(name())).toBe(1);
+  expect(
+    screen.getByRole("heading", { name: "Usage restrictions" }),
+  ).toBeTruthy();
+  expect(value.save).not.toHaveBeenCalled();
+});
+
+it("keeps wizard Enter inside the active nested registration dialog", async () => {
+  const value = fixture();
+  render(value.view());
+  await waitFor(() => expect(document.activeElement).toBe(search()));
+  await choose("oss");
+  fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+  const dialog = await screen.findByRole("dialog");
+  const url = within(dialog).getByRole("textbox", { name: /Git URL/ });
+  fireEvent.change(url, {
+    target: { value: "https://github.com/delinoio/example.git" },
+  });
+  pressEnter(url);
+  // The nested dialog's own form handled Enter; the wizard stayed on step one.
+  expect(screen.queryByRole("textbox", { name: "Project name" })).toBeNull();
+  await waitFor(() => expect(value.registrationSave).toHaveBeenCalledTimes(1));
+  expect(value.save).not.toHaveBeenCalled();
 });
