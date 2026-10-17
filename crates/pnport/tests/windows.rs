@@ -970,6 +970,8 @@ fn zip_library_mapping_cache_and_direct_dependency_binary() {
             .arg("--cache-dir")
             .arg(&cache)
             .args([
+                "--log-level=debug",
+                "--color=never",
                 "run",
                 "--",
                 "native-fixture",
@@ -1147,14 +1149,20 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const root = process.argv[1];
+const stage = value => process.stderr.write(JSON.stringify({event: 'pnport_node_fixture', pid: process.pid, arch: process.arch, stage: value}) + '\n');
+stage('read');
 const dependency = path.join(root, 'node_modules/example/data.txt');
 assert.equal(fs.readFileSync(dependency, 'utf8'), 'dependency');
+stage('enumerate');
 assert(fs.readdirSync(root).includes('node_modules'));
+stage('crypto');
 assert.equal(require('node:crypto').randomBytes(32).length, 32);
+stage('child');
 const child = require('node:child_process').execFileSync(process.execPath,
-  ['-e', 'process.stdout.write(require("node:fs").readFileSync(process.argv[1]))', dependency],
+  ['-e', 'process.stderr.write(JSON.stringify({event: "pnport_node_fixture", pid: process.pid, stage: "child_read"}) + "\\n"); process.stdout.write(require("node:fs").readFileSync(process.argv[1]))', dependency],
   { env: { SystemRoot: process.env.SystemRoot, PATH: process.env.PATH } });
 assert.equal(child.toString(), 'dependency');
+stage('loopback');
 const net = require('node:net');
 const server = net.createServer(socket => socket.end('loopback'));
 server.listen(0, '127.0.0.1', () => {

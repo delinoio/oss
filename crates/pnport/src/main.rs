@@ -317,6 +317,7 @@ fn resolve_command(view: &mut View, cwd: &Path, command: &OsString) -> Result<Pa
             "The executable was not found.",
         ));
     };
+    tracing::debug!(action = "command_lookup", cwd = %cwd.display(), command = name, owner = ?view.graph.package(cwd).map(|package| &package.package_location), "Resolving direct dependency executable");
     let dependencies: Vec<_> = view
         .graph
         .package(cwd)
@@ -324,9 +325,14 @@ fn resolve_command(view: &mut View, cwd: &Path, command: &OsString) -> Result<Pa
         .unwrap_or_default();
     let mut bins = std::collections::BTreeSet::new();
     for dependency in dependencies {
-        let Ok(package) = view.graph.resolve(&dependency, cwd) else {
-            continue;
+        let package = match view.graph.resolve(&dependency, cwd) {
+            Ok(package) => package,
+            Err(error) => {
+                tracing::debug!(action = "command_dependency_unresolved", dependency, error = %error);
+                continue;
+            }
         };
+        tracing::debug!(action = "command_dependency_resolved", dependency, package = %package.display());
         let translation = view.translate(&package.join("package.json"))?;
         let bytes = fs::read(&translation.physical).map_err(|_| {
             Error::new(
@@ -353,6 +359,7 @@ fn resolve_command(view: &mut View, cwd: &Path, command: &OsString) -> Result<Pa
             Some(serde_json::Value::Object(bins)) => bins.get(name).and_then(|bin| bin.as_str()),
             _ => None,
         };
+        tracing::debug!(action = "command_bin_selected", dependency, bin);
         if let Some(bin) = bin {
             let target = graph::normalize(&package.join(bin));
             if !target.starts_with(graph::normalize(&package)) {

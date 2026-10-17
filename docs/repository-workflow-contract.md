@@ -130,6 +130,20 @@ Workflow graph assertions and a temporary Git fixture cover the event rules,
 compatible additions, deleted fields and multi-commit pushes without
 downloading unrelated LFS assets.
 
+### pnport Windows development checks
+
+The separate `pnport-windows.yml` workflow runs on pnport-related pull requests
+and supports manual dispatch. It derives native Windows x64/arm64 hosts from the
+package-owned development matrix before allocation and reuses
+`scripts/ci/pnport-windows.ps1` for source and installed-development-archive
+validation. The two targets run independently with read-only contents access,
+no secrets and no publication. Logs record revision, target and development-only
+acceptance. PR coverage includes pnport, shared fspy implementations, package
+tooling, workflow/validator inputs and shared dependency/toolchain inputs.
+This is an explicit exception for the separate Windows development workflow;
+`CI.yml` retains its PR/manual native exclusions and affected selection.
+It does not establish complete Windows release or minimum-OS acceptance.
+
 ### Pinned repository utilities
 
 The root `clibox-prebuilt` dev dependency aliases the published `@delino/clibox@0.1.6` package. Its exact launcher and optional native packages are integrity-pinned in `pnpm-lock.yaml`; the private `packages/clibox` workspace is not an executable dependency. Ordinary `pnpm install` installs the prebuilt without Rust compilation. Run repository utility scripts from the repository root; they invoke `pnpm exec clibox` directly. There is no additional repository launcher or runtime download.
