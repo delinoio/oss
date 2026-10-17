@@ -8,12 +8,21 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import test from "node:test";
 
+const hasCCompiler =
+  process.platform !== "win32" &&
+  spawnSync("cc", ["--version"], { stdio: "ignore" }).status === 0;
+
 for (const phase of ["compile", "execute"]) {
   for (const signal of ["SIGINT", "SIGTERM"]) {
     test(
       `React probe cleans up after ${signal} during ${phase}`,
       {
-        skip: process.platform === "win32",
+        skip:
+          process.platform === "win32"
+            ? "POSIX signal fixture requires a Unix host"
+            : phase === "execute" && !hasCCompiler
+              ? "Native execution fixture requires cc; compilation interruption remains covered"
+              : false,
         timeout: 15000,
       },
       async () => {
