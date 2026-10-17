@@ -6,6 +6,7 @@ import (
 	"context"
 	pb "github.com/delinoio/oss/protos/gen/go/delcore/v1"
 	"github.com/delinoio/oss/servers/delcore-api/internal/accounting"
+	"github.com/delinoio/oss/servers/delcore-api/internal/postgres"
 	"google.golang.org/protobuf/types/known/timestamppb"
 	"time"
 )
@@ -187,7 +188,39 @@ func (s *Server) ChangeSubscription(ctx context.Context, r *connect.Request[pb.C
 			timing = "do_not_bill"
 		}
 		if free && len(external) == 0 {
-			return precondition("use cancellation to return to the default free plan")
+			var subscription string
+			var start, end time.Time
+			if e = c.tx.QueryRow(c.ctx, "SELECT external_subscription_id,period_start,period_end FROM tenants WHERE id=$1", q.TenantId).Scan(&subscription, &start, &end); e != nil {
+				return e
+			}
+			if subscription != "" || q.PlanId != t.PlanId {
+				return precondition("use cancellation to return to the default free plan")
+			}
+			// An explicit free-plan price-version refresh has no fixed fee to
+			// collect. Preserve used allowance and add only a prorated increase.
+			previous, e := postgres.CurrentAllowances(c.ctx, c.tx, q.TenantId)
+			if e != nil {
+				return e
+			}
+			if _, e = c.tx.Exec(c.ctx, "UPDATE entitlements SET ends_at=$2 WHERE tenant_id=$1 AND ends_at IS NULL AND starts_at<$2", q.TenantId, c.now); e != nil {
+				return e
+			}
+			for _, price := range q.PriceIds {
+				if _, e = c.tx.Exec(c.ctx, "INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2,$3,$4)", ID(), q.TenantId, price, c.now); e != nil {
+					return e
+				}
+			}
+			if e = postgres.GrantAllowances(c.ctx, c.tx, q.TenantId, start, end, c.now, "free_refresh:"+q.RequestKey, previous); e != nil {
+				return e
+			}
+			o.JobId, e = c.job(q.TenantId, "subscription", "request:"+q.RequestKey, map[string]any{"plan_id": q.PlanId, "price_ids": q.PriceIds, "amount": "0"})
+			if e != nil {
+				return e
+			}
+			if _, e = c.tx.Exec(c.ctx, "UPDATE jobs SET state='done' WHERE id=$1", o.JobId); e != nil {
+				return e
+			}
+			return c.audit(q.TenantId, "subscription.free_refresh", "")
 		}
 		o.JobId, e = c.job(q.TenantId, "subscription", "request:"+q.RequestKey, map[string]any{"plan_id": q.PlanId, "price_ids": q.PriceIds, "external_price_ids": external, "timing": timing, "return_url": q.ReturnUrl})
 		return e

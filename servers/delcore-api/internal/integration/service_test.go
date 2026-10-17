@@ -238,9 +238,12 @@ func TestSampleClientAndAccounting(t *testing.T) {
 		t.Fatal("payment replay", credits, e)
 	}
 	// A new catalog version must not reprice the accepted event or its correction.
-	_, e = client.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "new price version", Price: &pb.Price{PlanId: plan.Msg.Plan.Id, ServiceId: service.Msg.Service.Id, Meter: "requests", UnitPrice: "99", Included: "2", Currency: "USD"}}, "owner"))
+	newPrice, e := client.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "new price version", Price: &pb.Price{PlanId: plan.Msg.Plan.Id, ServiceId: service.Msg.Service.Id, Meter: "requests", UnitPrice: "99", Included: "2", Currency: "USD"}}, "owner"))
 	if e != nil {
 		t.Fatal(e)
+	}
+	if _, e = client.ChangeSubscription(ctx, req(&pb.ChangeSubscriptionRequest{RequestKey: key(), TenantId: tenant, PlanId: plan.Msg.Plan.Id, PriceIds: []string{newPrice.Msg.Price.Id}, ReturnUrl: cfg.ReturnURLs[0]}, "owner")); e != nil {
+		t.Fatal("explicit free price refresh", e)
 	}
 	var originalID string
 	if e = db.Pool.QueryRow(ctx, "SELECT id::text FROM usage_events WHERE event_key='event-1'").Scan(&originalID); e != nil {
