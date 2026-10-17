@@ -309,6 +309,33 @@ console.log(early(2));
 }
 
 #[test]
+fn keeps_sites_in_namespace_members_that_run_before_a_top_level_declaration() {
+    // Node cannot strip namespaces, so only the emitted calls are checked.
+    let temp = project(&[(
+        "main.ts",
+        r#"function attempt(f: () => number): number {
+  try {
+    return f();
+  } catch {
+    return -1;
+  }
+}
+namespace N {
+  export function run() {
+    return late(1);
+  }
+}
+console.log(attempt(N.run));
+const late = (value: number) => value * 2;
+console.log(attempt(N.run));
+"#,
+    )]);
+    optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+    let main = emitted(temp.path(), "main.ts");
+    assert!(main.contains("late("), "{main}");
+}
+
+#[test]
 fn inlines_top_level_declarations_at_sites_that_run_after_them() {
     let temp = project(&[
         (

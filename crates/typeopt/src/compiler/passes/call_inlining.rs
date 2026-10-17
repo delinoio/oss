@@ -1589,6 +1589,16 @@ fn assertion(text: &str, operand: Node, annotation: &str) -> String {
     }
 }
 
+/// Functions judged during one proof. A function being judged again adds no
+/// new way to run early, so it counts as late; a "late" answer that relied on
+/// such an assumption is not cached, a "not late" answer always is.
+#[derive(Default)]
+struct Proof {
+    visiting: Vec<Node>,
+    done: Vec<(Node, bool)>,
+    assumptions: usize,
+}
+
 /// Where code that contains a node runs from.
 enum RunContext {
     /// Straight-line top-level code of the module.
@@ -1628,7 +1638,13 @@ fn site_runs_after(ctx: &mut Ctx, facts: &mut Facts, declaration: Node, site: No
     let Some(file) = ctx.file_of_node(declaration) else {
         return false;
     };
-    let mut visiting = Vec::new();
+    // Cross-module ordering rests on the module graph, which only ES modules
+    // have: script files share one global scope in an order the graph does
+    // not describe.
+    if !is_external_module(ctx.files[file].node) {
+        return false;
+    }
+    let mut visiting = Proof::default();
     node_runs_after(ctx, facts, declaration, file, site, &mut visiting)
 }
 
@@ -1638,11 +1654,13 @@ fn node_runs_after(
     declaration: Node,
     file: usize,
     node: Node,
-    visiting: &mut Vec<Node>,
+    visiting: &mut Proof,
 ) -> bool {
     if ctx.file_of_node(node) != Some(file) {
         return match ctx.file_of_node(node) {
-            Some(other) => !facts.same_component(ctx, file, other),
+            Some(other) => {
+                is_external_module(ctx.files[other].node) && !facts.same_component(ctx, file, other)
+            }
             None => false,
         };
     }
@@ -1661,10 +1679,14 @@ fn function_runs_after(
     declaration: Node,
     file: usize,
     function: Node,
-    visiting: &mut Vec<Node>,
+    visiting: &mut Proof,
 ) -> bool {
+    if let Some(&(_, late)) = visiting.done.iter().find(|(f, _)| *f == function) {
+        return late;
+    }
     // A function that is already being judged adds no new way to run early.
-    if visiting.contains(&function) {
+    if visiting.visiting.contains(&function) {
+        visiting.assumptions += 1;
         return true;
     }
     if matches!(
@@ -1679,12 +1701,18 @@ fn function_runs_after(
             | SyntaxKind::Constructor
             | SyntaxKind::GetAccessor
             | SyntaxKind::SetAccessor
-    ) {
+    ) || function.parent().kind() == SyntaxKind::ModuleBlock
+    {
+        // A namespace member is reachable through the namespace object.
         return false;
     }
-    visiting.push(function);
+    let before = visiting.assumptions;
+    visiting.visiting.push(function);
     let late = judge_function(ctx, facts, declaration, file, function, visiting);
-    visiting.pop();
+    visiting.visiting.pop();
+    if !late || visiting.assumptions == before {
+        visiting.done.push((function, late));
+    }
     late
 }
 
@@ -1694,7 +1722,7 @@ fn judge_function(
     declaration: Node,
     file: usize,
     function: Node,
-    visiting: &mut Vec<Node>,
+    visiting: &mut Proof,
 ) -> bool {
     let name = match function.kind() {
         SyntaxKind::FunctionDeclaration => function.name(),
