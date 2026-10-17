@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"reflect"
 	"slices"
 	"strconv"
 	"time"
@@ -464,7 +463,7 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 			return Event{}, true, incompatible()
 		}
 		turn, err := decodeTurn(t.Turn)
-		if err != nil || !turn.Status.terminal() || !canonicalKeys(t.Turn, reflect.TypeOf(turnWire{})) {
+		if err != nil || !turn.Status.terminal() || !childTurnKeysCanonical(t.Turn) {
 			return Event{}, true, incompatible()
 		}
 		o.SourceID = string(turn.ID)

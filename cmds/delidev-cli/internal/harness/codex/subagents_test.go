@@ -372,6 +372,30 @@ func TestSubagentOwnershipItemsRejectCaseAliasedKeys(t *testing.T) {
 	}
 }
 
+func TestSubagentFailedTurnErrorRejectsCaseAliasedKeys(t *testing.T) {
+	c, turn := observationClient()
+	child := domain.NewID()
+	spawn := map[string]any{"type": "collabAgentToolCall", "id": "case-failed-spawn", "tool": "spawnAgent", "status": "completed", "senderThreadId": c.thread, "receiverThreadIds": []domain.ID{child}, "agentsStates": map[string]any{string(child): map[string]any{"status": "running", "message": nil}}}
+	if event, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "completedAtMs": 1, "item": spawn}); err != nil || event.Kind != SubagentEvent {
+		t.Fatal("canonical spawn did not establish child ownership", err)
+	}
+	failed := func(key string) json.RawMessage {
+		return json.RawMessage(`{"threadId":"` + string(child) + `","turn":{"id":"` + string(domain.NewID()) + `","items":[],"status":"failed","error":{"` + key + `":"boom"}}}`)
+	}
+	if _, handled, err := c.observeChildNative(nativewire.Event{Kind: nativewire.Notification, Method: "turn/completed", Params: failed("Message")}); !handled || err == nil {
+		t.Fatal("case-aliased failed-turn error key was accepted", handled, err)
+	}
+	if c.subagents[string(child)].Status == domain.SubagentFailed {
+		t.Fatal("case-aliased failed-turn error published the child as failed")
+	}
+	if _, handled, err := c.observeChildNative(nativewire.Event{Kind: nativewire.Notification, Method: "turn/completed", Params: failed("message")}); !handled || err != nil {
+		t.Fatal("canonical failed-turn error was rejected", handled, err)
+	}
+	if c.subagents[string(child)].Status != domain.SubagentFailed {
+		t.Fatal("canonical failed turn did not settle the child as failed")
+	}
+}
+
 func TestSubagentCanonicalCollaborationKeepsRequestedModelAndChildScope(t *testing.T) {
 	c, turn := observationClient()
 	child := domain.NewID()
