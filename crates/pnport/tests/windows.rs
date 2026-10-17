@@ -543,7 +543,7 @@ fn completion_port_directory_queries(root: &Path) {
     use windows_sys::Win32::{
         Foundation::{
             CloseHandle, DuplicateHandle, GetLastError, DUPLICATE_SAME_ACCESS, HANDLE,
-            INVALID_HANDLE_VALUE, WAIT_TIMEOUT,
+            INVALID_HANDLE_VALUE, STATUS_PENDING, WAIT_OBJECT_0, WAIT_TIMEOUT,
         },
         Storage::FileSystem::{
             CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OVERLAPPED, FILE_LIST_DIRECTORY,
@@ -551,7 +551,7 @@ fn completion_port_directory_queries(root: &Path) {
         },
         System::{
             Console::SetConsoleCtrlHandler,
-            Threading::GetCurrentProcess,
+            Threading::{CreateEventW, GetCurrentProcess, WaitForSingleObject},
             IO::{CreateIoCompletionPort, GetQueuedCompletionStatus, IO_STATUS_BLOCK, OVERLAPPED},
         },
     };
@@ -601,19 +601,27 @@ fn completion_port_directory_queries(root: &Path) {
         Classic,
         Extended,
     }
-    /// Returns the NTSTATUS of a restarting null-callback query.
-    fn query(directory: HANDLE, api: Query) -> i32 {
-        let mut ios: IO_STATUS_BLOCK = unsafe { std::mem::zeroed() };
+    /// Returns the NTSTATUS of a restarting null-callback query. The request
+    /// storage must outlive the kernel's use of it, so a pending request is
+    /// awaited before the buffers drop. `port` is the completion port the
+    /// handle is associated with, if any; the packet of a pending native
+    /// request is consumed so it cannot be mistaken for a rejected query's.
+    fn query(directory: HANDLE, api: Query, port: Option<HANDLE>) -> i32 {
+        // Heap storage so a request that never completes can be leaked instead
+        // of freed under the kernel.
+        let mut ios: Box<IO_STATUS_BLOCK> = Box::new(unsafe { std::mem::zeroed() });
         let mut buffer = vec![0u64; 2048];
         let length = (buffer.len() * 8) as u32;
-        unsafe {
+        let event = unsafe { CreateEventW(std::ptr::null(), 1, 0, std::ptr::null()) };
+        assert!(!event.is_null(), "create query event");
+        let mut status = unsafe {
             match api {
                 Query::Classic => NtQueryDirectoryFile(
                     directory,
+                    event,
                     std::ptr::null_mut(),
                     std::ptr::null_mut(),
-                    std::ptr::null_mut(),
-                    &mut ios,
+                    &mut *ios,
                     buffer.as_mut_ptr().cast(),
                     length,
                     FILE_NAMES_INFORMATION,
@@ -623,10 +631,10 @@ fn completion_port_directory_queries(root: &Path) {
                 ),
                 Query::Extended => NtQueryDirectoryFileEx(
                     directory,
+                    event,
                     std::ptr::null_mut(),
                     std::ptr::null_mut(),
-                    std::ptr::null_mut(),
-                    &mut ios,
+                    &mut *ios,
                     buffer.as_mut_ptr().cast(),
                     length,
                     FILE_NAMES_INFORMATION,
@@ -634,7 +642,25 @@ fn completion_port_directory_queries(root: &Path) {
                     std::ptr::null_mut(),
                 ),
             }
+        };
+        if status == STATUS_PENDING {
+            if unsafe { WaitForSingleObject(event, 10_000) } != WAIT_OBJECT_0 {
+                std::mem::forget(ios);
+                std::mem::forget(buffer);
+                panic!("{api:?} pending directory query did not complete");
+            }
+            status = unsafe { ios.Anonymous.Status };
+            if let Some(port) = port {
+                let (mut bytes, mut key) = (0, 0);
+                let mut overlapped: *mut OVERLAPPED = std::ptr::null_mut();
+                while unsafe {
+                    GetQueuedCompletionStatus(port, &mut bytes, &mut key, &mut overlapped, 50)
+                } != 0
+                {}
+            }
         }
+        unsafe { CloseHandle(event) };
+        status
     }
     fn open(path: &Path, overlapped: bool) -> HANDLE {
         let path = pnport_core::windows::wide(path).unwrap();
@@ -671,13 +697,13 @@ fn completion_port_directory_queries(root: &Path) {
     // Controls: an unassociated synchronous handle keeps the merged listing.
     let synchronous = open(root, false);
     for api in apis {
-        let status = query(synchronous, api);
+        let status = query(synchronous, api, None);
         assert!(status >= 0, "{api:?} unassociated status {status:#x}");
     }
     // A failed association (the handle is not overlapped) records nothing.
     assert_eq!(associate(synchronous), std::ptr::null_mut());
     for api in apis {
-        let status = query(synchronous, api);
+        let status = query(synchronous, api, None);
         assert!(status >= 0, "{api:?} failed association status {status:#x}");
     }
     unsafe { CloseHandle(synchronous) };
@@ -688,7 +714,7 @@ fn completion_port_directory_queries(root: &Path) {
         let port = associate(directory);
         assert!(!port.is_null(), "round {round} association failed");
         for api in apis {
-            let status = query(directory, api);
+            let status = query(directory, api, Some(port));
             assert!(status < 0, "{api:?} round {round} associated {status:#x}");
         }
         assert_no_packet(port);
@@ -707,7 +733,7 @@ fn completion_port_directory_queries(root: &Path) {
         };
         assert_ne!(duplicated, 0, "duplicate directory handle");
         for api in apis {
-            let status = query(duplicate, api);
+            let status = query(duplicate, api, Some(port));
             assert!(status < 0, "{api:?} round {round} duplicate {status:#x}");
         }
         assert_no_packet(port);
@@ -718,7 +744,7 @@ fn completion_port_directory_queries(root: &Path) {
         }
         let reopened = open(root, true);
         for api in apis {
-            let status = query(reopened, api);
+            let status = query(reopened, api, None);
             assert!(status >= 0, "{api:?} round {round} reopened {status:#x}");
         }
         unsafe { CloseHandle(reopened) };
@@ -732,7 +758,7 @@ fn completion_port_directory_queries(root: &Path) {
     let port = associate(native);
     assert!(!port.is_null(), "native association failed");
     for api in apis {
-        let status = query(native, api);
+        let status = query(native, api, Some(port));
         assert!(status >= 0, "{api:?} native status {status:#x}");
     }
     unsafe {
