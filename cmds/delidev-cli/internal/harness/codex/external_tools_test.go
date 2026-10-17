@@ -133,3 +133,29 @@ func TestNativeWebToolCompletionDoesNotInventSuccess(t *testing.T) {
 		t.Fatal("web private content escaped")
 	}
 }
+
+func TestNativeWebToolCompletionRequiresOriginalAction(t *testing.T) {
+	for _, raw := range []string{
+		`{"type":"webSearch","id":"web-call","query":"","action":null}`,
+		`{"type":"webSearch","id":"web-call","query":""}`,
+	} {
+		c, turn := observationClient()
+		c.dynamicToolsEnabled = true
+		start := `{"type":"webSearch","id":"web-call","query":"","action":null}`
+		if _, err := observeFixture(c, "item/started", dynamicItemEnvelopeFixture(c, turn, false, start)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := observeFixture(c, "item/completed", dynamicItemEnvelopeFixture(c, turn, true, raw)); err == nil {
+			t.Fatal("start-shaped web item completed")
+		}
+		if c.dynamicItems["web-call"].Completed {
+			t.Fatal("rejected completion settled original ownership")
+		}
+	}
+	for _, action := range []string{`{"type":"search","query":"fixture"}`, `{"type":"openPage","url":"https://example.test"}`, `{"type":"findInPage","url":"https://example.test","pattern":"fixture"}`, `{"type":"other"}`} {
+		raw := json.RawMessage(`{"type":"webSearch","id":"web-call","query":"fixture","action":` + action + `}`)
+		if _, snapshot, err := decodeWebTool(raw, true); err != nil || snapshot.Status != domain.DynamicDone {
+			t.Fatal("valid completed action rejected", err)
+		}
+	}
+}

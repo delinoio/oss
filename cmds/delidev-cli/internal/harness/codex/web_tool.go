@@ -34,6 +34,9 @@ func decodeWebTool(raw json.RawMessage, completed bool) (string, *domain.Dynamic
 	if len(raw) > 512<<10 || domain.ValidateJSONUnicodeEscapes(raw) != nil || domain.DecodeBounded(raw, &item, 512<<10) != nil || item.Type != "webSearch" || domain.Text(item.ID, "native web item", 1024, true) != nil || domain.Text(item.Query, "native web query", domain.MaxMessageText, false) != nil {
 		return "", nil, incompatible()
 	}
+	if completed && !externalValuePresent(item.Action) {
+		return "", nil, incompatible()
+	}
 	if externalValuePresent(item.Action) {
 		var action struct {
 			Type    string    `json:"type"`

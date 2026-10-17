@@ -3772,8 +3772,10 @@ automatically by the original Worker (see the
 
 Native `mcpToolCall` and `webSearch` history items use the same bounded schemas
 as live observations in continuation, compaction, legacy/managed Fork and
-paged Revert readers. Only terminal MCP statuses are admitted. Original items,
-ordering, identities and private content remain in the history proof; reading
+paged Revert readers. Only terminal MCP statuses and completed web-search items
+with a non-null validated action are admitted. A start-shaped web item cannot
+complete its live lifecycle or enter continuation, compaction, Fork or Revert
+as a settled tool. Original items, ordering, identities and private content remain in the history proof; reading
 history never publishes live tool events, creates reply ownership or dereferences
 MCP resources. Malformed, duplicate, oversized and unsupported items still fail
 closed. Restricted Sidechat does not acquire external-tool Fork authority.

@@ -74,6 +74,8 @@ func TestExternalToolHistoryRejectsUnsettledMalformedAndOversizedItems(t *testin
 		strings.Replace(mcpCompletedFixture, `"Original result"`, `true`, 1),
 		strings.Replace(mcpCompletedFixture, "Original result", strings.Repeat("x", domain.MaxMessageText+1), 1),
 		`{"type":"webSearch","id":"web-call","query":"x","action":{"type":"unknown"}}`,
+		`{"type":"webSearch","id":"web-call","query":"","action":null}`,
+		`{"type":"webSearch","id":"web-call","query":""}`,
 		`{"type":"webSearch","id":"web-call","query":"x","extra":true}`,
 		`{"type":"webSearch","id":"web-call","query":"` + strings.Repeat("x", 512<<10) + `"}`,
 	} {
