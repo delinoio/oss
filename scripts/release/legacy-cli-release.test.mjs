@@ -94,13 +94,7 @@ exit 1
     { mode: 0o755 },
   );
 
-  for (const project of [
-    "binpm",
-    "cargo-mono",
-    "nodeup",
-    "with-watch",
-    "derun",
-  ]) {
+  for (const project of ["binpm", "cargo-mono", "nodeup", "with-watch"]) {
     const source = readFileSync(
       new URL(
         `../../.github/workflows/release-${project}.yml`,
@@ -108,10 +102,7 @@ exit 1
       ),
       "utf8",
     );
-    const packageScript = workflowScript(
-      source,
-      project === "derun" ? "Build derun" : "Package artifact",
-    );
+    const packageScript = workflowScript(source, "Package artifact");
     for (const os of ["linux", "windows"]) {
       const fixture = path.join(directory, `${project}-${os}`);
       const target =
@@ -307,13 +298,7 @@ const writes = (f) =>
     ["POST", "PATCH", "UPLOAD", "SIGN", "DELETE"].includes(method),
   );
 
-for (const project of [
-  "binpm",
-  "cargo-mono",
-  "nodeup",
-  "with-watch",
-  "derun",
-]) {
+for (const project of ["binpm", "cargo-mono", "nodeup", "with-watch"]) {
   test(`${project}: immutable release allows a failed-then-recovered tap with zero release/signing writes`, async (t) => {
     const f = fixture(t, project);
     let tapAttempts = 0;
@@ -424,7 +409,7 @@ for (const [name, mutate] of [
   });
 
 test("fresh publication signs, uploads only into a draft and verifies readback before publication", async (t) => {
-  const f = fixture(t, "derun", "absent");
+  const f = fixture(t, "nodeup", "absent");
   assert.deepEqual(await publish(f.plan, f.files, f.dependencies), {
     releaseId: 42,
     reused: false,
@@ -506,13 +491,13 @@ test("unowned or conflicting partial drafts block before any write", async (t) =
 });
 
 test("bad signature generation and corrupt readback never publish a draft", async (t) => {
-  const badSignature = fixture(t, "derun", "absent");
+  const badSignature = fixture(t, "nodeup", "absent");
   badSignature.dependencies.sign = () => Buffer.from("invalid signature");
   await assert.rejects(
     publish(badSignature.plan, badSignature.files, badSignature.dependencies),
   );
   assert.equal(badSignature.release, null);
-  const f = fixture(t, "derun", "absent");
+  const f = fixture(t, "nodeup", "absent");
   f.corruptUpload = f.files.keys().next().value;
   await assert.rejects(
     publish(f.plan, f.files, f.dependencies),
@@ -581,7 +566,7 @@ test("draft discovery follows every list page, rejects duplicates and reads the 
 });
 
 test("a competing same-tag release before publication blocks the PATCH", async (t) => {
-  const f = fixture(t, "derun", "draft");
+  const f = fixture(t, "nodeup", "draft");
   const api = f.dependencies.api;
   let lists = 0;
   f.dependencies.api = async (...args) => {
@@ -684,21 +669,21 @@ test("release context preserves exact source/tag, main dispatch and dry-run boun
 });
 
 test("real CLI dry run emits unsigned checksums without GitHub or OIDC credentials", async (t) => {
-  const project = "derun";
+  const project = "nodeup";
   const directory = temporary(t);
   for (const name of artifactNames(project))
     writeFileSync(path.join(directory, name), "dry-run artifact");
   const version = readFileSync(
-    new URL("../../cmds/derun/internal/version/version.go", import.meta.url),
+    new URL("../../crates/nodeup/Cargo.toml", import.meta.url),
     "utf8",
-  ).match(/const Version = "([^"]+)"/u)[1];
+  ).match(/^version = "([^"]+)"/mu)[1];
   const sha = execFileSync("git", ["rev-parse", "HEAD"], {
     encoding: "utf8",
   }).trim();
   await main(["--artifacts-dir", directory], {
     RELEASE_PROJECT: project,
     RELEASE_VERSION: version,
-    RELEASE_TAG: `derun@v${version}`,
+    RELEASE_TAG: `nodeup@v${version}`,
     DRY_RUN: "true",
     GITHUB_SHA: sha,
     GITHUB_EVENT_NAME: "workflow_dispatch",
@@ -706,7 +691,7 @@ test("real CLI dry run emits unsigned checksums without GitHub or OIDC credentia
   });
   assert.match(
     readFileSync(path.join(directory, "SHA256SUMS"), "utf8"),
-    /derun-windows-amd64\.zip\n$/u,
+    /nodeup-windows-arm64\.zip\n$/u,
   );
 });
 

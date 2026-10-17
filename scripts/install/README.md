@@ -16,4 +16,3 @@ Scripts:
 - `cargo-mono.sh` / `cargo-mono.ps1`
 - `nodeup.sh` / `nodeup.ps1`
 - `with-watch.sh` / `with-watch.ps1`
-- `derun.sh` / `derun.ps1`

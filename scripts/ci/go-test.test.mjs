@@ -10,7 +10,6 @@ const delidev = `${root}/cmds/delidev-cli`;
 const fixtures = {
   [GoTestShard.Core]: [
     `${root}/cmds/async-commit-hook/internal/core`,
-    `${root}/cmds/derun/internal/e2e`,
     `${root}/cmds/runmoor/internal/runmoor`,
     `${root}/servers/devhud-api/internal/server`,
     `${root}/protos/gen/go/delidev/v1`,

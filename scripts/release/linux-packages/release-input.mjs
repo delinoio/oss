@@ -103,18 +103,18 @@ export function downloadRelease(plan, output) {
       checked.rust_image?.includes("@sha256:"),
     "RELEASE_PREDATES_PACKAGE_SUPPORT",
   );
-  const sourceFile = ["derun", "runmoor"].includes(plan.project)
-    ? plan.project === "derun"
-      ? "cmds/derun/internal/version/version.go"
-      : "cmds/runmoor/internal/runmoor/types.go"
-    : `crates/${plan.project}/Cargo.toml`;
+  const sourceFile =
+    plan.project === "runmoor"
+      ? "cmds/runmoor/internal/runmoor/types.go"
+      : `crates/${plan.project}/Cargo.toml`;
   const sourceResponse = api(
     `repos/delinoio/oss/contents/${sourceFile}?ref=${plan.revision}`,
   );
   const sourceText = Buffer.from(sourceResponse.content, "base64").toString();
-  const sourceVersion = ["derun", "runmoor"].includes(plan.project)
-    ? sourceText.match(/^const Version = "([^"]+)"$/mu)?.[1]
-    : sourceText.match(/^version = "([^"]+)"$/mu)?.[1];
+  const sourceVersion =
+    plan.project === "runmoor"
+      ? sourceText.match(/^const Version = "([^"]+)"$/mu)?.[1]
+      : sourceText.match(/^version = "([^"]+)"$/mu)?.[1];
   requireValue(sourceVersion === plan.version, "SOURCE_VERSION_MISMATCH");
   const workflowResponse = api(
     `repos/delinoio/oss/contents/.github/workflows/release-${plan.project}.yml?ref=${plan.revision}`,
@@ -125,13 +125,9 @@ export function downloadRelease(plan, output) {
       .includes("./.github/workflows/release-linux-packages.yml"),
     "RELEASE_PREDATES_PACKAGE_SUPPORT",
   );
-  const terms = [
-    "binpm",
-    "cargo-mono",
-    "nodeup",
-    "with-watch",
-    "derun",
-  ].includes(plan.project)
+  const terms = ["binpm", "cargo-mono", "nodeup", "with-watch"].includes(
+    plan.project,
+  )
     ? {
         license: readSourceFile("LICENSE"),
         notice: readSourceFile("NOTICE"),

@@ -245,7 +245,6 @@ export function packageFiles(plan, input, output, signing) {
     "cargo-mono": "Cargo subcommand for Rust monorepo management",
     nodeup: "Node.js version manager",
     "with-watch": "Rerun commands when inputs change",
-    derun: "Terminal relay and MCP server",
     runmoor: "Local ephemeral GitHub Actions runners",
     clibox: "Cross-platform developer utilities",
   }[plan.project];

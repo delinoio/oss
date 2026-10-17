@@ -20,7 +20,6 @@ const projects = [
   Project.CargoMono,
   Project.Nodeup,
   Project.WithWatch,
-  Project.Derun,
 ];
 const build = "b".repeat(40);
 const historical = "a".repeat(40);
@@ -305,7 +304,7 @@ test("absent-tag creation uses the build commit after mocked main advances", asy
     { status: 200, body: [] },
   ];
   const plan = await legacyReleaseMetadata(
-    input(Project.Derun),
+    input(Project.Nodeup),
     read,
     async () => responses.shift() ?? { status: 404 },
   );
@@ -319,7 +318,9 @@ test("absent-tag creation uses the build commit after mocked main advances", asy
   assert.notEqual(createdTagCommit, main);
   // A tag introduced during the build must be checked again before writes.
   await assert.rejects(
-    legacyReleaseMetadata(input(Project.Derun), read, async () => commit(main)),
+    legacyReleaseMetadata(input(Project.Nodeup), read, async () =>
+      commit(main),
+    ),
     /different commit/u,
   );
 });

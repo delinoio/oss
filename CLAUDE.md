@@ -53,7 +53,6 @@ _Source: `AGENTS.md`_
 - `docs/<domain>-<project-or-component>-<contract>.md`: Canonical domain contract docs (`apps`, `cmds`, `servers`, `crates`, `protos`, `packages`).
 - `docs/project-cargo-mono.md`: Cargo subcommand project index.
 - `docs/project-nodeup.md`: Node.js version manager project index.
-- `docs/project-derun.md`: Derun CLI project index.
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 
@@ -65,7 +64,6 @@ Treat project IDs as stable enum-style values:
 enum ProjectId {
   CargoMono = "cargo-mono",
   Nodeup = "nodeup",
-  Derun = "derun",
   SerdeFeather = "serde-feather",
   PublicDocs = "public-docs",
 }
@@ -75,7 +73,6 @@ enum ProjectId {
 
 - `nodeup` -> `crates/nodeup`
 - `cargo-mono` -> `crates/cargo-mono`
-- `derun` -> `cmds/derun`
 - `serde-feather` -> `crates/serde-feather`, `crates/serde-feather-macros`
 - `public-docs` -> `apps/public-docs`
 
@@ -200,9 +197,6 @@ Release automation baseline:
 - `release-nodeup` is defined in `.github/workflows/release-nodeup.yml`.
 - Trigger contract: runs on tag push `nodeup@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
 - Distribution contract: publishes signed multi-OS nodeup release artifacts and updates Homebrew (`nodeup`).
-- `release-derun` is defined in `.github/workflows/release-derun.yml`.
-- Trigger contract: runs on tag push `derun@v*` and supports `workflow_dispatch` (`version`, `dry_run`).
-- Distribution contract: publishes signed multi-OS derun release artifacts and updates Homebrew (`derun`).
 
 ### Documentation Lifecycle Rules
 
@@ -259,10 +253,6 @@ _Source: `cmds/AGENTS.md`_
 - Write all source and comments in English.
 - Prefer enums or typed constants over free-form string values.
 
-### Scope in This Domain
-
-- `cmds/derun`: Go tool for AI coding-agent workflow orchestration.
-
 ### Go Command Rules
 
 - Keep command boundaries explicit and documented.
@@ -278,7 +268,6 @@ _Source: `cmds/AGENTS.md`_
 ### Testing and Validation
 
 - Run relevant Go tests (`go test`) when code in this domain changes.
-- Update `docs/project-derun.md` and `docs/cmds-derun-foundation.md` whenever derun command contracts change.
 
 ---
 

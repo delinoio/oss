@@ -227,13 +227,7 @@ test("archive reader rejects non-executable and corrupted payloads", () => {
   assert.throws(() => extractExecutable(corrupt, "runmoor"));
 });
 test("legacy Linux archives accept licensed and authenticated historical shapes only", () => {
-  for (const project of [
-    "binpm",
-    "cargo-mono",
-    "nodeup",
-    "with-watch",
-    "derun",
-  ]) {
+  for (const project of ["binpm", "cargo-mono", "nodeup", "with-watch"]) {
     const executable = {
       name: project,
       data: Buffer.from(`binary:${project}`),

@@ -22,7 +22,6 @@ const projects = [
   Project.CargoMono,
   Project.Nodeup,
   Project.WithWatch,
-  Project.Derun,
 ];
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const ensure = (condition, code) => {
@@ -48,13 +47,13 @@ export function artifactNames(project) {
     "linux-amd64",
     "linux-arm64",
     "windows-amd64",
-    ...(project === Project.Derun ? [] : ["windows-arm64"]),
+    "windows-arm64",
   ];
   const names = targets.map(
     (target) =>
       `${project}-${target}.${target.startsWith("windows") ? "zip" : "tar.gz"}`,
   );
-  if (![Project.CargoMono, Project.Derun].includes(project))
+  if (project !== Project.CargoMono)
     names.push(
       ...targets.map(
         (target) =>

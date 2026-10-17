@@ -255,7 +255,7 @@ Release desktop launches register the packaged Chrome host; development launches
 
 - Initialize and localize the native tray before the frontend can invoke tray commands. The command palette traps focus, restores its trigger on Escape and normal completion, and preserves focus for a destination surface's sole critical input. Native external links use only the documented closed allowlist and confirm opener success with a bounded background wait; timeout or opener failures must return an error and emit structured diagnostics.
 
-- Current public-docs in-site top-level product page IDs are `devhud`, `cargo-mono`, `derun`, and `with-watch`.
+- Current public-docs in-site top-level product page IDs are `devhud`, `cargo-mono`, and `with-watch`.
 
 - The stable `/devhud` page documents public product availability and the coordinated all-channels GA rule without exposing release credentials, private workflow details, or deployment internals.
 

@@ -4,9 +4,9 @@
 
 The CLI release workflows own native APT and DNF distribution at `https://pkgs.oss.delino.io`. `packaging/linux/` owns pinned tools, public repository configuration, and package metadata; `scripts/release/linux-packages*` owns verification, packaging, repository generation, and resumable publication. This contract complements `repository-workflow-contract.md`.
 
-The stable enrollment contract covers binpm, cargo-mono, nodeup, with-watch, derun, runmoor, and clibox. Preview is reserved with no enrolled CLI. The initial rollout, including binpm, was canceled before registry or tag publication. The subsequently requested Runmoor `0.1.3` release has published native packages and passed the complete public installation matrix; other projects retain their own explicit release and verification gates. Enrollment does not imply a package is already published. Both amd64/x86_64 and arm64/aarch64 are required. Arch Linux and Alpine Linux are unsupported, and DevHud is not enrolled in native CLI packaging. Public package names equal executable names. Version is the exact source SemVer with packaging revision 1. CLI installation owns `/usr/bin/<project>` and package documentation, plus the shared APT keyring dependency described below; it never initializes user configuration, downloads runtimes, registers services, or starts a daemon.
+The stable enrollment contract covers binpm, cargo-mono, nodeup, with-watch, runmoor, and clibox. Preview is reserved with no enrolled CLI. The initial rollout, including binpm, was canceled before registry or tag publication. The subsequently requested Runmoor `0.1.3` release has published native packages and passed the complete public installation matrix; other projects retain their own explicit release and verification gates. Enrollment does not imply a package is already published. Both amd64/x86_64 and arm64/aarch64 are required. Arch Linux and Alpine Linux are unsupported, and DevHud is not enrolled in native CLI packaging. Public package names equal executable names. Version is the exact source SemVer with packaging revision 1. CLI installation owns `/usr/bin/<project>` and package documentation, plus the shared APT keyring dependency described below; it never initializes user configuration, downloads runtimes, registers services, or starts a daemon.
 
-All seven originating GitHub workflows publish stable releases and feed the stable native repository. Project contracts determine channels; callers cannot choose a channel. Clibox reuses the exact verified GNU npm executable bytes in its two signed GitHub Release archives before entering this common workflow.
+All six originating GitHub workflows publish stable releases and feed the stable native repository. Project contracts determine channels; callers cannot choose a channel. Clibox reuses the exact verified GNU npm executable bytes in its two signed GitHub Release archives before entering this common workflow.
 
 ## CI validation
 
@@ -16,11 +16,11 @@ The portable `scripts/release/linux-packages.test.mjs` regressions run in `devhu
 
 ## Build and input trust
 
-Rust GNU Linux binaries use the checksum-pinned AlmaLinux 9 image and the repository Rust toolchain. Bootstrap rustup 1.29.1 from the architecture-specific official archive URL in `pins.json`, verify its committed SHA-256 before execution, and disable self-updates. Never execute the mutable `sh.rustup.rs` bootstrap. Dynamic GLIBC requirements must not exceed 2.34; only explicitly mapped runtime libraries are allowed. x86-64 builds target the baseline ISA and ARM64 builds target generic ARMv8. Derun and Runmoor Linux builds disable CGO. Existing GitHub asset names and Sigstore identities remain authoritative.
+Rust GNU Linux binaries use the checksum-pinned AlmaLinux 9 image and the repository Rust toolchain. Bootstrap rustup 1.29.1 from the architecture-specific official archive URL in `pins.json`, verify its committed SHA-256 before execution, and disable self-updates. Never execute the mutable `sh.rustup.rs` bootstrap. Dynamic GLIBC requirements must not exceed 2.34; only explicitly mapped runtime libraries are allowed. x86-64 builds target the baseline ISA and ARM64 builds target generic ARMv8. Runmoor Linux builds disable CGO. Existing GitHub asset names and Sigstore identities remain authoritative.
 
 Only releases whose source contains this package-distribution contract can enter the repository. Resolve the exact tag to its commit, validate source version and channel, and verify the checksum manifest and both Linux archive Sigstore bundles against the originating release workflow, exact certificate commit SHA, repository and GitHub Actions OIDC issuer. Do not backfill older releases, rebuild a published version, overwrite an existing package identity, or expose signing authority to unverified archives.
 
-The native decoder for binpm, cargo-mono, nodeup, with-watch and derun accepts only the executable and, for newly licensed archives, the complete root `LICENSE` and `NOTICE` as fixed regular members. The two text members must appear together and match the source checkout exactly. Authenticated historical executable-only archives remain readable for immutable recovery. Duplicate, link, traversal and unrelated entries remain invalid; extraction returns the unchanged executable bytes.
+The native decoder for binpm, cargo-mono, nodeup and with-watch accepts only the executable and, for newly licensed archives, the complete root `LICENSE` and `NOTICE` as fixed regular members. The two text members must appear together and match the source checkout exactly. Authenticated historical executable-only archives remain readable for immutable recovery. Duplicate, link, traversal and unrelated entries remain invalid; extraction returns the unchanged executable bytes.
 
 ## Repository publication
 
@@ -40,7 +40,7 @@ Public HTTPS readback retries transient transport errors, HTTP 408/429/5xx respo
 
 The `linux-packages` GitHub Environment owns dedicated R2 object credentials limited to the two buckets and an RSA 4096 OpenPGP signing subkey. Keep the primary secret key and recovery material outside CI. Commit the public certificate and fingerprint only. APT uses a repository-specific Signed-By keyring. PR and dry-run paths use disposable signing identities and cannot consume production secrets or write R2.
 
-Restrict the environment to main and the seven CLI release-tag patterns, including `clibox@v*`. Each release caller explicitly uses `secrets: inherit`: without it, the hosted reusable-workflow runner can resolve environment variables but return empty environment secrets (actions/runner#4453). Only the guarded publisher references production credentials; validation and installation jobs do not consume them. Remove this workaround only after the upstream behavior is corrected and protected environment access is verified. Provision the buckets, custom domain, HTTPS and cache rules before enabling production publication. The rollout operator must wait for the exact downstream package publication and public verification after Release Project finishes its asynchronous tag handoff. Recovery retries must target the exact release identity and never modify GitHub tags or existing release assets. If an immutable source tag contains a broken reusable-workflow call, dispatch `release-linux-packages.yml` from main with the already-published project/version/revision and `mode=publish`; it repeats the same verification and installation gates before accessing the protected environment.
+Restrict the environment to main and the six CLI release-tag patterns, including `clibox@v*`. Each release caller explicitly uses `secrets: inherit`: without it, the hosted reusable-workflow runner can resolve environment variables but return empty environment secrets (actions/runner#4453). Only the guarded publisher references production credentials; validation and installation jobs do not consume them. Remove this workaround only after the upstream behavior is corrected and protected environment access is verified. Provision the buckets, custom domain, HTTPS and cache rules before enabling production publication. The rollout operator must wait for the exact downstream package publication and public verification after Release Project finishes its asynchronous tag handoff. Recovery retries must target the exact release identity and never modify GitHub tags or existing release assets. If an immutable source tag contains a broken reusable-workflow call, dispatch `release-linux-packages.yml` from main with the already-published project/version/revision and `mode=publish`; it repeats the same verification and installation gates before accessing the protected environment.
 
 ## Validation and rollout
 
@@ -98,7 +98,7 @@ clibox packages require `ca-certificates` in both formats for OS-trusted HTTPS r
 
 ## Project requirements
 
-- Follow `repository-linux-packages-contract.md` for the seven CLI APT/DNF repositories at `https://pkgs.oss.delino.io`. Native package publication is part of each selected CLI release, uses the dedicated `linux-packages` environment, and enrolls binpm, cargo-mono, nodeup, with-watch, derun, runmoor and clibox in stable.
+- Follow `repository-linux-packages-contract.md` for the six CLI APT/DNF repositories at `https://pkgs.oss.delino.io`. Native package publication is part of each selected CLI release, uses the dedicated `linux-packages` environment, and enrolls binpm, cargo-mono, nodeup, with-watch, runmoor and clibox in stable.
 
 ## Application integration
 
@@ -106,13 +106,13 @@ clibox packages require `ca-certificates` in both formats for OS-trusted HTTPS r
 
 ## Command integration
 
-- Derun exposes `--version` from its shared version constant. Native Linux Derun and Runmoor builds disable CGO and include amd64/arm64; package service/configuration ownership follows `repository-linux-packages-contract.md`.
+- Native Linux Runmoor builds disable CGO and include amd64/arm64; package service/configuration ownership follows `repository-linux-packages-contract.md`.
 
 ## packaging/linux constraints
 
-- This directory owns the seven CLI packages, their shared APT keyring package, native repository configuration, and immutable packaging tool/build-image pins.
+- This directory owns the six CLI packages, their shared APT keyring package, native repository configuration, and immutable packaging tool/build-image pins.
 
-- All seven enrolled CLIs use stable; keep the reserved preview suite separate, preserve exact upstream versions, and never enable services or modify a user's configuration from package hooks.
+- All six enrolled CLIs use stable; keep the reserved preview suite separate, preserve exact upstream versions, and never enable services or modify a user's configuration from package hooks.
 
 - Keep private keys, real credentials, generated package files, and generated repository trees out of Git. Repository-owned `dist` directories are generated and must be removed from the final worktree.
 

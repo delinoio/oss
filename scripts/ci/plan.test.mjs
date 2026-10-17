@@ -1512,7 +1512,7 @@ test("planner publishes the event Go matrix from real Git comparisons", (t) => {
   const eventPath = join(f.cwd, ".git", "go-plan-event.json");
   const outputPath = join(f.cwd, ".git", "go-plan-output");
   for (const path of [
-    "cmds/derun/example.go",
+    "cmds/runmoor/example.go",
     "go.mod",
     ".github/workflows/CI.yml",
   ]) {
@@ -1595,12 +1595,12 @@ test("CI Result rejects altered or missing Go matrices and every unsuccessful se
         ],
       }),
     ]) {
-      const needs = results(event, ["cmds/derun/example.go"]);
+      const needs = results(event, ["cmds/runmoor/example.go"]);
       needs.changes.outputs.go_test_matrix = value;
       assert.throws(() => validateResults(needs), value);
     }
     for (const result of ["failure", "cancelled", "skipped", undefined]) {
-      const needs = results(event, ["cmds/derun/example.go"]);
+      const needs = results(event, ["cmds/runmoor/example.go"]);
       needs["go-test"].result = result;
       assert.throws(() => validateResults(needs), /go-test/u);
     }
@@ -1718,7 +1718,7 @@ test("aggregate rejects missing, excluded and inconsistent Rust package selectio
 test("manual selection matches PR scope without macOS or native packaging", () => {
   for (const paths of [
     [],
-    ["cmds/derun/example.go"],
+    ["cmds/runmoor/example.go"],
     ["crates/binpm/src/main.rs"],
     [".github/workflows/CI.yml"],
     ["go.mod"],
@@ -1745,7 +1745,7 @@ test("manual selection matches PR scope without macOS or native packaging", () =
 test("manual affected comparison pins main and uses the complete branch merge-base range", (t) => {
   const f = fixture(t);
   f.git("switch", "-c", "feature");
-  f.write("cmds/derun/first.go", "first");
+  f.write("cmds/runmoor/first.go", "first");
   f.commit();
   f.write("crates/binpm/second.rs", "second");
   const head = f.commit();
@@ -1759,7 +1759,7 @@ test("manual affected comparison pins main and uses the complete branch merge-ba
   assert.deepEqual(range, {
     base: f.initial,
     head,
-    paths: ["cmds/derun/first.go", "crates/binpm/second.rs"],
+    paths: ["cmds/runmoor/first.go", "crates/binpm/second.rs"],
   });
   f.write("later-main.txt", "later");
   f.commit();

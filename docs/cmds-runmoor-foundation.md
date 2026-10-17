@@ -302,7 +302,7 @@ systemd user-session replacement or live GitHub/Docker/Tart/host jobs.
 
 - `cmds/runmoor`: local ephemeral GitHub Actions runner manager; follow its scoped AGENTS and `cmds-runmoor-foundation.md`.
 
-- Derun release and MCP server versions share `cmds/derun/internal/version/version.go`; Runmoor retains its `Version` constant. Version tests must work after any supported release bump.
+- Runmoor retains its `Version` constant. Version tests must work after any supported release bump.
 
 ### cmds/runmoor constraints
 
