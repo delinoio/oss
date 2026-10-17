@@ -723,7 +723,8 @@ fn trailing_word(text: &str) -> &str {
 /// - an object literal follows an operator, an opener, a comma, a colon that is
 ///   not a `case` label, or an expression keyword such as `return`;
 /// - a class body follows a heading that contains `class`, even when the
-///   heritage is a call expression (`class A extends mix(B) {`).
+///   heritage is a call expression (`class A extends mix(B) {`) or holds a
+///   class or function expression (`class A extends class {} {`).
 ///
 /// This is a lexical guess, not a parse. A brace that cannot be classified is
 /// treated as holding members, which keeps its keyword-named calls unguarded.
@@ -737,7 +738,10 @@ pub(super) fn brace_holds_members(code: &str, open: usize, ignored: &[(usize, us
     };
     match last {
         ')' => class_heading_precedes(code, prefix.len(), ignored),
-        ';' | '{' | '}' => false,
+        ';' | '{' => false,
+        // A block ends with `}`, but so does a class or function expression in
+        // a heritage clause (`class A extends class {} {`).
+        '}' => class_heading_precedes(code, prefix.len(), ignored),
         ':' => !is_case_label(prefix, ignored),
         _ if is_identifier_part(last) => match trailing_word(prefix) {
             "else" | "try" | "do" | "finally" | "static" => false,
@@ -767,34 +771,54 @@ fn class_heading_scan(
     ignored: &[(usize, usize)],
     stop_at_assignment: bool,
 ) -> bool {
-    class_keyword_scan(code, end, ignored, stop_at_assignment).is_some()
+    class_keyword_scan(code, end, ignored, stop_at_assignment, HeadKeyword::Class).is_some()
 }
 
-/// The offset of the `class` keyword that starts the head ending at `end`, or
-/// `None` when the head holds none. The scan is described on
-/// [`class_heading_precedes`].
+/// Which keywords [`class_keyword_scan`] accepts as the start of a head.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum HeadKeyword {
+    /// Only `class`: the head of a class body.
+    Class,
+    /// `class` or `function`: the head of a body that may belong to a nested
+    /// expression in a heritage clause (`class C extends function () {} {`).
+    ClassOrFunction,
+}
+
+/// The offset of the `class` keyword (or, for [`HeadKeyword::ClassOrFunction`],
+/// the `function` keyword) that starts the head ending at `end`, or `None` when
+/// the head holds none. The scan is described on [`class_heading_precedes`].
 ///
-/// A class expression in the heritage clause (`class C extends class {} {`)
-/// has a body of its own. When a top-level `}` closes the body of a class
-/// expression whose `class` keyword follows `extends`, the scan jumps to that
-/// keyword and keeps reading the outer head. Any other `}` ends the head.
+/// A class or function expression in the heritage clause
+/// (`class C extends class {} {`, `class C extends new class {} {`,
+/// `class C extends function () {} {`) has a body of its own. When a top-level
+/// `}` closes the body of such an expression, the scan jumps to its keyword
+/// and keeps reading the outer head. Any other `}` ends the head.
 fn class_keyword_scan(
     code: &str,
     end: usize,
     ignored: &[(usize, usize)],
     stop_at_assignment: bool,
+    keywords: HeadKeyword,
 ) -> Option<usize> {
     let mut depth = 0usize;
     // End offset of the identifier-like word being read backwards.
     let mut word_end: Option<usize> = None;
-    let is_class = |word_start: usize, word_end: usize| {
-        // `class` is a keyword unless it names a member (`a.class`, `#class`)
-        // or a property or method (`class: {`, `class() {`).
-        &code[word_start..word_end] == "class"
+    let is_keyword = |word_start: usize, word_end: usize| {
+        let word = &code[word_start..word_end];
+        // A keyword names a member (`a.class`, `#class`) or a property or
+        // method (`class: {`, `class() {`) when it follows a member operator
+        // or is followed by one of these. A `function` keyword is followed by
+        // its parameter list, so `(` does not exclude it.
+        let is_class = word == "class";
+        let is_function = word == "function" && keywords == HeadKeyword::ClassOrFunction;
+        let excluded: &[char] = if is_class {
+            &[':', '(', '=', ',']
+        } else {
+            &[':', '=', ',']
+        };
+        (is_class || is_function)
             && !code[..word_start].trim_end().ends_with(['.', '#'])
-            && !code[word_end..end]
-                .trim_start()
-                .starts_with([':', '(', '=', ','])
+            && !code[word_end..end].trim_start().starts_with(excluded)
     };
     // Walk char boundaries only: `position` is always the start of a char.
     let mut position = end;
@@ -807,7 +831,7 @@ fn class_keyword_scan(
         }
         if let Some(finish) = word_end.take()
             && depth == 0
-            && is_class(position + width, finish)
+            && is_keyword(position + width, finish)
         {
             return Some(position + width);
         }
@@ -824,7 +848,7 @@ fn class_keyword_scan(
                 }
             }
             '}' if depth == 0 => {
-                position = heritage_class_expression_start(code, position, ignored)?;
+                position = heritage_expression_start(code, position, ignored)?;
             }
             '{' | ';' if depth == 0 => return None,
             '=' if depth == 0 && stop_at_assignment => return None,
@@ -832,14 +856,16 @@ fn class_keyword_scan(
         }
     }
     word_end
-        .filter(|finish| depth == 0 && is_class(0, *finish))
+        .filter(|finish| depth == 0 && is_keyword(0, *finish))
         .map(|_| 0)
 }
 
-/// The offset of the `class` keyword of the class expression whose body ends
-/// with the `}` at `close`, when that keyword directly follows `extends`
-/// (`class C extends class { ... } {`). `None` for any other brace pair.
-fn heritage_class_expression_start(
+/// The offset of the `class` or `function` keyword of the class or function
+/// expression whose body ends with the `}` at `close`, when that expression is
+/// the heritage of a class (`class C extends class { ... } {`). The keyword may
+/// follow `new` (`extends new class {} {`) and, for a function, `async`
+/// (`extends async function () {} {`). `None` for any other brace pair.
+fn heritage_expression_start(
     code: &str,
     close: usize,
     ignored: &[(usize, usize)],
@@ -861,9 +887,27 @@ fn heritage_class_expression_start(
             _ => {}
         }
     };
-    let keyword = class_keyword_scan(code, open, ignored, true)?;
-    let before = strip_comments_for_prefix(code, keyword, ignored);
-    (trailing_word(before) == "extends").then_some(keyword)
+    let keyword = class_keyword_scan(code, open, ignored, true, HeadKeyword::ClassOrFunction)?;
+    let mut before = strip_comments_for_prefix(code, keyword, ignored);
+    if code[keyword..].starts_with("function")
+        && extend_word_over_braced_escapes(before, trailing_word(before)) == "async"
+    {
+        before = strip_comments_for_prefix(code, before.len() - "async".len(), ignored);
+    }
+    // Each `new` applies to the expression after it (`new new class {}`).
+    loop {
+        let word = extend_word_over_braced_escapes(before, trailing_word(before));
+        let member = before[..before.len() - word.len()]
+            .trim_end()
+            .ends_with(['.', '#']);
+        match word {
+            "new" if !member => {
+                before = strip_comments_for_prefix(code, before.len() - word.len(), ignored);
+            }
+            "extends" if !member => return Some(keyword),
+            _ => return None,
+        }
+    }
 }
 
 /// The offset of the `<` that opens the type-argument list closed by the `>` at
@@ -1868,10 +1912,17 @@ fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -
     let mut depth = 0usize;
     let mut index = from;
     // Number of top-level `function` or `class` keywords whose body brace has
-    // not opened yet. It is above one for a class expression in a heritage
-    // clause (`class A extends class {} { ... }`): each `{` at depth zero
-    // opens the body of the innermost pending keyword, so the nested class
-    // body closes before the outer body starts.
+    // not opened yet. It is above one when the head of a class holds a
+    // function or class expression at the top level of its heritage
+    // (`class A extends class {} { ... }`, `class A extends new class {} {
+    // ... }`, `class A extends function () {}.bind(x) { ... }`). Every such
+    // keyword counts, whatever operator (`new`, `async`) or comment precedes
+    // it: a head at the top level is made of the keyword, names, parameter
+    // lists and the heritage expression, and only an expression that is an
+    // operand of the heritage (a member or call chain on a primary
+    // expression) can hold a keyword outside brackets. Each `{` at depth zero
+    // opens the body of the innermost pending keyword, so a nested body closes
+    // before the outer body starts.
     let mut pending_bodies = 0usize;
     // True while a body that started at depth zero is open.
     let mut in_body = false;
@@ -1942,13 +1993,6 @@ fn arrow_expression_end(source: &str, from: usize, ignored: &[(usize, usize)]) -
         if depth == 0
             && !in_body
             && let Some(length) = function_or_class_keyword_len(source, index, ignored)
-            // A keyword while another one still awaits its body counts only
-            // as a class expression in an `extends` clause.
-            && (pending_bodies == 0
-                || matches!(
-                    previous_significant_token(source, index, ignored),
-                    Token::Word { text: "extends", member: false }
-                ))
         {
             pending_bodies += 1;
             index += length;
@@ -4816,6 +4860,193 @@ y=/process.env.F/.test(z),process.env.G"#;
                 "eval(code)",
             ),
         ]);
+    }
+
+    /// Operands that produce a body, written as the heritage of a class. Each
+    /// ends with its last body brace, so a `{` after it opens the class body.
+    const HERITAGE_BODY_EXPRESSIONS: [&str; 33] = [
+        "class {}",
+        "class B {}",
+        "class { run() {} }",
+        "class { x = { a: 1 }; static { run() } }",
+        "class extends class {} {}",
+        "class extends new class {} {}",
+        "class {}.x",
+        "class {}.x.y",
+        "class {}()",
+        "class {}.x(y)",
+        "class {}[0]",
+        "new class {}",
+        "new class B {}",
+        "new new class {}",
+        "new class {}()",
+        "new class {}(a, b)",
+        "new class extends new class {} {}",
+        "new class extends class {} {}()",
+        "new (class {})",
+        "(class {})",
+        "mix(class {})",
+        "function () {}",
+        "function named() {}",
+        "function* gen() {}",
+        "async function () {}",
+        "async function named() {}",
+        "new function () {}",
+        "new function () {}()",
+        "function () {}.bind(this)",
+        "new async function () {}",
+        "new function named(a = class {}) {}",
+        "function (a = function () {}) {}",
+        "mix(function () {}, class {})",
+    ];
+
+    /// Line breaks and comments that may sit between the tokens of a heritage
+    /// expression without ending it.
+    fn spread_heritage(heritage: &str, gap: &str) -> String {
+        heritage
+            .replace("new ", &format!("new{gap}"))
+            .replace("extends ", &format!("extends{gap}"))
+            .replace("class ", &format!("class{gap}"))
+            .replace("function ", &format!("function{gap}"))
+            .replace("async ", &format!("async{gap}"))
+    }
+
+    #[test]
+    fn body_producing_heritage_expressions_do_not_end_the_arrow_scope() {
+        // Gaps between the tokens of the heritage and the line break before the
+        // outer body. The call in the outer body must stay inside the arrow,
+        // and the call after the outer body must be reported.
+        let mut cases: Vec<(String, String)> = Vec::new();
+        for gap in [
+            " ".to_owned(),
+            " /*\n*/ ".to_owned(),
+            "\n".to_owned(),
+            " // c\n".to_owned(),
+        ] {
+            cases.push((gap, "\n".to_owned()));
+        }
+        for terminator in LINE_TERMINATORS {
+            cases.push((terminator.to_owned(), format!("/*{terminator}*/")));
+            cases.push((terminator.to_owned(), terminator.to_owned()));
+        }
+        for heritage in HERITAGE_BODY_EXPRESSIONS {
+            for (gap, line_break) in &cases {
+                let heritage = spread_heritage(heritage, gap);
+                for head in ["class A extends", "class extends"] {
+                    let source = format!(
+                        "const f = (eval) => {head} {heritage} {line_break} {{ m() {{ return \
+                         eval(code) }} }} {line_break} eval(code)"
+                    );
+                    assert_eq!(
+                        direct_eval_offsets(&source),
+                        vec![source.rfind("eval(code)").unwrap()],
+                        "{source:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn body_producing_expressions_inside_a_heritage_hold_their_own_calls() {
+        // The calls in the nested body and in the outer body are both inside
+        // the arrow, and the heritage does not leak a pending body into the
+        // statement after it.
+        for heritage in HERITAGE_BODY_EXPRESSIONS {
+            let source = format!(
+                "const f = (eval) => class A extends {heritage}\n{{ m() {{ return eval(code) }} \
+                 }}\nlater(eval(code))"
+            );
+            assert_eq!(
+                direct_eval_offsets(&source),
+                vec![source.rfind("eval(code)").unwrap()],
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn expressions_that_are_not_a_heritage_end_the_arrow_body_at_a_line_break() {
+        for terminator in LINE_TERMINATORS {
+            for expression in HERITAGE_BODY_EXPRESSIONS {
+                // Without an outer class, the expression is the whole body.
+                // Its closing brace (or call) completes it, and the block on
+                // the next line is a new statement.
+                for line_break in [format!("/*{terminator}*/"), terminator.to_string()] {
+                    let source =
+                        format!("const f = (eval) => {expression} {line_break} eval(code)");
+                    assert_eq!(
+                        direct_eval_offsets(&source),
+                        vec![source.rfind("eval(code)").unwrap()],
+                        "{source:?}"
+                    );
+                }
+            }
+            // A class that ends before the body keyword is complete: the
+            // heritage is a plain name, so the line break ends the arrow.
+            for heritage in ["B", "B.c", "mix(B)", "(class {})", "mix(class {})"] {
+                let source = format!(
+                    "const f = (eval) => class A extends {heritage} {{}}{terminator}eval(code)"
+                );
+                assert_eq!(
+                    direct_eval_offsets(&source),
+                    vec![source.rfind("eval(code)").unwrap()],
+                    "{source:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn heritage_body_expressions_do_not_hide_the_outer_class_body() {
+        for heritage in HERITAGE_BODY_EXPRESSIONS {
+            for outer in [
+                "class C extends {h} { eval(value) {} }",
+                "const D = class C extends {h} { eval(value) {} };",
+                "const D = class extends {h} { eval(value) {} };",
+                "class C extends {h} { run() { return 1 } eval(value) {} }",
+            ] {
+                let source = outer.replace("{h}", heritage);
+                assert_eq!(direct_eval_line(&source), None, "{source:?}");
+                let with_call = format!("{source}\neval(fresh);");
+                assert_reports_at(&with_call, "eval(fresh)");
+            }
+            // The nested body does not make the braces after a plain class a
+            // class body.
+            let source = format!(
+                "class C extends B {{}}\nclass D extends {heritage} {{}}\n{{ eval(code) {{}} }}"
+            );
+            assert_reports_at(&source, "eval(code)");
+        }
+    }
+
+    #[test]
+    fn braces_after_a_heritage_body_expression_hold_members() {
+        for heritage in HERITAGE_BODY_EXPRESSIONS {
+            let source = format!("class C extends {heritage} {{ if(x) {{}} }}");
+            let open = source.rfind("{ if").unwrap();
+            assert!(
+                brace_holds_members(&source, open, &non_code_ranges(&source)),
+                "{source:?}"
+            );
+            assert!(
+                class_heading_precedes(&source, open, &non_code_ranges(&source)),
+                "{source:?}"
+            );
+            // A class declaration followed by a block is not a heritage.
+            let source = "class C {}\n{ if(x) {} }";
+            let open = source.rfind("{ if").unwrap();
+            assert!(
+                !brace_holds_members(source, open, &non_code_ranges(source)),
+                "{source:?}"
+            );
+            let source = format!("const D = {heritage}\n{{ if(x) {{}} }}");
+            let open = source.rfind("{ if").unwrap();
+            assert!(
+                !class_heading_precedes(&source, open, &non_code_ranges(&source)),
+                "{source:?}"
+            );
+        }
     }
 
     #[test]
