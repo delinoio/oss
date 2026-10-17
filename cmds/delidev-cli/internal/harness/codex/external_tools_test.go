@@ -12,7 +12,8 @@ import (
 )
 
 const mcpStartedFixture = `{"type":"mcpToolCall","id":"mcp-call","server":"native","tool":"list_mcp_resources","arguments":{"private":"argument-sentinel"},"status":"inProgress","result":null,"error":null,"durationMs":null}`
-const mcpCompletedFixture = `{"type":"mcpToolCall","id":"mcp-call","server":"native","tool":"list_mcp_resources","arguments":{"private":"argument-sentinel"},"status":"completed","result":{"content":[{"type":"text","text":"Original result"},{"type":"image","data":"private-image-sentinel","mimeType":"image/png"},{"type":"resource_link","uri":"private-resource-sentinel","name":"resource"}],"structuredContent":{"private":"structured-sentinel"}},"error":null,"durationMs":9007199254740993}`
+const mcpCompletedResultJSON = `{"content":[{"type":"text","text":"Original result"},{"type":"image","data":"private-image-sentinel","mimeType":"image/png"},{"type":"resource_link","uri":"private-resource-sentinel","name":"resource"}],"structuredContent":{"private":"structured-sentinel"}}`
+const mcpCompletedFixture = `{"type":"mcpToolCall","id":"mcp-call","server":"native","tool":"list_mcp_resources","arguments":{"private":"argument-sentinel"},"status":"completed","result":` + mcpCompletedResultJSON + `,"error":null,"durationMs":9007199254740993}`
 
 func TestNativeMCPToolLifecycleUsesNegotiatedInertProjection(t *testing.T) {
 	for _, provider := range []string{"subscription", "api"} {
@@ -156,6 +157,83 @@ func TestNativeWebToolCompletionRequiresOriginalAction(t *testing.T) {
 		raw := json.RawMessage(`{"type":"webSearch","id":"web-call","query":"fixture","action":` + action + `}`)
 		if _, snapshot, err := decodeWebTool(raw, true); err != nil || snapshot.Status != domain.DynamicDone {
 			t.Fatal("valid completed action rejected", err)
+		}
+	}
+}
+
+func TestNativeMCPTerminalItemsRequireAnOutcome(t *testing.T) {
+	terminal := func(status, result, errorValue string) string {
+		raw := strings.Replace(mcpStartedFixture, `"inProgress"`, status, 1)
+		raw = strings.Replace(raw, `"result":null`, `"result":`+result, 1)
+		return strings.Replace(raw, `"error":null`, `"error":`+errorValue, 1)
+	}
+	const (
+		empty  = `{"content":[]}`
+		failed = `{"message":"native-failure"}`
+	)
+	for _, tc := range []struct {
+		name    string
+		raw     string
+		success bool
+		valid   bool
+	}{
+		{"completed with null outcomes", terminal(`"completed"`, `null`, `null`), false, false},
+		{"completed with omitted outcomes", strings.NewReplacer(`,"result":null`, ``, `,"error":null`, ``).Replace(strings.Replace(mcpStartedFixture, `"inProgress"`, `"completed"`, 1)), false, false},
+		{"completed with error only", terminal(`"completed"`, `null`, failed), false, false},
+		{"completed with result and error", terminal(`"completed"`, empty, failed), false, false},
+		{"completed with empty content", terminal(`"completed"`, empty, `null`), true, true},
+		{"failed with null outcomes", terminal(`"failed"`, `null`, `null`), false, false},
+		{"failed with omitted outcomes", strings.NewReplacer(`,"result":null`, ``, `,"error":null`, ``).Replace(strings.Replace(mcpStartedFixture, `"inProgress"`, `"failed"`, 1)), false, false},
+		{"failed with result and error", terminal(`"failed"`, empty, failed), false, false},
+		{"failed with error only", terminal(`"failed"`, `null`, failed), false, true},
+		{"failed with result only", terminal(`"failed"`, empty, `null`), false, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			id, snapshot, err := decodeMCPTool(json.RawMessage(tc.raw), true, enlargedNativeFrameBytes)
+			if !tc.valid {
+				if err == nil {
+					t.Fatal("outcome-free or ambiguous terminal MCP item accepted")
+				}
+				return
+			}
+			if err != nil || id != "mcp-call" || snapshot.Success == nil || *snapshot.Success != tc.success {
+				t.Fatal("valid terminal MCP item rejected or misclassified", err)
+			}
+
+			// The same item must be settled history for every history reader.
+			var identity struct{ Type string }
+			_ = json.Unmarshal([]byte(tc.raw), &identity)
+			if !settledExternalTool(json.RawMessage(tc.raw), identity.Type) {
+				t.Fatal("valid terminal MCP item is not settled history")
+			}
+		})
+	}
+	// An in-progress item stays outcome-free and valid.
+	if _, snapshot, err := decodeMCPTool(json.RawMessage(mcpStartedFixture), false, enlargedNativeFrameBytes); err != nil || snapshot.Success != nil {
+		t.Fatal("in-progress MCP item without an outcome rejected", err)
+	}
+}
+
+func TestNativeMCPStartedThenOutcomeFreeTerminalPublishesNothing(t *testing.T) {
+	for _, status := range []string{`"completed"`, `"failed"`} {
+		for _, outcome := range []string{`"result":null,"error":null`, `"result":null`, `"error":null`, ``} {
+			raw := strings.Replace(mcpStartedFixture, `"inProgress"`, status, 1)
+			if outcome == "" {
+				raw = strings.Replace(raw, `"result":null,"error":null,`, ``, 1)
+			} else {
+				raw = strings.Replace(raw, `"result":null,"error":null`, outcome, 1)
+			}
+			c, turn := observationClient()
+			c.dynamicToolsEnabled = true
+			if _, err := observeFixture(c, "item/started", dynamicItemEnvelopeFixture(c, turn, false, mcpStartedFixture)); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := observeFixture(c, "item/completed", dynamicItemEnvelopeFixture(c, turn, true, raw)); err == nil {
+				t.Fatal("outcome-free terminal MCP item settled", status, outcome)
+			}
+			if c.dynamicItems["mcp-call"].Completed || len(c.dynamicArrivals) != 0 {
+				t.Fatal("rejected terminal MCP item changed lifecycle state", status, outcome)
+			}
 		}
 	}
 }

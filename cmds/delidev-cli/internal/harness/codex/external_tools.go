@@ -66,6 +66,11 @@ func decodeMCPTool(raw json.RawMessage, completed bool, limit int) (string, *dom
 	if !completed && (hasResult || hasError || item.DurationMS != nil) || hasResult && hasError || item.Status == domain.DynamicDone && hasError {
 		return "", nil, incompatible()
 	}
+	// Terminal items must carry their outcome: a completed call needs a result and
+	// a failed call needs exactly one of a result or an error.
+	if completed && !hasResult && (item.Status == domain.DynamicDone || !hasError) {
+		return "", nil, incompatible()
+	}
 	snapshot := &domain.DynamicToolSnapshot{Identity: identity, Status: item.Status, DurationMS: item.DurationMS}
 	if hasResult {
 		var result struct {

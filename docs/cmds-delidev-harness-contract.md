@@ -3200,6 +3200,10 @@ MCP identity retains the original server as namespace, tool name and argument
 commitment. Preserve native status, exact duration and ordered text results.
 Media, resources and structured results retain commitments without exposing
 locators, embedded bytes or private metadata. Native error text stays private.
+A terminal MCP item must carry its outcome: a completed call requires a non-null
+result, and a failed call requires exactly one non-null result or error. Terminal
+items with neither, with explicit null outcomes, or with both are rejected as
+incompatible before live settlement.
 Standalone web search starts with an empty query and no action. Its lifecycle
 retains an empty-argument commitment; completion separately commits the observed
 query and action. Completion does not establish remote success because the
@@ -3772,7 +3776,8 @@ automatically by the original Worker (see the
 
 Native `mcpToolCall` and `webSearch` history items use the same bounded schemas
 as live observations in continuation, compaction, legacy/managed Fork and
-paged Revert readers. Only terminal MCP statuses and completed web-search items
+paged Revert readers. Only terminal MCP statuses that carry a result (completed)
+or exactly one result or error (failed), and completed web-search items
 with a non-null validated action are admitted. A start-shaped web item cannot
 complete its live lifecycle or enter continuation, compaction, Fork or Revert
 as a settled tool. Original items, ordering, identities and private content remain in the history proof; reading
