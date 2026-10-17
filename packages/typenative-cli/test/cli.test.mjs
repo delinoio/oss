@@ -359,3 +359,24 @@ test("create rejects present empty doctor-only options without writing", async (
     assert.equal(existsSync(destination), false);
   }
 });
+
+test("application commands reject malformed syntax before pipeline availability", () => {
+  for (const command of ["dev", "build", "run"]) {
+    for (const args of [
+      ["extra"],
+      ["--probe"],
+      ["--scriptc="],
+      ["--target="],
+      ["--target", "unknown"],
+      ["--target", "linux-x64", "--target", "macos-arm64"],
+    ]) {
+      const result = invoke([command, ...args]);
+      assert.equal(result.status, 1);
+      assert.equal(result.records[0].code, Code.Arguments);
+    }
+    assert.equal(
+      invoke([command, "--target", "linux-x64"]).records[0].code,
+      Code.Pipeline,
+    );
+  }
+});

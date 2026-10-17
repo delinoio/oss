@@ -51,6 +51,7 @@ try {
   try {
     parsed = parseArgs({
       allowPositionals: true,
+      tokens: true,
       strict: true,
       options: {
         json: { type: "boolean" },
@@ -136,6 +137,20 @@ try {
     }
   } else if (["dev", "build", "run"].includes(command)) {
     phase = command;
+    if (
+      positionals.length !== 1 ||
+      values.scriptc !== undefined ||
+      values.probe !== undefined ||
+      (values.target !== undefined &&
+        !Object.values(Target).includes(values.target as Target)) ||
+      parsed.tokens.filter(
+        (token) => token.kind === "option" && token.name === "target",
+      ).length > 1
+    )
+      throw new DiagnosticError(
+        Code.Arguments,
+        "Use tn dev|build|run [--target <target>] [--json].",
+      );
     throw new DiagnosticError(
       Code.Pipeline,
       "The React/Blitz native pipeline is not implemented. No application was launched.",
