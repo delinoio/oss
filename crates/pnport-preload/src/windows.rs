@@ -15,7 +15,10 @@ use std::{
     os::windows::ffi::{OsStrExt, OsStringExt},
     path::{Path, PathBuf},
     ptr,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, OnceLock,
+    },
 };
 
 use ntapi::ntioapi::*;
@@ -89,6 +92,11 @@ impl Drop for Guard {
 struct OpenFile {
     translation: Translation,
     listing: Mutex<Option<directory::Listing>>,
+    /// Set once the native file object is associated with an I/O completion
+    /// port (`FileCompletionInformation`). Duplicated handles share this
+    /// state because they share the `Arc<OpenFile>`, as they share the native
+    /// file object.
+    completion_port: AtomicBool,
 }
 struct Runtime {
     view: View,
@@ -155,6 +163,7 @@ fn track(handle: HANDLE, translation: Translation) {
                 Arc::new(OpenFile {
                     translation,
                     listing: Mutex::new(None),
+                    completion_port: AtomicBool::new(false),
                 }),
             );
         }
@@ -435,7 +444,19 @@ hook!(SET_INFO, ntapi::ntioapi::NtSetInformationFile, c"NtSetInformationFile", (
             if let Err(status) = translate(&target, true) { return status; }
         } else { match object_path(&mut attrs) { Ok(Some(path)) => if let Err(status) = translate(&path, true) { return status; }, _ => return UNSUPPORTED } }
     }
-    (SET_INFO.real())(file,ios,buffer,length,class)
+    let status = (SET_INFO.real())(file,ios,buffer,length,class);
+    // Record the association only after the native association succeeded so a
+    // rejected association never changes directory query behavior.
+    if status >= 0 && class == FileCompletionInformation {
+        if let Some(owned) = handle(file) {
+            owned.completion_port.store(true, Ordering::Release);
+            tracing::debug!(
+                action = "windows_completion_port_recorded",
+                "Recorded an I/O completion port association on a managed handle"
+            );
+        }
+    }
+    status
 });
 hook!(CLOSE, ntapi::ntobapi::NtClose, c"NtClose", (file: HANDLE) -> NTSTATUS, {
     let Some(_guard) = Guard::enter() else { return (CLOSE.real())(file); };

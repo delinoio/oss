@@ -517,11 +517,211 @@ fn native_child() {
             assert!(same(&launched, &image), "{api:?} null app: {launched:?}");
             assert!(same(&cwd, &child), "{api:?} null app cwd {cwd:?}");
         }
+    } else if mode == "completion" {
+        completion_port_directory_queries(&root);
     } else if mode == "wait" {
         fs::write(root.join("ready.txt"), std::process::id().to_string()).unwrap();
         loop {
             std::thread::sleep(Duration::from_millis(50));
         }
+    }
+}
+
+/// Native directory queries issued without an APC routine or context. A merged
+/// directory cannot post a completion packet, so a handle associated with an
+/// I/O completion port must fail explicitly instead of returning a result that
+/// a port waiter never observes.
+fn completion_port_directory_queries(root: &Path) {
+    use std::ffi::c_void;
+
+    use windows_sys::Win32::{
+        Foundation::{
+            CloseHandle, DuplicateHandle, GetLastError, DUPLICATE_SAME_ACCESS, HANDLE,
+            INVALID_HANDLE_VALUE, WAIT_TIMEOUT,
+        },
+        Storage::FileSystem::{
+            CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OVERLAPPED, FILE_LIST_DIRECTORY,
+            FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+        },
+        System::{
+            Threading::GetCurrentProcess,
+            IO::{CreateIoCompletionPort, GetQueuedCompletionStatus, IO_STATUS_BLOCK, OVERLAPPED},
+        },
+    };
+
+    #[link(name = "ntdll")]
+    extern "system" {
+        fn NtQueryDirectoryFile(
+            file: HANDLE,
+            event: HANDLE,
+            apc: *mut c_void,
+            context: *mut c_void,
+            ios: *mut IO_STATUS_BLOCK,
+            buffer: *mut c_void,
+            length: u32,
+            class: i32,
+            single: u8,
+            pattern: *mut c_void,
+            restart: u8,
+        ) -> i32;
+        fn NtQueryDirectoryFileEx(
+            file: HANDLE,
+            event: HANDLE,
+            apc: *mut c_void,
+            context: *mut c_void,
+            ios: *mut IO_STATUS_BLOCK,
+            buffer: *mut c_void,
+            length: u32,
+            class: i32,
+            flags: u32,
+            pattern: *mut c_void,
+        ) -> i32;
+    }
+    const FILE_NAMES_INFORMATION: i32 = 12;
+    const SL_RESTART_SCAN: u32 = 1;
+
+    #[derive(Clone, Copy, Debug)]
+    enum Query {
+        Classic,
+        Extended,
+    }
+    /// Returns the NTSTATUS of a restarting null-callback query.
+    fn query(directory: HANDLE, api: Query) -> i32 {
+        let mut ios: IO_STATUS_BLOCK = unsafe { std::mem::zeroed() };
+        let mut buffer = vec![0u64; 2048];
+        let length = (buffer.len() * 8) as u32;
+        unsafe {
+            match api {
+                Query::Classic => NtQueryDirectoryFile(
+                    directory,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    &mut ios,
+                    buffer.as_mut_ptr().cast(),
+                    length,
+                    FILE_NAMES_INFORMATION,
+                    0,
+                    std::ptr::null_mut(),
+                    1,
+                ),
+                Query::Extended => NtQueryDirectoryFileEx(
+                    directory,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    &mut ios,
+                    buffer.as_mut_ptr().cast(),
+                    length,
+                    FILE_NAMES_INFORMATION,
+                    SL_RESTART_SCAN,
+                    std::ptr::null_mut(),
+                ),
+            }
+        }
+    }
+    fn open(path: &Path, overlapped: bool) -> HANDLE {
+        let path = pnport_core::windows::wide(path).unwrap();
+        let handle = unsafe {
+            CreateFileW(
+                path.as_ptr(),
+                FILE_LIST_DIRECTORY,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                FILE_FLAG_BACKUP_SEMANTICS | if overlapped { FILE_FLAG_OVERLAPPED } else { 0 },
+                std::ptr::null_mut(),
+            )
+        };
+        assert_ne!(handle, INVALID_HANDLE_VALUE, "open {path:?}");
+        handle
+    }
+    /// Associates a new completion port with the handle. Returns the port, or
+    /// zero when the native association failed.
+    fn associate(directory: HANDLE) -> HANDLE {
+        unsafe { CreateIoCompletionPort(directory, std::ptr::null_mut(), 1, 0) }
+    }
+    /// A rejected query must not post a completion packet either.
+    fn assert_no_packet(port: HANDLE) {
+        let (mut bytes, mut key) = (0, 0);
+        let mut overlapped: *mut OVERLAPPED = std::ptr::null_mut();
+        let received =
+            unsafe { GetQueuedCompletionStatus(port, &mut bytes, &mut key, &mut overlapped, 200) };
+        assert_eq!(received, 0, "unexpected completion packet");
+        assert_eq!(unsafe { GetLastError() }, WAIT_TIMEOUT);
+    }
+    let apis = [Query::Classic, Query::Extended];
+
+    // Controls: an unassociated synchronous handle keeps the merged listing.
+    let synchronous = open(root, false);
+    for api in apis {
+        let status = query(synchronous, api);
+        assert!(status >= 0, "{api:?} unassociated status {status:#x}");
+    }
+    // A failed association (the handle is not overlapped) records nothing.
+    assert_eq!(associate(synchronous), std::ptr::null_mut());
+    for api in apis {
+        let status = query(synchronous, api);
+        assert!(status >= 0, "{api:?} failed association status {status:#x}");
+    }
+    unsafe { CloseHandle(synchronous) };
+
+    // Repeat so a reopened handle that reuses the numeric value starts clean.
+    for round in 0..2 {
+        let directory = open(root, true);
+        let port = associate(directory);
+        assert!(!port.is_null(), "round {round} association failed");
+        for api in apis {
+            let status = query(directory, api);
+            assert!(status < 0, "{api:?} round {round} associated {status:#x}");
+        }
+        assert_no_packet(port);
+        // A same-process duplicate shares the native file object.
+        let mut duplicate: HANDLE = std::ptr::null_mut();
+        let duplicated = unsafe {
+            DuplicateHandle(
+                GetCurrentProcess(),
+                directory,
+                GetCurrentProcess(),
+                &mut duplicate,
+                0,
+                0,
+                DUPLICATE_SAME_ACCESS,
+            )
+        };
+        assert_ne!(duplicated, 0, "duplicate directory handle");
+        for api in apis {
+            let status = query(duplicate, api);
+            assert!(status < 0, "{api:?} round {round} duplicate {status:#x}");
+        }
+        assert_no_packet(port);
+        unsafe {
+            CloseHandle(duplicate);
+            CloseHandle(directory);
+            CloseHandle(port);
+        }
+        let reopened = open(root, true);
+        for api in apis {
+            let status = query(reopened, api);
+            assert!(status >= 0, "{api:?} round {round} reopened {status:#x}");
+        }
+        unsafe { CloseHandle(reopened) };
+    }
+
+    // A native-backed directory (no merged entries) keeps the native syscall.
+    let plain = root.join("plain");
+    fs::create_dir_all(&plain).unwrap();
+    fs::write(plain.join("file.txt"), b"plain").unwrap();
+    let native = open(&plain, true);
+    let port = associate(native);
+    assert!(!port.is_null(), "native association failed");
+    for api in apis {
+        let status = query(native, api);
+        assert!(status >= 0, "{api:?} native status {status:#x}");
+    }
+    unsafe {
+        CloseHandle(native);
+        CloseHandle(port);
     }
 }
 
@@ -616,6 +816,21 @@ fn relative_applications_resolve_against_the_caller_directory() {
     assert!(
         output.status.success(),
         "application resolution failed {:?}: {} {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+#[test]
+fn completion_port_handles_reject_merged_directory_queries() {
+    let fixture = fixture(false);
+    let root = fixture.path().join("project 한글 space");
+    let cache = fixture.path().join("private-cache");
+    let output = run(&root, &cache, "completion").output().unwrap();
+    assert!(
+        output.status.success(),
+        "status {:?}: {} {}",
         output.status.code(),
         String::from_utf8_lossy(&output.stderr),
         String::from_utf8_lossy(&output.stdout)

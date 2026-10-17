@@ -153,7 +153,14 @@ unsafe fn query(
     }
     // Do not claim completion-port/APC semantics with a synchronous emulation.
     // Native-backed directories with no merged entries use the native syscall.
-    if apc.is_some() || !context.is_null() {
+    // `NtQueryDirectoryFileEx` accepts a null context for a handle associated
+    // with a completion port, so the association is tracked per open object.
+    if apc.is_some() || !context.is_null() || owned.completion_port.load(Ordering::Acquire) {
+        tracing::debug!(
+            action = "windows_directory_query_rejected",
+            callback = apc.is_some() || !context.is_null(),
+            "Rejected a merged directory query that needs APC or completion-port delivery"
+        );
         return Some(fail(Code::PnportUnsupportedOperation));
     }
     let Some(header) = layout(class) else {
