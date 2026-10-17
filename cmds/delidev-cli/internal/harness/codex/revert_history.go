@@ -134,6 +134,10 @@ func verifyRevertHistoryItem(raw json.RawMessage) (string, error) {
 		if !settledExternalTool(raw, item.Type) {
 			return "", compactionUncertain()
 		}
+	case "dynamicToolCall":
+		if _, _, err := decodeDynamicTool(raw, true); err != nil {
+			return "", compactionUncertain()
+		}
 	case "functionCallOutput":
 		if _, _, err := decodeFunctionOutput(raw); err != nil {
 			return "", compactionUncertain()
