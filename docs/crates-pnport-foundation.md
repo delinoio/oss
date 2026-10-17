@@ -88,14 +88,16 @@ dispatch/child birth instead of losing completion semantics or peer provenance.
 A directory query is rejected when it carries an APC routine or context, or when
 its file object is associated with an I/O completion port, even with a null
 callback and context. The association is recorded only after the native
-`FileCompletionInformation` request succeeds, is shared by duplicated handles
-and ends with the handle. An association request holds the per-object state
-exclusively across the native call and the state update, and a merged query
-holds it shared for its whole emulation, so a concurrent query on a duplicated
-handle either completes before the association or observes it, and never
-returns a packet-less result for an installed port. A rejected query leaves the
-enumeration cursor unchanged and writes no status. Native-backed directories
-and unassociated synchronous queries keep their behavior.
+`FileCompletionInformation` or `FileReplaceCompletionInformation` request
+succeeds; a replacement request with a null port removes the recorded
+association, and a non-null port sets it. The state is shared by duplicated
+handles and ends with the handle. An association request holds the per-object
+state exclusively across the native call and the state update, and a merged
+query holds it shared for its whole emulation, so a concurrent query on a
+duplicated handle either completes before the association or observes it, and
+never returns a packet-less result for an installed port. A rejected query
+leaves the enumeration cursor unchanged and writes no status. Native-backed
+directories and unassociated synchronous queries keep their behavior.
 Unclassified disk-device namespaces and lossily encoded Detours DLL paths also
 fail explicitly. These limits remain part of complete Windows acceptance.
 

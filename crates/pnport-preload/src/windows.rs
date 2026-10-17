@@ -90,7 +90,8 @@ struct OpenFile {
     translation: Translation,
     listing: Mutex<Option<directory::Listing>>,
     /// Whether the native file object is associated with an I/O completion
-    /// port (`FileCompletionInformation`). Duplicated handles share this state
+    /// port, as set by `FileCompletionInformation` or changed/removed by
+    /// `FileReplaceCompletionInformation`. Duplicated handles share this state
     /// because they share the `Arc<OpenFile>`, as they share the native file
     /// object. An association request holds the write lock across the native
     /// call and the state update, and a merged directory query holds the read
@@ -428,6 +429,25 @@ hook!(WRITE, ntapi::ntioapi::NtWriteFile, c"NtWriteFile", (file: HANDLE, event: 
     if !writable(file) { return DENIED; }
     (WRITE.real())(file,event,apc,context,ios,buffer,length,offset,key)
 });
+/// Returns whether a successful completion-port request leaves the file object
+/// associated. `FileCompletionInformation` always associates a port.
+/// `FileReplaceCompletionInformation` (Windows 8.1+) changes the port, or
+/// removes the association when `FILE_COMPLETION_INFORMATION::Port` is null.
+/// Returns `None` when the replacement payload cannot be read.
+unsafe fn completion_port_request(
+    class: FILE_INFORMATION_CLASS,
+    buffer: PVOID,
+    length: ULONG,
+) -> Option<bool> {
+    if class == FileCompletionInformation {
+        return Some(true);
+    }
+    if buffer.is_null() || (length as usize) < std::mem::size_of::<FILE_COMPLETION_INFORMATION>() {
+        return None;
+    }
+    let request = ptr::read_unaligned(buffer.cast::<FILE_COMPLETION_INFORMATION>());
+    Some(!request.Port.is_null())
+}
 hook!(SET_INFO, ntapi::ntioapi::NtSetInformationFile, c"NtSetInformationFile", (file: HANDLE, ios: PIO_STATUS_BLOCK, buffer: PVOID, length: ULONG, class: FILE_INFORMATION_CLASS) -> NTSTATUS, {
     let Some(_guard) = Guard::enter() else { return (SET_INFO.real())(file,ios,buffer,length,class); };
     if !writable(file) && !matches!(class, FilePositionInformation | FileCompletionInformation | FileIoPriorityHintInformation | FileIoCompletionNotificationInformation) { return DENIED; }
@@ -452,19 +472,25 @@ hook!(SET_INFO, ntapi::ntioapi::NtSetInformationFile, c"NtSetInformationFile", (
             if let Err(status) = translate(&target, true) { return status; }
         } else { match object_path(&mut attrs) { Ok(Some(path)) => if let Err(status) = translate(&path, true) { return status; }, _ => return UNSUPPORTED } }
     }
-    if class == FileCompletionInformation {
+    if matches!(class, FileCompletionInformation | FileReplaceCompletionInformation) {
         if let Some(owned) = handle(file) {
             // Serialize the native association request and the recorded state
-            // against merged directory queries on this file object. The state
-            // is recorded only if the native request succeeds so a rejected
-            // request never changes directory query behavior.
+            // against merged directory queries on this file object. The
+            // requested state is read before the call; it is recorded only if
+            // the native request succeeds so a rejected request never changes
+            // directory query behavior.
+            let requested = completion_port_request(class, buffer, length);
             let mut associated = owned.completion_port.write().unwrap_or_else(PoisonError::into_inner);
             let status = (SET_INFO.real())(file,ios,buffer,length,class);
             if status >= 0 {
-                *associated = true;
+                // An unreadable replacement request cannot succeed natively;
+                // fail closed by treating the object as associated.
+                *associated = requested.unwrap_or(true);
                 tracing::debug!(
                     action = "windows_completion_port_recorded",
-                    "Recorded an I/O completion port association on a managed handle"
+                    class,
+                    associated = *associated,
+                    "Recorded an I/O completion port association change on a managed handle"
                 );
             }
             return status;

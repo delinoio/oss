@@ -583,9 +583,17 @@ fn completion_port_directory_queries(root: &Path) {
             flags: u32,
             pattern: *mut c_void,
         ) -> i32;
+        fn NtSetInformationFile(
+            file: HANDLE,
+            ios: *mut IO_STATUS_BLOCK,
+            information: *mut c_void,
+            length: u32,
+            class: i32,
+        ) -> i32;
     }
     const FILE_NAMES_INFORMATION: i32 = 12;
     const SL_RESTART_SCAN: u32 = 1;
+    const FILE_REPLACE_COMPLETION_INFORMATION: i32 = 61;
 
     unsafe extern "system" fn ignore_control_event(_event: u32) -> i32 {
         1
@@ -661,6 +669,29 @@ fn completion_port_directory_queries(root: &Path) {
         }
         unsafe { CloseHandle(event) };
         status
+    }
+    /// Replaces (or, with a null port, removes) the completion port of a
+    /// handle through `FileReplaceCompletionInformation` (Windows 8.1+).
+    fn replace_completion_port(directory: HANDLE, port: HANDLE) -> i32 {
+        #[repr(C)]
+        struct CompletionInformation {
+            port: HANDLE,
+            key: *mut c_void,
+        }
+        let mut information = CompletionInformation {
+            port,
+            key: std::ptr::null_mut(),
+        };
+        let mut ios: IO_STATUS_BLOCK = unsafe { std::mem::zeroed() };
+        unsafe {
+            NtSetInformationFile(
+                directory,
+                &mut ios,
+                (&raw mut information).cast(),
+                std::mem::size_of::<CompletionInformation>() as u32,
+                FILE_REPLACE_COMPLETION_INFORMATION,
+            )
+        }
     }
     fn open(path: &Path, overlapped: bool) -> HANDLE {
         let path = pnport_core::windows::wide(path).unwrap();
@@ -748,6 +779,32 @@ fn completion_port_directory_queries(root: &Path) {
             assert!(status >= 0, "{api:?} round {round} reopened {status:#x}");
         }
         unsafe { CloseHandle(reopened) };
+    }
+
+    // `FileReplaceCompletionInformation` changes or removes the association
+    // without `FileCompletionInformation`, and the recorded state must follow.
+    let directory = open(root, true);
+    let port = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, std::ptr::null_mut(), 1, 0) };
+    assert!(!port.is_null(), "create replacement port");
+    let installed = replace_completion_port(directory, port);
+    if installed >= 0 {
+        for api in apis {
+            let status = query(directory, api, Some(port));
+            assert!(status < 0, "{api:?} replaced association {status:#x}");
+        }
+        assert_no_packet(port);
+        let removed = replace_completion_port(directory, std::ptr::null_mut());
+        assert!(removed >= 0, "remove association status {removed:#x}");
+        for api in apis {
+            let status = query(directory, api, None);
+            assert!(status >= 0, "{api:?} removed association {status:#x}");
+        }
+    } else {
+        eprintln!("FileReplaceCompletionInformation is unavailable: {installed:#x}");
+    }
+    unsafe {
+        CloseHandle(directory);
+        CloseHandle(port);
     }
 
     // A native-backed directory (no merged entries) keeps the native syscall.
