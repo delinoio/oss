@@ -72,6 +72,9 @@ func Resource(record store.Record) *pb.Resource {
 	if record.Kind == domain.TerminalKind {
 		document = terminalResourceDocument(document)
 	}
+	if record.Kind == domain.AccountKind {
+		document = claudeUsageResourceDocument(document)
+	}
 	if record.Kind == domain.JobKind {
 		document = nativeModelJobDocument(document)
 		document = nativeReviewJobDocument(document)
