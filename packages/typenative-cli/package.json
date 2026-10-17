@@ -21,7 +21,8 @@
     "build": "tsc -p tsconfig.json",
     "test": "pnpm build && node --test test/*.test.mjs",
     "prepack": "pnpm build",
-    "test:native": "pnpm build && node test/native-react.mjs"
+    "test:native": "pnpm build && node test/native-react.mjs",
+    "toolchain:patch": "node toolchain/apply-scriptc-patches.mjs"
   },
   "devDependencies": {
     "@types/node": "24.10.1",

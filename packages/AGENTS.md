@@ -8,6 +8,8 @@
 
 - Follow root `AGENTS.md` and the owning project/domain contracts.
 
+- TypeNative compiler patch changes follow the [compiler patch maintenance contract](../docs/packages-typenative-foundation.md#compiler-patch-maintenance). Preserve pinned source and patch identities, upstream licenses, and native regression coverage.
+
 ## Owning contracts
 
 - [bundlewhy adapters and distribution](../docs/packages-bundlewhy-distribution-contract.md)

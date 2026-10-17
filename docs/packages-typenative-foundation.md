@@ -161,6 +161,12 @@ Run `pnpm --filter @delino/typenative-cli test` and `pnpm --filter @delino/typen
 
 Initial investigation pins: React `19.3.1`; ScriptC `0.3.5` and reviewed source revision `d8c2b0f96d8de8fadf4937d93a701dfd3a10f4df`; Blitz revision `1e5479ae62737d60f7c2f8e8d31524f5cfe2ec01`. These selections are inputs for compatibility work, not an assertion that the combination passes acceptance. Do not automatically upgrade them. Preserve original licenses in distributions.
 
+### Compiler patch maintenance
+
+Maintain source patches under `packages/typenative-cli/toolchain/`. The patch manifest pins the upstream repository, full source revision, base package version and SHA-256 of the patch. Patch application must check integrity, reject a different source revision or tracked edits, and check the entire patch before writing. It must not fetch source, install dependencies, reset a checkout or replace a selected compiler automatically.
+
+Build the compiler and native runtime artifacts from the same selected source revision plus patches. Matching package version strings alone do not establish ABI compatibility. Keep upstream license text with patches and document each change's cause, scope and removal condition. Compiler regression tests must compare native behavior with a JavaScript reference where applicable; running that reference is tooling validation, not application execution.
+
 ### Out of scope
 
 - React DOM compatibility guarantees, server-only React APIs, RSC, experimental React APIs, SSR, and web deployment.

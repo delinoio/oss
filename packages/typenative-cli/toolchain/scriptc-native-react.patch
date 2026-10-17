@@ -1,0 +1,247 @@
+diff --git a/packages/compiler/src/frontend/lowering/call-signatures.ts b/packages/compiler/src/frontend/lowering/call-signatures.ts
+index 0499223f..851a927e 100644
+--- a/packages/compiler/src/frontend/lowering/call-signatures.ts
++++ b/packages/compiler/src/frontend/lowering/call-signatures.ts
+@@ -650,10 +650,34 @@ export function collectSignatureInner(lowerer: Lowerer, decl: ts.FunctionDeclara
+   });
+ }
+ 
++/** Only directive prologues establish strictness. A later string expression
++ * must not enable unmapped arguments for a sloppy function. */
++function hasStrictAncestor(node: ts.Node): boolean {
++  for (let current: ts.Node | undefined = node; current; current = current.parent) {
++    if (ts.isClassDeclaration(current) || ts.isClassExpression(current)) return true;
++    const statements = ts.isSourceFile(current)
++      ? current.statements
++      : ts.isFunctionLike(current) && current.body && ts.isBlock(current.body)
++        ? current.body.statements
++        : undefined;
++    if (!statements) continue;
++    for (const statement of statements) {
++      if (!ts.isExpressionStatement(statement) || !ts.isStringLiteral(statement.expression)) break;
++      if (
++        statement.expression.getText() === '"use strict"' ||
++        statement.expression.getText() === "'use strict'"
++      )
++        return true;
++    }
++  }
++  return false;
++}
++
+ /** Arrows inherit arguments. Ordinary JS functions receive a hidden
+  * array unless a declared rest parameter already owns that contract.
+- * Class methods are strict; other parameterized forms require ES modules
+- * because sloppy-mode arguments alias named parameters. */
++ * Strict functions have unmapped arguments, including CommonJS functions
++ * with an inherited or local strict directive. Sloppy functions still alias
++ * named parameters and must remain refused. */
+ function appendArgumentsParameter(
+   lowerer: Lowerer,
+   node: ts.SignatureDeclaration,
+@@ -675,7 +699,11 @@ function appendArgumentsParameter(
+     const classMethod =
+       ts.isMethodDeclaration(node) &&
+       (ts.isClassDeclaration(node.parent) || ts.isClassExpression(node.parent));
+-    if (!classMethod && !isNodeEsmFile(node.getSourceFile(), lowerer.program)) {
++    if (
++      !classMethod &&
++      !isNodeEsmFile(node.getSourceFile(), lowerer.program) &&
++      !hasStrictAncestor(node)
++    ) {
+       lowerer.unsupported(
+         "SC1090",
+         node,
+diff --git a/packages/compiler/src/frontend/lowering/lower-stmts.ts b/packages/compiler/src/frontend/lowering/lower-stmts.ts
+index 850af3e6..a14e7a3e 100644
+--- a/packages/compiler/src/frontend/lowering/lower-stmts.ts
++++ b/packages/compiler/src/frontend/lowering/lower-stmts.ts
+@@ -957,6 +957,12 @@ function varBindingType(lowerer: Lowerer, nameNode: ts.Identifier): IrType | nul
+     isNativeBuiltinValueInitializer(lowerer, nameNode.parent.initializer)
+   )
+     return DYN;
++  if (
++    ts.isVariableDeclaration(nameNode.parent) &&
++    jsBindingHasOpenWrites(lowerer, nameNode.parent)
++  ) {
++    return DYN;
++  }
+   let type = lowerer.mapTypeOf(lowerer.typeOf(nameNode));
+   if (type?.kind === "record" && isJsSourceFile(nameNode.getSourceFile())) {
+     const shape = lowerer.shapes.get(type.shapeId);
+@@ -5035,8 +5041,16 @@ export function jsBindingHasOpenWrites(lowerer: Lowerer, decl: ts.VariableDeclar
+   while (owner.parent && !ts.isFunctionLike(owner) && !ts.isSourceFile(owner)) owner = owner.parent;
+   let writes = lowerer.jsBindingWritesByOwner.get(owner);
+   if (!writes) {
+-    const indexed = new Map<string, ts.BinaryExpression[]>();
++    const indexed = new Map<string, (ts.BinaryExpression | ts.ForInStatement)[]>();
+     ts.walkPreorder(owner, (node) => {
++      // A for-in assignment writes strings even when a later hoisted var
++      // initializer makes the checker infer a numeric binding (minified JS).
++      if (ts.isForInStatement(node) && ts.isIdentifier(node.initializer)) {
++        const entries = indexed.get(node.initializer.text);
++        if (entries) entries.push(node);
++        else indexed.set(node.initializer.text, [node]);
++        return;
++      }
+       if (
+         !ts.isBinaryExpression(node) ||
+         node.operatorToken.kind < ts.SyntaxKind.FirstAssignment ||
+@@ -5051,10 +5065,11 @@ export function jsBindingHasOpenWrites(lowerer: Lowerer, decl: ts.VariableDeclar
+     writes = indexed;
+     lowerer.jsBindingWritesByOwner.set(owner, writes);
+   }
+-  return (writes.get(decl.name.text) ?? []).some(
+-    (node) =>
+-      lowerer.resolveValueSymbol(node.left as ts.Identifier) === symbol &&
+-      (lowerer.typeOf(node.right).flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0,
++  return (writes.get(decl.name.text) ?? []).some((node) =>
++    ts.isForInStatement(node)
++      ? lowerer.resolveValueSymbol(node.initializer as ts.Identifier) === symbol
++      : lowerer.resolveValueSymbol(node.left as ts.Identifier) === symbol &&
++        (lowerer.typeOf(node.right).flags & (ts.TypeFlags.Any | ts.TypeFlags.Unknown)) !== 0,
+   );
+ }
+ 
+diff --git a/packages/compiler/src/frontend/lowering/lowerer.ts b/packages/compiler/src/frontend/lowering/lowerer.ts
+index 0fff3c86..5076e6c8 100644
+--- a/packages/compiler/src/frontend/lowering/lowerer.ts
++++ b/packages/compiler/src/frontend/lowering/lowerer.ts
+@@ -1555,7 +1555,10 @@ export class Lowerer {
+   }
+   /** Syntactic writes indexed once per JS scope. Symbol and RHS type
+    * checks remain contextual to each binding probe. */
+-  readonly jsBindingWritesByOwner = new Map<ts.Node, Map<string, ts.BinaryExpression[]>>();
++  readonly jsBindingWritesByOwner = new Map<
++    ts.Node,
++    Map<string, (ts.BinaryExpression | ts.ForInStatement)[]>
++  >();
+   /** TRAP bindings: declarations whose initializer provably throws before
+    * producing a value (its chain roots at an ambient-undefined name —
+    * ambientUndefVarRootOf). Module init unwinds at the declaration, so no
+diff --git a/packages/compiler/src/frontend/strict-arguments.test.ts b/packages/compiler/src/frontend/strict-arguments.test.ts
+new file mode 100644
+index 00000000..93a85781
+--- /dev/null
++++ b/packages/compiler/src/frontend/strict-arguments.test.ts
+@@ -0,0 +1,120 @@
++import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
++import { execFileSync } from "node:child_process";
++import { tmpdir } from "node:os";
++import { join } from "node:path";
++import { expect, test } from "vitest";
++import { analyze, compile } from "../index.js";
++
++const cases = [
++  [
++    "file directive",
++    '"use strict"; function read(value) { value = 9; return arguments[0]; } console.log(read(3));',
++    false,
++  ],
++  [
++    "function directive",
++    'function read(value) { "use strict"; value = 9; return arguments[0]; } console.log(read(3));',
++    false,
++  ],
++  [
++    "inherited directive",
++    'function outer() { "use strict"; return function read(value) { value = 9; return arguments[0]; }; } console.log(outer()(3));',
++    false,
++  ],
++  [
++    "sloppy function",
++    "function read(value) { value = 9; return arguments[0]; } console.log(read(3));",
++    true,
++  ],
++  [
++    "late string",
++    'function read(value) { value = 9; "use strict"; return arguments[0]; } console.log(read(3));',
++    true,
++  ],
++  [
++    "escaped directive",
++    String.raw`"use\x20strict"; function read(value) { value = 9; return arguments[0]; } console.log(read(3));`,
++    true,
++  ],
++  [
++    "unrelated directive",
++    'function other() { "use strict"; } function read(value) { value = 9; return arguments[0]; } console.log(read(3));',
++    true,
++  ],
++] as const;
++
++test.each(cases)("CommonJS arguments: %s", (_name, source, refused) => {
++  const directory = mkdtempSync(join(tmpdir(), "scriptc-strict-arguments-"));
++  try {
++    const entry = join(directory, "entry.cjs");
++    writeFileSync(entry, source);
++    const result = analyze(entry);
++    const diagnostics = [...result.coverage.diagnostics, ...(result.coverage.runtimeFences ?? [])];
++    expect(
++      diagnostics.some((diagnostic) =>
++        diagnostic.message.includes("sloppy-mode parameter aliases"),
++      ),
++    ).toBe(refused);
++    if (!refused) expect(diagnostics).toEqual([]);
++  } finally {
++    rmSync(directory, { recursive: true, force: true });
++  }
++});
++
++const nativeCases = [
++  [
++    "file strict arguments",
++    '"use strict"; function read(value) { value = 9; return arguments[0]; } console.log(read(3));',
++  ],
++  [
++    "local strict arguments",
++    'function read(value) { "use strict"; value = 9; return arguments[0]; } console.log(read(3));',
++  ],
++  [
++    "inherited strict arguments",
++    'function outer() { "use strict"; return function read(value) { value = 9; return arguments[0]; }; } console.log(outer()(3));',
++  ],
++  [
++    "hoisted for-in writes",
++    '"use strict"; function keys(object) { for (key in object) console.log(key); var key = 2; console.log(key); } keys({a: 1, b: 2});',
++  ],
++  [
++    "captured for-in writes",
++    '"use strict"; function keys(object) { var key = 2; function walk() { for (key in object) console.log(key); } walk(); console.log(key); } keys({a: 1});',
++  ],
++] as const;
++
++test.each(nativeCases)(
++  "native matches Node: %s",
++  async (_name, source) => {
++    const directory = mkdtempSync(join(tmpdir(), "scriptc-native-arguments-"));
++    try {
++      const entry = join(directory, "entry.cjs");
++      const output = join(directory, process.platform === "win32" ? "app.exe" : "app");
++      writeFileSync(entry, source);
++      let buildEntry = entry;
++      if (_name.includes("for-in")) {
++        const pkg = join(directory, "node_modules", "loop-fixture");
++        mkdirSync(pkg, { recursive: true });
++        writeFileSync(
++          join(pkg, "package.json"),
++          JSON.stringify({ name: "loop-fixture", main: "index.js" }),
++        );
++        writeFileSync(join(pkg, "index.js"), source);
++        buildEntry = join(directory, "main.ts");
++        writeFileSync(buildEntry, 'import "loop-fixture";');
++      }
++      const result = await compile(buildEntry, {
++        outDir: directory,
++        outPath: output,
++        npmStatic: ["loop-fixture"],
++      });
++      expect(result.ok, JSON.stringify(result)).toBe(true);
++      const expected = execFileSync(process.execPath, [entry], { encoding: "utf8" });
++      expect(execFileSync(output, [], { encoding: "utf8" })).toBe(expected);
++    } finally {
++      rmSync(directory, { recursive: true, force: true });
++    }
++  },
++  60000,
++);

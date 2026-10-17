@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/vercel-labs/scriptc.git",
+  "revision": "d8c2b0f96d8de8fadf4937d93a701dfd3a10f4df",
+  "version": "0.3.5",
+  "patch": "scriptc-native-react.patch",
+  "sha256": "5e579a9588c5eb9a18e06e05ab9eefba8cfb2d65b2009ccdb41d49043b872d85"
+}
