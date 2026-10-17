@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -1491,6 +1492,17 @@ func TestClaudeUsageReadsAreRoutedAndOpenedOnlyThroughTheOwner(t *testing.T) {
 	}
 }
 
+// logTimestamp matches the JSON time field of one structured log line.
+var logTimestamp = regexp.MustCompile(`"time":"[^"]*",?`)
+
+func TestLogTimestampRemovalLeavesTheFieldsOnly(t *testing.T) {
+	line := `{"time":"2026-10-17T15:32:30.7512+09:00","level":"INFO","msg":"claude_usage_read_finished","result":"observed"}`
+	got := logTimestamp.ReplaceAllString(line, "")
+	if strings.Contains(got, "0.75") || !strings.Contains(got, `"msg":"claude_usage_read_finished"`) {
+		t.Fatalf("unexpected stripped line %s", got)
+	}
+}
+
 func TestClaudeUsageLogsStateAndResourcesNeverExposeSecrets(t *testing.T) {
 	f := newReadFixture(t, func(n *fakeUsageNative) { n.expiresIn = time.Minute })
 	// Renewal, a successful read, throttling and a reconnect-required end.
@@ -1509,7 +1521,10 @@ func TestClaudeUsageLogsStateAndResourcesNeverExposeSecrets(t *testing.T) {
 	if err := f.refreshAndWait(); err != nil {
 		t.Fatal(err)
 	}
-	logs := f.logText()
+	// The handler stamps every line with a fractional-second time; a stamp such
+	// as "10.7512" contains the quota text "0.75" by chance, so only the fields
+	// are searched.
+	logs := logTimestamp.ReplaceAllString(f.logText(), "")
 	for _, secret := range []string{usageFixtureAccess, usageFixtureRefresh, usageRenewedAccess, usageRenewedRefresh, usageFixtureEmail, usageFixtureOrgName, usageFixtureOrgID, "Bearer", "api.anthropic.com", "/api/oauth/usage", "utilization", "remaining", "0.75", "/subscription-runtime", "Usage Sentinel", f.section().Identity.Commitment} {
 		if strings.Contains(logs, secret) {
 			t.Fatalf("a log line exposed %q", secret)
