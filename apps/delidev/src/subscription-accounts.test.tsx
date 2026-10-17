@@ -329,6 +329,7 @@ function claudeUsageRowFixture(usage: Record<string, unknown>) {
           generation: newRequestId(),
           identity: { email: "alex@example.com", commitment: "ab".repeat(32) },
           published: true,
+          linked_at: observed,
           last_success_at: observed,
           windows: [
             { id: "five_hour", remaining: 0.75, observed_at: observed },
