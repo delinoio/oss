@@ -36,6 +36,7 @@ import {
   claudeUsageCapability,
   claudeUsageFailureMessages,
   claudeUsageLoginMessages,
+  claudeUsageLoginOperationState,
   claudeUsageQuotaWindows,
   claudeUsageSection,
   claudeUsageView,
@@ -391,12 +392,30 @@ export function useClaudeUsageTracking(options: ClaudeUsageTrackingOptions): {
   );
   const mutations = [start, code, confirm, cancel, disconnect, observe];
   const pending = mutations.some((value) => value.busy || value.uncertain);
+  // A terminal progress result can arrive before the account read delivers the
+  // revised document. Every mutation captures the document revision, so actions
+  // stay disabled until the document operation agrees with that result and a
+  // fresh account read is requested meanwhile.
+  const awaitingDocument =
+    lifecycle &&
+    reply !== undefined &&
+    progressTerminal(reply.state) &&
+    operation !== undefined &&
+    claudeUsageLoginOperationState(reply.state) !== operation.state;
+  const awaitedState = awaitingDocument ? reply?.state : undefined;
+  useEffect(() => {
+    if (awaitedState === undefined) return;
+    reread();
+    const timer = setInterval(reread, confirmationPollMilliseconds);
+    return () => clearInterval(timer);
+  }, [awaitedState, operation?.id]);
   const idle =
     active &&
     enabled &&
     capability === ClaudeUsageCapability.Available &&
     settled &&
     !externalBusy &&
+    !awaitingDocument &&
     !pending;
   const ready = idle && !refreshing;
 

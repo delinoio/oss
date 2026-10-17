@@ -279,6 +279,9 @@ const loginStateOf = (
   }
 };
 
+/** The login operation state a progress result corresponds to. */
+export const claudeUsageLoginOperationState = loginStateOf;
+
 /** Resolves the one distinct state the section presents. */
 export function claudeUsageView(input: {
   capability: ClaudeUsageCapability;

@@ -677,6 +677,40 @@ it("keeps the login progress, address and identity out of the shared query cache
   value.unmount();
 });
 
+it("keeps terminal actions disabled until the account document reflects the progress result", async () => {
+  const value = mount({
+    usage: {
+      connection: "connecting",
+      generation,
+      operation: operation("waiting"),
+    },
+    progress: () => ({
+      state: ClaudeUsageLoginState.FAILED,
+      operationId,
+      usageGeneration: generation,
+    }),
+  });
+  const section = await state(ClaudeUsageView.LoginFailed);
+  const again = () =>
+    within(section).getByRole("button", {
+      name: "Try again",
+    }) as HTMLButtonElement;
+  await new Promise((resolve) => setTimeout(resolve, 300));
+  expect(again().disabled).toBe(true);
+  fireEvent.click(again());
+  expect(value.start).not.toHaveBeenCalled();
+  // The revised document arrives through the account read.
+  value.set({
+    connection: "connecting",
+    generation,
+    operation: operation("failed"),
+  });
+  await waitFor(() => expect(again().disabled).toBe(false));
+  fireEvent.click(again());
+  await waitFor(() => expect(value.start).toHaveBeenCalledTimes(1));
+  expect(value.start.mock.calls[0][0].mutation.expectedRevision).toBe(revision);
+});
+
 it("shows the reviewed identity, goes back by discarding, and links only the reviewed commitment", async () => {
   const value = mount({
     usage: {
