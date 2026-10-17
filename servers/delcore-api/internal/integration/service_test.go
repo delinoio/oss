@@ -961,3 +961,32 @@ func TestAutoTopupFailureNotification(t *testing.T) {
 		t.Fatal("failure notification missing or duplicated", count, e)
 	}
 }
+
+func TestDeletionDistinguishesRejectedAndUnknownPurchases(t *testing.T) {
+	for _, category := range []string{"provider_rejected", "payment_failed", "payment_method_required", "unknown_payment_outcome", "retry_exhausted", "payment_mismatch"} {
+		t.Run(category, func(t *testing.T) {
+			db, client, cfg := setup(t)
+			ctx := context.Background()
+			_, tenant := bootstrap(t, client)
+			if _, e := db.Pool.Exec(ctx, "UPDATE tenants SET deleting_at=now()-interval '3 days' WHERE id=$1", tenant); e != nil {
+				t.Fatal(e)
+			}
+			jobID := key()
+			if _, e := db.Pool.Exec(ctx, `INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,error_category,available_at,created_at,updated_at) VALUES($1,$2,'topup',$1::uuid::text,'{}','failed',$3,now(),now(),now())`, jobID, tenant, category); e != nil {
+				t.Fatal(e)
+			}
+			w := &worker.Worker{DB: db, Config: cfg}
+			if e := w.Maintain(ctx, time.Now()); e != nil {
+				t.Fatal(e)
+			}
+			var deleted bool
+			if e := db.Pool.QueryRow(ctx, "SELECT deleted_at IS NOT NULL FROM tenants WHERE id=$1", tenant).Scan(&deleted); e != nil {
+				t.Fatal(e)
+			}
+			want := category == "provider_rejected" || category == "payment_failed" || category == "payment_method_required"
+			if deleted != want {
+				t.Fatalf("deleted=%v, want %v", deleted, want)
+			}
+		})
+	}
+}

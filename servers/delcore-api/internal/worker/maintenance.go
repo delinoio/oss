@@ -88,7 +88,7 @@ func (w *Worker) Maintain(ctx context.Context, now time.Time) error {
    AND NOT EXISTS(SELECT 1 FROM disputes WHERE tenant_id=t.id AND active)
    AND COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),0)=0
    AND COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('postpaid','settlement')),0)=0
-   AND NOT EXISTS(SELECT 1 FROM jobs WHERE tenant_id=t.id AND kind<>'email' AND state<>'done')
+   AND NOT EXISTS(SELECT 1 FROM jobs WHERE tenant_id=t.id AND kind<>'email' AND state<>'done' AND NOT (kind IN ('topup','auto_topup') AND state='failed' AND error_category IN ('provider_rejected','payment_failed','payment_method_required')))
    AND t.external_subscription_id=''`, now.Add(-time.Duration(w.Config.ReportingGraceSeconds+w.Config.DeletionGraceSeconds)*time.Second))
 		if e != nil {
 			return e
