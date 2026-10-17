@@ -6,13 +6,31 @@
 //! Native directory records for merged dependency/cache views. Enumeration
 //! cursors are shared by duplicated handles, as on the native open object.
 
-use std::os::windows::fs::MetadataExt;
+use std::os::windows::{
+    fs::{MetadataExt, OpenOptionsExt},
+    io::AsRawHandle,
+};
+
+use winapi::um::{
+    fileapi::{GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION},
+    winbase::FILE_FLAG_BACKUP_SEMANTICS,
+    winnt::{FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE},
+};
 
 use super::*;
+
+/// Byte offset of `FileId` in the ID-bearing record classes. Offsets follow
+/// `FILE_ID_BOTH_DIR_INFORMATION` (a 94-byte structure padded to the next
+/// 8-byte boundary) and `FILE_ID_FULL_DIR_INFORMATION` (`EaSize` then padding).
+const BOTH_FILE_ID_OFFSET: usize = 96;
+const FULL_FILE_ID_OFFSET: usize = 72;
 
 struct Item {
     name: Vec<u16>,
     metadata: fs::Metadata,
+    /// Native file reference number of the backing object that `metadata`
+    /// describes. Hard links to one file share it.
+    file_id: u64,
 }
 pub(super) struct Listing {
     items: Vec<Item>,
@@ -50,6 +68,53 @@ fn matching(pattern: &[u16], name: &[u16]) -> bool {
     unsafe { RtlIsNameInExpression(&mut expression, &mut value, 1, ptr::null_mut()) != 0 }
 }
 
+/// Returns the native 64-bit file reference number of the object at `path`,
+/// following reparse points like the metadata read for the same entry. The
+/// attribute-only handle needs no data access and never blocks other users.
+fn file_id(path: &Path) -> std::io::Result<u64> {
+    let file = fs::OpenOptions::new()
+        .access_mode(FILE_READ_ATTRIBUTES)
+        .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+        .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+        .open(path)?;
+    let mut information = std::mem::MaybeUninit::<BY_HANDLE_FILE_INFORMATION>::zeroed();
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle().cast(), information.as_mut_ptr()) }
+        == 0
+    {
+        return Err(std::io::Error::last_os_error());
+    }
+    let information = unsafe { information.assume_init() };
+    Ok((u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow))
+}
+
+/// Reads the metadata and file reference number of one listed entry. A failed
+/// lookup returns `failure` instead of a fabricated identity.
+fn item(name: Vec<u16>, path: &Path, failure: NTSTATUS) -> std::result::Result<Item, NTSTATUS> {
+    let metadata = fs::metadata(path).map_err(|error| {
+        tracing::debug!(
+            action = "windows_directory_metadata_failed",
+            path = %path.display(),
+            %error,
+            "Could not read metadata for a merged directory entry"
+        );
+        failure
+    })?;
+    let file_id = file_id(path).map_err(|error| {
+        tracing::debug!(
+            action = "windows_directory_file_id_failed",
+            path = %path.display(),
+            %error,
+            "Could not read the file reference number for a merged directory entry"
+        );
+        failure
+    })?;
+    Ok(Item {
+        name,
+        metadata,
+        file_id,
+    })
+}
+
 fn listing(file: &OpenFile, pattern: Vec<u16>) -> std::result::Result<Listing, NTSTATUS> {
     let mut items = Vec::new();
     let physical = &file.translation.physical;
@@ -59,20 +124,14 @@ fn listing(file: &OpenFile, pattern: Vec<u16>) -> std::result::Result<Listing, N
     ] {
         let name: Vec<_> = name.encode_utf16().collect();
         if matching(&pattern, &name) {
-            items.push(Item {
-                name,
-                metadata: fs::metadata(path).map_err(|_| IO_ERROR)?,
-            });
+            items.push(item(name, path, IO_ERROR)?);
         }
     }
     for entry in fs::read_dir(physical).map_err(|_| MISSING)? {
         let entry = entry.map_err(|_| IO_ERROR)?;
         let name: Vec<_> = entry.file_name().encode_wide().collect();
         if matching(&pattern, &name) {
-            items.push(Item {
-                name,
-                metadata: fs::metadata(entry.path()).map_err(|_| IO_ERROR)?,
-            });
+            items.push(item(name, &entry.path(), IO_ERROR)?);
         }
     }
     let additions = {
@@ -92,10 +151,7 @@ fn listing(file: &OpenFile, pattern: Vec<u16>) -> std::result::Result<Listing, N
             continue;
         }
         let translation = translate(&file.translation.logical.join(&entry.name), false)?;
-        items.push(Item {
-            name,
-            metadata: fs::metadata(&translation.physical).map_err(|_| MISSING)?,
-        });
+        items.push(item(name, &translation.physical, MISSING)?);
     }
     Ok(Listing {
         items,
@@ -214,6 +270,11 @@ unsafe fn query(
             put64(record, 48, item.metadata.len().saturating_add(4095) & !4095);
             put32(record, 56, item.metadata.file_attributes());
             put32(record, 60, (item.name.len() * 2) as u32);
+            match class {
+                FileIdBothDirectoryInformation => put64(record, BOTH_FILE_ID_OFFSET, item.file_id),
+                FileIdFullDirectoryInformation => put64(record, FULL_FILE_ID_OFFSET, item.file_id),
+                _ => {}
+            }
         } else {
             put32(record, 8, (item.name.len() * 2) as u32);
         }

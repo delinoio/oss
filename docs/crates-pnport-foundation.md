@@ -103,6 +103,14 @@ or observes it, and never returns a packet-less result for an installed port. A
 rejected query leaves the enumeration cursor unchanged and writes no status.
 Native-backed directories and unassociated synchronous queries keep their
 behavior.
+Merged `FileIdBothDirectoryInformation` and `FileIdFullDirectoryInformation`
+records carry the native file reference number (the 64-bit volume file index)
+of the backing object each entry represents, including `.`, `..` and virtual
+additions. Hard links share one number, and reparse points are followed like the
+entry's other metadata. A failed identity lookup returns the adapter's typed
+status instead of a zero identifier. Other record classes, chaining, alignment
+and cursor behavior are unchanged. Byte-layout checks run in the native Windows
+fixture; ReFS 128-bit identifiers are not represented.
 Unclassified disk-device namespaces and lossily encoded Detours DLL paths also
 fail explicitly. These limits remain part of complete Windows acceptance.
 

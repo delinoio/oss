@@ -519,6 +519,8 @@ fn native_child() {
         }
     } else if mode == "completion" {
         completion_port_directory_queries(&root);
+    } else if mode == "file-ids" {
+        directory_file_ids(&root);
     } else if mode == "wait" {
         fs::write(root.join("ready.txt"), std::process::id().to_string()).unwrap();
         loop {
@@ -948,6 +950,369 @@ fn completion_port_directory_queries(root: &Path) {
     fs::write(root.join("completion-done.txt"), b"done").unwrap();
 }
 
+/// Reads ID-bearing merged directory records through both native query APIs
+/// and compares every `FileId` with the identity of a native open of the same
+/// entry. `root` lists a physical `.pnp.cjs`, a hard-link pair and the virtual
+/// `node_modules` entry, plus `.` and `..`.
+fn directory_file_ids(root: &Path) {
+    use std::{collections::BTreeMap, ffi::c_void, os::windows::ffi::OsStringExt};
+
+    use windows_sys::Win32::{
+        Foundation::{
+            CloseHandle, DuplicateHandle, DUPLICATE_SAME_ACCESS, HANDLE, INVALID_HANDLE_VALUE,
+        },
+        Storage::FileSystem::{
+            CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+            FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES,
+            FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+        },
+        System::{Threading::GetCurrentProcess, IO::IO_STATUS_BLOCK},
+    };
+
+    #[link(name = "ntdll")]
+    extern "system" {
+        fn NtQueryDirectoryFile(
+            file: HANDLE,
+            event: HANDLE,
+            apc: *mut c_void,
+            context: *mut c_void,
+            ios: *mut IO_STATUS_BLOCK,
+            buffer: *mut c_void,
+            length: u32,
+            class: i32,
+            single: u8,
+            pattern: *mut c_void,
+            restart: u8,
+        ) -> i32;
+        fn NtQueryDirectoryFileEx(
+            file: HANDLE,
+            event: HANDLE,
+            apc: *mut c_void,
+            context: *mut c_void,
+            ios: *mut IO_STATUS_BLOCK,
+            buffer: *mut c_void,
+            length: u32,
+            class: i32,
+            flags: u32,
+            pattern: *mut c_void,
+        ) -> i32;
+    }
+    const FILE_DIRECTORY_INFORMATION: i32 = 1;
+    const FILE_BOTH_DIRECTORY_INFORMATION: i32 = 3;
+    const FILE_NAMES_INFORMATION: i32 = 12;
+    const FILE_ID_BOTH_DIRECTORY_INFORMATION: i32 = 37;
+    const FILE_ID_FULL_DIRECTORY_INFORMATION: i32 = 38;
+    const STATUS_NO_MORE_FILES: i32 = 0x8000_0006u32 as i32;
+    const SL_RESTART_SCAN: u32 = 1;
+    const SL_RETURN_SINGLE_ENTRY: u32 = 2;
+
+    #[derive(Clone, Copy, Debug)]
+    enum Query {
+        Classic,
+        Extended,
+    }
+    /// Fixed header size, the `FileId` offset (if the class has one) and the
+    /// offset of the file name for each class under test.
+    fn layout(class: i32) -> (usize, Option<usize>) {
+        match class {
+            FILE_DIRECTORY_INFORMATION => (64, None),
+            FILE_BOTH_DIRECTORY_INFORMATION => (94, None),
+            FILE_NAMES_INFORMATION => (12, None),
+            FILE_ID_BOTH_DIRECTORY_INFORMATION => (104, Some(96)),
+            FILE_ID_FULL_DIRECTORY_INFORMATION => (80, Some(72)),
+            _ => unreachable!("unexpected class {class}"),
+        }
+    }
+    fn open(path: &Path, access: u32) -> HANDLE {
+        let wide = pnport_core::windows::wide(path).unwrap();
+        let handle = unsafe {
+            CreateFileW(
+                wide.as_ptr(),
+                access,
+                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+                std::ptr::null(),
+                OPEN_EXISTING,
+                FILE_FLAG_BACKUP_SEMANTICS,
+                std::ptr::null_mut(),
+            )
+        };
+        assert_ne!(handle, INVALID_HANDLE_VALUE, "open {path:?}");
+        handle
+    }
+    /// The file reference number reported by a native open of `path`.
+    fn native_id(path: &Path) -> u64 {
+        let handle = open(path, FILE_READ_ATTRIBUTES);
+        let mut information: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+        assert_ne!(
+            unsafe { GetFileInformationByHandle(handle, &mut information) },
+            0,
+            "identity of {path:?}"
+        );
+        unsafe { CloseHandle(handle) };
+        (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow)
+    }
+    /// One query. Returns the status and the bytes written.
+    fn query(
+        directory: HANDLE,
+        api: Query,
+        class: i32,
+        capacity: usize,
+        single: bool,
+        restart: bool,
+    ) -> (i32, Vec<u8>) {
+        let mut ios: IO_STATUS_BLOCK = unsafe { std::mem::zeroed() };
+        // 8-byte aligned storage, as native callers provide.
+        let mut storage = vec![0u64; capacity.div_ceil(8)];
+        let status = unsafe {
+            match api {
+                Query::Classic => NtQueryDirectoryFile(
+                    directory,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    &mut ios,
+                    storage.as_mut_ptr().cast(),
+                    capacity as u32,
+                    class,
+                    u8::from(single),
+                    std::ptr::null_mut(),
+                    u8::from(restart),
+                ),
+                Query::Extended => NtQueryDirectoryFileEx(
+                    directory,
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    std::ptr::null_mut(),
+                    &mut ios,
+                    storage.as_mut_ptr().cast(),
+                    capacity as u32,
+                    class,
+                    if restart { SL_RESTART_SCAN } else { 0 }
+                        | if single { SL_RETURN_SINGLE_ENTRY } else { 0 },
+                    std::ptr::null_mut(),
+                ),
+            }
+        };
+        let used = if status >= 0 { ios.Information } else { 0 };
+        let bytes: Vec<u8> = storage
+            .iter()
+            .flat_map(|word| word.to_le_bytes())
+            .take(used)
+            .collect();
+        (status, bytes)
+    }
+    /// Parses a chain of records into `(name, file id)` pairs, checking the
+    /// chaining, alignment and name offset of every record.
+    fn parse(bytes: &[u8], class: i32) -> Vec<(String, Option<u64>)> {
+        let (header, id_offset) = layout(class);
+        let u32_at =
+            |offset: usize| u32::from_le_bytes(bytes[offset..offset + 4].try_into().unwrap());
+        let mut entries = Vec::new();
+        let mut offset = 0;
+        loop {
+            let name_length_at = if class == FILE_NAMES_INFORMATION {
+                8
+            } else {
+                60
+            };
+            let name_length = u32_at(offset + name_length_at) as usize;
+            let name_start = offset + header;
+            let name_bytes = &bytes[name_start..name_start + name_length];
+            let units: Vec<u16> = (0..name_bytes.len() / 2)
+                .map(|i| u16::from_le_bytes([name_bytes[2 * i], name_bytes[2 * i + 1]]))
+                .collect();
+            let id = id_offset.map(|at| {
+                u64::from_le_bytes(bytes[offset + at..offset + at + 8].try_into().unwrap())
+            });
+            entries.push((
+                std::ffi::OsString::from_wide(&units).into_string().unwrap(),
+                id,
+            ));
+            let next = u32_at(offset) as usize;
+            if next == 0 {
+                break;
+            }
+            assert_eq!(next % 8, 0, "record chain stays 8-byte aligned");
+            offset += next;
+        }
+        entries
+    }
+    /// Lists the whole directory with a record capacity of `capacity` bytes
+    /// per call.
+    fn collect(
+        directory: HANDLE,
+        api: Query,
+        class: i32,
+        capacity: usize,
+        single: bool,
+    ) -> Vec<(String, Option<u64>)> {
+        let mut all = Vec::new();
+        let mut restart = true;
+        loop {
+            let (status, bytes) = query(directory, api, class, capacity, single, restart);
+            restart = false;
+            if status == STATUS_NO_MORE_FILES {
+                return all;
+            }
+            assert!(status >= 0, "{api:?} class {class} status {status:#x}");
+            assert!(!bytes.is_empty(), "{api:?} class {class} returned no bytes");
+            all.extend(parse(&bytes, class));
+        }
+    }
+
+    // A hard link is a second name for one file reference number.
+    fs::hard_link(root.join("source.txt"), root.join("linked.txt")).unwrap();
+    let parent = root.parent().unwrap();
+    let expected_path = |name: &str| match name {
+        "." => root.to_path_buf(),
+        ".." => parent.to_path_buf(),
+        other => root.join(other),
+    };
+    let directory = open(root, FILE_LIST_DIRECTORY);
+    for api in [Query::Classic, Query::Extended] {
+        for class in [
+            FILE_ID_BOTH_DIRECTORY_INFORMATION,
+            FILE_ID_FULL_DIRECTORY_INFORMATION,
+        ] {
+            let listed = collect(directory, api, class, 64 * 1024, false);
+            let ids: BTreeMap<String, u64> = listed
+                .iter()
+                .map(|(name, id)| (name.clone(), id.unwrap()))
+                .collect();
+            assert_eq!(ids.len(), listed.len(), "{api:?} class {class} names");
+            for name in [
+                ".",
+                "..",
+                "source.txt",
+                "linked.txt",
+                "dependency.zip",
+                ".pnp.cjs",
+                "node_modules",
+            ] {
+                assert!(ids.contains_key(name), "{api:?} class {class} lacks {name}");
+            }
+            // Every record carries the identity of a native open of its entry,
+            // including `.`, `..` and the virtual `node_modules` addition.
+            for (name, id) in &ids {
+                assert_ne!(*id, 0, "{api:?} class {class} {name} has a zero id");
+                assert_eq!(
+                    *id,
+                    native_id(&expected_path(name)),
+                    "{api:?} class {class} {name}"
+                );
+            }
+            assert_eq!(
+                ids["source.txt"], ids["linked.txt"],
+                "hard links share an id"
+            );
+            let mut unique: Vec<_> = ids
+                .iter()
+                .filter(|(name, _)| *name != "linked.txt")
+                .map(|(_, id)| *id)
+                .collect();
+            unique.sort_unstable();
+            let distinct = unique.len();
+            unique.dedup();
+            assert_eq!(
+                unique.len(),
+                distinct,
+                "{api:?} class {class} distinct files"
+            );
+
+            // One record per call, and a buffer that holds a single record at
+            // a time, chain to the same names and identities.
+            let single = collect(directory, api, class, 64 * 1024, true);
+            assert_eq!(single, listed, "{api:?} class {class} single entry");
+            let (header, _) = layout(class);
+            let longest = ids
+                .keys()
+                .map(|name| name.encode_utf16().count() * 2)
+                .max()
+                .unwrap();
+            let narrow = collect(directory, api, class, header + longest + 8, false);
+            assert_eq!(narrow, listed, "{api:?} class {class} narrow buffer");
+
+            // A duplicated handle shares the enumeration cursor.
+            let mut duplicate: HANDLE = std::ptr::null_mut();
+            assert_ne!(
+                unsafe {
+                    DuplicateHandle(
+                        GetCurrentProcess(),
+                        directory,
+                        GetCurrentProcess(),
+                        &mut duplicate,
+                        0,
+                        0,
+                        DUPLICATE_SAME_ACCESS,
+                    )
+                },
+                0,
+                "duplicate directory handle"
+            );
+            let (status, first) = query(directory, api, class, 64 * 1024, true, true);
+            assert!(
+                status >= 0,
+                "{api:?} class {class} first status {status:#x}"
+            );
+            let mut resumed = parse(&first, class);
+            loop {
+                let (status, bytes) = query(duplicate, api, class, 64 * 1024, false, false);
+                if status == STATUS_NO_MORE_FILES {
+                    break;
+                }
+                assert!(
+                    status >= 0,
+                    "{api:?} class {class} resume status {status:#x}"
+                );
+                resumed.extend(parse(&bytes, class));
+            }
+            assert_eq!(resumed, listed, "{api:?} class {class} duplicated handle");
+            unsafe { CloseHandle(duplicate) };
+        }
+        // Classes without a file id keep their layout and names.
+        let names: Vec<_> = collect(directory, api, FILE_NAMES_INFORMATION, 64 * 1024, false)
+            .into_iter()
+            .map(|(name, _)| name)
+            .collect();
+        for class in [FILE_DIRECTORY_INFORMATION, FILE_BOTH_DIRECTORY_INFORMATION] {
+            let plain: Vec<_> = collect(directory, api, class, 64 * 1024, false)
+                .into_iter()
+                .map(|(name, _)| name)
+                .collect();
+            assert_eq!(plain, names, "{api:?} class {class} names");
+        }
+    }
+    unsafe { CloseHandle(directory) };
+
+    // A native-backed directory (no merged entries) uses the native syscall,
+    // whose ids are the native identities.
+    let plain = root.join("plain");
+    fs::create_dir_all(&plain).unwrap();
+    fs::write(plain.join("file.txt"), b"plain").unwrap();
+    let native = open(&plain, FILE_LIST_DIRECTORY);
+    for api in [Query::Classic, Query::Extended] {
+        for class in [
+            FILE_ID_BOTH_DIRECTORY_INFORMATION,
+            FILE_ID_FULL_DIRECTORY_INFORMATION,
+        ] {
+            for (name, id) in collect(native, api, class, 64 * 1024, false) {
+                let path = match name.as_str() {
+                    "." => plain.clone(),
+                    ".." => root.to_path_buf(),
+                    other => plain.join(other),
+                };
+                assert_eq!(
+                    id,
+                    Some(native_id(&path)),
+                    "{api:?} class {class} native {name}"
+                );
+            }
+        }
+    }
+    unsafe { CloseHandle(native) };
+    fs::write(root.join("file-ids-done.txt"), b"done").unwrap();
+}
+
 #[test]
 fn zip_library_mapping_cache_and_direct_dependency_binary() {
     for split in [false, true] {
@@ -1042,6 +1407,25 @@ fn relative_applications_resolve_against_the_caller_directory() {
         output.status.code(),
         String::from_utf8_lossy(&output.stderr),
         String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+#[test]
+fn merged_directory_records_carry_native_file_ids() {
+    let fixture = fixture(false);
+    let root = fixture.path().join("project 한글 space");
+    let cache = fixture.path().join("private-cache");
+    let output = run(&root, &cache, "file-ids").output().unwrap();
+    assert!(
+        output.status.success(),
+        "file id fixture failed {:?}: {} {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(
+        root.join("file-ids-done.txt").is_file(),
+        "the child assertions did not complete"
     );
 }
 
