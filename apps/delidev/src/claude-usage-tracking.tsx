@@ -723,14 +723,22 @@ function ClaudeUsageSection({ model }: { model: ClaudeUsageModel }) {
     view === ClaudeUsageView.Waiting &&
     model.codeRequested &&
     !model.codeSubmitted;
+  // A typed code belongs to one OAuth transaction: the input lifetime is keyed by
+  // the usage generation and login operation, so another client replacing the
+  // waiting operation always discards the old code and its local problem.
+  const loginKey = `${usage?.generation ?? ""}:${usage?.operation?.id ?? ""}`;
   // The single approval-code input takes focus when it first appears.
   useEffect(() => {
     if (showCode) code.current?.focus({ preventScroll: true });
-  }, [showCode]);
+  }, [showCode, loginKey]);
   // Hiding the dialog or leaving the waiting step discards the typed code.
   useEffect(() => {
     if ((!visible || !showCode) && code.current) code.current.value = "";
   }, [visible, showCode]);
+  useEffect(() => {
+    if (code.current) code.current.value = "";
+    setInvalidCode(false);
+  }, [loginKey]);
   // A control that unmounts with its state change must not strand keyboard
   // focus on the document body: return it to this section's heading.
   const previous = useRef(view);
@@ -915,6 +923,7 @@ function ClaudeUsageSection({ model }: { model: ClaudeUsageModel }) {
           </div>
           {model.codeRequested || model.codeSubmitted ? (
             <form
+              key={loginKey}
               className="claude-usage-code"
               onKeyDown={guardEnterSubmission}
               onSubmit={(event) => {

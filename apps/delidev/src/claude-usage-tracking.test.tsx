@@ -532,6 +532,48 @@ it("disposes the old browser binding when another waiting login replaces the ope
   ).toHaveLength(1);
 });
 
+it("clears the typed approval code when another waiting login replaces the operation", async () => {
+  const replacement = newRequestId();
+  let current = operationId;
+  const value = mount({
+    usage: {
+      connection: "connecting",
+      generation,
+      operation: operation("waiting"),
+    },
+    progress: () => ({
+      state: ClaudeUsageLoginState.WAITING,
+      operationId: current,
+      usageGeneration: generation,
+      url: authorization(),
+      codeRequested: true,
+    }),
+  });
+  const first = (await screen.findByLabelText(
+    "Approval code",
+  )) as HTMLInputElement;
+  await waitFor(() => expect(first.disabled).toBe(false));
+  fireEvent.change(first, { target: { value: "old-transaction" } });
+  expect(first.value).toBe("old-transaction");
+  current = replacement;
+  value.set({
+    connection: "connecting",
+    generation,
+    operation: operation("waiting", { id: replacement }),
+  });
+  await waitFor(async () => {
+    const next = (await screen.findByLabelText(
+      "Approval code",
+    )) as HTMLInputElement;
+    expect(next.value).toBe("");
+    expect(next.disabled).toBe(false);
+  });
+  const next = screen.getByLabelText("Approval code") as HTMLInputElement;
+  fireEvent.click(screen.getByRole("button", { name: "Submit code" }));
+  expect(value.submit).not.toHaveBeenCalled();
+  expect(next.value).toBe("");
+});
+
 it("rotates the opening identity after a failed browser open and records the failure", async () => {
   const value = mount({
     usage: {
