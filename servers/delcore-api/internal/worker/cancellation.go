@@ -40,8 +40,14 @@ func (w *Worker) activateFree(ctx context.Context, tx pgx.Tx, tenant string, at 
 			return e
 		}
 	}
-	if _, e = tx.Exec(ctx, "UPDATE jobs SET state='done',error_category='',updated_at=now() WHERE tenant_id=$1 AND kind='cancel' AND state IN ('pending','running','reconcile')", tenant); e != nil {
+	// A confirmed cancellation settles every cancel intent, including a terminally
+	// failed one, so it cannot keep blocking final deletion.
+	tag, e := tx.Exec(ctx, "UPDATE jobs SET state='done',error_category='',updated_at=now() WHERE tenant_id=$1 AND kind='cancel' AND state IN ('pending','running','reconcile','failed')", tenant)
+	if e != nil {
 		return e
+	}
+	if w.Log != nil {
+		w.Log.InfoContext(ctx, "confirmed cancellation completed cancel jobs", "tenant_id", tenant, "completed_jobs", tag.RowsAffected())
 	}
 	return postgres.GrantAllowances(ctx, tx, tenant, start, end, at, "free:"+tenant+":"+start.Format("2006-01"), nil)
 }

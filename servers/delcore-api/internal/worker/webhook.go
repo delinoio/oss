@@ -239,6 +239,9 @@ func (w *Worker) applyTransaction(ctx context.Context, tx pgx.Tx, t provider.Tra
 		if e = postgres.GrantAllowances(ctx, tx, j.Tenant, periodStart, periodEnd, at, "payment:"+t.ID, previous); e != nil {
 			return e
 		}
+		if e = w.applyRetainedSubscriptionState(ctx, tx, j.Tenant, t.SubscriptionID, at); e != nil {
+			return e
+		}
 	default:
 		return nil
 	}
@@ -267,16 +270,13 @@ func (w *Worker) subscriptionEvent(ctx context.Context, tx pgx.Tx, event provide
 	if e := json.Unmarshal(event.Data, &v); e != nil {
 		return e
 	}
-	var tenant string
-	e := tx.QueryRow(ctx, "SELECT id::text FROM tenants WHERE external_subscription_id=$1 AND $1<>''", v.ID).Scan(&tenant)
-	if errors.Is(e, pgx.ErrNoRows) {
+	// Retain the latest provider state before looking up the tenant so a status
+	// received ahead of the initial payment survives until association.
+	if v.ID == "" {
 		return nil
 	}
-	if e != nil {
-		return e
-	}
 	var previous time.Time
-	e = tx.QueryRow(ctx, "SELECT occurred_at FROM provider_objects WHERE external_id=$1", v.ID).Scan(&previous)
+	e := tx.QueryRow(ctx, "SELECT occurred_at FROM provider_objects WHERE external_id=$1", v.ID).Scan(&previous)
 	if e == nil && !event.OccurredAt.After(previous) {
 		return nil
 	}
@@ -284,6 +284,17 @@ func (w *Worker) subscriptionEvent(ctx context.Context, tx pgx.Tx, event provide
 		return e
 	}
 	if _, e = tx.Exec(ctx, "INSERT INTO provider_objects VALUES($1,$2,$3) ON CONFLICT(external_id) DO UPDATE SET occurred_at=EXCLUDED.occurred_at,state=EXCLUDED.state", v.ID, event.OccurredAt, v.Status); e != nil {
+		return e
+	}
+	var tenant string
+	e = tx.QueryRow(ctx, "SELECT id::text FROM tenants WHERE external_subscription_id=$1", v.ID).Scan(&tenant)
+	if errors.Is(e, pgx.ErrNoRows) {
+		if w.Log != nil {
+			w.Log.InfoContext(ctx, "retained subscription state before tenant association", "subscription_id", v.ID, "event_id", event.ID, "state", v.Status)
+		}
+		return nil
+	}
+	if e != nil {
 		return e
 	}
 	switch v.Status {
@@ -424,6 +435,38 @@ func (w *Worker) applyRenewalSettlements(ctx context.Context, tx pgx.Tx, t provi
 		if _, e = tx.Exec(ctx, "UPDATE jobs SET state='done',external_id=$2,error_category='',updated_at=now() WHERE id=$1", jobID, t.ID); e != nil {
 			return e
 		}
+	}
+	return nil
+}
+
+// applyRetainedSubscriptionState applies the provider state that was retained for
+// a subscription and occurred after the confirmed payment. Older or active state
+// never grants or clears anything. It runs in the payment transaction.
+func (w *Worker) applyRetainedSubscriptionState(ctx context.Context, tx pgx.Tx, tenant, subscription string, at time.Time) error {
+	var occurred time.Time
+	var state string
+	e := tx.QueryRow(ctx, "SELECT occurred_at,state FROM provider_objects WHERE external_id=$1", subscription).Scan(&occurred, &state)
+	if errors.Is(e, pgx.ErrNoRows) {
+		return nil
+	}
+	if e != nil {
+		return e
+	}
+	if !occurred.After(at) {
+		return nil
+	}
+	switch state {
+	case "canceled":
+		if w.Log != nil {
+			w.Log.WarnContext(ctx, "applying retained subscription cancellation", "tenant_id", tenant, "subscription_id", subscription, "state", state)
+		}
+		return w.activateFree(ctx, tx, tenant, occurred)
+	case "past_due":
+		if w.Log != nil {
+			w.Log.WarnContext(ctx, "applying retained subscription payment failure", "tenant_id", tenant, "subscription_id", subscription, "state", state)
+		}
+		_, e = tx.Exec(ctx, "UPDATE tenants SET renewal_failed=true WHERE id=$1", tenant)
+		return e
 	}
 	return nil
 }

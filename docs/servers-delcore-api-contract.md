@@ -59,6 +59,8 @@ Authenticated users, registered M2M consumer services, tenant administrators and
 - Existing subscriptions retain their price version. New subscriptions and explicit plan changes select the applicable new version.
 - Included usage expires each month. An upgrade grants the prorated difference for the remaining period.
 - After paid cancellation takes effect, move the tenant to the free plan and end paid add-ons. Preserve prior debt and disputes separately.
+- Treat a confirmed cancellation as complete for every cancel intent of the tenant, including a terminally failed one, so a stale failed cancel job cannot hold final deletion. Duplicate and stale provider notifications keep their ordering protection and do not complete jobs.
+- Retain the latest subscription status and occurrence time by provider subscription ID even when no tenant is associated yet. When the initial subscription payment establishes the association, apply retained state that occurred after that payment in the same transaction: a canceled state moves the tenant to the free plan and ends paid products, and a past-due state blocks paid use as renewal failure. Older retained state never overrides a newer payment, the newest occurrence wins regardless of delivery order, and an active status alone never grants paid products or clears a payment failure. Retention applies to notifications processed after this behavior ships; delcore does not backfill or reconstruct notifications that were already acknowledged without retained state.
 - Never activate paid entitlements or credit balances solely from a checkout request or browser return.
 
 **Metering, credits, and settlement**

@@ -1717,3 +1717,331 @@ func TestOperatorUsageRefundReleasesDeletionHold(t *testing.T) {
 		t.Fatal("refund did not release deletion", deleted, e)
 	}
 }
+
+type subscriptionOrderFixture struct {
+	db          *postgres.Store
+	client      delcorev1connect.DelcoreServiceClient
+	cfg         config.Config
+	w           *worker.Worker
+	userID      string
+	tenant      string
+	paidPlan    string
+	priceID     string
+	at          time.Time
+	transaction provider.Transaction
+}
+
+// newSubscriptionOrderFixture prepares an unassociated tenant with a pending
+// paid-subscription job and the matching initial transaction.
+func newSubscriptionOrderFixture(t *testing.T) *subscriptionOrderFixture {
+	t.Helper()
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	svc, e := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "create service", Service: &pb.Service{Name: "paid-service", ClientId: "service", Capabilities: []string{"execute"}, Scopes: []string{"authorize", "usage:write"}}}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "default free plan", Plan: &pb.Plan{Name: "free", Free: true, DefaultFree: true}}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	paid, e := client.PutPlan(ctx, req(&pb.PutPlanRequest{RequestKey: key(), Reason: "paid plan", Plan: &pb.Plan{Name: "paid", Rank: 10, Postpaid: true}}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	price, e := client.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "base subscription", Price: &pb.Price{PlanId: paid.Msg.Plan.Id, ServiceId: svc.Msg.Service.Id, Meter: "base", UnitPrice: "10", Included: "0", Currency: "USD", ExternalPriceId: "pri_base", Kind: pb.PriceKind_PRICE_KIND_RECURRING}}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	me, e := client.GetCurrentUser(ctx, req(&pb.GetCurrentUserRequest{}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	tenant := me.Msg.Tenants[0].Id
+	change, e := client.ChangeSubscription(ctx, req(&pb.ChangeSubscriptionRequest{RequestKey: key(), TenantId: tenant, PlanId: paid.Msg.Plan.Id, PriceIds: []string{price.Msg.Price.Id}, ReturnUrl: cfg.ReturnURLs[0]}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	payload := fmt.Sprintf(`{"id":"txn_initial","status":"completed","currency_code":"USD","customer_id":"ctm_fixture","subscription_id":"sub_order","custom_data":{"delcore_job_id":%q,"delcore_tenant_id":%q},"items":[{"price":{"id":"pri_base"},"quantity":1}],"billing_period":{"starts_at":%q,"ends_at":%q}}`, change.Msg.JobId, tenant, now.Format(time.RFC3339Nano), now.AddDate(0, 1, 0).Format(time.RFC3339Nano))
+	var transaction provider.Transaction
+	if e = json.Unmarshal([]byte(payload), &transaction); e != nil {
+		t.Fatal(e)
+	}
+	return &subscriptionOrderFixture{db: db, client: client, cfg: cfg, w: &worker.Worker{DB: db, Config: cfg, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}, userID: me.Msg.UserId, tenant: tenant, paidPlan: paid.Msg.Plan.Id, priceID: price.Msg.Price.Id, at: now, transaction: transaction}
+}
+
+// deliver stores and processes one subscription webhook.
+func (f *subscriptionOrderFixture) deliver(t *testing.T, eventID, status string, at time.Time) {
+	t.Helper()
+	ctx := context.Background()
+	event := provider.Event{ID: eventID, Type: "subscription." + status, OccurredAt: at, Data: json.RawMessage(fmt.Sprintf(`{"id":"sub_order","status":%q}`, status))}
+	raw, e := json.Marshal(event)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = f.db.Pool.Exec(ctx, "INSERT INTO webhooks(event_id,payload,received_at,occurred_at) VALUES($1,$2,now(),$3) ON CONFLICT DO NOTHING", event.ID, raw, event.OccurredAt); e != nil {
+		t.Fatal(e)
+	}
+	if e = f.w.ProcessWebhook(ctx, event.ID); e != nil {
+		t.Fatal(e)
+	}
+}
+
+func (f *subscriptionOrderFixture) pay(t *testing.T) {
+	t.Helper()
+	if e := f.w.ApplyTransaction(context.Background(), f.transaction, f.at); e != nil {
+		t.Fatal(e)
+	}
+}
+
+type subscriptionOrderState struct {
+	free          bool
+	renewalFailed bool
+	subscription  string
+	activePaid    int
+	paidGrants    int
+}
+
+func (f *subscriptionOrderFixture) state(t *testing.T) subscriptionOrderState {
+	t.Helper()
+	var s subscriptionOrderState
+	ctx := context.Background()
+	if e := f.db.Pool.QueryRow(ctx, "SELECT p.free,t.renewal_failed,t.external_subscription_id FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1", f.tenant).Scan(&s.free, &s.renewalFailed, &s.subscription); e != nil {
+		t.Fatal(e)
+	}
+	if e := f.db.Pool.QueryRow(ctx, "SELECT count(*) FROM entitlements WHERE tenant_id=$1 AND price_id=$2 AND ends_at IS NULL", f.tenant, f.priceID).Scan(&s.activePaid); e != nil {
+		t.Fatal(e)
+	}
+	if e := f.db.Pool.QueryRow(ctx, "SELECT count(*) FROM entitlements WHERE tenant_id=$1 AND price_id=$2", f.tenant, f.priceID).Scan(&s.paidGrants); e != nil {
+		t.Fatal(e)
+	}
+	return s
+}
+
+func (f *subscriptionOrderFixture) retained(t *testing.T) (string, time.Time) {
+	t.Helper()
+	var state string
+	var at time.Time
+	if e := f.db.Pool.QueryRow(context.Background(), "SELECT state,occurred_at FROM provider_objects WHERE external_id='sub_order'").Scan(&state, &at); e != nil {
+		t.Fatal(e)
+	}
+	return state, at
+}
+
+func TestRetainedCancellationAppliesAtAssociation(t *testing.T) {
+	f := newSubscriptionOrderFixture(t)
+	f.deliver(t, "evt_early_cancel", "canceled", f.at.Add(time.Hour))
+	if state, _ := f.retained(t); state != "canceled" {
+		t.Fatal("unmatched cancellation not retained", state)
+	}
+	if s := f.state(t); !s.free || s.subscription != "" {
+		t.Fatal("unmatched event changed tenant", s)
+	}
+	f.pay(t)
+	s := f.state(t)
+	if !s.free || s.subscription != "" || s.activePaid != 0 || s.paidGrants != 1 {
+		t.Fatal("retained cancellation not applied", s)
+	}
+	// Replay the payment, redeliver the event, and restart the worker.
+	f.pay(t)
+	f.deliver(t, "evt_early_cancel", "canceled", f.at.Add(time.Hour))
+	f.deliver(t, "evt_early_cancel_duplicate", "canceled", f.at.Add(time.Hour))
+	f.w = &worker.Worker{DB: f.db, Config: f.cfg, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	f.pay(t)
+	if again := f.state(t); again != s {
+		t.Fatal("replay changed state", s, again)
+	}
+}
+
+func TestRetainedPastDueBlocksPaidUseAtAssociation(t *testing.T) {
+	f := newSubscriptionOrderFixture(t)
+	ctx := context.Background()
+	f.deliver(t, "evt_early_past_due", "past_due", f.at.Add(time.Hour))
+	f.pay(t)
+	s := f.state(t)
+	if s.free || !s.renewalFailed || s.subscription != "sub_order" || s.activePaid != 1 {
+		t.Fatal("retained past-due state not applied", s)
+	}
+	decision, e := f.client.Authorize(ctx, req(&pb.AuthorizeRequest{TenantId: f.tenant, UserId: f.userID, Capability: "execute", Paid: true}, "service"))
+	if e != nil || decision.Msg.Allowed {
+		t.Fatal("past-due subscription allowed paid use", decision, e)
+	}
+	blocked := false
+	for _, reason := range decision.Msg.Reasons {
+		blocked = blocked || reason == pb.BlockReason_BLOCK_REASON_RENEWAL
+	}
+	if !blocked {
+		t.Fatal("renewal block reason missing", decision.Msg.Reasons)
+	}
+	f.deliver(t, "evt_early_past_due", "past_due", f.at.Add(time.Hour))
+	f.pay(t)
+	if again := f.state(t); again != s {
+		t.Fatal("replay changed state", s, again)
+	}
+}
+
+func TestRetainedSubscriptionStateOrdering(t *testing.T) {
+	t.Run("latest event wins over earlier delivery", func(t *testing.T) {
+		f := newSubscriptionOrderFixture(t)
+		f.deliver(t, "evt_canceled_late", "canceled", f.at.Add(2*time.Hour))
+		f.deliver(t, "evt_past_due_stale", "past_due", f.at.Add(time.Hour))
+		if state, at := f.retained(t); state != "canceled" || !at.Equal(f.at.Add(2*time.Hour)) {
+			t.Fatal("stale event overwrote retained state", state, at)
+		}
+		f.pay(t)
+		if s := f.state(t); !s.free || s.renewalFailed || s.activePaid != 0 {
+			t.Fatal("stale past-due regressed cancellation", s)
+		}
+	})
+	t.Run("newer event replaces older retained state", func(t *testing.T) {
+		f := newSubscriptionOrderFixture(t)
+		f.deliver(t, "evt_past_due_first", "past_due", f.at.Add(time.Hour))
+		f.deliver(t, "evt_canceled_after", "canceled", f.at.Add(2*time.Hour))
+		f.pay(t)
+		if s := f.state(t); !s.free || s.activePaid != 0 {
+			t.Fatal("newer cancellation not applied", s)
+		}
+	})
+	t.Run("event older than the payment is ignored", func(t *testing.T) {
+		f := newSubscriptionOrderFixture(t)
+		f.deliver(t, "evt_canceled_old", "canceled", f.at.Add(-time.Hour))
+		f.deliver(t, "evt_past_due_old", "past_due", f.at.Add(-time.Minute))
+		f.pay(t)
+		if s := f.state(t); s.free || s.renewalFailed || s.activePaid != 1 || s.subscription != "sub_order" {
+			t.Fatal("older event overrode the payment", s)
+		}
+	})
+}
+
+func TestSubscriptionStatusAloneGrantsAndClearsNothing(t *testing.T) {
+	f := newSubscriptionOrderFixture(t)
+	f.deliver(t, "evt_active_early", "active", f.at.Add(time.Hour))
+	if s := f.state(t); !s.free || s.activePaid != 0 || s.paidGrants != 0 {
+		t.Fatal("active status granted paid products", s)
+	}
+	f.pay(t)
+	if s := f.state(t); s.free || s.renewalFailed || s.activePaid != 1 {
+		t.Fatal("payment-first activation changed by retained active state", s)
+	}
+	// Events after association keep the supported behaviour.
+	f.deliver(t, "evt_past_due_after", "past_due", f.at.Add(2*time.Hour))
+	if s := f.state(t); s.free || !s.renewalFailed {
+		t.Fatal("past-due after association not applied", s)
+	}
+	f.deliver(t, "evt_active_after", "active", f.at.Add(3*time.Hour))
+	if s := f.state(t); s.free || !s.renewalFailed {
+		t.Fatal("active status cleared payment failure", s)
+	}
+	f.deliver(t, "evt_canceled_after", "canceled", f.at.Add(4*time.Hour))
+	if s := f.state(t); !s.free || s.activePaid != 0 {
+		t.Fatal("cancellation after association not applied", s)
+	}
+}
+
+func TestConfirmedCancellationCompletesFailedCancelJobs(t *testing.T) {
+	f := newSubscriptionOrderFixture(t)
+	ctx := context.Background()
+	f.pay(t)
+	cancel, e := f.client.CancelSubscription(ctx, req(&pb.CancelSubscriptionRequest{RequestKey: key(), TenantId: f.tenant}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	org, e := f.client.CreateTenant(ctx, req(&pb.CreateTenantRequest{RequestKey: key(), Name: "Other organization"}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	insert := func(tenant, kind, dedup string) string {
+		jobID := key()
+		if _, e := f.db.Pool.Exec(ctx, "INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,error_category,available_at,created_at,updated_at) VALUES($1,$2,$3,$4,'{}','failed','provider_rejected',now(),now(),now())", jobID, tenant, kind, dedup); e != nil {
+			t.Fatal(e)
+		}
+		return jobID
+	}
+	// The cancel job created by the RPC fails terminally without an external ID.
+	if _, e = f.db.Pool.Exec(ctx, "UPDATE jobs SET state='failed',error_category='provider_rejected',external_id='' WHERE id=$1", cancel.Msg.JobId); e != nil {
+		t.Fatal(e)
+	}
+	otherTenant := insert(org.Msg.Tenant.Id, "cancel", "other-tenant-cancel")
+	otherKind := insert(f.tenant, "settlement", "same-tenant-settlement")
+	jobState := func(jobID string) (string, string) {
+		var state, category string
+		if e := f.db.Pool.QueryRow(ctx, "SELECT state,error_category FROM jobs WHERE id=$1", jobID).Scan(&state, &category); e != nil {
+			t.Fatal(e)
+		}
+		return state, category
+	}
+	// A cancellation older than the retained provider state is stale and must
+	// leave the failed job alone.
+	f.deliver(t, "evt_active_newer", "active", f.at.Add(2*time.Hour))
+	f.deliver(t, "evt_cancel_stale", "canceled", f.at.Add(time.Hour))
+	if state, _ := jobState(cancel.Msg.JobId); state != "failed" {
+		t.Fatal("stale cancellation completed a failed cancel job", state)
+	}
+	f.deliver(t, "evt_cancel_confirmed", "canceled", f.at.Add(3*time.Hour))
+	if state, category := jobState(cancel.Msg.JobId); state != "done" || category != "" {
+		t.Fatal("confirmed cancellation left the cancel job", state, category)
+	}
+	if state, category := jobState(otherTenant); state != "failed" || category != "provider_rejected" {
+		t.Fatal("other tenant job changed", state, category)
+	}
+	if state, category := jobState(otherKind); state != "failed" || category != "provider_rejected" {
+		t.Fatal("other job kind changed", state, category)
+	}
+	// A duplicate delivery keeps the existing ordering protection.
+	if _, e = f.db.Pool.Exec(ctx, "UPDATE jobs SET state='failed',error_category='provider_rejected' WHERE id=$1", cancel.Msg.JobId); e != nil {
+		t.Fatal(e)
+	}
+	f.deliver(t, "evt_cancel_duplicate", "canceled", f.at.Add(3*time.Hour))
+	if state, _ := jobState(cancel.Msg.JobId); state != "failed" {
+		t.Fatal("duplicate cancellation reprocessed", state)
+	}
+}
+
+func TestFailedCancelJobDoesNotBlockDeletionAfterConfirmedCancellation(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	cfg.DeletionGraceSeconds = 10
+	if _, e := db.Pool.Exec(ctx, "UPDATE tenants SET external_subscription_id='sub_order',period_end=now()+interval '1 hour' WHERE id=$1", tenant); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := client.DeleteTenant(ctx, req(&pb.DeleteTenantRequest{RequestKey: key(), TenantId: tenant}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := db.Pool.Exec(ctx, "UPDATE jobs SET state='failed',error_category='provider_rejected',external_id='' WHERE tenant_id=$1 AND kind='cancel'", tenant); e != nil {
+		t.Fatal(e)
+	}
+	w := &worker.Worker{DB: db, Config: cfg, Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	now := time.Now().UTC()
+	future := now.Add(time.Duration(cfg.ReportingGraceSeconds+cfg.DeletionGraceSeconds+1) * time.Second)
+	if e := w.Maintain(ctx, future); e != nil {
+		t.Fatal(e)
+	}
+	deleted := func() bool {
+		var v bool
+		if e := db.Pool.QueryRow(ctx, "SELECT deleted_at IS NOT NULL FROM tenants WHERE id=$1", tenant).Scan(&v); e != nil {
+			t.Fatal(e)
+		}
+		return v
+	}
+	if deleted() {
+		t.Fatal("failed cancel job did not hold deletion")
+	}
+	event := provider.Event{ID: "evt_delete_cancel", Type: "subscription.canceled", OccurredAt: now.Add(time.Minute), Data: json.RawMessage(`{"id":"sub_order","status":"canceled"}`)}
+	raw, e := json.Marshal(event)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = db.Pool.Exec(ctx, "INSERT INTO webhooks(event_id,payload,received_at,occurred_at) VALUES($1,$2,now(),$3)", event.ID, raw, event.OccurredAt); e != nil {
+		t.Fatal(e)
+	}
+	if e = w.ProcessWebhook(ctx, event.ID); e != nil {
+		t.Fatal(e)
+	}
+	if e = w.Maintain(ctx, future); e != nil {
+		t.Fatal(e)
+	}
+	if !deleted() {
+		t.Fatal("confirmed cancellation did not release deletion")
+	}
+}
