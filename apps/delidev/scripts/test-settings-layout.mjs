@@ -171,7 +171,8 @@ let checked = 0,
   gitChecks = 0,
   keyboardChecks = 0,
   hiddenChoicesChecked = 0,
-  languagePickerChecks = 0;
+  languagePickerChecks = 0,
+  ownerScrollChecks = 0;
 try {
   const build = await createRsbuild({
     cwd: app,
@@ -1834,36 +1835,73 @@ try {
           await assertPopupPlacement(
             `${fixtureLanguage}/${theme}/${width} empty`,
           );
-          // Repositions with the owner and never scrolls the page itself.
-          const scrolled = await input.evaluate((node) => {
-            const owner = node.closest(".settings-content"),
-              room = owner.scrollHeight - owner.clientHeight;
-            if (room <= 0) return false;
-            owner.scrollTop = Math.min(room, 48);
-            return true;
-          });
-          if (scrolled) {
-            await page.evaluate(
+          // Repositions with the owner and never scrolls the page itself. The
+          // Settings scroll owner is the nearest overflowing ancestor (the app
+          // `main`); `.settings-content` grows with its content and never scrolls.
+          // The owner moves by 48px toward keeping the input visible, because a
+          // popup whose anchor left the screen is clamped by design.
+          const scrollOwner = (target) =>
+            input.evaluate((node, target) => {
+              let owner = node.parentElement;
+              for (; owner; owner = owner.parentElement) {
+                const overflow = getComputedStyle(owner).overflowY;
+                if (
+                  (overflow === "auto" || overflow === "scroll") &&
+                  owner.scrollHeight > owner.clientHeight
+                )
+                  break;
+              }
+              if (!owner) return null;
+              const before = owner.scrollTop;
+              if (target === undefined) {
+                const frame = owner.getBoundingClientRect(),
+                  anchor = node.getBoundingClientRect(),
+                  towardCenter =
+                    anchor.top + anchor.height / 2 <
+                    frame.top + frame.height / 2
+                      ? -48
+                      : 48;
+                owner.scrollTop = before + towardCenter;
+                if (owner.scrollTop === before)
+                  owner.scrollTop = before - towardCenter;
+              } else owner.scrollTop = target;
+              return {
+                tag: owner.tagName.toLowerCase(),
+                insideSettings: !!owner.querySelector(".settings-content"),
+                before,
+                moved: owner.scrollTop !== before,
+                pageScroll: document.scrollingElement.scrollTop,
+              };
+            }, target);
+          const settle = () =>
+            page.evaluate(
               () =>
                 new Promise((done) =>
                   requestAnimationFrame(() => requestAnimationFrame(done)),
                 ),
             );
-            await assertPopupPlacement(
+          const anchorBefore = (await popupGeometry()).anchorTop;
+          const scrolled = await scrollOwner();
+          if (scrolled) {
+            assert.equal(scrolled.tag, "main", JSON.stringify(scrolled));
+            assert(scrolled.insideSettings, JSON.stringify(scrolled));
+            assert(scrolled.moved, JSON.stringify(scrolled));
+            assert.equal(scrolled.pageScroll, 0, "the page never scrolls");
+            await settle();
+            const moved = await assertPopupPlacement(
               `${fixtureLanguage}/${theme}/${width} owner scrolled`,
             );
-            await input.evaluate((node) => {
-              node.closest(".settings-content").scrollTop = 0;
-            });
-            await page.evaluate(
-              () =>
-                new Promise((done) =>
-                  requestAnimationFrame(() => requestAnimationFrame(done)),
-                ),
+            // The popup follows the input instead of staying behind.
+            assert(
+              Math.abs(moved.anchorTop - anchorBefore) > 1,
+              `${fixtureLanguage}/${theme}/${width} anchor moved`,
             );
+            await scrollOwner(scrolled.before);
+            await settle();
             await assertPopupPlacement(
               `${fixtureLanguage}/${theme}/${width} owner restored`,
             );
+            ownerScrollChecks++;
           }
           await input.press("Enter");
           assert.equal(
@@ -1921,6 +1959,8 @@ try {
           );
           languagePickerChecks++;
         }
+    // The real Settings scroll owner must have been exercised at least once.
+    assert(ownerScrollChecks > 0, "no viewport scrolled the Settings owner");
   } else if (githubOnly) {
     let onboardingChecks = 0;
     // Half-size CSS viewports cover effective 200% layout, not native chrome zoom.
@@ -2952,6 +2992,7 @@ try {
         primarySurfaceChecks: languageOnly ? 0 : 16,
         keyboardChecks,
         languagePickerChecks,
+        ownerScrollChecks,
         nativeAcceptance: "not-performed",
       }),
     );
