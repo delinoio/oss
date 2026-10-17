@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import {
   useProductLabels,
   PresentationKind,
@@ -1494,9 +1495,10 @@ function AccountCreationWizard({
             </p>
           ) : null}
           <form
+            onKeyDown={guardEnterSubmission}
             id={`${taskFormId}-1`}
             onSubmit={(event) => {
-              event.preventDefault();
+              if (!consumeFormSubmit(event)) return;
               createAccount();
             }}
           >

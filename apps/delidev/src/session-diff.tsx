@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { useShortcuts } from "./shortcut-provider";
 import { ShortcutId, ShortcutInput } from "./shortcuts";
 import { Surface } from "./surface";
@@ -825,8 +826,9 @@ export function RepositoryDiff({
           }}
         >
           <form
+            onKeyDown={guardEnterSubmission}
             onSubmit={(event) => {
-              event.preventDefault();
+              if (!consumeFormSubmit(event)) return;
               if (submitPath()) closeMenu();
             }}
           >

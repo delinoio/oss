@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import "./wizard-presentation.css";
 import { LocalConnectionHelp } from "./local-connection-presentation";
 import { LocalizedText, copy, useLocale } from "./localization";
@@ -294,9 +295,10 @@ export function SubscriptionOnboarding(props: SubscriptionOnboardingProps) {
       {failed || props.problem ? <LocalConnectionHelp active={active} /> : null}
       {naming ? (
         <form
+          onKeyDown={guardEnterSubmission}
           id={`${taskFormId}-1`}
           onSubmit={(event) => {
-            event.preventDefault();
+            if (!consumeFormSubmit(event)) return;
             if (active && !busy && subscriptionNameValid(props.name))
               props.saveName();
           }}

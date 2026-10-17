@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import {
   SettingsActionButton,
   SettingsActionIcon,
@@ -324,9 +325,10 @@ function PairingTask({
       </p>
       {!accepted ? (
         <form
+          onKeyDown={guardEnterSubmission}
           id={formId}
           onSubmit={(event) => {
-            event.preventDefault();
+            if (!consumeFormSubmit(event)) return;
             void submit();
           }}
         >

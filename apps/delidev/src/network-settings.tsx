@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import {
   useProductLabels,
   PresentationKind,
@@ -463,9 +464,10 @@ function NetworkWorkspace({
             </>
           ) : null}
           <form
+            onKeyDown={guardEnterSubmission}
             className={inline ? "network-selection" : undefined}
             onSubmit={(event) => {
-              event.preventDefault();
+              if (!consumeFormSubmit(event)) return;
               if (
                 pending ||
                 choiceBusy ||
@@ -869,10 +871,11 @@ function ProfileEditor({
   });
   return (
     <form
+      onKeyDown={guardEnterSubmission}
       id={formId}
       aria-label={copy("network-settings.networkProfileEditor_838f1e")}
       onSubmit={(event) => {
-        event.preventDefault();
+        if (!consumeFormSubmit(event)) return;
         if (pending) return;
         const definition = {
           name,
