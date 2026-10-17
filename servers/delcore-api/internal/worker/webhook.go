@@ -15,6 +15,7 @@ import (
 	"github.com/delinoio/oss/servers/delcore-api/internal/provider"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 )
 
 func id() string { return uuid.Must(uuid.NewV7()).String() }
@@ -88,7 +89,11 @@ func (w *Worker) ProcessWebhook(ctx context.Context, selectedID string) error {
 			} else if u, err := uuid.Parse(t.Custom.JobID); err == nil && u.Version() == 7 {
 				_, e = tx.Exec(ctx, "UPDATE jobs SET state='failed',error_category='payment_failed',updated_at=now() WHERE id=$1 AND tenant_id::text=$2 AND state<>'done'", t.Custom.JobID, t.Custom.TenantID)
 				if e == nil {
-					_, e = tx.Exec(ctx, "UPDATE tenants SET auto_suspended=true WHERE id::text=$1 AND EXISTS(SELECT 1 FROM jobs WHERE id=$2 AND kind='auto_topup' AND state='failed')", t.Custom.TenantID, t.Custom.JobID)
+					var tag pgconn.CommandTag
+					tag, e = tx.Exec(ctx, "UPDATE tenants SET auto_suspended=true WHERE id::text=$1 AND EXISTS(SELECT 1 FROM jobs WHERE id=$2 AND kind='auto_topup' AND state='failed')", t.Custom.TenantID, t.Custom.JobID)
+					if e == nil && tag.RowsAffected() > 0 {
+						e = notify(ctx, tx, t.Custom.TenantID, "auto_failed:"+t.Custom.JobID, "Automatic top-up failed", "Automatic top-ups are suspended. Review your payment settings.", event.OccurredAt)
+					}
 				}
 			}
 			if e != nil {

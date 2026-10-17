@@ -936,3 +936,28 @@ func TestSubscriptionRejectsHistoricalPrice(t *testing.T) {
 		}
 	}
 }
+
+func TestAutoTopupFailureNotification(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	jobID := key()
+	if _, e := db.Pool.Exec(ctx, `INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,available_at,created_at,updated_at) VALUES($1,$2,'auto_topup',$1::uuid::text,'{}','reconcile',now(),now(),now())`, jobID, tenant); e != nil {
+		t.Fatal(e)
+	}
+	w := &worker.Worker{DB: db, Config: cfg}
+	for i := 0; i < 2; i++ {
+		event := provider.Event{ID: fmt.Sprintf("evt_failed_%d", i), Type: "transaction.payment_failed", OccurredAt: time.Now(), Data: json.RawMessage(fmt.Sprintf(`{"id":"txn_failed","custom_data":{"delcore_job_id":%q,"delcore_tenant_id":%q}}`, jobID, tenant))}
+		raw, _ := json.Marshal(event)
+		if _, e := db.Pool.Exec(ctx, "INSERT INTO webhooks(event_id,payload,received_at,occurred_at) VALUES($1,$2,now(),$3)", event.ID, raw, event.OccurredAt); e != nil {
+			t.Fatal(e)
+		}
+		if e := w.ProcessWebhook(ctx, event.ID); e != nil {
+			t.Fatal(e)
+		}
+	}
+	var count int
+	if e := db.Pool.QueryRow(ctx, "SELECT count(*) FROM jobs WHERE kind='email' AND dedup_key LIKE $1", "auto_failed:"+jobID+":%").Scan(&count); e != nil || count != 1 {
+		t.Fatal("failure notification missing or duplicated", count, e)
+	}
+}
