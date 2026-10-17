@@ -1656,13 +1656,12 @@ try {
             assert(popup.right <= popup.boundRight - 7.5, detail);
             assert(popup.top >= popup.boundTop + 7.5, detail);
             assert(popup.bottom <= popup.boundBottom - 7.5, detail);
+            // Exactly four pixels below the input, or four pixels above it when
+            // the popup flips; any other offset means the anchoring regressed.
             const below = popup.top - popup.anchorBottom,
               above = popup.anchorTop - popup.bottom;
-            assert(below >= 3.5 || above >= 3.5, detail);
             assert(
-              Math.abs(below - 4) <= 0.5 ||
-                Math.abs(above - 4) <= 0.5 ||
-                popup.height <= 280.5,
+              Math.abs(below - 4) <= 0.5 || Math.abs(above - 4) <= 0.5,
               detail,
             );
             return popup;
