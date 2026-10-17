@@ -174,6 +174,13 @@ func (w *Worker) Step(ctx context.Context) error {
 			}
 		}
 	case "cancel":
+		var waiting bool
+		if e = w.DB.Pool.QueryRow(ctx, `SELECT deleting_at IS NOT NULL AND (deleting_at>$2 OR COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('postpaid','settlement')),0)<>0 OR EXISTS(SELECT 1 FROM jobs WHERE tenant_id=t.id AND kind='settlement' AND state<>'done')) FROM tenants t WHERE id=$1`, j.Tenant, time.Now().Add(-time.Duration(w.Config.ReportingGraceSeconds)*time.Second)).Scan(&waiting); e != nil {
+			return e
+		}
+		if waiting {
+			return w.finish(ctx, j, "pending", "final_settlement_pending", "")
+		}
 		if subscription == "" {
 			return w.finish(ctx, j, "failed", "subscription_required", "")
 		}
@@ -218,7 +225,7 @@ func (w *Worker) finish(ctx context.Context, j job, state, category, external st
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), w.Config.Timeout())
 	defer cancel()
 	return w.DB.Transaction(ctx, func(tx pgx.Tx) error {
-		_, e := tx.Exec(ctx, "UPDATE jobs SET state=$2,error_category=$3,external_id=CASE WHEN $4='' THEN external_id ELSE $4 END,available_at=$5,attempts=CASE WHEN $3='provider_billing_window' THEN greatest(attempts-1,0) ELSE attempts END,updated_at=now() WHERE id=$1 AND state='running'", j.ID, state, category, external, time.Now().Add(time.Duration(w.Config.RetrySeconds)*time.Second))
+		_, e := tx.Exec(ctx, "UPDATE jobs SET state=$2,error_category=$3,external_id=CASE WHEN $4='' THEN external_id ELSE $4 END,available_at=$5,attempts=CASE WHEN $3 IN ('provider_billing_window','final_settlement_pending') THEN greatest(attempts-1,0) ELSE attempts END,updated_at=now() WHERE id=$1 AND state='running'", j.ID, state, category, external, time.Now().Add(time.Duration(w.Config.RetrySeconds)*time.Second))
 		if e != nil {
 			return e
 		}

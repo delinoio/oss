@@ -1185,3 +1185,59 @@ func TestFreePlanTransitions(t *testing.T) {
 		}
 	}
 }
+
+func TestDeletionWaitsToCancelUntilSettlement(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	if _, e := db.Pool.Exec(ctx, "UPDATE tenants SET external_subscription_id='sub_delete',period_end=now()+interval '1 hour' WHERE id=$1", tenant); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := client.DeleteTenant(ctx, req(&pb.DeleteTenantRequest{RequestKey: key(), TenantId: tenant}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	calls := 0
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		if r.URL.Path != "/subscriptions/sub_delete/cancel" {
+			t.Error(r.URL.Path)
+		}
+		io.WriteString(w, `{"data":{"id":"sub_delete","status":"active"}}`)
+	}))
+	defer mock.Close()
+	cfg.PaddleURL = mock.URL
+	w := &worker.Worker{DB: db, Config: cfg, Provider: provider.New(cfg), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	if e := w.Step(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if calls != 0 {
+		t.Fatal("cancellation preceded reporting grace")
+	}
+	if _, e := db.Pool.Exec(ctx, "UPDATE tenants SET deleting_at=now()-interval '3 days' WHERE id=$1", tenant); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := db.Pool.Exec(ctx, "INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,state,available_at,created_at,updated_at) VALUES($1,$2,'settlement','final-debt','{}','failed',now(),now(),now())", key(), tenant); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := db.Pool.Exec(ctx, "UPDATE jobs SET available_at=now()-interval '1 second' WHERE kind='cancel'"); e != nil {
+		t.Fatal(e)
+	}
+	if e := w.Step(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if calls != 0 {
+		t.Fatal("cancellation preceded debt settlement")
+	}
+	if _, e := db.Pool.Exec(ctx, "UPDATE jobs SET state='done' WHERE tenant_id=$1 AND kind='settlement'", tenant); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := db.Pool.Exec(ctx, "UPDATE jobs SET available_at=now()-interval '1 second' WHERE kind='cancel'"); e != nil {
+		t.Fatal(e)
+	}
+	if e := w.Step(ctx); e != nil {
+		t.Fatal(e)
+	}
+	if calls != 1 {
+		t.Fatal("settled deletion did not cancel", calls)
+	}
+}
