@@ -440,6 +440,32 @@ fn native_child() {
             b"dependency"
         );
         let mut original = fs::File::open(&dependency).unwrap();
+        // NT status is returned directly; hook bookkeeping must not clear the
+        // caller's independent Win32 last-error slot through TlsGetValue.
+        {
+            use std::os::windows::io::AsRawHandle;
+
+            use ntapi::ntioapi::{
+                FileStandardInformation, NtQueryInformationFile, FILE_STANDARD_INFORMATION,
+                IO_STATUS_BLOCK,
+            };
+            use winapi::um::errhandlingapi::{GetLastError, SetLastError};
+            let mut info: FILE_STANDARD_INFORMATION = unsafe { std::mem::zeroed() };
+            let mut ios: IO_STATUS_BLOCK = unsafe { std::mem::zeroed() };
+            let (status, error) = unsafe {
+                SetLastError(0x521);
+                let status = NtQueryInformationFile(
+                    original.as_raw_handle().cast(),
+                    &mut ios,
+                    (&raw mut info).cast(),
+                    std::mem::size_of_val(&info) as u32,
+                    FileStandardInformation,
+                );
+                (status, GetLastError())
+            };
+            assert!(status >= 0, "native information query failed {status:#x}");
+            assert_eq!(error, 0x521, "hook TLS changed the caller's last error");
+        }
         let mut duplicate = original.try_clone().unwrap();
         let mut first = [0; 4];
         duplicate.read_exact(&mut first).unwrap();
@@ -1371,6 +1397,13 @@ const dependency = path.join(root, 'node_modules/example/data.txt');
 assert.equal(fs.readFileSync(dependency, 'utf8'), 'dependency');
 stage('enumerate');
 assert(fs.readdirSync(root).includes('node_modules'));
+stage('worker_threads');
+const { Worker } = require('node:worker_threads');
+for (let index = 0; index < 4; index++) {
+  new Worker(`const { workerData } = require('node:worker_threads');
+    require('node:assert/strict').equal(require('node:fs').readFileSync(workerData, 'utf8'), 'dependency');`,
+    { eval: true, workerData: dependency }).on('error', error => { throw error; });
+}
 stage('crypto');
 assert.equal(require('node:crypto').randomBytes(32).length, 32);
 stage('child');
