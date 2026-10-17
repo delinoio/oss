@@ -3,9 +3,11 @@ package server
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"path/filepath"
 	"testing"
 
 	"connectrpc.com/connect"
@@ -312,4 +314,38 @@ func TestProviderInventoryCompatibleAccountFilter(t *testing.T) {
 	}
 	_, err = client.ListProviderInventory(ctx, ownerRequest(f.identity, &pb.ListProviderInventoryRequest{PageSize: 1, PageToken: first.Msg.NextPageToken, CompatibleAccountApiProtocol: pb.ApiProtocol_API_PROTOCOL_OPENAI_CHAT}))
 	wantAccountCode(t, err, domain.CursorExpired)
+}
+
+func TestProviderInventoryCompatibleAccountFilterFailsClosedOnMissingProvider(t *testing.T) {
+	f := newAccountFixture(t)
+	ctx := context.Background()
+	client := catalogClient(f)
+	connected := f.newAccount(domain.BearerAuth)
+	if _, err := connectAccount(f, connected, domain.NewID(), "compatible-filter-dangling-unique", false); err != nil {
+		t.Fatal(err)
+	}
+	filtered := &pb.ListProviderInventoryRequest{PageSize: 50, CompatibleAccountApiProtocol: pb.ApiProtocol_API_PROTOCOL_OPENAI_CHAT}
+	if response, err := client.ListProviderInventory(ctx, ownerRequest(f.identity, filtered)); err != nil || len(response.Msg.Entries) != 1 {
+		t.Fatalf("baseline filtered inventory: %+v %v", response, err)
+	}
+	// Simulate corruption or a faulty restore that loses the provider row of a
+	// connected account. The filtered RPC must report recovery_required rather
+	// than a successful page that treats the provider as absent.
+	db, err := sql.Open("sqlite", filepath.Join(f.root, "state.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	account := accountBody(t, connected)
+	if res, err := db.Exec("DELETE FROM entities WHERE kind='provider' AND id=?", string(account.ProviderID)); err != nil {
+		t.Fatal(err)
+	} else if n, _ := res.RowsAffected(); n != 1 {
+		t.Fatalf("fixture removed %d provider rows", n)
+	}
+	_, err = client.ListProviderInventory(ctx, ownerRequest(f.identity, filtered))
+	wantAccountCode(t, err, domain.RecoveryRequired)
+	// The default request never evaluates account eligibility.
+	if _, err := client.ListProviderInventory(ctx, ownerRequest(f.identity, &pb.ListProviderInventoryRequest{PageSize: 50})); err != nil {
+		t.Fatalf("unfiltered inventory must be unchanged: %v", err)
+	}
 }

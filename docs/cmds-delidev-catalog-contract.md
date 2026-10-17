@@ -234,17 +234,25 @@ over every committed account and provider, before the managed-preset/custom
 ordering and the page limit: managed presets are filtered in memory and custom
 providers by an `id IN (eligible ids)` clause ahead of `LIMIT`, so a qualifying
 provider after any number of ineligible ones is reachable and a page is never
-filtered after the fact. Every stored account record is decoded before any
-eligibility test, so an account whose field has the wrong JSON type fails the
-request instead of being skipped. A decoded account is also run through
-`Account.Validate`; an account that decodes but fails validation (for example
-an unknown health or type, or a malformed provider ID) fails the request with
-`recovery_required` rather than being treated as not selectable. A provider that owns a connected account is
-decoded and run through `Provider.Validate` before its compatibility is tested;
-a provider that decodes but fails validation (for example an insecure custom
-endpoint) fails the request with `recovery_required` rather than being omitted
-as incompatible. An unreadable account or provider record is never treated as
-proof that no account exists. The filter joins the
+filtered after the fact.
+
+Fail-closed reads: eligibility is decided from stored state, so every record or
+reference that decides compatibility either reads cleanly or fails the whole
+request with `recovery_required`; none is ever taken as proof that no account
+exists, and a failed request returns no partial page. Every stored account record
+is decoded and run through `Account.Validate` before any eligibility test, so an
+account with a wrong-typed field, or one that decodes but is invalid (for example
+an unknown health or type, or a malformed provider ID), fails the request instead
+of being skipped. The provider of each ready or unverified connected API account
+(the only accounts whose compatibility depends on a provider) must exist, decode
+and pass `Provider.Validate` (for example an insecure custom endpoint is
+invalid); a missing provider row, an undecodable provider or an invalid provider
+fails the request. Custom provider rows that cannot be decoded while the page is
+assembled fail the same way. Only a well-formed negative answer counts as
+absence: a disconnected, expired, revoked, failed or pending-removal account, or
+an account whose explicit or legacy API format does not resolve to the requested
+protocol. A dangling provider reference on an account that is not in a selectable
+state does not influence the filter. The filter joins the
 signed cursor scope only when set, and the cursor epoch (latest provider/account
 event) already expires continuations after any provider or account change, so a
 token cannot cross filters or survive the loss of an eligible provider's last
