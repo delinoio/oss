@@ -6688,10 +6688,18 @@ also owns prompt Markdown links. The pure model lives in
   link stays collapsed). Text inserted inside a collapsed label goes into the
   label with delimiters escaped, a deletion trims the label, and a link whose
   whole label is deleted loses its source. A link completed while composing stays
-  plain source. Markdown is parsed again only when composition ends: the
-  budget, the collapse decision (a link whose syntax changed, such as an image,
-  then shows its source) and the canonical selection are recomputed once, then.
-  All four composer placements share this behavior.
+  plain source. A link that was revealed (its source shown) when composition
+  started is plain source to the held state, like any link the IME completes.
+  Markdown is parsed again only when composition ends, exactly once: the budget,
+  the collapse decision (a link whose syntax changed, such as an image, then
+  shows its source) and the canonical selection are recomputed then. The
+  revealed set is derived from that single parse and the canonical selection
+  alone, never from the held state or from what was revealed before: a link that
+  is still valid and holds the caret stays revealed (no rewrite and no
+  collapse/reveal bounce), a link the caret has left collapses, and a link whose
+  syntax no longer parses as a link shows its source. At most one textarea
+  rewrite follows the last composed update, and the caret is restored from its
+  canonical offset. All four composer placements share this behavior.
 - **History.** Programmatic conversion clears the native undo stack, so every
   edit is recorded in `PromptEditHistory`. Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z, Ctrl+Y
   (non-macOS) and native `historyUndo`/`historyRedo` run through it. A conversion

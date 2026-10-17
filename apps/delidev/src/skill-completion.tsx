@@ -48,10 +48,12 @@ import {
   linkAtCaret,
   revealedStarts,
   sameStarts,
+  scanDraft,
   scanMarkdown,
   replacedRange,
   shiftStarts,
   type PromptLayout,
+  type ScannedDraft,
   type TextRange,
 } from "./prompt-markdown-links";
 import { ShortcutPlatform, shortcutPlatform } from "./shortcuts";
@@ -392,6 +394,9 @@ export function useSkillCompletion({
   // composed edit; the layout is derived from it, never from a re-parse of the
   // draft, until composition ends.
   const compositionCollapse = useRef<FrozenCollapse | undefined>(undefined);
+  // The one scan taken when composition ends. The revealed set and the layout
+  // are both derived from it, so the final draft is parsed exactly once.
+  const settledScan = useRef<ScannedDraft | undefined>(undefined);
   const history = useRef(new PromptEditHistory<SkillTokenBinding>());
   const linkOpening = useRef(false);
   const mounted = useRef(true);
@@ -617,7 +622,14 @@ export function useSkillCompletion({
     ? compositionCollapse.current
     : undefined;
   const layout = useMemo(
-    () => buildLayout(value, revealed, linkBudget, frozenCollapse),
+    () =>
+      buildLayout(
+        value,
+        revealed,
+        linkBudget,
+        frozenCollapse,
+        settledScan.current,
+      ),
     [value, revealed, linkBudget, frozenCollapse],
   );
   const layoutRef = useRef<PromptLayout>(layout);
@@ -1259,11 +1271,36 @@ export function useSkillCompletion({
       setDismissed(true);
     },
     onCompositionEnd: () => {
+      // The textarea still shows the frozen display, so the selection maps
+      // through the layout that produced it, not through a re-parsed one.
+      const held = layoutRef.current;
       composing.current = false;
       compositionCollapse.current = undefined;
       setComposition(false);
       if (!canEdit()) return;
-      syncSelection();
+      const input = textarea.current;
+      if (!input) return;
+      const start = held.toCanonical(input.selectionStart),
+        end = held.toCanonical(input.selectionEnd);
+      selectionRef.current = {
+        start,
+        end,
+        direction: selectionDirection(input),
+      };
+      setCaret(start);
+      // The freeze is lifted: the final draft is parsed once, and the revealed
+      // set is a function of that parse and the canonical selection alone. A
+      // link that was revealed (or is new) is judged like every other link, so
+      // one that still holds the caret stays revealed instead of collapsing
+      // under it, and nothing from before the composition is carried over.
+      const settled = scanDraft(held.canonical);
+      settledScan.current = settled;
+      const wanted = revealedStarts(settled.scan.links, start, end);
+      if (!sameStarts(wanted, revealedRef.current)) setRevealed(wanted);
+      console.debug("prompt composition end", {
+        links: settled.scan.links.length,
+        revealed: wanted.length,
+      });
       // The display is recomputed from the final draft now that the freeze is
       // lifted, so the canonical selection is re-applied after that render.
       pendingSelection.current = true;

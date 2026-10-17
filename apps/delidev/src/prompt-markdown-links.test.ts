@@ -12,6 +12,7 @@ import {
   linkAtCaret,
   markdownLinkFor,
   revealedStarts,
+  scanDraft,
   scanMarkdown,
   shiftStarts,
 } from "./prompt-markdown-links";
@@ -542,4 +543,30 @@ describe("frozen composition scan budget", () => {
       validate.mockRestore();
     }
   });
+});
+
+it("reuses a scan of the same draft and rescans for any other draft", () => {
+  const text = "[x](https://a) and [y](https://b)";
+  const scanned = scanDraft(text);
+  expect(scanned.scan.links).toHaveLength(2);
+  const validate = vi.spyOn(externalLinks, "validHttpUrl");
+  try {
+    const layout = buildLayout(
+      text,
+      [text.indexOf("[y")],
+      10,
+      undefined,
+      scanned,
+    );
+    expect(validate).not.toHaveBeenCalled();
+    expect(layout.links).toBe(scanned.scan.links);
+    expect(layout.display).toBe("x and [y](https://b)");
+    // A scan of another draft is ignored, never trusted.
+    const other = buildLayout(`${text}!`, [], 10, undefined, scanned);
+    expect(validate).toHaveBeenCalledTimes(2);
+    expect(other.links).not.toBe(scanned.scan.links);
+    expect(other.display).toBe("x and y!");
+  } finally {
+    validate.mockRestore();
+  }
 });

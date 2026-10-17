@@ -400,9 +400,21 @@ export interface FrozenCollapse {
    * Links that are collapsed, in canonical order. They are held by position
    * and never re-parsed, so a link stays collapsed even when a composed edit
    * makes its source stop parsing as a link. A link that is not listed (for
-   * example one completed while composing) stays plain source.
+   * example one completed while composing, or one that was revealed when
+   * composition started) stays plain source.
    */
   links: readonly MarkdownLink[];
+}
+
+/** A draft together with its Markdown scan, so the scan can be reused. */
+export interface ScannedDraft {
+  canonical: string;
+  scan: MarkdownScan;
+}
+
+/** Scans a draft once; pass the result to `buildLayout` to avoid a rescan. */
+export function scanDraft(canonical: string): ScannedDraft {
+  return { canonical, scan: scanMarkdown(canonical) };
 }
 
 /** Captures the collapse state of a layout so it can be held while composing. */
@@ -436,15 +448,23 @@ export function freezeCollapse(layout: PromptLayout): FrozenCollapse {
  * from the retained link ranges alone, so each composed keystroke costs
  * O(retained links) of map work with no Markdown parse. In that case `links`
  * reports the retained ranges; the draft is parsed again once the freeze lifts.
+ * A `scanned` result for this exact draft is used instead of parsing it again,
+ * which lets the caller derive the revealed set and the layout from one scan.
  */
 export function buildLayout(
   canonical: string,
   revealed: readonly number[] = [],
   collapseLimit = Number.POSITIVE_INFINITY,
   frozen?: FrozenCollapse,
+  scanned?: ScannedDraft,
 ): PromptLayout {
   const hold = frozen?.canonical === canonical ? frozen : undefined;
-  const links = hold ? hold.links : scanMarkdown(canonical).links;
+  const links = hold
+    ? hold.links
+    : (scanned?.canonical === canonical
+        ? scanned.scan
+        : scanMarkdown(canonical)
+      ).links;
   const collapseSuppressed = hold
     ? hold.suppressed
     : links.length > collapseLimit;
