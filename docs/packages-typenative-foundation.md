@@ -162,6 +162,7 @@ Update the [project index](project-typenative.md) and [native host contract](cra
 
 ## References
 
+- [TypeNative project index](project-typenative.md)
 - [Repository defaults](repository-defaults.md)
 - [Repository workflow](repository-workflow-contract.md)
 - [Dependency security](repository-dependency-security-contract.md)

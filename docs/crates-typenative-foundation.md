@@ -48,6 +48,7 @@ Update the [project index](project-typenative.md) and [SDK contract](packages-ty
 
 ## References
 
+- [TypeNative project index](project-typenative.md)
 - [Repository defaults](repository-defaults.md)
 - [Repository workflow](repository-workflow-contract.md)
 - [Repository license](repository-license-contract.md)
