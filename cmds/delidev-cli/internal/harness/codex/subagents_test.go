@@ -251,6 +251,78 @@ func TestSubagentEarlyStatusRequiresExactEnvelope(t *testing.T) {
 	}
 }
 
+func TestSubagentEarlyStatusRejectsCaseAliasedKeys(t *testing.T) {
+	c, turn := observationClient()
+	child := domain.NewID()
+	rejected := []struct {
+		name string
+		raw  string
+	}{
+		{"capitalized status", `{"threadId":"` + string(child) + `","Status":{"type":"idle"}}`},
+		{"uppercase status", `{"threadId":"` + string(child) + `","STATUS":{"type":"idle"}}`},
+		{"both status spellings", `{"threadId":"` + string(child) + `","status":{"type":"idle"},"Status":{"type":"idle"}}`},
+		{"capitalized nested type", `{"threadId":"` + string(child) + `","status":{"Type":"idle"}}`},
+		{"capitalized nested active flags", `{"threadId":"` + string(child) + `","status":{"type":"active","ActiveFlags":["waitingOnApproval"]}}`},
+		{"extra capitalized thread id", `{"threadId":"` + string(child) + `","ThreadID":"` + string(child) + `","status":{"type":"idle"}}`},
+	}
+	for _, tc := range rejected {
+		raw := nativewire.Event{Kind: nativewire.Notification, Method: "thread/status/changed", Params: json.RawMessage(tc.raw)}
+		event, handled, err := c.observeChildNative(raw)
+		if err == nil || !handled || event.Kind == MetadataEvent || len(c.pendingChildStatuses) != 0 || len(c.subagents) != 0 || c.execution.active != turn {
+			t.Fatal("case-aliased early child status envelope was accepted or recorded state", tc.name, handled, err)
+		}
+	}
+	// A capitalized thread identity key never names a child identity.
+	raw := nativewire.Event{Kind: nativewire.Notification, Method: "thread/status/changed", Params: json.RawMessage(`{"ThreadId":"` + string(child) + `","status":{"type":"idle"}}`)}
+	if _, handled, err := c.observeChildNative(raw); handled || err != nil || len(c.pendingChildStatuses) != 0 {
+		t.Fatal("capitalized thread identity key reached the child fence", handled, err)
+	}
+	// The canonical key spelling, in either object order, is still accepted.
+	for _, params := range []string{
+		`{"threadId":"` + string(child) + `","status":{"type":"idle"}}`,
+		`{"status":{"type":"idle"},"threadId":"` + string(child) + `"}`,
+	} {
+		raw := nativewire.Event{Kind: nativewire.Notification, Method: "thread/status/changed", Params: json.RawMessage(params)}
+		event, handled, err := c.observeChildNative(raw)
+		if err != nil || !handled || event.Kind != MetadataEvent || len(c.pendingChildStatuses) != 1 {
+			t.Fatal("canonical early child status envelope was rejected", handled, err)
+		}
+	}
+}
+
+func TestSubagentChildNativeEnvelopesRejectCaseAliasedKeys(t *testing.T) {
+	c, turn := observationClient()
+	child := domain.NewID()
+	spawn := map[string]any{"type": "collabAgentToolCall", "id": "case-spawn", "tool": "spawnAgent", "status": "completed", "senderThreadId": c.thread, "receiverThreadIds": []domain.ID{child}, "agentsStates": map[string]any{string(child): map[string]any{"status": "running", "message": nil}}}
+	if event, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "completedAtMs": 1, "item": spawn}); err != nil || event.Kind != SubagentEvent {
+		t.Fatal("canonical spawn did not establish child ownership", err)
+	}
+	id := string(child)
+	completedTurn := `{"id":"` + string(domain.NewID()) + `","items":[],"status":"completed"}`
+	for _, tc := range []struct{ name, method, canonical, aliased string }{
+		{"turn completed envelope", "turn/completed", `{"threadId":"` + id + `","turn":` + completedTurn + `}`, `{"threadId":"` + id + `","Turn":` + completedTurn + `}`},
+		{"turn completed turn", "turn/completed", `{"threadId":"` + id + `","turn":` + completedTurn + `}`, `{"threadId":"` + id + `","turn":{"id":"` + string(domain.NewID()) + `","items":[],"Status":"completed"}}`},
+		{"agent message item", "item/completed", `{"threadId":"` + id + `","turnId":"` + string(turn) + `","item":{"type":"agentMessage","id":"m1","text":"hi"}}`, `{"threadId":"` + id + `","turnId":"` + string(turn) + `","item":{"type":"agentMessage","id":"m1","Text":"hi"}}`},
+		{"token usage", "thread/tokenUsage/updated", `{"threadId":"` + id + `","turnId":"` + string(turn) + `","tokenUsage":{"total":{"inputTokens":1,"cachedInputTokens":0,"outputTokens":1,"reasoningOutputTokens":0,"totalTokens":2},"last":{"inputTokens":1,"cachedInputTokens":0,"outputTokens":1,"reasoningOutputTokens":0,"totalTokens":2},"modelContextWindow":null}}`, `{"threadId":"` + id + `","turnId":"` + string(turn) + `","tokenUsage":{"Total":{"inputTokens":1,"cachedInputTokens":0,"outputTokens":1,"reasoningOutputTokens":0,"totalTokens":2},"last":{"inputTokens":1,"cachedInputTokens":0,"outputTokens":1,"reasoningOutputTokens":0,"totalTokens":2},"modelContextWindow":null}}`},
+	} {
+		if _, handled, err := c.observeChildNative(nativewire.Event{Kind: nativewire.Notification, Method: tc.method, Params: json.RawMessage(tc.aliased)}); !handled || err == nil {
+			t.Fatal("case-aliased child envelope was accepted", tc.name, handled, err)
+		}
+		if _, handled, err := c.observeChildNative(nativewire.Event{Kind: nativewire.Notification, Method: tc.method, Params: json.RawMessage(tc.canonical)}); !handled || err != nil {
+			t.Fatal("canonical child envelope was rejected", tc.name, handled, err)
+		}
+	}
+	started := func(key string) json.RawMessage {
+		return json.RawMessage(`{"` + key + `":{"id":"` + id + `","sessionId":"` + string(c.execution.thread.SessionID) + `","cliVersion":"` + SupportedVersion + `","cwd":"/","modelProvider":"` + c.execution.settings.Provider + `","createdAt":1,"updatedAt":1,"ephemeral":false,"preview":"","projectId":null,"source":null,"status":{"type":"idle"},"turns":[],"parentThreadId":"` + string(c.thread) + `"}}`)
+	}
+	if _, handled, err := c.observeChildNative(nativewire.Event{Kind: nativewire.Notification, Method: "thread/started", Params: started("Thread")}); handled && err == nil {
+		t.Fatal("capitalized thread envelope key was accepted")
+	}
+	if _, handled, err := c.observeChildNative(nativewire.Event{Kind: nativewire.Notification, Method: "thread/started", Params: started("thread")}); !handled || err != nil {
+		t.Fatal("canonical thread/started envelope was rejected", handled, err)
+	}
+}
+
 func TestSubagentCanonicalCollaborationKeepsRequestedModelAndChildScope(t *testing.T) {
 	c, turn := observationClient()
 	child := domain.NewID()

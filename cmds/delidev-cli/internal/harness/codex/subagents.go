@@ -4,6 +4,7 @@ package codex
 import (
 	"context"
 	"encoding/json"
+	"reflect"
 	"slices"
 	"strconv"
 	"time"
@@ -334,7 +335,7 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 		var v struct {
 			Thread threadWire `json:"thread"`
 		}
-		if domain.Decode(native.Params, &v) == nil && v.Thread.ParentThreadID != nil {
+		if decodeCaseExact(native.Params, &v) == nil && v.Thread.ParentThreadID != nil {
 			t := v.Thread
 			if t.ID.Validate() != nil || t.ID == c.thread || t.ParentThreadID.Validate() != nil || t.SessionID.Validate() != nil || t.ModelProvider != c.execution.settings.Provider || t.CLIVersion != c.version || validateThreadStatus(t.Status) != nil {
 				return Event{}, true, incompatible()
@@ -376,7 +377,7 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 				ThreadID domain.ID    `json:"threadId"`
 				Status   ThreadStatus `json:"status"`
 			}
-			if domain.Decode(native.Params, &envelope) != nil || envelope.ThreadID != domain.ID(thread) || validateThreadStatus(envelope.Status) != nil {
+			if !requireExactKeys(native.Params, "threadId", "status") || decodeCaseExact(native.Params, &envelope) != nil || envelope.ThreadID != domain.ID(thread) || validateThreadStatus(envelope.Status) != nil {
 				if c.logger != nil {
 					c.logger.Warn("Codex child status envelope rejected", "owner_id", c.ownerID, "stage", "early-child-status")
 				}
@@ -416,11 +417,11 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 			ThreadID domain.ID       `json:"threadId"`
 			Turn     json.RawMessage `json:"turn"`
 		}
-		if domain.Decode(native.Params, &t) != nil {
+		if decodeCaseExact(native.Params, &t) != nil {
 			return Event{}, true, incompatible()
 		}
 		turn, err := decodeTurn(t.Turn)
-		if err != nil || !turn.Status.terminal() {
+		if err != nil || !turn.Status.terminal() || !canonicalKeys(t.Turn, reflect.TypeOf(turnWire{})) {
 			return Event{}, true, incompatible()
 		}
 		o.SourceID = string(turn.ID)
@@ -463,7 +464,7 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 			Delivery  json.RawMessage   `json:"delivery,omitempty"`
 			Questions []json.RawMessage `json:"questions,omitempty"`
 		}
-		if domain.Decode(fields["item"], &v) != nil {
+		if decodeCaseExact(fields["item"], &v) != nil {
 			return Event{}, true, incompatible()
 		}
 		// Omitted, null or empty questions carry no interaction metadata. Keep
@@ -483,7 +484,7 @@ func (c *Client) observeChildNative(native nativewire.Event) (Event, bool, error
 				Window *int64          `json:"modelContextWindow"`
 			} `json:"tokenUsage"`
 		}
-		if domain.Decode(native.Params, &v) != nil || (domain.NativeTokenUsage{Total: v.Usage.Total.normalized(), Last: v.Usage.Last.normalized(), ContextWindow: v.Usage.Window}).Validate() != nil {
+		if decodeCaseExact(native.Params, &v) != nil || (domain.NativeTokenUsage{Total: v.Usage.Total.normalized(), Last: v.Usage.Last.normalized(), ContextWindow: v.Usage.Window}).Validate() != nil {
 			return Event{}, true, incompatible()
 		}
 		count := func(n *int64) *string {
