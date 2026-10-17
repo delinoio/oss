@@ -168,6 +168,7 @@ function mount(options: Options = {}) {
     account: usage === undefined ? current : set(usage),
   });
   const capabilities = options.capabilities ?? available;
+  let readFailure = false;
   const status = vi.fn(async () => {
     if (capabilities === "loading") return new Promise<never>(() => undefined);
     if (capabilities === "error")
@@ -214,7 +215,11 @@ function mount(options: Options = {}) {
   const transport = createRouterTransport((router) => {
     router.service(SystemService, { getStatus: status });
     router.service(ResourceService, {
-      getResource: () => ({ resource: current }),
+      getResource: () => {
+        if (readFailure)
+          throw new ConnectError("account unavailable", Code.Unavailable);
+        return { resource: current };
+      },
     });
     router.service(SubscriptionService, {
       startClaudeUsageLogin: start,
@@ -273,6 +278,9 @@ function mount(options: Options = {}) {
       view.rerender(tree());
     },
     set,
+    failReads: (failing: boolean) => {
+      readFailure = failing;
+    },
     close,
     status,
     start,
@@ -392,6 +400,21 @@ it("starts one usage login from the not-connected state and opens the browser th
   expect(action).toBe(OAuthNativeAction.ClaudeSubscriptionOpen);
   expect(attempt).toBe(operationId);
   expect(url).toBe(authorization());
+});
+
+it("disables every usage action while the authoritative account read is invalid", async () => {
+  const value = mount({ usage: undefined });
+  const connect = (await screen.findByRole("button", {
+    name: "Connect usage account",
+  })) as HTMLButtonElement;
+  await waitFor(() => expect(connect.disabled).toBe(false));
+  // The refetch fails, so the cached revision is no longer authoritative.
+  value.failReads(true);
+  await waitFor(() => expect(connect.disabled).toBe(true));
+  fireEvent.click(connect);
+  expect(value.start).not.toHaveBeenCalled();
+  value.failReads(false);
+  await waitFor(() => expect(connect.disabled).toBe(false));
 });
 
 it("never opens a client localhost callback or a foreign address", async () => {

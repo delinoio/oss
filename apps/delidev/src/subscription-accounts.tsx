@@ -183,6 +183,9 @@ function NativeManagedSubscriptionAccount({
       state.claude_credential === "server-token",
     status,
     externalBusy:
+      // Without a valid authoritative account read the displayed revision may
+      // be stale, so no usage operation may be submitted with it.
+      !validRead ||
       quotaBusy ||
       operation.busy ||
       operation.uncertain ||
