@@ -75,10 +75,10 @@ export function DetailsActionMenu({
         ref={summary}
         aria-label={label}
         onClick={(event) => {
-          if (!overlay) return;
-          // The native toggle would arrive a task later than the popup needs.
+          // The native toggle would arrive a task later than the popup needs,
+          // and would collapse the always-open fallback that React keeps open.
           event.preventDefault();
-          setOpen((value) => !value);
+          if (overlay) setOpen((value) => !value);
         }}
       >
         ⋯

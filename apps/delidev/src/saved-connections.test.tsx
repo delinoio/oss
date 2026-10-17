@@ -1174,5 +1174,12 @@ it("keeps row actions listed in flow in the fallback dialog host", async () => {
   await screen.findByRole("button", { name: "Open Saved server" });
   const rename = screen.getByRole("button", { name: /^Rename Saved server/ });
   expect(rename.parentElement?.hasAttribute("popover")).toBe(false);
-  expect((rename.closest("details") as HTMLDetailsElement).open).toBe(true);
+  const details = rename.closest("details") as HTMLDetailsElement;
+  expect(details.open).toBe(true);
+  // The always-open fallback never collapses when its ellipsis is clicked.
+  fireEvent.click(details.querySelector("summary") as HTMLElement);
+  expect(details.open).toBe(true);
+  expect(screen.getByRole("button", { name: /^Rename Saved server/ })).toBe(
+    rename,
+  );
 });
