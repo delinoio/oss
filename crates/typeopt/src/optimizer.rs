@@ -17,6 +17,8 @@ pub enum Preservation {
     TypeConstraint,
     SpecialProperty,
     NoSizeBenefit,
+    /// Bundle mode: the rename grew the gzip or Brotli size of a chunk.
+    NoCompressedBenefit,
     /// The rename needs a disabled property pass.
     RequiresDisabledPass,
     /// The renamed program failed type checking and was rolled back.
