@@ -365,7 +365,7 @@ func TestActualSSHCommandJoinsCancellationBeforeReturn(t *testing.T) {
 	}
 }
 
-func TestActualSSHSetupEffectsRetainRecoveryAfterDeadline(t *testing.T) {
+func TestActualSSHSetupEffectsRetainRecoveryAfterCancellation(t *testing.T) {
 	data := []byte("fixture-worker-bytes")
 	digest := sha256.Sum256(data)
 	artifact := updates.Artifact{
@@ -412,15 +412,32 @@ func TestActualSSHSetupEffectsRetainRecoveryAfterDeadline(t *testing.T) {
 				t.Fatal(err)
 			}
 			defer c.Close()
-			ctx, stop := context.WithTimeout(parent, 50*time.Millisecond)
+			// Cancel only after the peer received the exec request so the test
+			// never races a fixed deadline against exec delivery.
+			ctx, stop := context.WithCancel(parent)
 			defer stop()
-			if setup {
-				_, err = c.Setup(ctx, document, false)
-			} else {
-				err = c.Stage(ctx, server, operation, artifact, source)
+			done := make(chan error, 1)
+			go func() {
+				if setup {
+					_, err := c.Setup(ctx, document, false)
+					done <- err
+					return
+				}
+				done <- c.Stage(ctx, server, operation, artifact, source)
+			}()
+			select {
+			case <-peer.stalled:
+			case <-time.After(time.Second):
+				t.Fatal("SSH peer did not receive the exec request")
+			}
+			stop()
+			select {
+			case err = <-done:
+			case <-time.After(time.Second):
+				t.Fatal("Potential remote effect did not settle at cancellation")
 			}
 			if domain.SafeError(err).Code != domain.RecoveryRequired || parent.Err() != nil {
-				t.Fatal("Potential remote effect lost its recovery requirement or child deadline", err)
+				t.Fatal("Potential remote effect lost its recovery requirement or child cancellation", err)
 			}
 			select {
 			case <-peer.settled:
