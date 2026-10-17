@@ -83,9 +83,9 @@ function clipsOverflow(style: CSSStyleDeclaration): boolean {
  * ancestors leave visible, so a pointer or a person can no longer reach it.
  *
  * Every ancestor whose overflow is not `visible` (a scrolling list, the tray
- * that contains the list, the Settings task body or content pane) clips the
- * anchor, so the visible box is the intersection of all of their boxes, not
- * only the nearest one. An absolutely positioned anchor is only clipped by
+ * that contains the list, the Settings task body or content pane) and the
+ * window itself clip the anchor, so the visible box is the intersection of all
+ * of their boxes, not only the nearest one. An absolutely positioned anchor is only clipped by
  * ancestors from its containing block outwards and a fixed one by none. An
  * ancestor without a measurable box (`display: contents`, detached or not yet
  * laid out) never dismisses. This is geometry only: it neither scrolls nor
@@ -123,9 +123,19 @@ export function isAnchorClippedOut(anchor: HTMLElement): boolean {
     position = style.position;
     if (position === "fixed") break;
   }
+  const target = anchor.getBoundingClientRect();
+  // The window is the root clipping box: a page that scrolls an anchor out of
+  // the window leaves nothing to present the popup beside. An anchor without a
+  // measurable box (not laid out) is never judged by the window.
+  if (target.width > 0 && target.height > 0) {
+    clipped = true;
+    left = Math.max(left, 0);
+    top = Math.max(top, 0);
+    right = Math.min(right, window.innerWidth);
+    bottom = Math.min(bottom, window.innerHeight);
+  }
   if (!clipped) return false;
   if (right <= left || bottom <= top) return true;
-  const target = anchor.getBoundingClientRect();
   return (
     target.bottom <= top ||
     target.top >= bottom ||

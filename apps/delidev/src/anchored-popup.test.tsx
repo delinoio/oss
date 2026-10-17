@@ -454,3 +454,27 @@ test("a fixed anchor is not clipped and an absolute one only from its containing
   fireEvent.scroll(document.body);
   expect(invalid).toHaveBeenCalledOnce();
 });
+
+test("closes when the page scrolls the anchor out of the window", () => {
+  const { container } = render(<Fixture />);
+  expect(invalid).not.toHaveBeenCalled();
+  // Partly inside the window keeps the popup.
+  anchorRect = { ...rowRect, top: viewport.height - 10 };
+  fireEvent.scroll(document.body);
+  expect(invalid).not.toHaveBeenCalled();
+  // It flips above the anchor instead of leaving the window.
+  expect(Number.parseFloat(popupNode(container).style.top)).toBeLessThan(
+    viewport.height,
+  );
+  anchorRect = { ...rowRect, top: viewport.height };
+  fireEvent.scroll(document.body);
+  expect(invalid).toHaveBeenCalledOnce();
+  expect(container.querySelector("[data-test-popup]")).toBeNull();
+});
+
+test("an anchor without a measurable box is not judged by the window", () => {
+  anchorRect = { left: 0, top: 0, width: 0, height: 0 };
+  const { container } = render(<Fixture />);
+  expect(invalid).not.toHaveBeenCalled();
+  expect(popupNode(container)).toBeTruthy();
+});
