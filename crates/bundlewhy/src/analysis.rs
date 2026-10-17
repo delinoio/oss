@@ -292,6 +292,31 @@ fn coverage(
                         ),
                     )
                 }
+                // The Vite chunk-graph rule proves a claim only from chunks
+                // that carry import data. The adapter drops that data for
+                // every chunk when the finished build no longer matches its
+                // module snapshot, so the rule can then decline every
+                // candidate without reporting anything.
+                OptimizationCategory::ChunkSplitting
+                    if collection.bundler == "vite"
+                        && rules::vite::chunks_without_import_data(collection) > 0 =>
+                {
+                    let missing = rules::vite::chunks_without_import_data(collection);
+                    tracing::debug!(
+                        chunks_without_import_data = missing,
+                        chunks = collection.chunks.len(),
+                        "vite chunk splitting coverage is partial: chunk import data is missing"
+                    );
+                    (
+                        CoverageState::Partial,
+                        format!(
+                            "{missing} emitted chunk(s) have no chunk import data (an older \
+                             adapter, or the finished build's module placement differed from the \
+                             collected snapshot), so dynamic imports that the chunk graph would \
+                             prove ineffective are not reported."
+                        ),
+                    )
+                }
                 // Detectors and evidence interpretation are verified only for
                 // the frozen matrix; an explicitly selected other version can
                 // change APIs or stats silently.
@@ -723,6 +748,71 @@ mod tests {
             .iter()
             .find(|entry| entry.category == OptimizationCategory::DeadCodeElimination)
             .unwrap()
+    }
+
+    fn chunk_splitting_coverage(analysis: &Analysis) -> &CategoryCoverage {
+        analysis
+            .coverage
+            .iter()
+            .find(|entry| entry.category == OptimizationCategory::ChunkSplitting)
+            .unwrap()
+    }
+
+    #[test]
+    fn vite_chunk_splitting_coverage_is_partial_when_chunk_import_data_is_missing() {
+        let covered = run_fixture(BundlerChoice::Vite, |_| {});
+        let entry = chunk_splitting_coverage(&covered.output.analysis);
+        assert_eq!(entry.state, CoverageState::Covered);
+        // The adapter drops the three lists of every chunk when the finished
+        // build does not match its module snapshot; any single chunk without
+        // them is enough to keep the category from claiming full coverage.
+        for (name, keys) in [
+            (
+                "all lists of every chunk",
+                vec!["imports", "externalImports", "dynamicImports"],
+            ),
+            ("only imports", vec!["imports"]),
+            ("only externalImports", vec!["externalImports"]),
+            ("only dynamicImports", vec!["dynamicImports"]),
+        ] {
+            let dropped = run_fixture(BundlerChoice::Vite, |value| {
+                let chunks = value["chunks"].as_array_mut().unwrap();
+                let last = chunks.len() - 1;
+                for chunk in &mut chunks[last..] {
+                    for key in &keys {
+                        chunk.as_object_mut().unwrap().remove(*key);
+                    }
+                }
+            });
+            let entry = chunk_splitting_coverage(&dropped.output.analysis);
+            assert_eq!(entry.state, CoverageState::Partial, "{name}");
+            assert!(
+                entry.note.contains("1 emitted chunk(s)"),
+                "{name}: {}",
+                entry.note
+            );
+            assert!(!entry.rules.is_empty(), "{name}");
+            // Other categories are unaffected.
+            assert_eq!(
+                dead_code_coverage(&dropped.output.analysis).state,
+                CoverageState::Covered,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn rspack_chunk_splitting_coverage_ignores_vite_chunk_import_data() {
+        let fixture = run_fixture(BundlerChoice::Rspack, |_| {});
+        assert!(
+            fixture
+                .collection
+                .chunks
+                .iter()
+                .all(|chunk| chunk.imports.is_none())
+        );
+        let entry = chunk_splitting_coverage(&fixture.output.analysis);
+        assert_ne!(entry.state, CoverageState::Partial);
     }
 
     #[test]
@@ -4682,6 +4772,11 @@ mod tests {
                         "isDynamicEntry": false,
                         "facadeModuleId": null,
                         "modules": chunk.modules,
+                        // A complete chunk-graph record, so these helper
+                        // chunks keep Vite chunk splitting coverage unchanged.
+                        "imports": [],
+                        "externalImports": [],
+                        "dynamicImports": [],
                     }));
                 }
                 edit(value);
