@@ -127,14 +127,8 @@ function useClaudeUsageProgress(request: {
     data?: GetClaudeUsageLoginProgressResponse;
     error?: unknown;
   }>({});
-  const {
-    enabled,
-    settled,
-    once,
-    accountId,
-    operationId,
-    usageGeneration,
-  } = request;
+  const { enabled, settled, once, accountId, operationId, usageGeneration } =
+    request;
   useEffect(() => {
     if (!enabled) {
       setResult({});
