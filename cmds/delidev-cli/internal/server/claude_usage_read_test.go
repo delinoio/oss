@@ -629,6 +629,63 @@ func TestClaudeUsageCoalescedRefreshIsClaimedAndReplaysAfterTheReadFinishes(t *t
 	}
 }
 
+// The Refresh all receipt carries the Claude usage reads of the request: a retry
+// after a lost response lists the original accounts and never reads again, and a
+// request whose admissions did not happen before the response was lost resumes
+// them on retry.
+func TestClaudeUsageRefreshAllReceiptIncludesTheClaudeReads(t *testing.T) {
+	f := newReadFixture(t, nil)
+	f.clock.Advance(5 * time.Minute)
+	request := &pb.RefreshAllSubscriptionQuotasRequest{RequestId: string(domain.NewID())}
+	send := func() *pb.RefreshAllSubscriptionQuotasResponse {
+		t.Helper()
+		response, err := f.client.RefreshAllSubscriptionQuotas(context.Background(), subscriptionRequest(f.service.Identity.Token, request))
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.await()
+		return response.Msg
+	}
+	first := send()
+	if first.Replayed || len(first.Accounts) != 1 || first.Accounts[0] != string(f.account()) || f.provider.count() != 1 {
+		t.Fatalf("first response = %+v requests %d", first, f.provider.count())
+	}
+	retried := send()
+	if !retried.Replayed || len(retried.Accounts) != 1 || retried.Accounts[0] != string(f.account()) {
+		t.Fatalf("the replay did not reproduce the original account list: %+v", retried)
+	}
+	if f.provider.count() != 1 {
+		t.Fatalf("the replayed request read again: %d requests", f.provider.count())
+	}
+
+	// A request whose admissions were interrupted after its receipt committed
+	// resumes them on retry: the receipt, not the response, owns the reads.
+	f.clock.Advance(5 * time.Minute)
+	resumed := &pb.RefreshAllSubscriptionQuotasRequest{RequestId: string(domain.NewID())}
+	f.service.stopping.Store(true)
+	interrupted, err := f.client.RefreshAllSubscriptionQuotas(context.Background(), subscriptionRequest(f.service.Identity.Token, resumed))
+	f.service.stopping.Store(false)
+	if err != nil || len(interrupted.Msg.Accounts) != 1 || f.provider.count() != 1 {
+		t.Fatalf("the interrupted request = %v %+v requests %d", err, interrupted, f.provider.count())
+	}
+	again, err := f.client.RefreshAllSubscriptionQuotas(context.Background(), subscriptionRequest(f.service.Identity.Token, resumed))
+	if err != nil || !again.Msg.Replayed || len(again.Msg.Accounts) != 1 {
+		t.Fatalf("the retry = %v %+v", err, again)
+	}
+	f.await()
+	if f.provider.count() != 2 {
+		t.Fatalf("the retry did not resume the receipt's read: %d requests", f.provider.count())
+	}
+	f.await()
+	if _, err := f.client.RefreshAllSubscriptionQuotas(context.Background(), subscriptionRequest(f.service.Identity.Token, resumed)); err != nil {
+		t.Fatal(err)
+	}
+	f.await()
+	if f.provider.count() != 2 {
+		t.Fatalf("a third delivery read again: %d requests", f.provider.count())
+	}
+}
+
 func TestClaudeUsageRefreshReceiptReplayNeverReadsAgain(t *testing.T) {
 	f := newReadFixture(t, nil)
 	request := f.refreshRequest(domain.NewID())

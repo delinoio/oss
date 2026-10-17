@@ -22,22 +22,80 @@ import (
 func (s *Service) dueClaudeUsageAccounts(ctx context.Context, now time.Time) ([]domain.ID, error) {
 	var due []domain.ID
 	err := s.Store.Read(ctx, func(tx *store.Tx) error {
-		records, err := all(tx, domain.AccountKind)
-		if err != nil {
-			return err
-		}
-		for _, r := range records {
-			a, err := store.Decode[domain.Account](r)
-			if err != nil {
-				return err
-			}
-			if a.ManagedClaudeAccount() && a.Connection != nil && a.Removal == nil && a.Subscription.ClaudeUsage != nil && a.Subscription.ClaudeUsage.ReadDue(now) {
-				due = append(due, r.ID)
-			}
-		}
-		return nil
+		var err error
+		due, err = dueClaudeUsageAccountsTx(tx, now)
+		return err
 	})
 	return due, err
+}
+
+func dueClaudeUsageAccountsTx(tx *store.Tx, now time.Time) ([]domain.ID, error) {
+	var due []domain.ID
+	records, err := all(tx, domain.AccountKind)
+	if err != nil {
+		return nil, err
+	}
+	for _, r := range records {
+		a, err := store.Decode[domain.Account](r)
+		if err != nil {
+			return nil, err
+		}
+		if a.ManagedClaudeAccount() && a.Connection != nil && a.Removal == nil && a.Subscription.ClaudeUsage != nil && a.Subscription.ClaudeUsage.ReadDue(now) {
+			due = append(due, r.ID)
+		}
+	}
+	return due, nil
+}
+
+// claudeUsageReadRef is one scheduled read that a Refresh all request asked the
+// usage-read owner to admit, with the operation ID of its durable claim. The
+// request receipt stores it, so a replay of the request reproduces the same
+// accounts and resumes the same claims.
+type claudeUsageReadRef struct {
+	Account   domain.ID `json:"account"`
+	Operation domain.ID `json:"operation"`
+}
+
+// dueClaudeUsageReadsTx selects, inside the Refresh all receipt transaction, the
+// due scheduled reads of this request (bounded per pass like the maintenance
+// scan) and allocates each claim's operation ID.
+func (s *Service) dueClaudeUsageReadsTx(tx *store.Tx) ([]claudeUsageReadRef, error) {
+	if !s.claudeUsageActive() {
+		return nil, nil
+	}
+	due, err := dueClaudeUsageAccountsTx(tx, s.claudeUsageNow())
+	if err != nil {
+		return nil, err
+	}
+	if len(due) > claudeUsageScanAdmissionPerPass {
+		due = due[:claudeUsageScanAdmissionPerPass]
+	}
+	reads := make([]claudeUsageReadRef, 0, len(due))
+	for _, account := range due {
+		reads = append(reads, claudeUsageReadRef{Account: account, Operation: domain.NewID()})
+	}
+	return reads, nil
+}
+
+// admitClaudeUsageReceiptReads admits the reads a Refresh all receipt recorded.
+// Each admission is keyed by its recorded operation ID and the request, so a
+// replay or a retry after a lost response resumes exactly the unfinished claims
+// and never starts a second read for an account whose claim already exists. An
+// account whose read is running, suppressed or no longer due is skipped silently.
+func (s *Service) admitClaudeUsageReceiptReads(ctx context.Context, actor domain.Principal, request domain.ID, reads []claudeUsageReadRef) {
+	for _, read := range reads {
+		if ctx.Err() != nil {
+			return
+		}
+		_, err := s.admitClaudeUsageRead(ctx, read.Account, read.Operation, actor, claudeUsageTriggerRefreshAll, claudeUsageFence{}, struct{ Account, Request domain.ID }{read.Account, request})
+		switch {
+		case err == nil, errors.Is(err, errClaudeUsageNotDue), errors.Is(err, errClaudeUsageBusy):
+		default:
+			if ctx.Err() == nil {
+				s.logger.WarnContext(ctx, "claude_usage_admission_failed", "account_id", read.Account, "trigger", claudeUsageTriggerRefreshAll, "code", domain.SafeError(err).Code)
+			}
+		}
+	}
 }
 
 // scheduleClaudeUsageReads admits the due scheduled reads on behalf of actor and

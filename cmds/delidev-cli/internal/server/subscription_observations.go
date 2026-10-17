@@ -193,6 +193,10 @@ const subscriptionQuotaMaintenanceInterval = 4 * time.Minute
 
 type subscriptionQuotaBatchReceipt struct {
 	Accounts []domain.ID `json:"accounts"`
+	// ClaudeReads are the due Claude usage reads the request asked the usage-read
+	// owner to admit. They are part of the durable receipt so a replay reproduces
+	// the account list and resumes the same claims.
+	ClaudeReads []claudeUsageReadRef `json:"claude_reads,omitempty"`
 }
 
 func subscriptionQuotaCandidates(tx *store.Tx, now time.Time, dueOnly bool, epoch domain.ID) ([]store.Record, error) {
@@ -289,7 +293,13 @@ func (s *Service) RefreshAllSubscriptionQuotas(ctx context.Context, req *connect
 		return nil, rpc.Error(err, c)
 	}
 	result, err := s.Store.Mutate(ctx, domain.ID(req.Msg.RequestId), "subscription.quota.all", actor, func(tx *store.Tx) (any, error) {
-		return queueSubscriptionQuotas(tx, actor, time.Now().UTC(), false, s.subscriptionServerEpoch())
+		receipt, err := queueSubscriptionQuotas(tx, actor, time.Now().UTC(), false, s.subscriptionServerEpoch())
+		if err != nil {
+			return receipt, err
+		}
+		// The due Claude usage reads join the same durable receipt.
+		receipt.ClaudeReads, err = s.dueClaudeUsageReadsTx(tx)
+		return receipt, err
 	})
 	// The usage-read owner takes the account gate itself.
 	unlock()
@@ -306,12 +316,12 @@ func (s *Service) RefreshAllSubscriptionQuotas(ctx context.Context, req *connect
 	}
 	// Claude usage reads join the same request through their own owner. Only a
 	// read that is due is admitted, so neither Refresh all nor the 30-second
-	// foreground cadence can force a fetch before the four-minute interval, and a
-	// replayed request admits nothing.
-	if !result.Replayed {
-		for _, id := range s.scheduleClaudeUsageReads(ctx, actor, claudeUsageTriggerRefreshAll) {
-			response.Accounts = append(response.Accounts, string(id))
-		}
+	// foreground cadence can force a fetch before the four-minute interval. The
+	// reads are part of the receipt: a replay lists the original accounts and
+	// resumes unfinished claims, and an existing claim never reads again.
+	s.admitClaudeUsageReceiptReads(ctx, actor, domain.ID(req.Msg.RequestId), receipt.ClaudeReads)
+	for _, read := range receipt.ClaudeReads {
+		response.Accounts = append(response.Accounts, string(read.Account))
 	}
 	return connect.NewResponse(response), nil
 }
