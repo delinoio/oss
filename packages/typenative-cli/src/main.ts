@@ -101,7 +101,7 @@ try {
         Code.Arguments,
         "doctor does not accept positional arguments.",
       );
-    if (values.target) {
+    if (values.target !== undefined) {
       if (!Object.values(Target).includes(values.target as Target))
         throw new DiagnosticError(Code.Arguments, "Unknown target identifier.");
       target = values.target as Target;

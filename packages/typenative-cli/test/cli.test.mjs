@@ -245,3 +245,14 @@ test(
     assert.equal(result.records[0].code, Code.Version);
   },
 );
+
+test("doctor rejects an explicitly empty target", () => {
+  for (const args of [
+    ["doctor", "--target="],
+    ["doctor", "--target", ""],
+  ]) {
+    const result = invoke(args);
+    assert.equal(result.status, 1);
+    assert.equal(result.records[0].code, Code.Arguments);
+  }
+});
