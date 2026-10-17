@@ -239,18 +239,22 @@ func claudeUsageStartable(a domain.Account) bool {
 }
 
 // claudeUsageCleanupCandidate selects an account whose usage section owes
-// cleanup that no live login owns. A login of the current epoch is owned by its
-// run and is never selected; a login of an older epoch has no run and is fenced
-// first. An identity review that elapsed, or whose actor lost authority and
-// can therefore never confirm it, is discarded.
-func (s *Service) claudeUsageCleanupCandidate(a domain.Account, now time.Time, actorGone bool) bool {
+// cleanup that no live login owns. A login whose run is registered is owned by
+// it and is never selected. A connecting login without a registered owner has
+// lost its run: either its server epoch ended (a restart) or its goroutine
+// finished without settling the section (for example a failed settlement
+// transaction after the child was joined), so it is cleaned up and settled
+// instead of waiting for a restart or an explicit cancel. An identity review
+// that elapsed, or whose actor lost authority and can therefore never confirm
+// it, is discarded.
+func (s *Service) claudeUsageCleanupCandidate(account domain.ID, a domain.Account, now time.Time, actorGone bool) bool {
 	if !a.ManagedClaudeAccount() || a.Subscription.ClaudeUsage == nil {
 		return false
 	}
 	usage := a.Subscription.ClaudeUsage
 	switch usage.Connection {
 	case domain.ClaudeUsageConnecting:
-		return usage.Operation != nil && (usage.Operation.Epoch != s.subscriptionServerEpoch() || usage.Operation.State == domain.SubscriptionRecovery)
+		return usage.Operation != nil && (usage.Operation.Epoch != s.subscriptionServerEpoch() || usage.Operation.State == domain.SubscriptionRecovery || !s.claudeUsage.live(account))
 	case domain.ClaudeUsageConfirming:
 		return usage.Operation != nil && (!now.Before(usage.Operation.ExpiresAt) || actorGone) || usage.OwesCleanup()
 	}

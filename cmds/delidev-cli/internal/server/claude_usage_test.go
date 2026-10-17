@@ -677,7 +677,7 @@ func TestClaudeUsageRestartFencesOldLoginWithoutRelaunch(t *testing.T) {
 		t.Fatalf("restart progress = %+v", got)
 	}
 	_, account := f.record()
-	if !f.service.claudeUsageCleanupCandidate(account, time.Now(), false) {
+	if !f.service.claudeUsageCleanupCandidate(f.input.AccountID, account, time.Now(), false) {
 		t.Fatal("the fenced login is not selected for cleanup")
 	}
 	if err := f.service.cleanupClaudeUsage(ctx, f.input.AccountID); err != nil {
@@ -711,6 +711,46 @@ func TestClaudeUsageShutdownJoinsLoginAndKeepsDurableState(t *testing.T) {
 	}
 	if _, err := f.start(); err == nil {
 		t.Fatal("a login started after shutdown")
+	}
+}
+
+// A same-epoch login whose run disappeared without settling the section (for
+// example a failed settlement after the child was joined) is selected by the
+// cleanup scanner, joined to a failed state and its native storage removed
+// instead of waiting for a restart or an explicit cancel.
+func TestClaudeUsageCleanupScannerRecoversASameEpochLoginWithoutARun(t *testing.T) {
+	f := newUsageFixture(t)
+	op, err := f.start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(f.usage.ready)
+	f.await(op, pb.ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_WAITING)
+	_, account := f.record()
+	if f.service.claudeUsageCleanupCandidate(f.input.AccountID, account, time.Now(), false) {
+		t.Fatal("a login owned by its live run was selected for cleanup")
+	}
+	// The run ends without settling the durable section; the epoch is unchanged.
+	f.service.closeClaudeUsage()
+	f.service.claudeUsage = claudeUsageRuns{}
+	_, account = f.record()
+	if !f.service.claudeUsageCleanupCandidate(f.input.AccountID, account, time.Now(), false) {
+		t.Fatal("a same-epoch login without a run was not selected for cleanup")
+	}
+	ctx := domain.WithPrincipal(context.Background(), domain.Principal{Type: domain.OwnerDevice})
+	if err := f.service.cleanupClaudeUsage(ctx, f.input.AccountID); err != nil {
+		t.Fatal(err)
+	}
+	section := f.section()
+	if section == nil || section.Connection != domain.ClaudeUsageReconnectRequired || section.Operation == nil || section.Operation.State != domain.SubscriptionFailed {
+		t.Fatalf("the orphaned login was not settled as failed: %+v", section)
+	}
+	if f.removals.Load() == 0 {
+		t.Fatal("the orphaned login's native storage was not removed")
+	}
+	_, account = f.record()
+	if f.service.claudeUsageCleanupCandidate(f.input.AccountID, account, time.Now(), false) {
+		t.Fatal("a settled login is still selected for cleanup")
 	}
 }
 
