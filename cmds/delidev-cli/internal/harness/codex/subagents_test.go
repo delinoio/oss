@@ -335,6 +335,43 @@ func TestSubagentChildNativeEnvelopesRejectCaseAliasedKeys(t *testing.T) {
 	}
 }
 
+func TestSubagentOwnershipItemsRejectCaseAliasedKeys(t *testing.T) {
+	c, turn := observationClient()
+	child := domain.NewID()
+	spawn := func(rename func(map[string]any)) map[string]any {
+		item := map[string]any{"type": "collabAgentToolCall", "id": "case-alias-spawn", "tool": "spawnAgent", "status": "completed", "senderThreadId": c.thread, "receiverThreadIds": []domain.ID{child}, "agentsStates": map[string]any{string(child): map[string]any{"status": "running", "message": nil}}}
+		if rename != nil {
+			rename(item)
+		}
+		return item
+	}
+	aliased := map[string]func(map[string]any){
+		"Tool instead of tool": func(m map[string]any) { m["Tool"] = m["tool"]; delete(m, "tool") },
+		"both tool spellings":  func(m map[string]any) { m["Tool"] = m["tool"] },
+		"nested agent state alias": func(m map[string]any) {
+			m["agentsStates"] = map[string]any{string(child): map[string]any{"Status": "running", "message": nil}}
+		},
+	}
+	for name, rename := range aliased {
+		event, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "completedAtMs": 1, "item": spawn(rename)})
+		if err == nil || event.Kind == SubagentEvent || len(c.subagents) != 0 {
+			t.Fatal("case-aliased collaboration item established child ownership", name, err)
+		}
+	}
+	if event, err := observeFixture(c, "item/completed", map[string]any{"threadId": c.thread, "turnId": turn, "completedAtMs": 1, "item": spawn(nil)}); err != nil || event.Kind != SubagentEvent || len(c.subagents) != 1 {
+		t.Fatal("canonical collaboration item did not establish child ownership", err)
+	}
+	activity := func(kindKey string) json.RawMessage {
+		return json.RawMessage(`{"type":"subAgentActivity","id":"case-alias-activity","` + kindKey + `":"started","agentThreadId":"` + string(child) + `","agentPath":"/native-child"}`)
+	}
+	if _, err := c.observeSubagentActivity(activity("Kind"), turn); err == nil {
+		t.Fatal("case-aliased activity item was accepted")
+	}
+	if _, err := c.observeSubagentActivity(activity("kind"), turn); err != nil {
+		t.Fatal("canonical activity item was rejected", err)
+	}
+}
+
 func TestSubagentCanonicalCollaborationKeepsRequestedModelAndChildScope(t *testing.T) {
 	c, turn := observationClient()
 	child := domain.NewID()

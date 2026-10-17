@@ -139,7 +139,7 @@ func (c *Client) observeCollaboration(item json.RawMessage, sender domain.ID, tu
 			Message *string `json:"message"`
 		} `json:"agentsStates"`
 	}
-	if domain.Decode(item, &v) != nil || v.Type != "collabAgentToolCall" || v.Sender != sender || domain.Text(v.ID, "native collab item", 1024, true) != nil || !slices.Contains([]string{"spawnAgent", "sendInput", "resumeAgent", "wait", "closeAgent", "sendMessage", "followupTask", "interruptAgent", "listAgents"}, v.Tool) || !slices.Contains([]string{"inProgress", "completed", "failed", "interrupted"}, v.Status) || len(v.Receivers) > 128 {
+	if decodeCaseExact(item, &v) != nil || v.Type != "collabAgentToolCall" || v.Sender != sender || domain.Text(v.ID, "native collab item", 1024, true) != nil || !slices.Contains([]string{"spawnAgent", "sendInput", "resumeAgent", "wait", "closeAgent", "sendMessage", "followupTask", "interruptAgent", "listAgents"}, v.Tool) || !slices.Contains([]string{"inProgress", "completed", "failed", "interrupted"}, v.Status) || len(v.Receivers) > 128 {
 		return Event{}, incompatible()
 	}
 	if sender != c.thread {
@@ -203,7 +203,7 @@ func (c *Client) observeSubagentActivity(item json.RawMessage, turn domain.ID) (
 		Agent domain.ID `json:"agentThreadId"`
 		Path  string    `json:"agentPath"`
 	}
-	if domain.Decode(item, &v) != nil || v.Type != "subAgentActivity" || v.Agent.Validate() != nil || domain.Text(v.Path, "native agent path", 1024, true) != nil {
+	if decodeCaseExact(item, &v) != nil || v.Type != "subAgentActivity" || v.Agent.Validate() != nil || domain.Text(v.Path, "native agent path", 1024, true) != nil {
 		return Event{}, incompatible()
 	}
 	if !slices.Contains([]string{"started", "interacted", "interrupted", "completed"}, v.Kind) {
@@ -312,12 +312,12 @@ func (c *Client) inspectDescendantSnapshotLocked(ctx context.Context) (Event, er
 			Next *string           `json:"nextCursor"`
 			Back *string           `json:"backwardsCursor"`
 		}
-		if domain.Decode(response.Result, &result) != nil || result.Data == nil {
+		if decodeCaseExact(response.Result, &result) != nil || result.Data == nil {
 			return Event{}, incompatible()
 		}
 		for _, raw := range result.Data {
 			var t threadWire
-			if domain.Decode(raw, &t) != nil || t.ID.Validate() != nil || t.ParentThreadID == nil || t.ParentThreadID.Validate() != nil || t.SessionID.Validate() != nil || t.CLIVersion != c.version || t.ModelProvider != c.execution.settings.Provider || validateThreadStatus(t.Status) != nil || seen[string(t.ID)] {
+			if decodeCaseExact(raw, &t) != nil || t.ID.Validate() != nil || t.ParentThreadID == nil || t.ParentThreadID.Validate() != nil || t.SessionID.Validate() != nil || t.CLIVersion != c.version || t.ModelProvider != c.execution.settings.Provider || validateThreadStatus(t.Status) != nil || seen[string(t.ID)] {
 				if c.logger != nil {
 					c.logger.WarnContext(ctx, "Codex descendant inventory rejected", "owner_id", c.ownerID, "stage", "thread-identity")
 				}
@@ -575,7 +575,7 @@ func (c *Client) readChildHistory(ctx context.Context, child domain.SubagentObse
 		Next *string           `json:"nextCursor"`
 		Back *string           `json:"backwardsCursor"`
 	}
-	if domain.Decode(response.Result, &page) != nil || len(page.Data) > 1 {
+	if decodeCaseExact(response.Result, &page) != nil || len(page.Data) > 1 {
 		return child, incompatible()
 	}
 	if len(page.Data) == 0 {

@@ -15,7 +15,8 @@ var jsonUnmarshalerType = reflect.TypeOf((*json.Unmarshaler)(nil)).Elem()
 // rejected) and then requires every object key that targets a typed struct
 // field to use the field's canonical JSON name. encoding/json matches struct
 // tags case-insensitively, so `Status` would otherwise be accepted for
-// `status`. Raw-message, map and interface fields remain opaque.
+// `status`. Map keys are data and stay free; map values, slices and nested
+// structs are checked. Raw-message and interface fields remain opaque.
 func decodeCaseExact(raw []byte, target any) error {
 	if err := domain.Decode(raw, target); err != nil {
 		return err
@@ -62,6 +63,16 @@ func canonicalKeys(raw []byte, t reflect.Type) bool {
 		for key, value := range object {
 			field, ok := fields[key]
 			if !ok || !canonicalKeys(value, field) {
+				return false
+			}
+		}
+	case reflect.Map:
+		var object map[string]json.RawMessage
+		if json.Unmarshal(raw, &object) != nil {
+			return false
+		}
+		for _, value := range object {
+			if !canonicalKeys(value, t.Elem()) {
 				return false
 			}
 		}
