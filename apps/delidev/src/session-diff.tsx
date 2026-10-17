@@ -5,6 +5,12 @@ import { Surface } from "./surface";
 import { copy, LocalizedText, useLocale } from "./localization";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  AnchoredPopupAlign,
+  AnchoredPopupWidth,
+  useAnchoredPopup,
+  useOutsidePointerDismiss,
+} from "./anchored-popup";
+import {
   EntranceMotion,
   useEntranceActivation,
   type EntranceProps,
@@ -300,7 +306,19 @@ export function RepositoryDiff({
   const [baseRef, setBaseRef] = useState(initial?.base_ref);
   const [menu, setMenu] = useState(false);
   const menuTrigger = useRef<HTMLButtonElement>(null),
-    pathInput = useRef<HTMLInputElement>(null);
+    pathInput = useRef<HTMLInputElement>(null),
+    menuPanel = useRef<HTMLDivElement>(null);
+  // The options panel is an anchored top-layer popup so opening it never
+  // pushes the diff down; it may cover the diff but reserves no space. Focus,
+  // Escape, Close and submit keep their original owners in this component.
+  useAnchoredPopup({
+    open: menu,
+    anchor: menuTrigger,
+    popup: menuPanel,
+    onInvalid: () => setMenu(false),
+    width: AnchoredPopupWidth.Content,
+    align: AnchoredPopupAlign.End,
+  });
   const transport = useTransport(),
     queryClient = useQueryClient();
   const optionsInput = {
@@ -322,6 +340,11 @@ export function RepositoryDiff({
   useEffect(() => {
     if (menu) pathInput.current?.focus();
   }, [menu]);
+  // The popup may cover the diff, so a pointer press outside it and its trigger
+  // dismisses it like the other action menus. The path draft stays in state.
+  useOutsidePointerDismiss(menu, [menuPanel, menuTrigger], () =>
+    setMenu(false),
+  );
   useEffect(() => {
     if (initial) {
       setComparison(initial.comparison);
@@ -814,7 +837,9 @@ export function RepositoryDiff({
       </header>
       {menu ? (
         <div
-          className="diff-options"
+          ref={menuPanel}
+          popover="manual"
+          className="anchored-popup diff-options"
           role="dialog"
           aria-label={copy("session-diff.moreOptions")}
           onKeyDown={(event) => {
