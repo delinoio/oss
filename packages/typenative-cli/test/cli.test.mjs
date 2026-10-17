@@ -224,3 +224,24 @@ test("CLI create returns structured metadata and explicit incomplete framework s
   assert.deepEqual(record.versions, versions);
   assert.ok(record.buildId);
 });
+
+test(
+  "doctor surfaces a compiler version mismatch in the aggregate record",
+  { skip: process.platform === "win32" },
+  async (t) => {
+    const { chmod } = await import("node:fs/promises");
+    const root = await temporary(t);
+    const compiler = join(root, "scriptc");
+    await writeFile(compiler, '#!/bin/sh\nprintf "0.0.0\\n"\n');
+    await chmod(compiler, 0o755);
+    const result = invoke([
+      "doctor",
+      "--target",
+      "linux-x64",
+      "--scriptc",
+      compiler,
+    ]);
+    assert.equal(result.status, 1);
+    assert.equal(result.records[0].code, Code.Version);
+  },
+);

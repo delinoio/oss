@@ -118,7 +118,7 @@ try {
     const checks = inspectTools(target, compiler);
     const ok = checks.every((check) => check.ok);
     emit(
-      ok ? Code.Ok : Code.Tool,
+      checks.find((check) => !check.ok)?.code ?? Code.Ok,
       "Selected prerequisite checks only; SDK completeness and TypeNative platform acceptance are unverified.",
       { checks, frameworkReady: false, platformAcceptance: "unverified" },
     );
