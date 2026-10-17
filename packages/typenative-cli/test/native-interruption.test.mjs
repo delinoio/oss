@@ -1,3 +1,4 @@
+import { hostTarget } from "../dist/core.js";
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
@@ -17,8 +18,9 @@ for (const phase of ["compile", "execute"]) {
     test(
       `React probe cleans up after ${signal} during ${phase}`,
       {
-        skip:
-          process.platform === "win32"
+        skip: !hostTarget()
+          ? "Native probe does not support this host target"
+          : process.platform === "win32"
             ? "POSIX signal fixture requires a Unix host"
             : phase === "execute" && !hasCCompiler
               ? "Native execution fixture requires cc; compilation interruption remains covered"
