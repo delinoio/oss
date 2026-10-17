@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -27,6 +28,8 @@ var claudeUsageLogKeys = map[string]bool{
 	"trigger": true, "result": true, "failure": true, "kind": true, "status": true, "phase": true, "code": true,
 	"renewed": true, "replayed": true, "coalesced": true, "complete": true, "cleanup_confirmed": true, "profile_cleaned": true, "superseded": true, "version_observed": true,
 	"references_removed": true, "backoff_seconds": true,
+	// Counts of the retained profile-lease retry and the retirement rejoin attempt.
+	"retained": true, "unconfirmed": true, "attempt": true,
 	// Emitted by internal/nativeprofile.Log (closed profile event fields).
 	"profile_id": true, "owner": true, "harness": true, "purpose": true, "reason": true,
 }
@@ -90,8 +93,39 @@ func TestClaudeUsageLogsFollowTheClosedStructuredContract(t *testing.T) {
 		t.Fatal(err)
 	}
 	generation, commitment := string(f.section().Generation), f.section().Identity.Commitment
+	// A retained profile lease whose release fails once is retried: the retry
+	// logs how many leases were retained and how many stayed unconfirmed.
+	resetStrandedUsageLeases(t)
+	lease := &flakyUsageLease{failures: 1}
+	if err := strandedUsageLeases.close(lease); err == nil {
+		t.Fatal("a failed lease release was reported as confirmed")
+	}
+	if remaining := strandedUsageLeases.retry(f.service.logger); remaining != 0 {
+		t.Fatalf("the retained lease stayed unconfirmed: %d", remaining)
+	}
+	// A run admitted between the disconnect's join and its account gate is
+	// rejoined by the next attempt, which logs the attempt number.
+	var admitted atomic.Int32
+	f.service.claudeUsageRetirementJoined = func() {
+		if admitted.Add(1) != 1 {
+			return
+		}
+		run, runCtx, err := f.service.claudeUsage.reserve(f.account(), domain.NewID(), time.Now().Add(time.Minute))
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		go func() {
+			<-runCtx.Done()
+			f.service.claudeUsage.finish(run)
+		}()
+	}
 	if err := f.disconnect(generation); err != nil {
 		t.Fatal(err)
+	}
+	f.service.claudeUsageRetirementJoined = nil
+	if admitted.Load() < 2 {
+		t.Fatalf("the late run was not rejoined: %d joins", admitted.Load())
 	}
 	// A second login that the user cancels while native storage removal fails:
 	// the owed cleanup is logged with a closed code and completed on retry.
@@ -151,9 +185,9 @@ func TestClaudeUsageLogsFollowTheClosedStructuredContract(t *testing.T) {
 				if number, ok := value.(float64); !ok || number < 1 || number > float64(domain.NativeSubscriptionCleanup) {
 					t.Fatalf("%s: phase %v is not a closed phase", message, value)
 				}
-			case "backoff_seconds", "references_removed":
-				if _, ok := value.(float64); !ok {
-					t.Fatalf("%s: %s is not a number: %v", message, key, value)
+			case "backoff_seconds", "references_removed", "retained", "unconfirmed", "attempt":
+				if number, ok := value.(float64); !ok || number < 0 || number != float64(int64(number)) {
+					t.Fatalf("%s: %s is not a count: %v", message, key, value)
 				}
 			case "trigger", "result", "failure", "kind", "status":
 				if !isText || !claudeUsageLogValues[key][text] {
@@ -172,6 +206,7 @@ func TestClaudeUsageLogsFollowTheClosedStructuredContract(t *testing.T) {
 		"claude_usage_read_claimed", "claude_usage_fetch_result", "claude_usage_read_finished",
 		"claude_usage_renewal_started", "claude_usage_renewal_published",
 		"claude_usage_cleanup", "claude_usage_cleanup_pending", "claude_usage_disconnected", "claude_usage_login_canceled",
+		"claude_usage_profile_release_retried", "claude_usage_retirement_rejoin",
 	} {
 		if !seen[event] {
 			t.Errorf("log event %s is missing", event)
