@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import { statusLabel } from "./product-status";
 import {
@@ -409,8 +410,9 @@ function Questions({
   );
   return (
     <form
+      onKeyDown={guardEnterSubmission}
       onSubmit={(event) => {
-        event.preventDefault();
+        if (!consumeFormSubmit(event)) return;
         if (blocked || missing) return;
         void mutation.send({
           mutation: {
@@ -776,8 +778,9 @@ function Approval({
   };
   return (
     <form
+      onKeyDown={guardEnterSubmission}
       onSubmit={(event) => {
-        event.preventDefault();
+        if (!consumeFormSubmit(event)) return;
         if (blocked || (native.kind !== "permissions" && !decision)) return;
         void mutation.send({
           mutation: {

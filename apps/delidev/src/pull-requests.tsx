@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import {
   useProductLabels,
   PresentationKind,
@@ -879,8 +880,11 @@ export function PullRequests({
             >
               <h3>{copy("pull-requests.queryOptions_aeced2")}</h3>
               <form
+                onKeyDown={guardEnterSubmission}
                 className="sidebar-form"
-                onSubmit={(event) => event.preventDefault()}
+                onSubmit={(event) => {
+                  consumeFormSubmit(event);
+                }}
               >
                 <fieldset className="pr-state-field">
                   <legend>{copy("pull-requests.state_a3b50c")}</legend>

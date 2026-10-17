@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { LocalizedText, copy, resolveMessage, useLocale } from "./localization";
 import {
   InteractionQuery,
@@ -128,11 +129,12 @@ export function NativeQuestionResponse({
     closed || mutation.busy || mutation.uncertain || !submissionAllowed;
   return (
     <form
+      onKeyDown={guardEnterSubmission}
       aria-label={copy(
         "native-interaction-response.answerOriginalOpencodeQuestions_872727",
       )}
       onSubmit={(event) => {
-        event.preventDefault();
+        if (!consumeFormSubmit(event)) return;
         if (blocked || missing || invalid || oversized) return;
         void mutation.send({
           mutation: {
@@ -395,10 +397,13 @@ export function NativePermissionResponse({
   };
   return (
     <form
+      onKeyDown={guardEnterSubmission}
       aria-label={copy(
         "native-interaction-response.respondToOriginalOpencodePermission_78b0d2",
       )}
-      onSubmit={(event) => event.preventDefault()}
+      onSubmit={(event) => {
+        consumeFormSubmit(event);
+      }}
     >
       <p>
         {copy(

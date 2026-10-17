@@ -19,6 +19,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import {
+  appleDevelopmentCertificateName,
   developmentCertificateName,
   developmentServerIdentifier,
   publishDevelopmentBundle,
@@ -37,12 +38,12 @@ function temporary(t) {
   t.after(() => rmSync(root, { recursive: true, force: true }));
   return root;
 }
-function certificate(t) {
+function certificate(t, name = developmentCertificateName) {
   const root = temporary(t);
   const config = join(root, "openssl.conf");
   writeFileSync(
     config,
-    `[req]\nprompt=no\ndistinguished_name=dn\nx509_extensions=ext\n[dn]\nCN=${developmentCertificateName}\n[ext]\nextendedKeyUsage=codeSigning\n`,
+    `[req]\nprompt=no\ndistinguished_name=dn\nx509_extensions=ext\n[dn]\nCN=${name}\n[ext]\nextendedKeyUsage=codeSigning\n`,
     { mode: 0o600 },
   );
   execFileSync(
@@ -97,6 +98,64 @@ test(
         ),
       /development-certificate-expired/,
     );
+  },
+);
+
+test(
+  "Apple Development candidates require Apple-anchored signed-code verification before registration",
+  unixFixture,
+  async (t) => {
+    const directory = join(temporary(t), "config");
+    // A forged name must not be enough to register a synthetic certificate.
+    const { pem, fingerprint } = certificate(t, "Apple Development: Fixture");
+    const calls = [];
+    await assert.rejects(
+      registerDevelopmentIdentity(fingerprint, {
+        directory,
+        environment: {},
+        command: async (name, args) => {
+          calls.push([name, args]);
+          if (name === "/usr/bin/security")
+            return args.includes(appleDevelopmentCertificateName) ? pem : "";
+          if (args.includes("--verify")) {
+            assert.ok(args.includes(serverRequirement(fingerprint)));
+            assert.match(
+              serverRequirement(fingerprint),
+              /anchor apple generic/,
+            );
+            assert.match(
+              serverRequirement(fingerprint),
+              /certificate leaf\[field\.1\.2\.840\.113635\.100\.6\.1\.12\] exists/,
+            );
+            throw new Error("fixture-untrusted-development-certificate");
+          }
+          return "";
+        },
+      }),
+      /fixture-untrusted-development-certificate/,
+    );
+    assert.equal(existsSync(join(directory, "signing.json")), false);
+    assert.deepEqual(
+      calls.slice(0, 2).map((call) => call[1][3]),
+      [developmentCertificateName, appleDevelopmentCertificateName],
+    );
+  },
+);
+
+test(
+  "distribution certificates are not development candidates",
+  unixFixture,
+  (t) => {
+    for (const name of [
+      "Developer ID Application: Fixture",
+      "Apple Distribution: Fixture",
+    ]) {
+      const { pem, fingerprint } = certificate(t, name);
+      assert.throws(
+        () => validateDevelopmentCertificate(pem, fingerprint),
+        /development-certificate-invalid/,
+      );
+    }
   },
 );
 

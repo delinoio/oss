@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import "./wizard-presentation.css";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
@@ -774,9 +775,10 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
               {copy("claude-subscription.success")}
             </p>
             <form
+              onKeyDown={guardEnterSubmission}
               id={id}
               onSubmit={(e) => {
-                e.preventDefault();
+                if (!consumeFormSubmit(e)) return;
                 p.save();
               }}
             >
@@ -847,8 +849,9 @@ function ClaudeSubscriptionOnboarding(p: OnboardingProps) {
             {v.step === Step.Login &&
             v.method === SubscriptionLoginMethod.BROWSER_CODE ? (
               <form
+                onKeyDown={guardEnterSubmission}
                 onSubmit={(e) => {
-                  e.preventDefault();
+                  if (!consumeFormSubmit(e)) return;
                   const value = code.current?.value ?? "";
                   if (code.current) code.current.value = "";
                   p.submit(value);

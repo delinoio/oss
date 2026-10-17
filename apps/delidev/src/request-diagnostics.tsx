@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 
 import { Timestamp } from "./timestamp-display";
@@ -534,8 +535,9 @@ export function RequestDiagnostics({
         {copy("request-diagnostics.httpLatencyCoversTheObservedRequest_bc4448")}
       </p>
       <form
+        onKeyDown={guardEnterSubmission}
         onSubmit={(event) => {
-          event.preventDefault();
+          if (!consumeFormSubmit(event)) return;
           if (draft && !isEntityId(draft)) {
             setProblem(ownedMessage("request-diagnostics.extra.4fa709f4f55a"));
             return;

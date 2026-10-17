@@ -1,3 +1,4 @@
+import { consumeFormSubmit, guardEnterSubmission } from "./form-enter";
 import { useProductLabels, PresentationKind } from "./product-identity-labels";
 import { Disclosure, DisclosureSummary } from "./disclosure";
 import {
@@ -300,9 +301,10 @@ function PricingEditor({
     setDraft((current) => ({ ...current, [key]: value }));
   return (
     <form
+      onKeyDown={guardEnterSubmission}
       id={`${taskFormId}-1`}
       onSubmit={(event) => {
-        event.preventDefault();
+        if (!consumeFormSubmit(event)) return;
         if (blocked || stale || readError || !current) return;
         try {
           const basis = priceInput(draft);

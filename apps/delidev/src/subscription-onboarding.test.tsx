@@ -18,6 +18,7 @@ import {
   LocalConnectionPresentationProvider,
 } from "./local-connection-presentation";
 import { Modal } from "./ui";
+import { pressEnter } from "./test-form-enter";
 
 function props(
   overrides: Partial<SubscriptionOnboardingProps> = {},
@@ -98,6 +99,28 @@ it("focuses the confirmed name once and preserves edits across progress rerender
   fireEvent.click(later);
   expect(value.leave).toHaveBeenCalledTimes(1);
   expect(value.cancel).not.toHaveBeenCalled();
+});
+
+it("saves the confirmed account name with plain Enter once and never from a disabled or composing press", () => {
+  const value = props({
+    stage: Stage.Naming,
+    name: "My account",
+    suggested: true,
+  });
+  const view = render(<SubscriptionOnboarding {...value} />);
+  const input = screen.getByLabelText("Account name") as HTMLInputElement;
+  expect(pressEnter(input, { repeat: true })).toBe(0);
+  expect(pressEnter(input, { composing: true })).toBe(0);
+  expect(pressEnter(input, { keyCode: 229 })).toBe(0);
+  expect(value.saveName).not.toHaveBeenCalled();
+  expect(pressEnter(input)).toBe(1);
+  expect(value.saveName).toHaveBeenCalledTimes(1);
+  expect(value.leave).not.toHaveBeenCalled();
+  view.rerender(<SubscriptionOnboarding {...value} name="   " />);
+  expect(pressEnter(input)).toBe(0);
+  view.rerender(<SubscriptionOnboarding {...value} busy />);
+  expect(pressEnter(input)).toBe(0);
+  expect(value.saveName).toHaveBeenCalledTimes(1);
 });
 
 it.each([

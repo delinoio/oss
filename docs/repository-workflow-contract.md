@@ -802,3 +802,7 @@ For an explicit local repository-wide pass, use `pnpm format -- --all`; this opt
 Root `pnpm format:check` checks and `pnpm format` fixes the same candidates. Local execution defaults to the merge base of `origin/main` and HEAD and includes tracked working changes and untracked non-ignored files. Explicit `--base <sha> --head <sha>` arguments after the Turbo `--` separator select a committed range, as do `TURBO_SCM_BASE` and `TURBO_SCM_HEAD` in CI. CI requires an explicit comparison. Formatter configuration changes do not expand validation to unchanged files; configuration regressions belong to the central contract fixtures.
 
 The formatting job reuses the shared Node setup, frozen script-disabled install, successful-main-only pnpm cache saves, and Turbo summary artifacts. It needs no Rust or Go installation and never allocates a macOS runner.
+
+## Delcore validation
+
+The affected `delcore-api` Ubuntu job runs Go formatting, vet, build, unit tests and real PostgreSQL integration tests through the package-owned uncached tasks. Missing `DELCORE_TEST_DATABASE_URL` fails integration tests. Retain the default affected manual mode and existing release gates. OCI tests use the delcore Dockerfile to verify non-root startup, schema rejection, graceful shutdown and disposable backup restore without publishing an image. The job preserves source revision, commands, outcomes and unperformed account checks as a validation artifact. See [the server contract](servers-delcore-api-contract.md).

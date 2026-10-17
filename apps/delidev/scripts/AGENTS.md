@@ -8,6 +8,8 @@
 
 Follow the parent instructions and the owning contracts in `docs/`. These rules retain the original requirements; cross-domain changes must also read the affected owners' instructions.
 
+- macOS local signing may use an explicitly registered Apple Development certificate or the legacy dedicated self-signed certificate. Never automatically select an identity or use distribution/release certificates. Follow the desktop contract’s local development signing and recovery procedure; preserve existing Keychain items and access controls.
+
 ## Owning contracts
 
 - [DeliDev desktop client](../../../docs/apps-delidev-desktop-contract.md)
