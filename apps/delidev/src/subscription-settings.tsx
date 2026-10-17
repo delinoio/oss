@@ -35,6 +35,8 @@ import {
   SettingsDialogFocus,
 } from "./settings-task";
 import { subscriptionCatalog, SubscriptionBrand } from "./subscription-catalog";
+import { Harness } from "./configuration-fields";
+import { HarnessMark } from "./harness-mark";
 
 export enum QuotaObservationState {
   Observed = "observed",
@@ -218,20 +220,33 @@ export function quotaPresentation(
   };
 }
 
+// Settings rows show the harness each service serves. Only the explicit
+// service brand selects artwork; aliases, provider names and account metadata
+// never do. The rail and popover keep their own catalog artwork.
+const subscriptionHarnessByBrand: Record<SubscriptionBrand, Harness> = {
+  [SubscriptionBrand.ChatGPT]: Harness.Codex,
+  [SubscriptionBrand.Claude]: Harness.Claude,
+  [SubscriptionBrand.Grok]: Harness.Grok,
+  [SubscriptionBrand.OpenCodeGo]: Harness.OpenCode,
+};
+
+function subscriptionHarness(brand?: SubscriptionBrand): Harness | undefined {
+  return brand !== undefined &&
+    Object.prototype.hasOwnProperty.call(subscriptionHarnessByBrand, brand)
+    ? subscriptionHarnessByBrand[brand]
+    : undefined;
+}
+
 function ProviderMark({ brand }: { brand?: SubscriptionBrand }) {
   useLocale();
-  const descriptor = subscriptionCatalog.find(
-    (provider) => provider.brand === brand,
-  );
+  const harness = subscriptionHarness(brand);
   return (
     <span
       className={`subscription-mark${brand ? ` subscription-mark-${brand}` : ""}`}
       aria-hidden="true"
     >
-      {brand === SubscriptionBrand.OpenCodeGo ? (
-        <span className="subscription-opencode-mark" />
-      ) : descriptor ? (
-        <img src={descriptor.mark} alt="" width="24" height="24" />
+      {harness ? (
+        <HarnessMark harness={harness} />
       ) : (
         <svg
           viewBox="0 0 24 24"

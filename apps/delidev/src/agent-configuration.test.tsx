@@ -569,7 +569,7 @@ it("keeps source inventory failures scoped to source selection and never reads t
   fireEvent.click(await screen.findByRole("radio", { name: "Codex" }));
   await settled(value);
   expect(
-    document.querySelector('.worker-source-details [role="alert"]'),
+    document.querySelector('.worker-source-body [role="alert"]'),
   ).toBeTruthy();
   expect(document.body.textContent).not.toContain("Private inventory failure");
   expect(value.search).not.toHaveBeenCalled();

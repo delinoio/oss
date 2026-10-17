@@ -11,8 +11,6 @@ import {
 import { createPortal } from "react-dom";
 import { useQuery } from "@connectrpc/connect-query";
 import {
-  AccountTypeFilter,
-  EntityKind,
   FailureCode,
   clientFailure,
   ResourceQuery,
@@ -29,7 +27,9 @@ import { subscriptionCatalog } from "./subscription-catalog";
 import {
   useConnectPaginationReader,
   usePaginationChain,
+  usePaginationRefresh,
 } from "./scroll-pagination-query";
+import { subscriptionInventoryRequest } from "./subscription-inventory";
 import { ScrollContinuation } from "./scroll-continuation";
 import { ReadStage } from "./scroll-pagination";
 import {
@@ -79,13 +79,7 @@ export function SubscriptionRail({
     capable &&
     !status.error &&
     !status.data?.stopping;
-  const request = useCallback(
-    (token: string) => ({
-      filter: { kind: EntityKind.ACCOUNT, pageSize: 50, pageToken: token },
-      accountType: AccountTypeFilter.SUBSCRIPTION,
-    }),
-    [],
-  );
+  const request = subscriptionInventoryRequest;
   const project = useCallback(
     (response: { resources: Resource[]; nextPageToken: string }) => {
       if (
@@ -110,6 +104,14 @@ export function SubscriptionRail({
     `subscription-rail:${enabled}:${authenticationLost}`,
     allowed,
     reader,
+  );
+  // Saved-inventory invalidation (for example after a local login completes)
+  // rereads only the accepted ranges through the chain's queued refresh.
+  usePaginationRefresh(
+    ResourceQuery.listResources,
+    request(""),
+    allowed,
+    query.refresh,
   );
   useEffect(() => {
     if (!enabled) setAuthenticationLost(false);

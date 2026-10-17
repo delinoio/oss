@@ -1,17 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 import { fireEvent, waitFor } from "@testing-library/react";
 
-/** Select an exact domain identity through the accessible popup. */
+/** The inline list is its own always-visible choice container. */
+function inline(control: HTMLElement) {
+  return control.getAttribute("role") === "listbox";
+}
+function unavailable(control: HTMLElement) {
+  return inline(control)
+    ? control.getAttribute("aria-disabled") === "true"
+    : (control as HTMLButtonElement).disabled;
+}
+
+/** Select an exact domain identity through the accessible popup or inline list. */
 export async function chooseScrollOption(control: HTMLElement, id: string) {
   await waitFor(() => {
-    if ((control as HTMLButtonElement).disabled)
-      throw new Error("Picker is disabled.");
+    if (unavailable(control)) throw new Error("Picker is disabled.");
   });
-  fireEvent.click(control);
+  if (!inline(control)) fireEvent.click(control);
   await waitFor(() => {
-    const popup = document.getElementById(
-      control.getAttribute("aria-controls") ?? "",
-    );
+    const popup = inline(control)
+      ? control
+      : document.getElementById(control.getAttribute("aria-controls") ?? "");
     const option = [
       ...(popup?.querySelectorAll<HTMLElement>("[data-picker-id]") ?? []),
     ].find((node) => node.dataset.pickerId === id);
@@ -25,18 +34,17 @@ export async function chooseScrollOption(control: HTMLElement, id: string) {
 }
 export async function waitScrollChoices(control: HTMLElement) {
   await waitFor(() => {
-    if ((control as HTMLButtonElement).disabled)
-      throw new Error("Picker is disabled.");
+    if (unavailable(control)) throw new Error("Picker is disabled.");
   });
-  fireEvent.click(control);
+  if (!inline(control)) fireEvent.click(control);
   await waitFor(() => {
-    const popup = document.getElementById(
-      control.getAttribute("aria-controls") ?? "",
-    );
+    const popup = inline(control)
+      ? control
+      : document.getElementById(control.getAttribute("aria-controls") ?? "");
     if ((popup?.querySelectorAll("[data-picker-id]").length ?? 0) < 2)
       throw new Error("Choices have not loaded.");
   });
-  fireEvent.keyDown(control, { key: "Escape" });
+  if (!inline(control)) fireEvent.keyDown(control, { key: "Escape" });
 }
 export function scrollChoiceValue(control: HTMLElement) {
   return control.dataset.value;

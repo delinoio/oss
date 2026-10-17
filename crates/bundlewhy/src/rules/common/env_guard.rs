@@ -1426,6 +1426,13 @@ impl<'a> Parser<'a> {
 
     /// Member accesses, calls and postfix operators after a primary.
     fn parse_lhs(&mut self) -> Expr {
+        // `null` (possibly parenthesized) as the primary: an optional access
+        // right after it short-circuits the whole chain.
+        let mut null_base = self.null_primary();
+        // Set once a statically nullish base met `?.`. JavaScript evaluates
+        // no later selector or argument of that chain, so none of them may
+        // keep a read alive.
+        let mut short_circuited = false;
         let (mut expr, terminal) = self.parse_primary();
         if terminal {
             return expr;
@@ -1434,6 +1441,7 @@ impl<'a> Parser<'a> {
             match token.kind {
                 TokenKind::Punct => match token.text {
                     "." => {
+                        null_base = false;
                         self.bump();
                         let Some(name) = self.tok().filter(|name| name.kind == TokenKind::Word)
                         else {
@@ -1443,6 +1451,8 @@ impl<'a> Parser<'a> {
                         expr = self.member(expr, Selector::Name(name.text));
                     }
                     "?." => {
+                        short_circuited |= null_base;
+                        null_base = false;
                         self.bump();
                         // A nullish base short-circuits the chain. Only the
                         // read itself (possibly parenthesized) is the base;
@@ -1453,10 +1463,10 @@ impl<'a> Parser<'a> {
                             self.site(EnvGuard::OptionalChain, expr);
                         }
                         if self.is_punct("(") {
-                            expr = self.call(expr);
+                            expr = self.chain_call(expr, short_circuited);
                         } else if self.is_punct("[") {
-                            let selector = self.parse_index();
-                            expr = self.member(expr, selector);
+                            let selector = self.chain_index(short_circuited);
+                            expr = self.chain_member(expr, selector, short_circuited);
                         } else if let Some(name) =
                             self.tok().filter(|name| name.kind == TokenKind::Word)
                         {
@@ -1467,18 +1477,24 @@ impl<'a> Parser<'a> {
                         }
                     }
                     "[" => {
-                        let selector = self.parse_index();
-                        expr = self.member(expr, selector);
+                        null_base = false;
+                        let selector = self.chain_index(short_circuited);
+                        expr = self.chain_member(expr, selector, short_circuited);
                     }
-                    "(" => expr = self.call(expr),
+                    "(" => {
+                        null_base = false;
+                        expr = self.chain_call(expr, short_circuited);
+                    }
                     _ => break,
                 },
                 // A tagged template calls the tag.
                 TokenKind::Template(TemplatePart::Whole) => {
+                    null_base = false;
                     self.bump();
                     expr = self.tagged(expr);
                 }
                 TokenKind::Template(TemplatePart::Head) => {
+                    null_base = false;
                     self.parse_template();
                     expr = self.tagged(expr);
                 }
@@ -1494,6 +1510,56 @@ impl<'a> Parser<'a> {
             expr = self.derived(expr);
         }
         expr
+    }
+
+    /// True when the tokens at the cursor are `null`, possibly wrapped in
+    /// balanced parentheses: the only statically nullish primary. Shadowable
+    /// names such as `undefined` are not.
+    fn null_primary(&self) -> bool {
+        let mut depth = 0;
+        while is_punct(self.at(depth), "(") {
+            depth += 1;
+        }
+        self.at(depth)
+            .is_some_and(|token| token.kind == TokenKind::Word && token.text == "null")
+            && (1..=depth).all(|offset| is_punct(self.at(depth + offset), ")"))
+    }
+
+    /// A member access in a chain. After a short-circuit the selector is
+    /// parsed but never evaluated, so it contributes no value.
+    fn chain_member(
+        &mut self,
+        object: Expr,
+        selector: Selector<'a>,
+        short_circuited: bool,
+    ) -> Expr {
+        if short_circuited {
+            return None;
+        }
+        self.member(object, selector)
+    }
+
+    /// The `[` ... `]` selector of a chain. After a short-circuit the key is
+    /// parsed but never evaluated, so the branch sites it collects (such as
+    /// the `&&` in `null?.[process.env.FLAG && run()]`) are discarded.
+    fn chain_index(&mut self, short_circuited: bool) -> Selector<'a> {
+        let mark = self.sites.len();
+        let selector = self.parse_index();
+        if short_circuited {
+            self.sites.truncate(mark);
+        }
+        selector
+    }
+
+    /// The call of a chain. After a short-circuit the arguments are parsed but
+    /// never evaluated, so the branch sites they collect are discarded.
+    fn chain_call(&mut self, callee: Expr, short_circuited: bool) -> Expr {
+        let mark = self.sites.len();
+        let call = self.call(callee);
+        if short_circuited {
+            self.sites.truncate(mark);
+        }
+        call
     }
 
     fn member(&mut self, object: Expr, selector: Selector<'a>) -> Expr {
@@ -1877,6 +1943,15 @@ impl<'a> Parser<'a> {
             self.parse_body();
         } else if self.eat_punct(":") {
             property.value = self.parse_assign();
+            if property.key == Some("__proto__") && !property.wildcard {
+                // `{__proto__: v}` and `{"__proto__": v}` invoke the prototype
+                // setter instead of defining an own property, so no member
+                // selects `v`. The operand stays parsed for its own branches.
+                // A computed key (`["__proto__"]`) is wildcard and does define
+                // an own property, but computed keys are never inferred.
+                property.key = None;
+                property.value = None;
+            }
         } else if self.eat_punct("=") {
             self.parse_assign();
         }
@@ -2353,6 +2428,109 @@ mod tests {
         assert_eq!(
             guard("process.env.FLAG??run?.()", "process.env.FLAG"),
             Some("the retained read controls a ?? fallback branch")
+        );
+    }
+
+    #[test]
+    fn statically_nullish_optional_chain_skips_unevaluated_keys() {
+        let guard = |code: &str| {
+            let read = "process.env.FLAG";
+            let start = code.find(read).unwrap();
+            env_guard(code, start, start + read.len(), &non_code_ranges(code))
+                .map(EnvGuard::evidence)
+        };
+        // `null?.` short-circuits before the key or any later selector or
+        // argument is evaluated, so the read guards nothing.
+        for base in ["null", "(null)", "((null))", "( /* c */ null /* c */ )"] {
+            for tail in [
+                "?.[process.env.FLAG]",
+                "?.[process.env.FLAG].x",
+                "?.[process.env.FLAG][other]",
+                "?.[process.env.FLAG]()",
+                "?.[a][process.env.FLAG]",
+                "?.a[process.env.FLAG]",
+                "?.a.b[process.env.FLAG].c",
+                "?.a(process.env.FLAG)",
+                "?.(process.env.FLAG)",
+                "?.a?.[process.env.FLAG]",
+                "?.[a]?.[process.env.FLAG]",
+                "?.[a].b(c)[process.env.FLAG]",
+            ] {
+                for template in [
+                    "BASETAIL&&run();",
+                    "BASETAIL||run();",
+                    "BASETAIL??run();",
+                    "BASETAIL?run():stop();",
+                    "if(BASETAIL){run()}",
+                    "while(BASETAIL){run()}",
+                    "x=BASETAIL&&run();",
+                    "run()&&BASETAIL;BASETAIL&&run();",
+                ] {
+                    let code = template.replace("BASETAIL", &format!("{base}{tail}"));
+                    assert_eq!(guard(&code), None, "{code}");
+                }
+            }
+        }
+        // A branch inside a key or argument that is never evaluated collects
+        // no site either.
+        for code in [
+            "null?.[process.env.FLAG&&run()];",
+            "null?.[process.env.FLAG||run()];",
+            "null?.[process.env.FLAG??run()];",
+            "null?.[process.env.FLAG?run():stop()];",
+            "null?.[process.env.FLAG?.x];",
+            "null?.(process.env.FLAG?.x);",
+            "null?.(process.env.FLAG&&run());",
+            "(null)?.a(process.env.FLAG&&run());",
+            "(null)?.a[process.env.FLAG&&run()];",
+            "null?.a.b[x,process.env.FLAG&&run()].c;",
+            "null?.[a]?.[process.env.FLAG&&run()];",
+        ] {
+            assert_eq!(guard(code), None, "{code}");
+        }
+        // Unknown bases, ordinary computed access and real reads keep their
+        // evidence.
+        let and = Some(EnvGuard::ShortCircuitAnd.evidence());
+        for code in [
+            "obj?.[process.env.FLAG]&&run();",
+            "obj[process.env.FLAG]&&run();",
+            "undefined?.[process.env.FLAG]&&run();",
+            "(null,obj)?.[process.env.FLAG]&&run();",
+            "(a?.b)?.[process.env.FLAG]&&run();",
+            "null.x?.[process.env.FLAG]&&run();",
+            "null[process.env.FLAG]&&run();",
+            "null?.a&&process.env.FLAG&&run();",
+            "process.env.FLAG&&run();",
+            "process.env.FLAG&&null?.[other];",
+            "null?.[other]&&process.env.FLAG&&run();",
+        ] {
+            assert_eq!(guard(code), and.clone(), "{code}");
+        }
+        // A branch in a key or argument of an unknown base is evaluated.
+        for code in [
+            "obj?.[process.env.FLAG&&run()];",
+            "obj?.(process.env.FLAG&&run());",
+            "obj[process.env.FLAG&&run()];",
+            "null.x?.[process.env.FLAG&&run()];",
+            "null?.[a];obj?.[process.env.FLAG&&run()];",
+            "null?.[a],run(process.env.FLAG&&run());",
+        ] {
+            assert_eq!(guard(code), and.clone(), "{code}");
+        }
+        // The key of a later, separately evaluated chain still counts.
+        assert_eq!(
+            guard("(null?.a,obj?.[process.env.FLAG])&&run();"),
+            and.clone()
+        );
+        assert_eq!(guard("[null?.a]&&obj[process.env.FLAG]&&run();"), and);
+        // A real read as the base of a nullish chain keeps its own evidence.
+        assert_eq!(
+            guard("process.env.FLAG?.[null?.[other]];"),
+            Some(EnvGuard::OptionalChain.evidence())
+        );
+        assert_eq!(
+            guard("null?.[other];process.env.FLAG?.x;"),
+            Some(EnvGuard::OptionalChain.evidence())
         );
     }
 
@@ -3266,6 +3444,58 @@ mod tests {
             (
                 "object conditional value",
                 "x={a:c?d:process.env.FLAG}.a&&run()",
+                Some("and"),
+            ),
+            // A literal `__proto__` key sets the prototype; it is not an own
+            // property, so selecting it does not return the operand.
+            (
+                "object prototype setter",
+                "({__proto__:+process.env.FLAG}).__proto__&&run()",
+                None,
+            ),
+            (
+                "object prototype setter (quoted)",
+                "({\"__proto__\":+process.env.FLAG}).__proto__&&run()",
+                None,
+            ),
+            (
+                "object prototype setter (single quoted, plain operand)",
+                "({'__proto__':process.env.FLAG}).__proto__&&run()",
+                None,
+            ),
+            (
+                "object prototype setter keeps nested branch evidence",
+                "({__proto__:process.env.FLAG&&run()}).other",
+                Some("and"),
+            ),
+            (
+                "object prototype setter after an own property",
+                "({value:1,__proto__:process.env.FLAG}).value&&run()",
+                None,
+            ),
+            (
+                "object computed __proto__ key is not inferred",
+                "({['__proto__']:+process.env.FLAG}).__proto__&&run()",
+                None,
+            ),
+            (
+                "object __proto__ shorthand holds no read",
+                "({__proto__}).__proto__&&process.env.FLAG&&run()",
+                Some("and"),
+            ),
+            (
+                "object __proto__ method holds no read",
+                "({__proto__(){return process.env.FLAG}}).__proto__&&run()",
+                None,
+            ),
+            (
+                "object ordinary property control",
+                "({value:+process.env.FLAG}).value&&run()",
+                Some("and"),
+            ),
+            (
+                "object ordinary property next to a prototype setter",
+                "({__proto__:a,value:+process.env.FLAG}).value&&run()",
                 Some("and"),
             ),
             // typeof, void and delete discard their operand's value.

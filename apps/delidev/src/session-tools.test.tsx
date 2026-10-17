@@ -1,4 +1,8 @@
-import { chooseScrollOption, waitScrollChoices } from "./test-scroll-picker";
+import {
+  chooseScrollOption,
+  scrollChoiceValue,
+  waitScrollChoices,
+} from "./test-scroll-picker";
 import { create } from "@bufbuild/protobuf";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
@@ -509,6 +513,64 @@ it("blocks a recovery confirmation selected before a peer revision without an In
   expect(value.workspace).not.toHaveBeenCalled();
 });
 
+it("keeps dependent choices when the accepted project is chosen again and resets them for another row", async () => {
+  const value = fixture();
+  render(
+    value.view(
+      <NewSession
+        active
+        ownsActivation
+        activation={1}
+        back={() => {}}
+        openSettings={() => {}}
+        open={() => {}}
+        created={() => {}}
+      />,
+    ),
+  );
+  const project = () => screen.getByRole("listbox", { name: "Project" });
+  await waitScrollChoices(project());
+  await chooseScrollOption(project(), value.project.id);
+  fireEvent.click(screen.getByRole("button", { name: "Options" }));
+  // The fixture Agent Worker is on a later page.
+  fireEvent.click(screen.getByRole("combobox", { name: "Agent Worker" }));
+  fireEvent.click(
+    await screen.findByRole("button", { name: "Load more Agent Worker" }),
+  );
+  fireEvent.keyDown(screen.getByRole("combobox", { name: "Agent Worker" }), {
+    key: "Escape",
+  });
+  await chooseScrollOption(
+    screen.getByRole("combobox", { name: "Agent Worker" }),
+    value.agent.id,
+  );
+  await chooseScrollOption(
+    screen.getByRole("combobox", { name: "Runs on" }),
+    value.machine.id,
+  );
+  // Reselecting the accepted identity is not a project change.
+  fireEvent.click(within(project()).getByRole("option", { name: "Project" }));
+  await act(async () => {});
+  expect(
+    scrollChoiceValue(screen.getByRole("combobox", { name: "Agent Worker" })),
+  ).toBe(value.agent.id);
+  expect(
+    scrollChoiceValue(screen.getByRole("combobox", { name: "Runs on" })),
+  ).toBe(value.machine.id);
+  // Another row, including General Chat, keeps the existing reset rules.
+  fireEvent.click(
+    within(project()).getByRole("option", { name: "General Chat" }),
+  );
+  await waitFor(() => expect(scrollChoiceValue(project())).toBe(""));
+  expect(
+    scrollChoiceValue(screen.getByRole("combobox", { name: "Agent Worker" })),
+  ).toBe("");
+  expect(
+    scrollChoiceValue(screen.getByRole("combobox", { name: "Runs on" })),
+  ).toBe("");
+  expect(value.createSession).not.toHaveBeenCalled();
+});
+
 it("selects an Agent from later pages and preserves an explicit per-repository starting override", async () => {
   const value = fixture();
   render(
@@ -524,9 +586,9 @@ it("selects an Agent from later pages and preserves an explicit per-repository s
       />,
     ),
   );
-  await waitScrollChoices(screen.getByRole("combobox", { name: "Project" }));
+  await waitScrollChoices(screen.getByRole("listbox", { name: "Project" }));
   await chooseScrollOption(
-    screen.getByRole("combobox", { name: "Project" }),
+    screen.getByRole("listbox", { name: "Project" }),
     value.project.id,
   );
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
@@ -642,7 +704,7 @@ it("consumes a locked project entry without applying it after Local proof settle
       />,
     );
   const rendered = render(page(1, value.project.id));
-  await waitScrollChoices(screen.getByRole("combobox", { name: "Project" }));
+  await waitScrollChoices(screen.getByRole("listbox", { name: "Project" }));
   fireEvent.change(screen.getByLabelText("First message"), {
     target: { value: "Retained task" },
   });
@@ -654,7 +716,7 @@ it("consumes a locked project entry without applying it after Local proof settle
     release({ machineId: value.machine.id, token: "A".repeat(43) }),
   );
   expect(blockedChanged).toHaveBeenLastCalledWith(false);
-  expect(screen.getByRole("combobox", { name: "Project" })).toHaveProperty(
+  expect(screen.getByRole("listbox", { name: "Project" })).toHaveProperty(
     ["dataset", "value"],
     value.project.id,
   );
@@ -664,12 +726,12 @@ it("consumes a locked project entry without applying it after Local proof settle
   );
   rendered.rerender(page(2, otherProjectId, false));
   rendered.rerender(page(2, otherProjectId));
-  expect(screen.getByRole("combobox", { name: "Project" })).toHaveProperty(
+  expect(screen.getByRole("listbox", { name: "Project" })).toHaveProperty(
     ["dataset", "value"],
     value.project.id,
   );
   rendered.rerender(page(3, otherProjectId));
-  expect(screen.getByRole("combobox", { name: "Project" })).toHaveProperty(
+  expect(screen.getByRole("listbox", { name: "Project" })).toHaveProperty(
     ["dataset", "value"],
     otherProjectId,
   );
@@ -711,9 +773,9 @@ it("reads fresh matching Local Worker proof for creation and retains that exact 
       />,
     ),
   );
-  await waitScrollChoices(screen.getByRole("combobox", { name: "Project" }));
+  await waitScrollChoices(screen.getByRole("listbox", { name: "Project" }));
   await chooseScrollOption(
-    screen.getByRole("combobox", { name: "Project" }),
+    screen.getByRole("listbox", { name: "Project" }),
     value.project.id,
   );
   const metadataReads = proof.mock.calls.length;
@@ -811,20 +873,19 @@ it("locks Project selection while Local proof or session creation is pending or 
       />,
     ),
   );
-  await waitScrollChoices(screen.getByRole("combobox", { name: "Project" }));
-  const project = screen.getByRole("combobox", {
-    name: "Project",
-  }) as HTMLSelectElement;
+  await waitScrollChoices(screen.getByRole("listbox", { name: "Project" }));
+  const project = screen.getByRole("listbox", { name: "Project" });
+  const locked = () => project.getAttribute("aria-disabled") === "true";
   await chooseScrollOption(project, value.project.id);
   const metadataReads = proof.mock.calls.length;
   fireEvent.click(screen.getByRole("button", { name: "Options" }));
   fireEvent.click(screen.getByRole("radio", { name: "Local" }));
   await waitFor(() => {
     expect(proof).toHaveBeenCalledTimes(metadataReads + 1);
-    expect(project.disabled).toBe(true);
+    expect(locked()).toBe(true);
   });
   finishProof({ machineId: value.machine.id, token: "A".repeat(43) });
-  await waitFor(() => expect(project.disabled).toBe(false));
+  await waitFor(() => expect(locked()).toBe(false));
   proof.mockResolvedValue({
     machineId: value.machine.id,
     token: "A".repeat(43),
@@ -851,10 +912,10 @@ it("locks Project selection while Local proof or session creation is pending or 
   fireEvent.click(screen.getByRole("button", { name: "Create session" }));
   await waitFor(() => {
     expect(value.createSession).toHaveBeenCalledTimes(1);
-    expect(project.disabled).toBe(true);
+    expect(locked()).toBe(true);
   });
   finishCreate({ change: { session: value.session } });
-  await waitFor(() => expect(project.disabled).toBe(false));
+  await waitFor(() => expect(locked()).toBe(false));
   fireEvent.change(screen.getByLabelText("First message"), {
     target: { value: "Uncertain local request" },
   });
@@ -862,7 +923,7 @@ it("locks Project selection while Local proof or session creation is pending or 
   await screen.findByRole("button", {
     name: "Retry the same session creation",
   });
-  expect(project.disabled).toBe(true);
+  expect(locked()).toBe(true);
   const retained = value.createSession.mock.calls[0][0] as {
     documentJson: Uint8Array;
   };

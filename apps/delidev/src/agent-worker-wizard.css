@@ -44,9 +44,24 @@
   color: inherit;
   font: inherit;
   text-align: start;
-  overflow-wrap: anywhere;
+}
+/* The number and label form one atomic group: the label never breaks inside a
+   word, so a group that does not fit wraps to the next row as a whole (the
+   strip is flex-wrap: wrap). Declared on the label itself so no inherited
+   white-space or overflow-wrap from the host controls can win. */
+.worker-steps .worker-step-target > :last-child {
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 .worker-steps button.worker-step-target {
+  /* The shared control rules of every host cap a button at max-width: 100% of
+     its list item, but this button adds 16px of padding that the negative
+     margins give back. The cap therefore squeezed the label by 16px and let it
+     break inside words. min-width always overrides max-width, so the button is
+     never narrower than its content whatever the host selector specificity
+     (dialog, page and shared wizard hosts each cap with a different one). */
+  min-width: max-content;
   min-height: 36px;
   /* Negative margins grow the hit area without changing the strip layout. The
      reach of two neighbours (8px each) stays below the 24px step gap, so
@@ -332,7 +347,7 @@
   border-top: 1px solid var(--border);
   padding: 16px 0;
 }
-.worker-source-group > fieldset > header {
+.worker-source-group fieldset > header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -359,7 +374,7 @@
   position: static;
 }
 @media (max-width: 640px) {
-  .worker-source-group > fieldset > header {
+  .worker-source-group fieldset > header {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -424,50 +439,6 @@
 .worker-wizard {
   container-type: inline-size;
 }
-.worker-accounts-workspace {
-  display: grid;
-  grid-template-columns: 260px minmax(0, 1fr);
-  gap: 24px;
-}
-.worker-source-list {
-  min-width: 0;
-  padding-right: 24px;
-  border-right: 1px solid var(--border);
-}
-.worker-source-list h4 {
-  margin: 0;
-}
-.worker-source-list ol {
-  list-style: none;
-  margin: 16px 0;
-  padding: 0;
-}
-.worker-source-list li + li {
-  margin-top: 8px;
-}
-.worker-source-list button {
-  width: 100%;
-  text-align: left;
-}
-.worker-source-list button[aria-pressed] {
-  display: grid;
-  gap: 4px;
-  padding: 12px;
-  white-space: normal;
-  overflow-wrap: anywhere;
-}
-.worker-source-list button[aria-pressed="true"] {
-  background: var(--selected-background);
-  color: var(--selected-text);
-  border-color: var(--selected-border);
-}
-.worker-source-details {
-  min-width: 0;
-}
-.worker-accounts-workspace .worker-source-group {
-  border-top: 0;
-  padding-top: 0;
-}
 .settings-task-footer .worker-footer {
   margin: 0;
   padding: 0;
@@ -475,22 +446,11 @@
   width: 100%;
   justify-content: flex-end;
 }
-.worker-accounts-workspace[hidden],
-.worker-source-list[hidden],
+.worker-source-workspace[hidden],
+.worker-source-intro[hidden],
+.worker-source-add[hidden],
 .worker-source-group[hidden] {
   display: none;
-}
-@container (width < 720px) {
-  .worker-accounts-workspace {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 16px;
-  }
-  .worker-source-list {
-    padding-right: 0;
-    padding-bottom: 16px;
-    border-right: 0;
-    border-bottom: 1px solid var(--border);
-  }
 }
 .worker-footer:empty {
   display: none;
@@ -499,13 +459,51 @@
   margin-left: auto;
 }
 
-/* The grip owns movement; the adjacent button owns detail-panel selection. */
-.worker-source-order > li {
-  display: flex;
-  gap: 8px;
-  align-items: center;
+/* Accounts step: one vertical list of accordion cards at every width.
+   The grip owns movement; the sibling disclosure trigger owns expansion. */
+.worker-source-workspace {
+  min-width: 0;
 }
-.worker-source-list .worker-source-grip {
+.worker-source-intro h4 {
+  margin: 0;
+}
+.worker-source-order {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.worker-source-order > li {
+  min-width: 0;
+}
+.worker-source-workspace[data-accordion] .worker-source-order {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0 12px;
+}
+.worker-source-group[data-expanded] {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0;
+  background: var(--surface);
+}
+.worker-source-group[data-expanded="true"] {
+  border-color: var(--selected-border);
+}
+.worker-source-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px;
+  border-radius: 7px;
+}
+.worker-source-group[data-expanded="true"] > .worker-source-card-header {
+  background: var(--selected-background);
+  color: var(--selected-text);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.worker-source-card-header .worker-source-grip {
   flex: 0 0 40px;
   width: 40px;
   min-height: 40px;
@@ -517,9 +515,62 @@
 .worker-source-grip[data-moving="true"] {
   cursor: grabbing;
 }
-.worker-source-list .worker-source-selection {
+/* While a source moves, its body is collapsed so the pointer only travels
+   across card headers, not a long expanded account list or routing form. */
+.worker-source-order > li[data-moving] .worker-source-body {
+  display: none;
+}
+.worker-source-card-header
+  button.worker-source-trigger.disclosure-header.disclosure-header {
   flex: 1;
   min-width: 0;
+  min-height: 40px;
+  padding: 4px 8px;
+  border-color: transparent;
+  background: transparent;
+  color: inherit;
+}
+.worker-source-card-header
+  button.worker-source-trigger.disclosure-header.disclosure-header:hover:not(
+    :disabled
+  ) {
+  background: var(--surface-hover);
+}
+.worker-source-card-header
+  button.worker-source-trigger.disclosure-header.disclosure-header
+  > .disclosure-chevron {
+  order: 2;
+  margin-left: auto;
+  transform: rotate(90deg);
+}
+.worker-source-card-header
+  button.worker-source-trigger.disclosure-header.disclosure-header[aria-expanded="true"]
+  > .disclosure-chevron {
+  transform: rotate(-90deg);
+}
+.worker-source-summary {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.worker-source-summary small {
+  color: var(--muted);
+}
+.worker-source-group[data-expanded="true"] .worker-source-summary small {
+  color: inherit;
+}
+.worker-source-workspace[data-accordion] .worker-source-body {
+  padding: 12px 16px 16px;
+  border-top: 1px solid var(--border);
+}
+.worker-source-remove {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+.worker-source-add button {
+  width: 100%;
 }
 .worker-source-order-status {
   position: absolute;

@@ -52,6 +52,11 @@ import {
 import type { ScrollContinuationQuery } from "./scroll-continuation";
 import { HarnessMark, knownHarness } from "./harness-mark";
 import { ScrollPicker } from "./scroll-picker";
+import {
+  InlineChoiceIcon,
+  InlineChoiceList,
+  type InlineChoiceAction,
+} from "./inline-choice-list";
 import type { MessageShape } from "@bufbuild/protobuf";
 import {
   SystemCapability,
@@ -794,6 +799,14 @@ function Check({
   );
 }
 
+/** How a ResourceChoice presents its accepted choices. Popup is the default
+ * ScrollPicker; Inline renders an always-expanded single-select list for the
+ * New session Project selector only. */
+export enum ResourceChoicePresentation {
+  Popup = "popup",
+  Inline = "inline",
+}
+
 export const ResourceSelectionPending = createContext<
   ((identity: string, pending: boolean) => void) | undefined
 >(undefined);
@@ -819,8 +832,17 @@ export function ResourceChoice({
   selectionResetToken = 0,
   emptyInventoryAction,
   emptyInventoryActionPending = false,
+  presentation = ResourceChoicePresentation.Popup,
+  inlineAction,
+  createAction,
 }: {
   selectionResetToken?: number;
+  presentation?: ResourceChoicePresentation;
+  // Icon button beside the label; applies to the Inline presentation only.
+  inlineAction?: InlineChoiceAction;
+  // Optional final picker row that opens a creation flow. It is a navigation
+  // action, never a resource choice, and is not read through the exact-ID path.
+  createAction?: { label: string; name: string; invoke: () => void };
   emptyInventoryAction?: { label: string; invoke: () => void };
   // True while the caller still restores a retained Agent selection, so the
   // empty-inventory creation entry must not be offered yet.
@@ -1276,6 +1298,28 @@ export function ResourceChoice({
       disabled: row.id === value && selectedProviderOff,
     })),
   ];
+  // The empty identity is the first row. A selection that is outside the
+  // reached pages is pinned directly after it, so exactly one accepted row
+  // shows the selected state. While its exact read is pending, failed or denied
+  // the row reuses the popup's localized unavailable-selection sentence, so the
+  // retained identity never disappears from the list.
+  const inlineOptions = options.map((option, index) => ({
+    id: option.id,
+    label: option.label,
+    disabled: "disabled" in option ? option.disabled : false,
+    icon: index === 0 ? InlineChoiceIcon.Chat : InlineChoiceIcon.Project,
+  }));
+  if (value && !result.rows.some((row) => row.id === value))
+    inlineOptions.splice(1, 0, {
+      id: value,
+      label: selectedResource
+        ? productResourceName(productLabel, selectedResource)
+        : copy("configuration-fields.sentence.38798a0275ce", {
+            v0: resourceLabel,
+          }),
+      disabled: selectedResource ? selectedProviderOff : false,
+      icon: InlineChoiceIcon.Project,
+    });
   const firstInventory = resources.payloadPages.find(
     (page) => page.token === "",
   )?.payload[0];
@@ -1354,6 +1398,17 @@ export function ResourceChoice({
             {emptyInventoryAction!.label}
           </button>
         </div>
+      ) : presentation === ResourceChoicePresentation.Inline ? (
+        <InlineChoiceList
+          label={label}
+          options={inlineOptions}
+          value={value}
+          change={(id) => void select(id)}
+          query={result}
+          active={active}
+          disabled={disabled || selectionBusy}
+          action={inlineAction}
+        />
       ) : (
         <ScrollPicker
           label={label}
@@ -1378,6 +1433,10 @@ export function ResourceChoice({
           autoFocus={autoFocus}
           markRequired={markRequired}
           triggerRef={pickerTrigger}
+          // No creation entry may be offered for the whole restoration wait:
+          // the caller's pending flag withholds the dropdown action while the
+          // inventory is loading, populated or proven empty alike.
+          action={emptyInventoryActionPending ? undefined : createAction}
         />
       )}
       {needsProviderCapability && active && !ready ? (

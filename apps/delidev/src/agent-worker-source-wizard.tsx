@@ -8,6 +8,7 @@ import {
 import "./wizard-presentation.css";
 import { SettingsActionButton, SettingsActionIcon } from "./settings-action";
 import { WorkerSourceOrder } from "./worker-source-order";
+import { DisclosureButton, DisclosureContent } from "./disclosure";
 import { WizardAccountNavigation } from "./wizard-account-navigation";
 import { useProviderPages } from "./model-pagination";
 import { useWizardAccounts } from "./wizard-pagination";
@@ -18,6 +19,7 @@ import { ScrollContinuation } from "./scroll-continuation";
 import { ScrollPayloadWindow } from "./scroll-payload-window";
 import { paginationIdentity, paginationRevision } from "./scroll-pagination";
 import {
+  type ReactNode,
   useCallback,
   useDeferredValue,
   useEffect,
@@ -220,6 +222,8 @@ function SourceGroup({
   count,
   step,
   displayed,
+  grip,
+  toggle,
   harness,
   active,
   locked,
@@ -233,7 +237,12 @@ function SourceGroup({
   index: number;
   count: number;
   step: Step;
+  /** Accounts step only: whether this source's accordion body is expanded. */
   displayed: boolean;
+  /** Accounts step only: the reorder grip placed beside the disclosure trigger. */
+  grip: ReactNode;
+  /** Accounts step only: expands this source (closing the others) or collapses it. */
+  toggle: (key: string) => void;
   harness: Harness;
   active: boolean;
   locked: boolean;
@@ -250,6 +259,9 @@ function SourceGroup({
   const [highlight, setHighlight] = useState(-1);
   const [nativePending, setNativePending] = useState(false);
   const listID = useId();
+  const accordion = step === Step.Accounts;
+  const triggerID = `${listID}-trigger`,
+    bodyID = `${listID}-body`;
   const group = useRef<HTMLElement>(null),
     accountRoot = useRef<HTMLDivElement>(null),
     modelRoot = useRef<HTMLUListElement>(null),
@@ -556,19 +568,399 @@ function SourceGroup({
       ref={group}
       className="worker-source-group"
       data-source-group={value.key}
-      hidden={
-        (step !== Step.Accounts && step !== Step.Model) ||
-        (step === Step.Accounts && !displayed)
-      }
+      data-expanded={accordion ? displayed : undefined}
+      hidden={step !== Step.Accounts && step !== Step.Model}
       aria-label={copy("agent-worker-wizard.sourceLabel", { v0: index + 1 })}
     >
-      <fieldset disabled={locked}>
-        <header>
-          <h4 tabIndex={-1} data-wizard-field="source-heading">
-            {index + 1} · {label}
-          </h4>
-          {step === Step.Accounts ? (
-            <div className="actions">
+      {accordion ? (
+        // The grip and the disclosure trigger are siblings: a button never
+        // nests another control, and the grip keeps its own tab stop.
+        <div className="worker-source-card-header">
+          {grip}
+          <DisclosureButton
+            id={triggerID}
+            className="worker-source-trigger"
+            aria-expanded={displayed}
+            aria-controls={bodyID}
+            data-wizard-field="source-heading"
+            onClick={() => toggle(value.key)}
+          >
+            <span className="worker-source-summary">
+              <strong>
+                {index + 1} · {label}
+              </strong>
+              <small>
+                {copy("agent-worker-wizard.accountsSelected", {
+                  v0: ids.length,
+                })}
+              </small>
+            </span>
+          </DisclosureButton>
+        </div>
+      ) : null}
+      <DisclosureContent
+        id={bodyID}
+        className="worker-source-body"
+        hidden={accordion && !displayed}
+      >
+        <fieldset disabled={locked}>
+          {step === Step.Model ? (
+            <header>
+              <h4 tabIndex={-1} data-wizard-field="source-heading">
+                {index + 1} · {label}
+              </h4>
+            </header>
+          ) : null}
+          {ids.map((id) => (
+            <SelectedAccount
+              key={id}
+              id={id}
+              active={active}
+              refresh={0}
+              read={remember}
+            />
+          ))}
+          <div hidden={step !== Step.Accounts}>
+            <p>
+              {copy(
+                source?.kind === SourceKind.Subscription
+                  ? "agent-worker-wizard.subscription"
+                  : "agent-worker-wizard.apiProvider",
+              )}
+            </p>
+            <div>
+              <div data-wizard-field="source">
+                <ScrollPicker
+                  label={copy("agent-worker-wizard.sourceLabel", {
+                    v0: index + 1,
+                  })}
+                  value={sourceID}
+                  selectedLabel={label}
+                  placeholder={copy("agent-worker-wizard.selectSource")}
+                  active={active && step === Step.Accounts && displayed}
+                  disabled={locked}
+                  query={sourceQuery}
+                  change={chooseSource}
+                  options={[
+                    ...Object.values(SubscriptionServiceId)
+                      .filter(
+                        (service) =>
+                          subscriptionServiceHarnesses[service] === harness,
+                      )
+                      .map((service) => ({
+                        id: `${SourceKind.Subscription}:${service}`,
+                        label: `${subscriptionServiceNames[service]} ${copy("agent-worker-wizard.subscription")}`,
+                        disabled: duplicateSources.includes(
+                          `${SourceKind.Subscription}:${service}`,
+                        ),
+                      })),
+                    ...(source?.kind === SourceKind.Api &&
+                    !entries.some((entry) => entry.providerId === source.id)
+                      ? [
+                          {
+                            id: sourceID,
+                            label:
+                              label +
+                              copy("agent-worker-wizard.retainedSourceSuffix"),
+                          },
+                        ]
+                      : []),
+                    ...entries.map((entry) => ({
+                      id: `${SourceKind.Api}:${entry.providerId}`,
+                      label: entry.displayName,
+                      disabled: duplicateSources.includes(
+                        `${SourceKind.Api}:${entry.providerId}`,
+                      ),
+                    })),
+                  ]}
+                />
+              </div>
+              <Failure failure={providers.error?.failure} />
+              {providers.isLoading ? (
+                <p role="status">
+                  {copy("agent-worker-wizard.loadingApiSources")}
+                </p>
+              ) : compatibleFilter === false ? (
+                <p role="status">
+                  {copy("agent-worker-wizard.updateServerCompatibleApiSources")}
+                </p>
+              ) : providers.loaded &&
+                !providers.isFetching &&
+                !providers.error &&
+                entries.length === 0 ? (
+                <p>{copy("agent-worker-wizard.noApiSources")}</p>
+              ) : null}
+            </div>
+            <Problem error={provider.error} />
+            {provider.error ? (
+              <SettingsActionButton
+                icon={SettingsActionIcon.Retry}
+                type="button"
+                disabled={!active || locked || provider.isFetching}
+                onClick={() => void provider.refetch()}
+              >
+                {copy("agent-worker-wizard.retrySourceDetails")}
+              </SettingsActionButton>
+            ) : null}
+            <Failure failure={rows.error?.failure} />
+            {source && rows.isLoading ? (
+              <p role="status">{copy("agent-worker-wizard.loadingAccounts")}</p>
+            ) : null}
+            {rows.error && rows.data ? (
+              <p role="status">
+                {copy("agent-worker-wizard.refreshFailedStaleAccounts")}
+              </p>
+            ) : null}
+            {rows.data && !pageValid ? (
+              <p role="alert">
+                {copy("agent-worker-wizard.invalidAccountPage")}
+              </p>
+            ) : null}
+            <div ref={accountRoot} className="worker-account-list">
+              {ids.map((id) => (
+                <label className="worker-account-row" key={id}>
+                  <input
+                    type="checkbox"
+                    data-wizard-field="account"
+                    aria-label={copy("agent-worker-wizard.selectAccount", {
+                      v0: known[id]
+                        ? productResourceName(productLabel, known[id])
+                        : productLabel(
+                            PresentationKind.Account,
+                            id,
+                            labels[id]?.name,
+                          ),
+                    })}
+                    checked
+                    onChange={() =>
+                      update(value.key, {
+                        accounts: value.accounts.filter(
+                          (account) => account.id !== id,
+                        ),
+                      })
+                    }
+                  />
+                  <span>
+                    <strong>
+                      {known[id]
+                        ? productResourceName(productLabel, known[id])
+                        : productLabel(
+                            PresentationKind.Account,
+                            id,
+                            labels[id]?.name,
+                          )}
+                    </strong>
+                    <small>
+                      {known[id]
+                        ? accountStatus(
+                            accountDisplayStatus(document(known[id])),
+                          )
+                        : labels[id]
+                          ? accountStatus(labels[id].status)
+                          : undefined}
+                    </small>
+                    <small>{copy("agent-worker-wizard.executionCheck")}</small>
+                  </span>
+                </label>
+              ))}
+              <ScrollPayloadWindow
+                identity={paginationIdentity}
+                revision={paginationRevision}
+                query={rows}
+                root={accountRoot}
+                active={
+                  active && step === Step.Accounts && displayed && !locked
+                }
+              >
+                {(payload) =>
+                  payload
+                    .filter(
+                      (row) =>
+                        !ids.includes(row.id) &&
+                        showAccountChoice(row) &&
+                        accountFormatMatches(
+                          row,
+                          provider.data?.resource,
+                          harness,
+                        ),
+                    )
+                    .map((row) => (
+                      <label className="worker-account-row" key={row.id}>
+                        <input
+                          type="checkbox"
+                          data-wizard-field="account"
+                          checked={false}
+                          disabled={Boolean(rows.error)}
+                          onChange={() => {
+                            retainDisplay(row);
+                            update(value.key, {
+                              accounts: [
+                                ...value.accounts,
+                                { id: row.id, weight: 1 },
+                              ],
+                            });
+                          }}
+                        />
+                        <span>
+                          <strong>
+                            {productResourceName(productLabel, row)}
+                          </strong>
+                          <small>
+                            {accountStatus(accountDisplayStatus(document(row)))}
+                          </small>
+                          <small>
+                            {copy("agent-worker-wizard.executionCheck")}
+                          </small>
+                        </span>
+                      </label>
+                    ))
+                }
+              </ScrollPayloadWindow>
+              <ScrollContinuation
+                showErrors={false}
+                query={rows}
+                root={accountRoot}
+                active={
+                  active &&
+                  step === Step.Accounts &&
+                  displayed &&
+                  !locked &&
+                  Boolean(source)
+                }
+                label={copy("agent-worker-wizard.sourceAccountPages", {
+                  v0: index + 1,
+                })}
+              />
+            </div>
+            {source &&
+            rows.loaded &&
+            !provider.error &&
+            !provider.isFetching &&
+            !rows.rows.length &&
+            !rows.nextPageToken &&
+            !rows.error &&
+            !rows.isFetching ? (
+              <div className="worker-account-empty">
+                <p>{copy("agent-worker-wizard.noAccountsForSource")}</p>
+                <WizardAccountNavigation
+                  source={source}
+                  active={active && displayed && !locked}
+                  navigate={openAccounts}
+                />
+              </div>
+            ) : null}
+            {source && rows.error ? (
+              <SettingsActionButton
+                icon={SettingsActionIcon.Inspect}
+                type="button"
+                disabled={!active || locked || rows.isFetching}
+                onClick={
+                  rows.error.stalled ||
+                  rows.error.failure.code === FailureCode.CursorExpired
+                    ? rows.reload
+                    : rows.retry
+                }
+              >
+                {copy(
+                  rows.error.stalled ||
+                    rows.error.failure.code === FailureCode.CursorExpired
+                    ? "pagination.reload"
+                    : "agent-worker-wizard.retryAccounts",
+                )}
+              </SettingsActionButton>
+            ) : null}
+            <p>
+              {copy("agent-worker-wizard.accountsSelected", { v0: ids.length })}
+            </p>
+            <section className="worker-routing">
+              <h4>{copy("agent-worker-wizard.routingOptions")}</h4>
+              {!ids.length ? (
+                <p>{copy("agent-worker-wizard.routingEmpty")}</p>
+              ) : null}
+              <label>
+                {copy("agent-worker-wizard.accountRouting")}
+                <select
+                  data-wizard-field="routing"
+                  value={value.routing || ""}
+                  onChange={(event) => changeRouting(event.target.value)}
+                >
+                  <option value="">
+                    {copy("agent-worker-wizard.serverDefault")}
+                  </option>
+                  {Object.values(Routing).map((policy) => (
+                    <option
+                      key={policy}
+                      value={policy}
+                      disabled={policy === Routing.Fixed && ids.length !== 1}
+                    >
+                      {policy === Routing.Priority
+                        ? copy("agent-worker-wizard.inOrder")
+                        : policy}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <ol>
+                {value.accounts.map((account, position) => (
+                  <li key={text(account.id)}>
+                    <strong>
+                      {known[text(account.id)]
+                        ? productResourceName(
+                            productLabel,
+                            known[text(account.id)],
+                          )
+                        : productLabel(
+                            PresentationKind.Account,
+                            text(account.id),
+                          )}
+                    </strong>
+                    <label>
+                      {copy("agent-worker-wizard.weightForAccount", {
+                        v0: position + 1,
+                      })}
+                      <input
+                        data-wizard-field="weight"
+                        type="number"
+                        min={1}
+                        max={1000}
+                        value={Number(account.weight)}
+                        onChange={(event) =>
+                          update(value.key, {
+                            accounts: value.accounts.map((item, i) =>
+                              i === position
+                                ? {
+                                    ...item,
+                                    weight: Number(event.target.value),
+                                  }
+                                : item,
+                            ),
+                          })
+                        }
+                      />
+                    </label>
+                    <SettingsActionButton
+                      icon={SettingsActionIcon.Up}
+                      type="button"
+                      disabled={position === 0}
+                      aria-label={copy("agent-worker-wizard.moveAccountUp", {
+                        v0: position + 1,
+                      })}
+                      onClick={() => {
+                        const accounts = [...value.accounts];
+                        [accounts[position - 1], accounts[position]] = [
+                          accounts[position],
+                          accounts[position - 1],
+                        ];
+                        update(value.key, { accounts });
+                      }}
+                    >
+                      {copy("agent-worker-wizard.up")}
+                    </SettingsActionButton>
+                  </li>
+                ))}
+              </ol>
+            </section>
+            <div className="actions worker-source-remove">
               <SettingsActionButton
                 icon={SettingsActionIcon.Delete}
                 type="button"
@@ -581,617 +973,280 @@ function SourceGroup({
                 {copy("agent-worker-wizard.remove")}
               </SettingsActionButton>
             </div>
-          ) : null}
-        </header>
-        {ids.map((id) => (
-          <SelectedAccount
-            key={id}
-            id={id}
-            active={active}
-            refresh={0}
-            read={remember}
-          />
-        ))}
-        <div hidden={step !== Step.Accounts}>
-          <p>
-            {copy(
-              source?.kind === SourceKind.Subscription
-                ? "agent-worker-wizard.subscription"
-                : "agent-worker-wizard.apiProvider",
-            )}
-          </p>
-          <div>
-            <div data-wizard-field="source">
-              <ScrollPicker
-                label={copy("agent-worker-wizard.sourceLabel", {
-                  v0: index + 1,
-                })}
-                value={sourceID}
-                selectedLabel={label}
-                placeholder={copy("agent-worker-wizard.selectSource")}
-                active={active && step === Step.Accounts && displayed}
-                disabled={locked}
-                query={sourceQuery}
-                change={chooseSource}
-                options={[
-                  ...Object.values(SubscriptionServiceId)
-                    .filter(
-                      (service) =>
-                        subscriptionServiceHarnesses[service] === harness,
-                    )
-                    .map((service) => ({
-                      id: `${SourceKind.Subscription}:${service}`,
-                      label: `${subscriptionServiceNames[service]} ${copy("agent-worker-wizard.subscription")}`,
-                      disabled: duplicateSources.includes(
-                        `${SourceKind.Subscription}:${service}`,
-                      ),
-                    })),
-                  ...(source?.kind === SourceKind.Api &&
-                  !entries.some((entry) => entry.providerId === source.id)
-                    ? [
-                        {
-                          id: sourceID,
-                          label:
-                            label +
-                            copy("agent-worker-wizard.retainedSourceSuffix"),
-                        },
-                      ]
-                    : []),
-                  ...entries.map((entry) => ({
-                    id: `${SourceKind.Api}:${entry.providerId}`,
-                    label: entry.displayName,
-                    disabled: duplicateSources.includes(
-                      `${SourceKind.Api}:${entry.providerId}`,
-                    ),
-                  })),
-                ]}
-              />
-            </div>
-            <Failure failure={providers.error?.failure} />
-            {providers.isLoading ? (
-              <p role="status">
-                {copy("agent-worker-wizard.loadingApiSources")}
-              </p>
-            ) : compatibleFilter === false ? (
-              <p role="status">
-                {copy("agent-worker-wizard.updateServerCompatibleApiSources")}
-              </p>
-            ) : providers.loaded &&
-              !providers.isFetching &&
-              !providers.error &&
-              entries.length === 0 ? (
-              <p>{copy("agent-worker-wizard.noApiSources")}</p>
-            ) : null}
           </div>
-          <Problem error={provider.error} />
-          {provider.error ? (
+          <div hidden={step !== Step.Model}>
+            <p>{copy("agent-worker-wizard.endpointSuggestions")}</p>
+            <div className="worker-model-combobox">
+              <label htmlFor={`${listID}-input`}>
+                {copy("agent-worker-wizard.modelForSource", { v0: label })}
+              </label>
+              <input
+                ref={modelInput}
+                id={`${listID}-input`}
+                data-wizard-field="model"
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={popup}
+                aria-controls={listID}
+                aria-activedescendant={
+                  popup &&
+                  highlight >= 0 &&
+                  highlight < suggestions.length + (value.input.trim() ? 1 : 0)
+                    ? `${listID}-${highlight}`
+                    : undefined
+                }
+                value={value.input}
+                autoComplete="off"
+                onFocus={() => setPopup(true)}
+                onBlur={(event) => {
+                  if (
+                    !modelRoot.current
+                      ?.closest(".worker-model-results")
+                      ?.contains(event.relatedTarget as Node | null)
+                  )
+                    setPopup(false);
+                }}
+                onChange={(event) => {
+                  update(value.key, {
+                    input: event.target.value,
+                    model: undefined,
+                  });
+                  setPopup(true);
+                  setHighlight(-1);
+                }}
+                onKeyDown={(event) => {
+                  if (event.nativeEvent.isComposing) return;
+                  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    event.preventDefault();
+                    const count =
+                      suggestions.length + (value.input.trim() ? 1 : 0);
+                    setPopup(true);
+                    setHighlight((position) =>
+                      count === 0
+                        ? -1
+                        : event.key === "ArrowDown"
+                          ? Math.min(position + 1, count - 1)
+                          : position <= 0
+                            ? count - 1
+                            : position - 1,
+                    );
+                  } else if (popup && ["Home", "End"].includes(event.key)) {
+                    event.preventDefault();
+                    setHighlight(
+                      event.key === "Home"
+                        ? 0
+                        : suggestions.length + (value.input.trim() ? 1 : 0) - 1,
+                    );
+                  } else if (event.key === "Escape" && popup) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    setPopup(false);
+                  } else if (event.key === "Enter" && popup) {
+                    event.preventDefault();
+                    pick(suggestions[highlight]);
+                  }
+                }}
+              />
+              <div
+                className="worker-model-results"
+                onKeyDown={(event) => {
+                  if (
+                    event.key === "Escape" &&
+                    popup &&
+                    !event.nativeEvent.isComposing
+                  ) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    (
+                      event.currentTarget
+                        .previousElementSibling as HTMLInputElement | null
+                    )?.focus({ preventScroll: true });
+                    setPopup(false);
+                  }
+                }}
+                onBlur={(event) => {
+                  if (
+                    !event.currentTarget.contains(
+                      event.relatedTarget as Node | null,
+                    ) &&
+                    event.relatedTarget !==
+                      event.currentTarget.previousElementSibling
+                  )
+                    setPopup(false);
+                }}
+                role="region"
+                tabIndex={0}
+                aria-label={copy("agent-worker-wizard.modelsForSource", {
+                  v0: label,
+                })}
+              >
+                {popup ? (
+                  <ul
+                    ref={modelRoot}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        modelInput.current?.focus();
+                        setPopup(false);
+                      }
+                    }}
+                    id={listID}
+                    role="listbox"
+                    aria-label={copy("agent-worker-wizard.modelsForSource", {
+                      v0: label,
+                    })}
+                  >
+                    {suggestions.map((row, position) => (
+                      <li
+                        key={`${row.kind}:${row.nativeId}`}
+                        id={`${listID}-${position}`}
+                        role="option"
+                        aria-selected={highlight === position}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => pick(row)}
+                      >
+                        <div className="worker-model-heading">
+                          <strong>{row.name}</strong>
+                          <span className="worker-model-origin">
+                            {copy(
+                              row.kind === SuggestionKind.Known
+                                ? "agent-worker-wizard.knownModelOrigin"
+                                : "agent-worker-wizard.endpointModelOrigin",
+                            )}
+                          </span>
+                        </div>
+                        <small>
+                          {row.nativeId}
+                          {row.hidden === true
+                            ? copy("agent-worker-wizard.hiddenSuffix")
+                            : ""}
+                        </small>
+                      </li>
+                    ))}
+                    {value.input.trim() ? (
+                      <li
+                        id={`${listID}-${suggestions.length}`}
+                        role="option"
+                        aria-selected={highlight === suggestions.length}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => pick()}
+                      >
+                        {copy("agent-worker-wizard.useExactModelId", {
+                          v0: value.input.trim(),
+                        })}
+                      </li>
+                    ) : null}
+                  </ul>
+                ) : null}
+                <Problem error={endpoint.error || knownModels.error} />
+                {endpoint.isFetching || knownModels.isFetching ? (
+                  <p role="status">
+                    {copy("agent-worker-wizard.loadingModelCatalog")}
+                  </p>
+                ) : null}
+                {source?.kind === SourceKind.Api &&
+                endpoint.data &&
+                !endpointValid ? (
+                  <p role="alert">
+                    {copy("agent-worker-wizard.invalidModelPage")}
+                  </p>
+                ) : null}
+                {source?.kind === SourceKind.Subscription ? (
+                  <>
+                    {knownValid ? (
+                      <p>
+                        {copy("agent-worker-wizard.knownModelsCatalogUpdated", {
+                          v0: catalogDate,
+                          v1:
+                            knownModels.data!.source ===
+                            KnownSubscriptionModelCatalogSource.CACHE
+                              ? copy("agent-worker-wizard.cachedCatalog")
+                              : knownModels.data!.source ===
+                                  KnownSubscriptionModelCatalogSource.BUNDLED
+                                ? copy("agent-worker-wizard.builtInCatalog")
+                                : "",
+                        })}
+                      </p>
+                    ) : knownModels.data ? (
+                      <p role="alert">
+                        {copy("agent-worker-wizard.knownCatalogUnavailable")}
+                      </p>
+                    ) : null}
+                    {status.data && !knownSupported ? (
+                      <p>
+                        {copy("agent-worker-wizard.updateServerForKnownModels")}
+                      </p>
+                    ) : null}
+                  </>
+                ) : null}
+              </div>
+            </div>
             <SettingsActionButton
-              icon={SettingsActionIcon.Retry}
+              icon={SettingsActionIcon.Refresh}
               type="button"
-              disabled={!active || locked || provider.isFetching}
-              onClick={() => void provider.refetch()}
+              disabled={
+                locked ||
+                endpoint.isFetching ||
+                knownModels.isFetching ||
+                (source?.kind === SourceKind.Api &&
+                  (!refreshAccount || !provider.data?.resource))
+              }
+              onClick={() => {
+                if (!active || locked || step !== Step.Model) return;
+                if (
+                  source?.kind === SourceKind.Api &&
+                  refreshAccount &&
+                  provider.data?.resource
+                )
+                  void endpoint.refetch();
+                if (source?.kind === SourceKind.Subscription && knownSupported)
+                  void knownModels.refetch();
+              }}
             >
-              {copy("agent-worker-wizard.retrySourceDetails")}
+              {copy("agent-worker-wizard.refreshModelsEndpoint")}
             </SettingsActionButton>
-          ) : null}
-          <Failure failure={rows.error?.failure} />
-          {source && rows.isLoading ? (
-            <p role="status">{copy("agent-worker-wizard.loadingAccounts")}</p>
-          ) : null}
-          {rows.error && rows.data ? (
-            <p role="status">
-              {copy("agent-worker-wizard.refreshFailedStaleAccounts")}
+            <p>
+              {copy(
+                source?.kind === SourceKind.Subscription
+                  ? "agent-worker-wizard.subscriptionModelAvailability"
+                  : "agent-worker-wizard.endpointReadOnly",
+              )}
             </p>
-          ) : null}
-          {rows.data && !pageValid ? (
-            <p role="alert">{copy("agent-worker-wizard.invalidAccountPage")}</p>
-          ) : null}
-          <div ref={accountRoot} className="worker-account-list">
-            {ids.map((id) => (
-              <label className="worker-account-row" key={id}>
-                <input
-                  type="checkbox"
-                  data-wizard-field="account"
-                  aria-label={copy("agent-worker-wizard.selectAccount", {
-                    v0: known[id]
-                      ? productResourceName(productLabel, known[id])
-                      : productLabel(
-                          PresentationKind.Account,
-                          id,
-                          labels[id]?.name,
-                        ),
-                  })}
-                  checked
-                  onChange={() =>
+            {harness === Harness.Codex && source?.kind === SourceKind.Api ? (
+              <>
+                <NativeModelSettings
+                  active={active && step === Step.Model}
+                  selectedAccounts={selectedRows}
+                  pendingOperation={setNativePending}
+                  createModel={(model) =>
                     update(value.key, {
-                      accounts: value.accounts.filter(
-                        (account) => account.id !== id,
-                      ),
+                      input: text(model.native_id),
+                      model: {
+                        name: text(model.name),
+                        input_modalities: items(model.input_modalities),
+                        context_limit: model.context_limit,
+                        metadata_source: "user-declared",
+                      },
                     })
                   }
                 />
-                <span>
-                  <strong>
-                    {known[id]
-                      ? productResourceName(productLabel, known[id])
-                      : productLabel(
-                          PresentationKind.Account,
-                          id,
-                          labels[id]?.name,
-                        )}
-                  </strong>
-                  <small>
-                    {known[id]
-                      ? accountStatus(accountDisplayStatus(document(known[id])))
-                      : labels[id]
-                        ? accountStatus(labels[id].status)
-                        : undefined}
-                  </small>
-                  <small>{copy("agent-worker-wizard.executionCheck")}</small>
-                </span>
-              </label>
-            ))}
-            <ScrollPayloadWindow
-              identity={paginationIdentity}
-              revision={paginationRevision}
-              query={rows}
-              root={accountRoot}
-              active={active && step === Step.Accounts && displayed && !locked}
-            >
-              {(payload) =>
-                payload
-                  .filter(
-                    (row) =>
-                      !ids.includes(row.id) &&
-                      showAccountChoice(row) &&
-                      accountFormatMatches(
-                        row,
-                        provider.data?.resource,
-                        harness,
-                      ),
-                  )
-                  .map((row) => (
-                    <label className="worker-account-row" key={row.id}>
-                      <input
-                        type="checkbox"
-                        data-wizard-field="account"
-                        checked={false}
-                        disabled={Boolean(rows.error)}
-                        onChange={() => {
-                          retainDisplay(row);
-                          update(value.key, {
-                            accounts: [
-                              ...value.accounts,
-                              { id: row.id, weight: 1 },
-                            ],
-                          });
-                        }}
-                      />
-                      <span>
-                        <strong>
-                          {productResourceName(productLabel, row)}
-                        </strong>
-                        <small>
-                          {accountStatus(accountDisplayStatus(document(row)))}
-                        </small>
-                        <small>
-                          {copy("agent-worker-wizard.executionCheck")}
-                        </small>
-                      </span>
-                    </label>
-                  ))
-              }
-            </ScrollPayloadWindow>
-            <ScrollContinuation
-              showErrors={false}
-              query={rows}
-              root={accountRoot}
-              active={
-                active &&
-                step === Step.Accounts &&
-                displayed &&
-                !locked &&
-                Boolean(source)
-              }
-              label={copy("agent-worker-wizard.sourceAccountPages", {
-                v0: index + 1,
-              })}
-            />
-          </div>
-          {source &&
-          rows.loaded &&
-          !provider.error &&
-          !provider.isFetching &&
-          !rows.rows.length &&
-          !rows.nextPageToken &&
-          !rows.error &&
-          !rows.isFetching ? (
-            <div className="worker-account-empty">
-              <p>{copy("agent-worker-wizard.noAccountsForSource")}</p>
-              <WizardAccountNavigation
-                source={source}
-                active={active && displayed && !locked}
-                navigate={openAccounts}
-              />
-            </div>
-          ) : null}
-          {source && rows.error ? (
-            <SettingsActionButton
-              icon={SettingsActionIcon.Inspect}
-              type="button"
-              disabled={!active || locked || rows.isFetching}
-              onClick={
-                rows.error.stalled ||
-                rows.error.failure.code === FailureCode.CursorExpired
-                  ? rows.reload
-                  : rows.retry
-              }
-            >
-              {copy(
-                rows.error.stalled ||
-                  rows.error.failure.code === FailureCode.CursorExpired
-                  ? "pagination.reload"
-                  : "agent-worker-wizard.retryAccounts",
-              )}
-            </SettingsActionButton>
-          ) : null}
-          <p>
-            {copy("agent-worker-wizard.accountsSelected", { v0: ids.length })}
-          </p>
-          <section className="worker-routing">
-            <h4>{copy("agent-worker-wizard.routingOptions")}</h4>
-            {!ids.length ? (
-              <p>{copy("agent-worker-wizard.routingEmpty")}</p>
+                {selectedRows.some(
+                  (row) =>
+                    !accountFormatMatches(
+                      row,
+                      provider.data?.resource,
+                      harness,
+                    ),
+                ) ? (
+                  <p>{copy("agent-worker-wizard.codexResponses")}</p>
+                ) : null}
+              </>
             ) : null}
-            <label>
-              {copy("agent-worker-wizard.accountRouting")}
-              <select
-                data-wizard-field="routing"
-                value={value.routing || ""}
-                onChange={(event) => changeRouting(event.target.value)}
-              >
-                <option value="">
-                  {copy("agent-worker-wizard.serverDefault")}
-                </option>
-                {Object.values(Routing).map((policy) => (
-                  <option
-                    key={policy}
-                    value={policy}
-                    disabled={policy === Routing.Fixed && ids.length !== 1}
-                  >
-                    {policy === Routing.Priority
-                      ? copy("agent-worker-wizard.inOrder")
-                      : policy}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <ol>
-              {value.accounts.map((account, position) => (
-                <li key={text(account.id)}>
-                  <strong>
-                    {known[text(account.id)]
-                      ? productResourceName(
-                          productLabel,
-                          known[text(account.id)],
-                        )
-                      : productLabel(
-                          PresentationKind.Account,
-                          text(account.id),
-                        )}
-                  </strong>
-                  <label>
-                    {copy("agent-worker-wizard.weightForAccount", {
-                      v0: position + 1,
-                    })}
-                    <input
-                      data-wizard-field="weight"
-                      type="number"
-                      min={1}
-                      max={1000}
-                      value={Number(account.weight)}
-                      onChange={(event) =>
-                        update(value.key, {
-                          accounts: value.accounts.map((item, i) =>
-                            i === position
-                              ? { ...item, weight: Number(event.target.value) }
-                              : item,
-                          ),
-                        })
-                      }
-                    />
-                  </label>
-                  <SettingsActionButton
-                    icon={SettingsActionIcon.Up}
-                    type="button"
-                    disabled={position === 0}
-                    aria-label={copy("agent-worker-wizard.moveAccountUp", {
-                      v0: position + 1,
-                    })}
-                    onClick={() => {
-                      const accounts = [...value.accounts];
-                      [accounts[position - 1], accounts[position]] = [
-                        accounts[position],
-                        accounts[position - 1],
-                      ];
-                      update(value.key, { accounts });
-                    }}
-                  >
-                    {copy("agent-worker-wizard.up")}
-                  </SettingsActionButton>
-                </li>
-              ))}
-            </ol>
-          </section>
-        </div>
-        <div hidden={step !== Step.Model}>
-          <p>{copy("agent-worker-wizard.endpointSuggestions")}</p>
-          <div className="worker-model-combobox">
-            <label htmlFor={`${listID}-input`}>
-              {copy("agent-worker-wizard.modelForSource", { v0: label })}
-            </label>
-            <input
-              ref={modelInput}
-              id={`${listID}-input`}
-              data-wizard-field="model"
-              role="combobox"
-              aria-autocomplete="list"
-              aria-expanded={popup}
-              aria-controls={listID}
-              aria-activedescendant={
-                popup &&
-                highlight >= 0 &&
-                highlight < suggestions.length + (value.input.trim() ? 1 : 0)
-                  ? `${listID}-${highlight}`
-                  : undefined
-              }
-              value={value.input}
-              autoComplete="off"
-              onFocus={() => setPopup(true)}
-              onBlur={(event) => {
-                if (
-                  !modelRoot.current
-                    ?.closest(".worker-model-results")
-                    ?.contains(event.relatedTarget as Node | null)
-                )
-                  setPopup(false);
-              }}
-              onChange={(event) => {
-                update(value.key, {
-                  input: event.target.value,
-                  model: undefined,
-                });
-                setPopup(true);
-                setHighlight(-1);
-              }}
-              onKeyDown={(event) => {
-                if (event.nativeEvent.isComposing) return;
-                if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-                  event.preventDefault();
-                  const count =
-                    suggestions.length + (value.input.trim() ? 1 : 0);
-                  setPopup(true);
-                  setHighlight((position) =>
-                    count === 0
-                      ? -1
-                      : event.key === "ArrowDown"
-                        ? Math.min(position + 1, count - 1)
-                        : position <= 0
-                          ? count - 1
-                          : position - 1,
-                  );
-                } else if (popup && ["Home", "End"].includes(event.key)) {
-                  event.preventDefault();
-                  setHighlight(
-                    event.key === "Home"
-                      ? 0
-                      : suggestions.length + (value.input.trim() ? 1 : 0) - 1,
-                  );
-                } else if (event.key === "Escape" && popup) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setPopup(false);
-                } else if (event.key === "Enter" && popup) {
-                  event.preventDefault();
-                  pick(suggestions[highlight]);
-                }
-              }}
-            />
-            <div
-              className="worker-model-results"
-              onKeyDown={(event) => {
-                if (
-                  event.key === "Escape" &&
-                  popup &&
-                  !event.nativeEvent.isComposing
-                ) {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  (
-                    event.currentTarget
-                      .previousElementSibling as HTMLInputElement | null
-                  )?.focus({ preventScroll: true });
-                  setPopup(false);
-                }
-              }}
-              onBlur={(event) => {
-                if (
-                  !event.currentTarget.contains(
-                    event.relatedTarget as Node | null,
-                  ) &&
-                  event.relatedTarget !==
-                    event.currentTarget.previousElementSibling
-                )
-                  setPopup(false);
-              }}
-              role="region"
-              tabIndex={0}
-              aria-label={copy("agent-worker-wizard.modelsForSource", {
-                v0: label,
-              })}
-            >
-              {popup ? (
-                <ul
-                  ref={modelRoot}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") {
-                      event.preventDefault();
-                      event.stopPropagation();
-                      modelInput.current?.focus();
-                      setPopup(false);
-                    }
-                  }}
-                  id={listID}
-                  role="listbox"
-                  aria-label={copy("agent-worker-wizard.modelsForSource", {
-                    v0: label,
-                  })}
-                >
-                  {suggestions.map((row, position) => (
-                    <li
-                      key={`${row.kind}:${row.nativeId}`}
-                      id={`${listID}-${position}`}
-                      role="option"
-                      aria-selected={highlight === position}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => pick(row)}
-                    >
-                      <div className="worker-model-heading">
-                        <strong>{row.name}</strong>
-                        <span className="worker-model-origin">
-                          {copy(
-                            row.kind === SuggestionKind.Known
-                              ? "agent-worker-wizard.knownModelOrigin"
-                              : "agent-worker-wizard.endpointModelOrigin",
-                          )}
-                        </span>
-                      </div>
-                      <small>
-                        {row.nativeId}
-                        {row.hidden === true
-                          ? copy("agent-worker-wizard.hiddenSuffix")
-                          : ""}
-                      </small>
-                    </li>
-                  ))}
-                  {value.input.trim() ? (
-                    <li
-                      id={`${listID}-${suggestions.length}`}
-                      role="option"
-                      aria-selected={highlight === suggestions.length}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={() => pick()}
-                    >
-                      {copy("agent-worker-wizard.useExactModelId", {
-                        v0: value.input.trim(),
-                      })}
-                    </li>
-                  ) : null}
-                </ul>
-              ) : null}
-              <Problem error={endpoint.error || knownModels.error} />
-              {endpoint.isFetching || knownModels.isFetching ? (
-                <p role="status">
-                  {copy("agent-worker-wizard.loadingModelCatalog")}
-                </p>
-              ) : null}
-              {source?.kind === SourceKind.Api &&
-              endpoint.data &&
-              !endpointValid ? (
-                <p role="alert">
-                  {copy("agent-worker-wizard.invalidModelPage")}
-                </p>
-              ) : null}
-              {source?.kind === SourceKind.Subscription ? (
-                <>
-                  {knownValid ? (
-                    <p>
-                      {copy("agent-worker-wizard.knownModelsCatalogUpdated", {
-                        v0: catalogDate,
-                        v1:
-                          knownModels.data!.source ===
-                          KnownSubscriptionModelCatalogSource.CACHE
-                            ? copy("agent-worker-wizard.cachedCatalog")
-                            : knownModels.data!.source ===
-                                KnownSubscriptionModelCatalogSource.BUNDLED
-                              ? copy("agent-worker-wizard.builtInCatalog")
-                              : "",
-                      })}
-                    </p>
-                  ) : knownModels.data ? (
-                    <p role="alert">
-                      {copy("agent-worker-wizard.knownCatalogUnavailable")}
-                    </p>
-                  ) : null}
-                  {status.data && !knownSupported ? (
-                    <p>
-                      {copy("agent-worker-wizard.updateServerForKnownModels")}
-                    </p>
-                  ) : null}
-                </>
-              ) : null}
-            </div>
+            <p>{copy("agent-worker-wizard.modelReadiness")}</p>
           </div>
-          <SettingsActionButton
-            icon={SettingsActionIcon.Refresh}
-            type="button"
-            disabled={
-              locked ||
-              endpoint.isFetching ||
-              knownModels.isFetching ||
-              (source?.kind === SourceKind.Api &&
-                (!refreshAccount || !provider.data?.resource))
-            }
-            onClick={() => {
-              if (!active || locked || step !== Step.Model) return;
-              if (
-                source?.kind === SourceKind.Api &&
-                refreshAccount &&
-                provider.data?.resource
-              )
-                void endpoint.refetch();
-              if (source?.kind === SourceKind.Subscription && knownSupported)
-                void knownModels.refetch();
-            }}
-          >
-            {copy("agent-worker-wizard.refreshModelsEndpoint")}
-          </SettingsActionButton>
-          <p>
-            {copy(
-              source?.kind === SourceKind.Subscription
-                ? "agent-worker-wizard.subscriptionModelAvailability"
-                : "agent-worker-wizard.endpointReadOnly",
-            )}
-          </p>
-          {harness === Harness.Codex && source?.kind === SourceKind.Api ? (
-            <>
-              <NativeModelSettings
-                active={active && step === Step.Model}
-                selectedAccounts={selectedRows}
-                pendingOperation={setNativePending}
-                createModel={(model) =>
-                  update(value.key, {
-                    input: text(model.native_id),
-                    model: {
-                      name: text(model.name),
-                      input_modalities: items(model.input_modalities),
-                      context_limit: model.context_limit,
-                      metadata_source: "user-declared",
-                    },
-                  })
-                }
-              />
-              {selectedRows.some(
-                (row) =>
-                  !accountFormatMatches(row, provider.data?.resource, harness),
-              ) ? (
-                <p>{copy("agent-worker-wizard.codexResponses")}</p>
-              ) : null}
-            </>
-          ) : null}
-          <p>{copy("agent-worker-wizard.modelReadiness")}</p>
-        </div>
-      </fieldset>
+        </fieldset>
+      </DisclosureContent>
     </section>
   );
 }
@@ -1217,7 +1272,9 @@ export function AgentWorkerSourceWizard({
       ? items(document(initial).routes).map((item) => draft(object(item)))
       : [draft({ routing: Routing.Priority })],
   );
-  const [selectedKey, setSelectedKey] = useState("");
+  // Accordion disclosure: "" means no choice yet (the first source opens),
+  // a route key is the single expanded source, null means all are collapsed.
+  const [expandedKey, setExpandedKey] = useState<string | null>("");
   const formID = useId();
   const inTask = useInSettingsTask();
   const [evidence, setEvidence] = useState<Record<string, Evidence>>({});
@@ -1264,9 +1321,14 @@ export function AgentWorkerSourceWizard({
     },
     [stepEntranceRef],
   );
-  const displayedKey = routes.some((route) => route.key === selectedKey)
-    ? selectedKey
-    : routes[0]?.key;
+  const displayedKey =
+    expandedKey === null
+      ? null
+      : routes.some((route) => route.key === expandedKey)
+        ? expandedKey
+        : routes[0]?.key;
+  const toggleSource = (key: string) =>
+    setExpandedKey(displayedKey === key ? null : key);
   const notifications = useNotifications();
   const current = useQuery(
     ResourceQuery.getResource,
@@ -1361,7 +1423,7 @@ export function AgentWorkerSourceWizard({
     } else heading.current?.focus();
   }, [active, step, focusKey, focusField, focusAttempt]);
   const focus = (key = "", field = "") => {
-    if (key) setSelectedKey(key);
+    if (key) setExpandedKey(key);
     setFocusKey(key);
     setFocusField(field);
     setFocusAttempt((value) => value + 1);
@@ -1454,6 +1516,7 @@ export function AgentWorkerSourceWizard({
       return;
     setData((previous) => ({ ...previous, harness }));
     setRoutes([draft({ routing: Routing.Priority })]);
+    setExpandedKey("");
     clampVisited(Step.Harness);
     setProblem("");
   };
@@ -1621,46 +1684,78 @@ export function AgentWorkerSourceWizard({
           <p>{harnessNames[data.harness as Harness]}</p>
         </div>
         <div
-          className={
-            step === Step.Accounts ? "worker-accounts-workspace" : undefined
-          }
+          className="worker-source-workspace"
+          data-accordion={step === Step.Accounts || undefined}
+          hidden={step !== Step.Accounts && step !== Step.Model}
         >
-          <aside
-            className="worker-source-list"
-            hidden={step !== Step.Accounts}
-            aria-label={copy("agent-worker-wizard.accountSources")}
-          >
+          <div className="worker-source-intro" hidden={step !== Step.Accounts}>
             <h4>{copy("agent-worker-wizard.accountSources")}</h4>
             <p>{copy("agent-worker-wizard.usedInOrder")}</p>
-            <WorkerSourceOrder
-              ids={routes.map((route) => route.key)}
-              names={
-                new Map(
-                  routes.map((route) => [
-                    route.key,
-                    evidence[route.key]?.label ||
-                      copy("agent-worker-wizard.chooseSource"),
-                  ]),
-                )
-              }
-              counts={
-                new Map(
-                  routes.map((route) => [route.key, route.accounts.length]),
-                )
-              }
-              selected={displayedKey ?? ""}
-              select={setSelectedKey}
-              active={active && step === Step.Accounts}
-              editable={!blocked}
-              change={(order) => {
-                setRoutes((previous) =>
-                  order.map((key) =>
-                    previous.find((route) => route.key === key)!,
-                  ),
-                );
-                setProblem("");
-              }}
-            />
+          </div>
+          {/* One ordered list at every width. The same SourceGroup instances
+              render under both steps so controllers and drafts stay mounted;
+              only the Accounts step shows the accordion header and grip. */}
+          <WorkerSourceOrder
+            ids={routes.map((route) => route.key)}
+            names={
+              new Map(
+                routes.map((route) => [
+                  route.key,
+                  evidence[route.key]?.label ||
+                    copy("agent-worker-wizard.chooseSource"),
+                ]),
+              )
+            }
+            active={active && step === Step.Accounts}
+            editable={!blocked}
+            change={(order) => {
+              setRoutes((previous) =>
+                order.map((key) =>
+                  previous.find((route) => route.key === key)!,
+                ),
+              );
+              setProblem("");
+            }}
+            renderItem={({ id, index, grip }) => {
+              const route = routes.find((item) => item.key === id)!;
+              return (
+                <SourceGroup
+                  value={route}
+                  index={index}
+                  count={routes.length}
+                  step={step}
+                  displayed={displayedKey === route.key}
+                  grip={grip}
+                  toggle={toggleSource}
+                  harness={data.harness as Harness}
+                  active={active}
+                  locked={blocked}
+                  duplicateSources={routes
+                    .filter((other) => other.key !== route.key)
+                    .map((other) => sourceKey(other.source))}
+                  update={update}
+                  report={report}
+                  openAccounts={openAccounts}
+                  remove={(key) => {
+                    const position = routes.findIndex(
+                      (route) => route.key === key,
+                    );
+                    const remaining = routes.filter(
+                      (route) => route.key !== key,
+                    );
+                    setRoutes(remaining);
+                    // The next source (or the preceding one when the last
+                    // source was removed) opens and receives focus.
+                    focus(
+                      remaining[Math.min(position, remaining.length - 1)]?.key,
+                      "source-heading",
+                    );
+                  }}
+                />
+              );
+            }}
+          />
+          <div className="worker-source-add" hidden={step !== Step.Accounts}>
             <SettingsActionButton
               icon={SettingsActionIcon.Add}
               decorativePrefix="+ "
@@ -1671,43 +1766,12 @@ export function AgentWorkerSourceWizard({
                 // The new group has no source or accounts yet.
                 clampVisited(Step.Accounts);
                 setRoutes((previous) => [...previous, next]);
+                // Focusing the new group's source picker also expands it.
                 focus(next.key, "source");
               }}
             >
               {copy("agent-worker-wizard.addSource")}
             </SettingsActionButton>
-          </aside>
-          <div className="worker-source-details">
-            {routes.map((route, index) => (
-              <SourceGroup
-                key={route.key}
-                value={route}
-                index={index}
-                count={routes.length}
-                step={step}
-                displayed={displayedKey === route.key}
-                harness={data.harness as Harness}
-                active={active}
-                locked={blocked}
-                duplicateSources={routes
-                  .filter((other) => other.key !== route.key)
-                  .map((other) => sourceKey(other.source))}
-                update={update}
-                report={report}
-                openAccounts={openAccounts}
-                remove={(key) => {
-                  const position = routes.findIndex(
-                    (route) => route.key === key,
-                  );
-                  const remaining = routes.filter((route) => route.key !== key);
-                  setRoutes(remaining);
-                  focus(
-                    remaining[Math.min(position, remaining.length - 1)]?.key,
-                    "source-heading",
-                  );
-                }}
-              />
-            ))}
           </div>
         </div>
         <div hidden={step !== Step.Accounts}>

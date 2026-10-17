@@ -292,6 +292,31 @@ fn coverage(
                         ),
                     )
                 }
+                // The Vite chunk-graph rule proves a claim only from chunks
+                // that carry import data. The adapter drops that data for
+                // every chunk when the finished build no longer matches its
+                // module snapshot, so the rule can then decline every
+                // candidate without reporting anything.
+                OptimizationCategory::ChunkSplitting
+                    if collection.bundler == "vite"
+                        && rules::vite::chunks_without_import_data(collection) > 0 =>
+                {
+                    let missing = rules::vite::chunks_without_import_data(collection);
+                    tracing::debug!(
+                        chunks_without_import_data = missing,
+                        chunks = collection.chunks.len(),
+                        "vite chunk splitting coverage is partial: chunk import data is missing"
+                    );
+                    (
+                        CoverageState::Partial,
+                        format!(
+                            "{missing} emitted chunk(s) have no chunk import data (an older \
+                             adapter, or the finished build's module placement differed from the \
+                             collected snapshot), so dynamic imports that the chunk graph would \
+                             prove ineffective are not reported."
+                        ),
+                    )
+                }
                 // Detectors and evidence interpretation are verified only for
                 // the frozen matrix; an explicitly selected other version can
                 // change APIs or stats silently.
@@ -359,6 +384,12 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
     let mut problems: Vec<Problem> = Vec::new();
     let mut chunks = Vec::new();
     let mut failed_chunks = 0usize;
+    // Chunks made only of bundler-owned virtual helpers have no source-backed
+    // candidate a map could attribute; they are neither a problem nor a
+    // coverage penalty. Their generated-location findings stay available.
+    // The check runs while the loop still holds each chunk's own collected
+    // metadata, so it never searches the collection by file name.
+    let mut missing_maps: Vec<String> = Vec::new();
     for chunk in &collection.chunks {
         match Chunk::load(
             &input.build_dir,
@@ -367,7 +398,19 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
             chunk.is_entry,
             &context_dir,
         ) {
-            Ok(loaded) => chunks.push(loaded),
+            Ok(loaded) => {
+                if loaded.map.is_none() {
+                    if collection.is_virtual_only_collected_chunk(chunk) {
+                        tracing::debug!(
+                            chunk = loaded.file.as_str(),
+                            "virtual-only helper chunk has no source map; not counted as missing"
+                        );
+                    } else {
+                        missing_maps.push(loaded.file.clone());
+                    }
+                }
+                chunks.push(loaded);
+            }
             Err(error) => {
                 failed_chunks += 1;
                 problems.push(problem(
@@ -377,20 +420,6 @@ pub fn analyze(input: &AnalysisInput<'_>) -> AnalysisOutput {
                     "Start a new run; do not modify the run directory while it is being analyzed.",
                 ));
             }
-        }
-    }
-    // Chunks made only of bundler-owned virtual helpers have no source-backed
-    // candidate a map could attribute; they are neither a problem nor a
-    // coverage penalty. Their generated-location findings stay available.
-    let mut missing_maps: Vec<String> = Vec::new();
-    for chunk in chunks.iter().filter(|chunk| chunk.map.is_none()) {
-        if collection.is_virtual_only_chunk(&chunk.file) {
-            tracing::debug!(
-                chunk = chunk.file.as_str(),
-                "virtual-only helper chunk has no source map; not counted as missing"
-            );
-        } else {
-            missing_maps.push(chunk.file.clone());
         }
     }
     if !missing_maps.is_empty() {
@@ -723,6 +752,71 @@ mod tests {
             .iter()
             .find(|entry| entry.category == OptimizationCategory::DeadCodeElimination)
             .unwrap()
+    }
+
+    fn chunk_splitting_coverage(analysis: &Analysis) -> &CategoryCoverage {
+        analysis
+            .coverage
+            .iter()
+            .find(|entry| entry.category == OptimizationCategory::ChunkSplitting)
+            .unwrap()
+    }
+
+    #[test]
+    fn vite_chunk_splitting_coverage_is_partial_when_chunk_import_data_is_missing() {
+        let covered = run_fixture(BundlerChoice::Vite, |_| {});
+        let entry = chunk_splitting_coverage(&covered.output.analysis);
+        assert_eq!(entry.state, CoverageState::Covered);
+        // The adapter drops the three lists of every chunk when the finished
+        // build does not match its module snapshot; any single chunk without
+        // them is enough to keep the category from claiming full coverage.
+        for (name, keys) in [
+            (
+                "all lists of every chunk",
+                vec!["imports", "externalImports", "dynamicImports"],
+            ),
+            ("only imports", vec!["imports"]),
+            ("only externalImports", vec!["externalImports"]),
+            ("only dynamicImports", vec!["dynamicImports"]),
+        ] {
+            let dropped = run_fixture(BundlerChoice::Vite, |value| {
+                let chunks = value["chunks"].as_array_mut().unwrap();
+                let last = chunks.len() - 1;
+                for chunk in &mut chunks[last..] {
+                    for key in &keys {
+                        chunk.as_object_mut().unwrap().remove(*key);
+                    }
+                }
+            });
+            let entry = chunk_splitting_coverage(&dropped.output.analysis);
+            assert_eq!(entry.state, CoverageState::Partial, "{name}");
+            assert!(
+                entry.note.contains("1 emitted chunk(s)"),
+                "{name}: {}",
+                entry.note
+            );
+            assert!(!entry.rules.is_empty(), "{name}");
+            // Other categories are unaffected.
+            assert_eq!(
+                dead_code_coverage(&dropped.output.analysis).state,
+                CoverageState::Covered,
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn rspack_chunk_splitting_coverage_ignores_vite_chunk_import_data() {
+        let fixture = run_fixture(BundlerChoice::Rspack, |_| {});
+        assert!(
+            fixture
+                .collection
+                .chunks
+                .iter()
+                .all(|chunk| chunk.imports.is_none())
+        );
+        let entry = chunk_splitting_coverage(&fixture.output.analysis);
+        assert_ne!(entry.state, CoverageState::Partial);
     }
 
     #[test]
@@ -3751,6 +3845,16 @@ mod tests {
              use(); } } }",
             "class C { async #load() { if (await(process.env.BUNDLEWHY_FIXTURE_FLAG)) { use(); } \
              } }",
+            // A comment right after `case` or `default` does not turn the clause block
+            // into a member container, so the async context reaches the guard.
+            "async function \
+             outer(x){switch(x){case/*c*/1:{if(x){if(await(process.env.\
+             BUNDLEWHY_FIXTURE_FLAG))run()}}}}",
+            "async function outer(x){switch(x){case/*c*/ \
+             1:{if(x){if(await(process.env.BUNDLEWHY_FIXTURE_FLAG))run()}}}}",
+            "async function \
+             outer(x){switch(x){default/*c*/:{if(x){if(await(process.env.\
+             BUNDLEWHY_FIXTURE_FLAG))run()}}}}",
         ] {
             let fixture = run_fixture_patched(
                 BundlerChoice::Rspack,
@@ -4672,6 +4776,11 @@ mod tests {
                         "isDynamicEntry": false,
                         "facadeModuleId": null,
                         "modules": chunk.modules,
+                        // A complete chunk-graph record, so these helper
+                        // chunks keep Vite chunk splitting coverage unchanged.
+                        "imports": [],
+                        "externalImports": [],
+                        "dynamicImports": [],
                     }));
                 }
                 edit(value);
@@ -4863,6 +4972,49 @@ mod tests {
         let dce = dead_code_coverage(analysis);
         assert_eq!(dce.state, CoverageState::Partial);
         assert!(dce.note.contains("1 chunk(s) have no usable source map"));
+    }
+
+    #[test]
+    fn many_mapless_chunks_are_classified_by_their_own_metadata() {
+        // Interleave exempt helper chunks and source-backed chunks without
+        // maps. Each chunk is classified from the metadata the load loop
+        // already holds, so the outcome depends only on that chunk and the
+        // warning keeps collection order.
+        const COUNT: usize = 150;
+        let leak = |text: String| -> &'static str { Box::leak(text.into_boxed_str()) };
+        let mut extra = Vec::new();
+        let mut expected = Vec::new();
+        for index in 0..COUNT {
+            extra.push(ExtraChunk {
+                file: leak(format!("assets/helper-{index:03}.js")),
+                code: HELPER_CODE,
+                modules: vec![PRELOAD_HELPER],
+                map: ExtraMap::Absent,
+            });
+            let backed = leak(format!("assets/backed-{index:03}.js"));
+            extra.push(ExtraChunk {
+                file: backed,
+                code: HELPER_CODE,
+                modules: vec![PRELOAD_HELPER, APP_MODULE],
+                map: ExtraMap::Absent,
+            });
+            expected.push(backed);
+        }
+        let fixture = vite_with_extra_chunks(&extra, |_| {});
+        let analysis = &fixture.output.analysis;
+        assert_eq!(analysis.status, RunStatus::Partial);
+        let problems = missing_map_problems(analysis);
+        assert_eq!(problems.len(), 1);
+        assert_eq!(
+            problems[0].message,
+            format!("No usable source map for: {}", expected.join(", "))
+        );
+        assert!(!problems[0].message.contains("assets/helper-"));
+        let dce = dead_code_coverage(analysis);
+        assert!(
+            dce.note
+                .contains(&format!("{COUNT} chunk(s) have no usable source map"))
+        );
     }
 
     #[test]
@@ -5230,11 +5382,24 @@ mod tests {
                 assert_eq!(built.bundler_choice(), choice, "{bundler:?}");
                 let expected = vite_expected && choice == Some(BundlerChoice::Vite);
                 assert_eq!(
-                    built.is_virtual_only_chunk("a.js"),
+                    built.is_virtual_only_collected_chunk(&built.chunks[0]),
                     expected,
                     "{name} with bundler {bundler:?}"
                 );
-                assert!(!built.is_virtual_only_chunk("b.js"), "{name}: unknown file");
+                // The predicate decides from the passed chunk's own metadata
+                // and never searches `Collection::chunks` by file name, so a
+                // chunk that is absent from the collection is classified by
+                // its modules alone.
+                let detached = crate::collect::CollectedChunk {
+                    file: "b.js".to_owned(),
+                    modules: built.chunks[0].modules.clone(),
+                    ..Default::default()
+                };
+                assert_eq!(
+                    built.is_virtual_only_collected_chunk(&detached),
+                    expected,
+                    "{name} with bundler {bundler:?}: detached chunk"
+                );
             }
         }
     }

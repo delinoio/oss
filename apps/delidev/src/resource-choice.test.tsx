@@ -828,3 +828,68 @@ it("rejects retired Model resources without inferring Agent decoration", async (
   expect(document.querySelector(".scroll-picker-decoration")).toBeNull();
   client.clear();
 });
+
+it("invokes an optional creation action without selecting or reading a resource", async () => {
+  const row = create(ResourceSchema, {
+    id: newRequestId(),
+    kind: EntityKind.MACHINE,
+    revision: 1n,
+    schemaVersion: 1,
+    documentJson: encode({ name: "Runner" }),
+  });
+  const reads = vi.fn(() => ({ resource: row })),
+    invoke = vi.fn(),
+    change = vi.fn();
+  const transport = createRouterTransport((router) =>
+    router.service(ResourceService, {
+      listResources: () => ({ resources: [row] }),
+      getResource: reads,
+    }),
+  );
+  const view = (props: { disabled?: boolean; withAction?: boolean }) => (
+    <TransportProvider transport={transport}>
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <ResourceChoice
+          label="Runner"
+          kind={EntityKind.MACHINE}
+          value=""
+          active
+          disabled={props.disabled}
+          change={change}
+          createAction={
+            props.withAction === false
+              ? undefined
+              : { label: "New", name: "New runner", invoke }
+          }
+        />
+      </QueryClientProvider>
+    </TransportProvider>
+  );
+  const result = render(view({}));
+  const trigger = await screen.findByRole("combobox", { name: "Runner" });
+  await waitFor(() => expect(trigger).toHaveProperty("disabled", false));
+  fireEvent.click(trigger);
+  await screen.findByRole("option", { name: "Runner" });
+  const action = screen.getByRole("option", { name: "New runner" });
+  expect(action.getAttribute("aria-selected")).toBe("false");
+  fireEvent.click(action);
+  expect(invoke).toHaveBeenCalledTimes(1);
+  expect(change).not.toHaveBeenCalled();
+  expect(reads).not.toHaveBeenCalled();
+  expect(screen.queryByRole("listbox")).toBeNull();
+  expect(document.activeElement).toBe(trigger);
+  // A disabled owner cannot open the popup, so it cannot invoke the action.
+  result.rerender(view({ disabled: true }));
+  expect(trigger).toHaveProperty("disabled", true);
+  expect(screen.queryByRole("option", { name: "New runner" })).toBeNull();
+  // Without configuration the picker exposes no action.
+  result.rerender(view({ withAction: false }));
+  fireEvent.click(await screen.findByRole("combobox", { name: "Runner" }));
+  await screen.findByRole("option", { name: "Runner" });
+  expect(screen.queryByRole("option", { name: "New runner" })).toBeNull();
+  expect(invoke).toHaveBeenCalledTimes(1);
+});

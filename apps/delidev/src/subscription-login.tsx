@@ -31,6 +31,7 @@ import {
   type CodexDiagnostic,
   type GrokDiagnostic,
 } from "@delinoio/delidev-api-client";
+import { useSubscriptionInventoryInvalidation } from "./subscription-inventory";
 import { OAuthNativeAction, useOAuthNativeControl } from "./account-oauth";
 import { useSettingsOpening } from "./settings-lifetime";
 import { document, encode, object, text } from "./documents";
@@ -114,10 +115,18 @@ const stages: Partial<Record<SubscriptionLoginState, Stage>> = {
 
 export function useSubscriptionLogin(
   active: boolean,
-  changed: () => void,
+  inventoryChanged: () => void,
   closed?: () => void,
 ) {
   useLocale();
+  // Every shared account-change notification also reaches independently owned
+  // saved inventories (the rail) through one authenticated-connection-scoped
+  // invalidation, in addition to the caller's own refresh.
+  const publishInventory = useSubscriptionInventoryInvalidation();
+  const changed = () => {
+    inventoryChanged();
+    publishInventory();
+  };
   const claude = useClaudeSubscriptionLogin(active, changed);
   const grok = useGrokSubscriptionLogin(active, changed);
   const transport = useTransport(),

@@ -318,9 +318,20 @@ export function DisclosureContent({
     // Close mounted content after focus restoration, before the browser paints.
     setConcealed(Boolean(hidden));
   }, [hidden]);
+  const displaced = useRef<Element | null>(null);
   useLayoutEffect(() => {
     const content = node.current;
-    return () => focusTrigger(content);
+    // StrictMode re-runs this effect right after a simulated cleanup. Return
+    // any focus that cleanup moved to the trigger; a real unmount never re-runs.
+    const previous = displaced.current;
+    displaced.current = null;
+    if (previous?.isConnected && content?.contains(previous))
+      (previous as HTMLElement).focus?.({ preventScroll: true });
+    return () => {
+      const active = document.activeElement;
+      displaced.current = content?.contains(active) ? active : null;
+      focusTrigger(content);
+    };
   }, []);
   return (
     <div

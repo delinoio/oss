@@ -373,6 +373,18 @@ try {
       await control.elementHandle(),
     );
   };
+  // New session's Project selector is an expanded listbox: focus its rows,
+  // jump to the last loaded row and select it.
+  const selectProject = async (root) => {
+    const control = root.getByRole("listbox", { name: /^(Project|프로젝트)$/ });
+    await control.getByRole("option").first().focus();
+    await page.keyboard.press("End");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(
+      (node) => Boolean(node.dataset.value),
+      await control.elementHandle(),
+    );
+  };
   const surrounding = (root) =>
     root.evaluate((node) => {
       const selectors = [
@@ -565,9 +577,9 @@ try {
           );
           const input = root.locator("textarea");
           await input.waitFor();
-          if (kind === "New session") await selectResource(root, 0);
-          await selectResource(root, kind === "New session" ? 1 : 0);
-          await selectResource(root, kind === "New session" ? 2 : 1);
+          if (kind === "New session") await selectProject(root);
+          await selectResource(root, 0);
+          await selectResource(root, 1);
           await checkCompletionLayout(root, input);
           const open = async (token) => {
             await input.fill("");

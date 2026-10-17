@@ -13,6 +13,134 @@ use serde_json::json;
 
 const MODE: &str = "PNPORT_NATIVE_WINDOWS_FIXTURE";
 const PROJECT: &str = "PNPORT_NATIVE_WINDOWS_PROJECT";
+const WORK: &str = "PNPORT_NATIVE_WINDOWS_WORK";
+const REPORT: &str = "PNPORT_NATIVE_WINDOWS_REPORT";
+
+#[derive(Clone, Copy, Debug)]
+enum Api {
+    Ansi,
+    Wide,
+}
+
+/// Calls the native `CreateProcess` entry point directly so the application
+/// string, command line and `lpCurrentDirectory` are exactly the requested
+/// values. Returns the worker exit code, or the Win32 error when creation
+/// fails.
+fn create_process(
+    api: Api,
+    application: Option<&str>,
+    command: &str,
+    directory: Option<&Path>,
+) -> Result<u32, u32> {
+    use std::{ffi::CString, os::windows::ffi::OsStrExt, ptr};
+
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, GetLastError},
+        System::Threading::{
+            CreateProcessA, CreateProcessW, GetExitCodeProcess, WaitForSingleObject,
+            PROCESS_INFORMATION, STARTUPINFOA, STARTUPINFOW,
+        },
+    };
+    let mut info = PROCESS_INFORMATION::default();
+    let created = match api {
+        Api::Wide => {
+            let text = |value: &str| value.encode_utf16().chain([0]).collect::<Vec<u16>>();
+            let application = application.map(text);
+            let mut command = text(command);
+            let directory = directory.map(|value| {
+                value
+                    .as_os_str()
+                    .encode_wide()
+                    .chain([0])
+                    .collect::<Vec<u16>>()
+            });
+            let startup = STARTUPINFOW {
+                cb: std::mem::size_of::<STARTUPINFOW>() as u32,
+                ..Default::default()
+            };
+            unsafe {
+                CreateProcessW(
+                    application
+                        .as_ref()
+                        .map_or(ptr::null(), |value| value.as_ptr()),
+                    command.as_mut_ptr(),
+                    ptr::null(),
+                    ptr::null(),
+                    0,
+                    0,
+                    ptr::null(),
+                    directory
+                        .as_ref()
+                        .map_or(ptr::null(), |value| value.as_ptr()),
+                    &startup,
+                    &mut info,
+                )
+            }
+        }
+        Api::Ansi => {
+            let application = application.map(|value| CString::new(value).unwrap());
+            let mut command = CString::new(command).unwrap().into_bytes_with_nul();
+            let directory = directory.map(|value| CString::new(value.to_str().unwrap()).unwrap());
+            let startup = STARTUPINFOA {
+                cb: std::mem::size_of::<STARTUPINFOA>() as u32,
+                ..Default::default()
+            };
+            unsafe {
+                CreateProcessA(
+                    application
+                        .as_ref()
+                        .map_or(ptr::null(), |value| value.as_ptr().cast()),
+                    command.as_mut_ptr(),
+                    ptr::null(),
+                    ptr::null(),
+                    0,
+                    0,
+                    ptr::null(),
+                    directory
+                        .as_ref()
+                        .map_or(ptr::null(), |value| value.as_ptr().cast()),
+                    &startup,
+                    &mut info,
+                )
+            }
+        }
+    };
+    if created == 0 {
+        return Err(unsafe { GetLastError() });
+    }
+    let waited = unsafe { WaitForSingleObject(info.hProcess, 30_000) };
+    let mut code = u32::MAX;
+    let queried = unsafe { GetExitCodeProcess(info.hProcess, &mut code) };
+    unsafe {
+        CloseHandle(info.hProcess);
+        CloseHandle(info.hThread);
+    }
+    assert_eq!(waited, 0, "{api:?} worker did not exit");
+    assert_ne!(queried, 0, "{api:?} worker exit code unavailable");
+    Ok(code)
+}
+
+/// Launches the report worker and returns the working directory and image
+/// path that the worker observed about itself.
+fn launch_worker(
+    api: Api,
+    work: &Path,
+    application: Option<&str>,
+    command: &str,
+    directory: Option<&Path>,
+) -> Result<(PathBuf, PathBuf), u32> {
+    let report = work.join("report.txt");
+    let _ = fs::remove_file(&report);
+    std::env::set_var(MODE, "report");
+    std::env::set_var(REPORT, &report);
+    let code = create_process(api, application, command, directory)?;
+    assert_eq!(code, 0, "{api:?} report worker failed with {code}");
+    let text = fs::read_to_string(&report).unwrap();
+    let mut lines = text.lines();
+    let cwd = PathBuf::from(lines.next().unwrap());
+    let image = PathBuf::from(lines.next().unwrap());
+    Ok((cwd, image))
+}
 
 fn binary() -> PathBuf {
     std::env::var_os("PNPORT_TEST_BINARY")
@@ -305,6 +433,90 @@ fn native_child() {
         assert!(names.iter().any(|name| name == ".cache"));
         assert!(names.iter().any(|name| name == "example"));
         assert!(fs::remove_dir(root.join("node_modules")).is_err());
+    } else if mode == "report" {
+        let report = PathBuf::from(std::env::var_os(REPORT).unwrap());
+        fs::write(
+            report,
+            format!(
+                "{}\n{}\n",
+                std::env::current_dir().unwrap().display(),
+                std::env::current_exe().unwrap().display()
+            ),
+        )
+        .unwrap();
+    } else if mode == "application" {
+        let work = PathBuf::from(std::env::var_os(WORK).unwrap());
+        let caller = work.join("caller");
+        let child = work.join("child");
+        std::env::set_current_dir(&caller).unwrap();
+        let same = |left: &Path, right: &Path| {
+            fs::canonicalize(left).unwrap() == fs::canonicalize(right).unwrap()
+        };
+        let image = caller.join("bin").join("worker.exe");
+        let decoy = child.join("bin").join("worker.exe");
+        let image_text = image.to_str().unwrap();
+        assert_eq!(image_text.as_bytes()[1], b':', "fixture needs a drive path");
+        let worker = "worker.exe --exact native_child --nocapture";
+        let arguments = " --exact native_child --nocapture";
+        for api in [Api::Wide, Api::Ansi] {
+            // A partial application resolves against the caller directory
+            // while the worker still starts in the requested directory.
+            let requested = [
+                (r"bin\worker.exe".to_owned(), "relative"),
+                ("bin/worker.exe".to_owned(), "forward-slash relative"),
+                (image_text[2..].to_owned(), "root-relative"),
+                (
+                    format!("{}:bin\\worker.exe", &image_text[..1]),
+                    "drive-relative",
+                ),
+            ];
+            for (application, label) in requested {
+                let (cwd, launched) =
+                    launch_worker(api, &work, Some(&application), worker, Some(&child))
+                        .unwrap_or_else(|error| {
+                            panic!("{api:?} {label} application failed with {error}")
+                        });
+                assert!(same(&launched, &image), "{api:?} {label}: {launched:?}");
+                assert!(!same(&launched, &decoy), "{api:?} {label} chose the child");
+                assert!(same(&cwd, &child), "{api:?} {label} cwd {cwd:?}");
+            }
+            // Without a requested directory the worker inherits the caller's.
+            let (cwd, launched) =
+                launch_worker(api, &work, Some(r"bin\worker.exe"), worker, None).unwrap();
+            assert!(same(&launched, &image), "{api:?} null cwd: {launched:?}");
+            assert!(same(&cwd, &caller), "{api:?} null cwd observed {cwd:?}");
+            // A relative image that exists only below the child directory is
+            // not found from the caller directory.
+            let missing = launch_worker(
+                api,
+                &work,
+                Some(r"bin\only-child.exe"),
+                worker,
+                Some(&child),
+            );
+            assert!(missing.is_err(), "{api:?} selected an image in the child");
+            assert!(
+                !work.join("report.txt").exists(),
+                "{api:?} started a worker for a missing caller image"
+            );
+            // Controls: absolute applications are never rebased, and a null
+            // application keeps native command-line resolution.
+            let absolute = decoy.to_str().unwrap();
+            let (cwd, launched) =
+                launch_worker(api, &work, Some(absolute), worker, Some(&child)).unwrap();
+            assert!(same(&launched, &decoy), "{api:?} absolute: {launched:?}");
+            assert!(same(&cwd, &child), "{api:?} absolute cwd {cwd:?}");
+            let (cwd, launched) = launch_worker(
+                api,
+                &work,
+                None,
+                &format!(r"bin\worker.exe{arguments}"),
+                Some(&child),
+            )
+            .unwrap();
+            assert!(same(&launched, &image), "{api:?} null app: {launched:?}");
+            assert!(same(&cwd, &child), "{api:?} null app cwd {cwd:?}");
+        }
     } else if mode == "wait" {
         fs::write(root.join("ready.txt"), std::process::id().to_string()).unwrap();
         loop {
@@ -376,6 +588,38 @@ fn installed_inline_split_filesystem_and_replacement_environment() {
         assert_eq!(fs::read(root.join("source.txt")).unwrap(), b"source");
         assert_eq!(fs::read(root.join("output.txt")).unwrap(), b"output");
     }
+}
+
+#[test]
+fn relative_applications_resolve_against_the_caller_directory() {
+    let fixture = fixture(false);
+    let root = fixture.path().join("project 한글 space");
+    let work = fixture.path().join("application-work");
+    assert!(
+        work.to_str().is_some_and(str::is_ascii),
+        "ANSI CreateProcess fixtures need an ASCII temporary directory: {work:?}"
+    );
+    let executable = std::env::current_exe().unwrap();
+    for (directory, name) in [
+        ("caller", "worker.exe"),
+        ("child", "worker.exe"),
+        ("child", "only-child.exe"),
+    ] {
+        let directory = work.join(directory).join("bin");
+        fs::create_dir_all(&directory).unwrap();
+        fs::copy(&executable, directory.join(name)).unwrap();
+    }
+    let output = run(&root, &fixture.path().join("cache"), "application")
+        .env(WORK, &work)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "application resolution failed {:?}: {} {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stderr),
+        String::from_utf8_lossy(&output.stdout)
+    );
 }
 
 #[test]
