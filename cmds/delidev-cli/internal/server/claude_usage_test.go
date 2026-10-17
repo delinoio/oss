@@ -473,6 +473,44 @@ func TestClaudeUsageUncertainVaultWriteStaysOwedForCleanup(t *testing.T) {
 	}
 }
 
+// A shutdown that cancels the run after the credential was written must not let
+// the detached staging commit the review: the durable state stays untouched and
+// the recorded intent keeps the written reference owed for cleanup.
+func TestClaudeUsageShutdownDuringStagingNeverCommitsTheReview(t *testing.T) {
+	f := newUsageFixture(t)
+	f.secrets.afterPut = func() {
+		f.service.claudeUsage.mu.Lock()
+		run := f.service.claudeUsage.active[f.input.AccountID]
+		f.service.claudeUsage.mu.Unlock()
+		run.cancel(errClaudeUsageShutdown)
+	}
+	op, err := f.start()
+	if err != nil {
+		t.Fatal(err)
+	}
+	close(f.usage.ready)
+	f.await(op, pb.ClaudeUsageLoginState_CLAUDE_USAGE_LOGIN_STATE_WAITING)
+	if err := f.submit(op, usageFixtureCode); err != nil {
+		t.Fatal(err)
+	}
+	<-f.usage.codes
+	close(f.usage.finish)
+	deadline := time.Now().Add(10 * time.Second)
+	for f.service.claudeUsage.live(f.input.AccountID) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if f.service.claudeUsage.live(f.input.AccountID) {
+		t.Fatal("the staging run never finished")
+	}
+	section := f.section()
+	if section == nil || section.Connection != domain.ClaudeUsageConnecting || section.Published {
+		t.Fatalf("shutdown committed a review: %+v", section)
+	}
+	if len(f.usageRefs()) != 1 || len(section.RetiredCredentials) != 1 || section.RetiredCredentials[0] != domain.ID(f.usageRefs()[0].ID) {
+		t.Fatalf("the written reference is not owed for cleanup: refs=%d retired=%v", len(f.usageRefs()), section.RetiredCredentials)
+	}
+}
+
 func TestClaudeUsageCaptureFailureLeavesNoCredential(t *testing.T) {
 	f := newUsageFixture(t)
 	f.usage.captureErr = domain.Fail(domain.RecoveryRequired, "The Claude usage credential storage is ambiguous.", "")

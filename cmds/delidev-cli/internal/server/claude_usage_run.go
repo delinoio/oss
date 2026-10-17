@@ -344,8 +344,22 @@ func (s *Service) stageClaudeUsage(ctx context.Context, run *claudeUsageRun, op 
 	if ctx.Err() != nil {
 		return s.claudeUsageEndOutcome(ctx, nil, context.Cause(ctx))
 	}
+	// The durable steps below use the detached owner context so a cancellation
+	// cannot cut one in half, but the run context stays authoritative for the
+	// transitions: once its cancellation (shutdown, cancel, revocation) is
+	// observed, no transition commits, so shutdown leaves the durable state
+	// untouched and the recorded intent keeps the staged reference owed.
+	runEnded := func() error {
+		if ctx.Err() != nil {
+			return context.Cause(ctx)
+		}
+		return nil
+	}
 	// 1. Durable cleanup intent for the reference about to be written.
 	if _, err := s.Store.Mutate(bounded, domain.NewID(), "claude.usage.intent", struct{ Account, Operation, Credential domain.ID }{account, op.ID, credential}, func(tx *store.Tx) (any, error) {
+		if err := runEnded(); err != nil {
+			return nil, err
+		}
 		r, a, err := claudeUsageAccountTx(tx, account, 0)
 		if err != nil {
 			return nil, err
@@ -379,6 +393,9 @@ func (s *Service) stageClaudeUsage(ctx context.Context, run *claudeUsageRun, op 
 	profileCleaned := releaseErr == nil && s.removeUsageStorage(bounded, account) == nil
 	// 4. Review state.
 	_, err = s.Store.Mutate(bounded, domain.NewID(), "claude.usage.stage", struct{ Account, Operation, Credential domain.ID }{account, op.ID, credential}, func(tx *store.Tx) (any, error) {
+		if err := runEnded(); err != nil {
+			return nil, err
+		}
 		r, a, err := claudeUsageAccountTx(tx, account, 0)
 		if err != nil {
 			return nil, err
