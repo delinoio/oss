@@ -250,3 +250,9 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 
 - [DeliDev signed updates](cmds-delidev-updates-contract.md)
 - [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)
+
+### TypeNative
+
+- [Project index](project-typenative.md)
+- [SDK and developer workflow](packages-typenative-foundation.md)
+- [Native host](crates-typenative-foundation.md)
