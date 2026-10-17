@@ -109,12 +109,17 @@ func TestClaudeServerUsageStateRejectsInvalidShapes(t *testing.T) {
 			u.Operation = claudeUsageOperation(SubscriptionSucceeded)
 			u.Operation.CodeConsumed = true
 		}),
-		"connecting with credential": {Connection: ClaudeUsageConnecting, Generation: NewID(), Operation: claudeUsageOperation(SubscriptionWaiting), CredentialID: NewID()},
-		"connecting without op":      {Connection: ClaudeUsageConnecting, Generation: NewID()},
-		"confirming published":       {Connection: ClaudeUsageConfirming, Generation: NewID(), Operation: claudeUsageOperation(SubscriptionSucceeded), CredentialID: NewID(), Identity: linkedClaudeUsage().Identity, Published: true},
-		"confirming with evidence":   {Connection: ClaudeUsageConfirming, Generation: NewID(), Operation: claudeUsageOperation(SubscriptionSucceeded), CredentialID: NewID(), Identity: linkedClaudeUsage().Identity, Failure: ClaudeUsageFailureUnavailable},
-		"reconnect with credential":  {Connection: ClaudeUsageReconnectRequired, Generation: NewID(), CredentialID: NewID()},
-		"reconnect with backoff":     {Connection: ClaudeUsageReconnectRequired, Generation: NewID(), BackoffUntil: &soon, Failure: ClaudeUsageFailureRateLimited},
+		"connecting with credential":  {Connection: ClaudeUsageConnecting, Generation: NewID(), Operation: claudeUsageOperation(SubscriptionWaiting), CredentialID: NewID()},
+		"connecting without op":       {Connection: ClaudeUsageConnecting, Generation: NewID()},
+		"connecting with canceled op": {Connection: ClaudeUsageConnecting, Generation: NewID(), Operation: claudeUsageOperation(SubscriptionCanceled)},
+		"connecting with expired op":  {Connection: ClaudeUsageConnecting, Generation: NewID(), Operation: claudeUsageOperation(SubscriptionExpired)},
+		"connecting with failed op":   {Connection: ClaudeUsageConnecting, Generation: NewID(), Operation: claudeUsageOperation(SubscriptionFailed)},
+		"connecting with unsupported": {Connection: ClaudeUsageConnecting, Generation: NewID(), Operation: claudeUsageOperation(SubscriptionUnsupported)},
+		"connecting with succeeded":   {Connection: ClaudeUsageConnecting, Generation: NewID(), Operation: claudeUsageOperation(SubscriptionSucceeded)},
+		"confirming published":        {Connection: ClaudeUsageConfirming, Generation: NewID(), Operation: claudeUsageOperation(SubscriptionSucceeded), CredentialID: NewID(), Identity: linkedClaudeUsage().Identity, Published: true},
+		"confirming with evidence":    {Connection: ClaudeUsageConfirming, Generation: NewID(), Operation: claudeUsageOperation(SubscriptionSucceeded), CredentialID: NewID(), Identity: linkedClaudeUsage().Identity, Failure: ClaudeUsageFailureUnavailable},
+		"reconnect with credential":   {Connection: ClaudeUsageReconnectRequired, Generation: NewID(), CredentialID: NewID()},
+		"reconnect with backoff":      {Connection: ClaudeUsageReconnectRequired, Generation: NewID(), BackoffUntil: &soon, Failure: ClaudeUsageFailureRateLimited},
 	} {
 		account := claudeUsageAccount(t, usage)
 		if account.Subscription.Validate(account) == nil {

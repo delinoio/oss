@@ -237,7 +237,7 @@ func (s ClaudeServerUsageState) Validate(account Account) error {
 	}
 	switch s.Connection {
 	case ClaudeUsageConnecting:
-		if s.Operation == nil || s.Operation.State == SubscriptionSucceeded || s.Identity != nil || s.CredentialID != "" || s.Published || s.LinkedAt != nil || s.Refresh != ClaudeUsageIdle || s.Failure != ClaudeUsageFailureNone || s.LastSuccessAt != nil || s.BackoffUntil != nil || len(s.Windows) != 0 {
+		if s.Operation == nil || !s.Operation.Active() || s.Identity != nil || s.CredentialID != "" || s.Published || s.LinkedAt != nil || s.Refresh != ClaudeUsageIdle || s.Failure != ClaudeUsageFailureNone || s.LastSuccessAt != nil || s.BackoffUntil != nil || len(s.Windows) != 0 {
 			return invalid()
 		}
 	case ClaudeUsageConfirming:
