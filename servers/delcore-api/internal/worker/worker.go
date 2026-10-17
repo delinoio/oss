@@ -140,7 +140,18 @@ func (w *Worker) Step(ctx context.Context) error {
 			delete(body, "customer_id")
 			delete(body, "collection_mode")
 			body["effective_from"] = "immediately"
-			body["on_payment_failure"] = "prevent_change"
+			if j.Kind == "settlement" {
+				var deleting bool
+				if e = w.DB.Pool.QueryRow(ctx, "SELECT deleting_at IS NOT NULL FROM tenants WHERE id=$1", j.Tenant).Scan(&deleting); e != nil {
+					return e
+				}
+				if !deleting {
+					body["effective_from"] = "next_billing_period"
+				}
+			}
+			if body["effective_from"] == "immediately" {
+				body["on_payment_failure"] = "prevent_change"
+			}
 		} else {
 			body["checkout"] = map[string]string{"url": p.ReturnURL}
 		}

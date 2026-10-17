@@ -183,6 +183,12 @@ type Transaction struct {
 		TenantID string `json:"delcore_tenant_id"`
 	} `json:"custom_data"`
 	Details struct {
+		LineItems []struct {
+			PriceID string `json:"price_id"`
+			Totals  struct {
+				Subtotal string `json:"subtotal"`
+			} `json:"totals"`
+		} `json:"line_items"`
 		Totals struct {
 			Subtotal string `json:"subtotal"`
 			Total    string `json:"total"`

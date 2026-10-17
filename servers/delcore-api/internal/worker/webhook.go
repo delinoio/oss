@@ -125,6 +125,16 @@ func (w *Worker) applyTransaction(ctx context.Context, tx pgx.Tx, t provider.Tra
 		return nil
 	}
 	if t.Origin == "subscription_recurring" {
+		if e := w.applyRenewalSettlements(ctx, tx, t, at); e != nil {
+			return e
+		}
+		items := t.Items[:0:0]
+		for _, item := range t.Items {
+			if item.Price.ProductID != w.Config.PaddleCreditProductID || item.Price.Custom.JobID == "" {
+				items = append(items, item)
+			}
+		}
+		t.Items = items
 		return w.renew(ctx, tx, t, at)
 	}
 	if t.Custom.JobID == "" {
@@ -352,4 +362,39 @@ func (w *Worker) adjustmentEvent(ctx context.Context, tx pgx.Tx, event provider.
 	}
 	_, e = tx.Exec(ctx, "INSERT INTO adjustment_effects VALUES($1,$2,$3,$4) ON CONFLICT(external_id) DO UPDATE SET amount=EXCLUDED.amount,occurred_at=EXCLUDED.occurred_at", v.ID, v.TransactionID, effect, event.OccurredAt)
 	return e
+}
+
+// One renewal can contain several separately reserved settlement jobs. Match
+// each immutable price attribution and line subtotal before closing its debt.
+func (w *Worker) applyRenewalSettlements(ctx context.Context, tx pgx.Tx, t provider.Transaction, at time.Time) error {
+	for _, item := range t.Items {
+		if item.Price.ProductID != w.Config.PaddleCreditProductID || item.Quantity != 1 {
+			continue
+		}
+		jobID := item.Price.Custom.JobID
+		if u, e := uuid.Parse(jobID); e != nil || u.Version() != 7 {
+			continue
+		}
+		subtotal := ""
+		for _, line := range t.Details.LineItems {
+			if line.PriceID == item.Price.ID {
+				subtotal = line.Totals.Subtotal
+			}
+		}
+		var tenant, amount string
+		e := tx.QueryRow(ctx, `SELECT j.tenant_id::text,j.payload->>'amount' FROM jobs j JOIN tenants t ON t.id=j.tenant_id WHERE j.id=$1 AND j.kind='settlement' AND j.state<>'done' AND j.tenant_id::text=$2 AND j.payload->>'minor_units'=$3 AND t.external_subscription_id=$4 AND t.external_customer_id=$5 AND j.payload->>'currency'=$6`, jobID, item.Price.Custom.TenantID, subtotal, t.SubscriptionID, t.CustomerID, t.Currency).Scan(&tenant, &amount)
+		if errors.Is(e, pgx.ErrNoRows) {
+			continue
+		}
+		if e != nil {
+			return e
+		}
+		if _, e = tx.Exec(ctx, "INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2,'settlement',$3,$4,$5) ON CONFLICT(source_key) DO NOTHING", id(), tenant, amount, "settlement-job:"+jobID, at); e != nil {
+			return e
+		}
+		if _, e = tx.Exec(ctx, "UPDATE jobs SET state='done',external_id=$2,error_category='',updated_at=now() WHERE id=$1", jobID, t.ID); e != nil {
+			return e
+		}
+	}
+	return nil
 }

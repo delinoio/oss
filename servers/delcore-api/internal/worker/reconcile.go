@@ -106,7 +106,13 @@ func (w *Worker) reconcile(ctx context.Context, j job) error {
 		}
 		for _, t := range transactions {
 			t = t.AttributeCharge(w.Config.PaddleCreditProductID)
-			if t.Custom.JobID == j.ID && t.Status == "completed" {
+			matches := t.Custom.JobID == j.ID
+			for _, item := range t.Items {
+				if item.Price.Custom.JobID == j.ID && item.Price.ProductID == w.Config.PaddleCreditProductID {
+					matches = true
+				}
+			}
+			if matches && t.Status == "completed" {
 				return w.ApplyTransaction(ctx, t, time.Now().UTC())
 			}
 		}

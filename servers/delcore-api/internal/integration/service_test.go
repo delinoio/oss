@@ -1026,3 +1026,63 @@ func TestRecoveredSubscriptionMutationUsesKnownSubscription(t *testing.T) {
 		})
 	}
 }
+
+func TestLateSettlementUsesNextRenewal(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	cfg.PaddleCreditProductID = "pro_fixture"
+	cfg.PaddleToken = "fixture"
+	if _, e := db.Pool.Exec(ctx, "UPDATE tenants SET external_subscription_id='sub_charge',external_customer_id='ctm_charge',period_end=$2 WHERE id=$1", tenant, time.Now().Add(24*time.Hour)); e != nil {
+		t.Fatal(e)
+	}
+	jobID := key()
+	if _, e := db.Pool.Exec(ctx, `INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,available_at,created_at,updated_at) VALUES($1,$2,'settlement',$1::uuid::text,'{"amount":"10","minor_units":"1000","currency":"USD"}',now()-interval '1 second',now(),now())`, jobID, tenant); e != nil {
+		t.Fatal(e)
+	}
+	charges := 0
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			charges++
+			if r.URL.Path != "/subscriptions/sub_charge/charge" {
+				t.Errorf("unexpected path %s", r.URL.Path)
+			}
+			var body map[string]json.RawMessage
+			if e := json.NewDecoder(r.Body).Decode(&body); e != nil {
+				t.Error(e)
+			}
+			if string(body["effective_from"]) != `"next_billing_period"` {
+				t.Error("late settlement charged outside renewal")
+			}
+			if _, exists := body["custom_data"]; exists {
+				t.Error("unsupported charge custom_data")
+			}
+			if !strings.Contains(string(body["items"]), jobID) {
+				t.Error("missing price-level attribution")
+			}
+			io.WriteString(w, `{"data":{"id":"sub_charge","status":"active"}}`)
+			return
+		}
+		fmt.Fprintf(w, `{"data":[{"id":"txn_charge","status":"completed","origin":"subscription_recurring","currency_code":"USD","subscription_id":"sub_charge","customer_id":"ctm_charge","custom_data":{"delcore_job_id":"old-subscription-job"},"details":{"totals":{"subtotal":"3000"},"line_items":[{"price_id":"pri_charge","totals":{"subtotal":"1000"}}]},"items":[{"quantity":1,"price":{"id":"pri_charge","product_id":"pro_fixture","custom_data":{"delcore_job_id":%q,"delcore_tenant_id":%q}}}]}]}`, jobID, tenant)
+	}))
+	defer mock.Close()
+	cfg.PaddleURL = mock.URL
+	w := &worker.Worker{DB: db, Config: cfg, Provider: provider.New(cfg), Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	for i := 0; i < 2; i++ {
+		if e := w.Step(ctx); e != nil {
+			t.Fatal(e)
+		}
+		if _, e := db.Pool.Exec(ctx, "UPDATE jobs SET available_at=now()-interval '1 second' WHERE id=$1", jobID); e != nil {
+			t.Fatal(e)
+		}
+	}
+	var state, balance string
+	if e := db.Pool.QueryRow(ctx, "SELECT state,(SELECT sum(amount)::text FROM ledger WHERE tenant_id=$2 AND kind='settlement') FROM jobs WHERE id=$1", jobID, tenant).Scan(&state, &balance); e != nil {
+		t.Fatal(e)
+	}
+	amount, e := accounting.Parse(balance)
+	if e != nil || amount.String() != "10" || state != "done" || charges != 1 {
+		t.Fatal("charge reconciliation", state, balance, charges, e)
+	}
+}
