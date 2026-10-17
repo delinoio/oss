@@ -119,7 +119,20 @@ export const runProbeTool: ProbeRunner = (command, args, cwd, signal) =>
       if (!child.pid) return;
       try {
         if (process.platform !== "win32") process.kill(-child.pid, "SIGKILL");
-        else child.kill("SIGKILL");
+        else {
+          // Windows SIGTERM cannot be caught. When an IPC owner requests cleanup,
+          // terminate the compiler tree before waiting for its pipes to close.
+          spawnSync(
+            join(
+              process.env.SystemRoot ?? "C:\\Windows",
+              "System32",
+              "taskkill.exe",
+            ),
+            ["/PID", String(child.pid), "/T", "/F"],
+            { stdio: "ignore", windowsHide: true, timeout: 5000 },
+          );
+          child.kill("SIGKILL");
+        }
       } catch {
         child.kill("SIGKILL");
       }
