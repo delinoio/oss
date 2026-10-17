@@ -32,6 +32,16 @@ TypeScript application authors, trusted native-plugin authors and framework main
 - Check distribution integrity. Fail on mismatches or incomplete installation.
 - Roll back through an explicitly selected previous compatible version combination without deleting application data.
 
+**Application command target selection**
+
+The application pipeline uses `tn dev [--target <target>]`, `tn build [--target <target>]`, and `tn run [--target <target>]` from the project root containing `typenative.json`. Each command accepts `--json` for structured diagnostics. These command forms describe the required application pipeline; the initial unavailable-pipeline behavior below remains in force until that pipeline exists.
+
+- An explicit `--target` selects exactly one canonical target from the project index. Reject empty, unknown, repeated, or multiple target values and unexpected positional arguments with an argument diagnostic and nonzero exit status before invoking the pipeline.
+- Without `--target`, select the current desktop host/architecture combination. Never infer a mobile target, select an attached device automatically, or fall back to a different architecture. If the host has no canonical desktop target, require an explicit target.
+- `build` creates the selected target's development package only when the host toolchain supports it. Reject unsupported host/target combinations before compiling; do not silently build the host target instead.
+- `dev` and `run` execute desktop applications only on the matching host target. Mobile execution requires explicit `ios-arm64-simulator` or `android-arm64-emulator` and a compatible prepared virtual device. If no compatible device exists, or more than one is available, fail with an actionable diagnostic rather than guessing. The user must leave exactly one compatible virtual device available.
+- `dev` compiles and launches the selected target with the update behavior below. `run` installs and launches the selected target's development package; reject a missing package or mismatched target. `build` does not launch an application. Never use cross-architecture emulation as target acceptance.
+
 **React and native development updates**
 
 - Support the complete stable public client-side React 19.3.1 core API.
