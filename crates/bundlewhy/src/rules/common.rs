@@ -1,7 +1,8 @@
 //! Rules shared by both engines: duplicate packages and minifier blockers.
 
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    cell::RefCell,
+    collections::{BTreeMap, BTreeSet, HashMap},
     path::Path,
     sync::LazyLock,
 };
@@ -267,8 +268,8 @@ fn previous_significant_token<'a>(
         }
     }
     let prefix = &code[..end];
-    if is_identifier_part(last) {
-        let text = extend_word_over_braced_escapes(prefix, trailing_word(prefix));
+    if is_identifier_part(last) || braced_identifier_escape_start(prefix).is_some() {
+        let text = trailing_word(prefix);
         if text.starts_with(|character: char| character.is_ascii_digit()) {
             return Token::Number;
         }
@@ -286,6 +287,26 @@ fn previous_significant_token<'a>(
         }
     }
     Token::Punct(&prefix[end - last.len_utf8()..])
+}
+
+/// Length of the identifier-like word at the start of `text`, Unicode escapes
+/// (`\u006f`, `\u{6f}`) included. The forward counterpart of [`trailing_word`]:
+/// a word that continues with an escape is one word (`in\u0061` is a name, not
+/// the keyword `in`).
+fn leading_word_len(text: &str) -> usize {
+    let mut length = 0;
+    while let Some(character) = text[length..].chars().next() {
+        if is_identifier_part(character) {
+            length += character.len_utf8();
+        } else if let Some((decoded, escape)) = decode_identifier_escape(&text[length..])
+            && is_identifier_part(decoded)
+        {
+            length += escape;
+        } else {
+            break;
+        }
+    }
+    length
 }
 
 /// Whether a `.` that directly follows `head` is the last character of a
@@ -402,10 +423,8 @@ fn next_significant_token<'a>(
             index += character.len_utf8();
             continue;
         }
-        if is_identifier_part(character) {
-            let length = code[index..]
-                .find(|part: char| !is_identifier_part(part))
-                .unwrap_or(code.len() - index);
+        if is_identifier_part(character) || starts_with_identifier_escape(&code[index..]) {
+            let length = leading_word_len(&code[index..]);
             let text = &code[index..index + length];
             let token = if character.is_ascii_digit() {
                 Token::Number
@@ -705,30 +724,80 @@ pub(super) fn is_identifier_part(character: char) -> bool {
 }
 
 /// The identifier-like word at the end of `text`, or an empty string.
+///
+/// A Unicode escape that continues the word to the left belongs to it, in both
+/// forms: `\u006f` (four hex digits) and `\u{6f}` (braced). The word of
+/// `function fo\u006f()` ends at the `o` and starts at the `f`; the word of
+/// `function \u{66}oo` starts at the backslash. An escaped word never equals a
+/// keyword, because a reserved word cannot be written with an escape. A text
+/// that ends with a braced escape (`name\u{6f}`) has that word as its last
+/// token even though it ends with `}`.
 fn trailing_word(text: &str) -> &str {
-    let start = text
-        .rfind(|character: char| !is_identifier_part(character))
-        .map_or(0, |index| {
-            index + text[index..].chars().next().map_or(1, char::len_utf8)
-        });
-    &text[start..]
+    let mut start = text.len();
+    loop {
+        let head = &text[..start];
+        let plain = head
+            .rfind(|character: char| !is_identifier_part(character))
+            .map_or(0, |index| {
+                index + head[index..].chars().next().map_or(1, char::len_utf8)
+            });
+        start = plain;
+        // Four-digit escape: its `u` and digits are the start of the plain
+        // word that was just read, and the backslash lies before it.
+        if let Some(escape) = text[..start].strip_suffix('\\')
+            && decode_identifier_escape(&text[escape.len()..]).is_some_and(|(character, length)| {
+                length == 6 && start + 5 <= text.len() && is_identifier_part(character)
+            })
+        {
+            start = escape.len();
+            continue;
+        }
+        // Braced escape: it ends with `}`, which no plain word contains.
+        if let Some(escape_start) = braced_identifier_escape_start(&text[..start]) {
+            start = escape_start;
+            continue;
+        }
+        return &text[start..];
+    }
+}
+
+/// True when `text` ends with an identifier character, written plainly or as a
+/// braced Unicode escape (`name\u{6f}`).
+fn ends_with_identifier_part(text: &str) -> bool {
+    text.chars().next_back().is_some_and(is_identifier_part)
+        || braced_identifier_escape_start(text).is_some()
+}
+
+/// Memo of heritage-expression decisions for one chunk, keyed by the offset of
+/// the closing `}`. Every `{` of a chunk asks whether a class heading precedes
+/// it, and the answer for a brace pair never changes, so each pair is decided
+/// once instead of once per later brace.
+#[derive(Default)]
+pub(super) struct HeritageCache {
+    starts: RefCell<HashMap<usize, Option<usize>>>,
 }
 
 /// Whether the `{` at `open` starts an object literal or a class body, whose
 /// members may be named like control keywords, instead of a statement block.
 ///
 /// Decided from the code before the brace, comments removed:
-/// - blocks follow `)`, `;`, `{`, `}`, `=>`, a statement keyword (`else`,
-///   `try`, `do`, `finally`, `static`) or the start of the code;
+/// - blocks follow `)`, `;`, `{`, `=>`, a statement keyword (`else`, `try`,
+///   `do`, `finally`, `static`) or the start of the code;
+/// - a `}` ends a block unless it closes a class or function expression in the
+///   heritage clause of a class heading (`class C extends class {} {`);
 /// - an object literal follows an operator, an opener, a comma, a colon that is
 ///   not a `case` label, or an expression keyword such as `return`;
 /// - a class body follows a heading that contains `class`, even when the
-///   heritage is a call expression (`class A extends mix(B) {`) or holds a
-///   class or function expression (`class A extends class {} {`).
+///   heritage is a call expression (`class A extends mix(B) {`).
 ///
 /// This is a lexical guess, not a parse. A brace that cannot be classified is
 /// treated as holding members, which keeps its keyword-named calls unguarded.
-pub(super) fn brace_holds_members(code: &str, open: usize, ignored: &[(usize, usize)]) -> bool {
+pub(super) fn brace_holds_members(
+    code: &str,
+    open: usize,
+    ignored: &[(usize, usize)],
+    cache: &HeritageCache,
+) -> bool {
     let prefix = strip_comments_for_prefix(code, open, ignored);
     if prefix.ends_with("=>") {
         return false;
@@ -736,18 +805,19 @@ pub(super) fn brace_holds_members(code: &str, open: usize, ignored: &[(usize, us
     let Some(last) = prefix.chars().next_back() else {
         return false;
     };
-    match last {
-        ')' => class_heading_precedes(code, prefix.len(), ignored),
-        ';' | '{' => false,
-        // A block ends with `}`, but so does a class or function expression in
-        // a heritage clause (`class A extends class {} {`).
-        '}' => class_heading_precedes(code, prefix.len(), ignored),
-        ':' => !is_case_label(prefix, ignored),
-        _ if is_identifier_part(last) => match trailing_word(prefix) {
+    // A name that ends with a braced escape (`name\u{6f}`) ends with `}` but
+    // is a word like any other.
+    if is_identifier_part(last) || braced_identifier_escape_start(prefix).is_some() {
+        return match trailing_word(prefix) {
             "else" | "try" | "do" | "finally" | "static" => false,
             word if OBJECT_VALUE_KEYWORDS.contains(&word) => true,
-            _ => class_heading_precedes(code, prefix.len(), ignored),
-        },
+            _ => class_heading_precedes(code, prefix.len(), ignored, cache),
+        };
+    }
+    match last {
+        ')' | '}' => class_heading_precedes(code, prefix.len(), ignored, cache),
+        ';' | '{' => false,
+        ':' => !is_case_label(prefix, ignored),
         _ => true,
     }
 }
@@ -758,8 +828,13 @@ pub(super) fn brace_holds_members(code: &str, open: usize, ignored: &[(usize, us
 /// `}`, or at an unbalanced opener. A type-argument list (`class C<T extends {
 /// a: 1 }>`, `extends B<{ a: 1 }>`) is skipped as a whole, so the braces and
 /// `=` inside it do not end the head.
-pub(super) fn class_heading_precedes(code: &str, end: usize, ignored: &[(usize, usize)]) -> bool {
-    class_heading_scan(code, end, ignored, false)
+pub(super) fn class_heading_precedes(
+    code: &str,
+    end: usize,
+    ignored: &[(usize, usize)],
+    cache: &HeritageCache,
+) -> bool {
+    class_heading_scan(code, end, ignored, false, cache)
 }
 
 /// Shared body of [`class_heading_precedes`]. `stop_at_assignment` also ends
@@ -770,110 +845,221 @@ fn class_heading_scan(
     end: usize,
     ignored: &[(usize, usize)],
     stop_at_assignment: bool,
+    cache: &HeritageCache,
 ) -> bool {
-    class_keyword_scan(code, end, ignored, stop_at_assignment, HeadKeyword::Class).is_some()
+    class_keyword_scan(code, end, ignored, stop_at_assignment, cache).is_some()
 }
 
-/// Which keywords [`class_keyword_scan`] accepts as the start of a head.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum HeadKeyword {
-    /// Only `class`: the head of a class body.
-    Class,
-    /// `class` or `function`: the head of a body that may belong to a nested
-    /// expression in a heritage clause (`class C extends function () {} {`).
-    ClassOrFunction,
+/// What a backwards head scan reports.
+enum HeadStep {
+    /// The offset of the `class` keyword that starts the head.
+    Found(usize),
+    /// The head holds no `class` keyword.
+    Missing,
+    /// A top-level `}` at this offset may close a heritage expression.
+    Brace(usize),
 }
 
-/// The offset of the `class` keyword (or, for [`HeadKeyword::ClassOrFunction`],
-/// the `function` keyword) that starts the head ending at `end`, or `None` when
-/// the head holds none. The scan is described on [`class_heading_precedes`].
+/// One backwards head scan. The scan is resumable so that nested heritage
+/// expressions run on an explicit stack instead of the call stack.
+struct HeadScan {
+    end: usize,
+    position: usize,
+    depth: usize,
+    /// End offset of the identifier-like word being read backwards.
+    word_end: Option<usize>,
+    stop_at_assignment: bool,
+    /// The `}` whose heritage expression this scan decides, if any.
+    close: Option<usize>,
+}
+
+impl HeadScan {
+    fn new(end: usize, stop_at_assignment: bool, close: Option<usize>) -> Self {
+        Self {
+            end,
+            position: end,
+            depth: 0,
+            word_end: None,
+            stop_at_assignment,
+            close,
+        }
+    }
+
+    fn is_class(&self, code: &str, word_start: usize, word_end: usize) -> bool {
+        // `class` is a keyword unless it names a member (`a.class`, `#class`)
+        // or a property or method (`class: {`, `class() {`).
+        &code[word_start..word_end] == "class"
+            && !code[..word_start].trim_end().ends_with(['.', '#'])
+            && !code[word_end..self.end]
+                .trim_start()
+                .starts_with([':', '(', '=', ','])
+    }
+
+    /// Reads backwards until the head is decided or a top-level `}` needs a
+    /// decision. After [`HeadStep::Brace`] the caller either moves `position`
+    /// to the start of the heritage expression or ends the scan.
+    fn advance(&mut self, code: &str, ignored: &[(usize, usize)]) -> HeadStep {
+        // Walk char boundaries only: `position` is always the start of a char.
+        while let Some(character) = code[..self.position].chars().next_back() {
+            let width = character.len_utf8();
+            self.position -= width;
+            let position = self.position;
+            if !in_ranges(ignored, position) {
+                if is_identifier_part(character) {
+                    self.word_end.get_or_insert(position + width);
+                    continue;
+                }
+                // A braced escape (`\u{6f}`) is an identifier character that
+                // ends with `}`: it continues the word instead of closing a
+                // brace pair, and the word stays whole behind it.
+                if character == '}'
+                    && let Some(escape_start) =
+                        braced_identifier_escape_start(&code[..position + width])
+                    && !in_ranges(ignored, escape_start)
+                {
+                    self.word_end.get_or_insert(position + width);
+                    self.position = escape_start;
+                    continue;
+                }
+                // The backslash of a four-digit escape (`\u006f`) belongs to
+                // the word that was read after it.
+                if character == '\\'
+                    && self.word_end.is_some_and(|finish| {
+                        position + 6 <= finish
+                            && decode_identifier_escape(&code[position..]).is_some_and(
+                                |(decoded, length)| length == 6 && is_identifier_part(decoded),
+                            )
+                    })
+                {
+                    continue;
+                }
+            }
+            if let Some(finish) = self.word_end.take()
+                && self.depth == 0
+                && self.is_class(code, position + width, finish)
+            {
+                return HeadStep::Found(position + width);
+            }
+            if in_ranges(ignored, position) {
+                continue;
+            }
+            match character {
+                ')' | ']' => self.depth += 1,
+                '(' | '[' => {
+                    let Some(depth) = self.depth.checked_sub(1) else {
+                        return HeadStep::Missing;
+                    };
+                    self.depth = depth;
+                }
+                // The `>` of an arrow (`=>`) never closes a type-argument list.
+                '>' if self.depth == 0 && !code[..position].ends_with('=') => {
+                    if let Some(open) = type_arguments_open(code, position, ignored) {
+                        self.position = open;
+                    }
+                }
+                '}' if self.depth == 0 => return HeadStep::Brace(position),
+                '{' | ';' if self.depth == 0 => return HeadStep::Missing,
+                '=' if self.depth == 0 && self.stop_at_assignment => return HeadStep::Missing,
+                _ => {}
+            }
+        }
+        match self.word_end {
+            Some(finish) if self.depth == 0 && self.is_class(code, 0, finish) => HeadStep::Found(0),
+            _ => HeadStep::Missing,
+        }
+    }
+}
+
+/// The offset of the `class` keyword that starts the head ending at `end`, or
+/// `None` when the head holds none. The scan is described on
+/// [`class_heading_precedes`].
 ///
-/// A class or function expression in the heritage clause
-/// (`class C extends class {} {`, `class C extends new class {} {`,
-/// `class C extends function () {} {`) has a body of its own. When a top-level
-/// `}` closes the body of such an expression, the scan jumps to its keyword
-/// and keeps reading the outer head. Any other `}` ends the head.
+/// A class or function expression in the heritage clause (`class C extends
+/// class {} {`, `class C extends function () {} {`) has a body of its own. When
+/// a top-level `}` closes the body of such an expression that follows
+/// `extends`, the scan jumps to the start of the expression and keeps reading
+/// the outer head. Any other `}` ends the head.
+///
+/// Nested heritage expressions run on an explicit stack, and each decided brace
+/// pair is memoised in `cache`, so neither deep nesting nor a long run of
+/// sibling brace pairs can overflow the stack or rescan the same text.
 fn class_keyword_scan(
     code: &str,
     end: usize,
     ignored: &[(usize, usize)],
     stop_at_assignment: bool,
-    keywords: HeadKeyword,
+    cache: &HeritageCache,
 ) -> Option<usize> {
-    let mut depth = 0usize;
-    // End offset of the identifier-like word being read backwards.
-    let mut word_end: Option<usize> = None;
-    let is_keyword = |word_start: usize, word_end: usize| {
-        let word = &code[word_start..word_end];
-        // A keyword names a member (`a.class`, `#class`) or a property or
-        // method (`class: {`, `class() {`) when it follows a member operator
-        // or is followed by one of these. A `function` keyword is followed by
-        // its parameter list, so `(` does not exclude it.
-        let is_class = word == "class";
-        let is_function = word == "function" && keywords == HeadKeyword::ClassOrFunction;
-        let excluded: &[char] = if is_class {
-            &[':', '(', '=', ',']
-        } else {
-            &[':', '=', ',']
-        };
-        (is_class || is_function)
-            && !code[..word_start].trim_end().ends_with(['.', '#'])
-            && !code[word_end..end].trim_start().starts_with(excluded)
-    };
-    // Walk char boundaries only: `position` is always the start of a char.
-    let mut position = end;
-    while let Some(character) = code[..position].chars().next_back() {
-        let width = character.len_utf8();
-        position -= width;
-        if !in_ranges(ignored, position) && is_identifier_part(character) {
-            word_end.get_or_insert(position + width);
-            continue;
-        }
-        if let Some(finish) = word_end.take()
-            && depth == 0
-            && is_keyword(position + width, finish)
-        {
-            return Some(position + width);
-        }
-        if in_ranges(ignored, position) {
-            continue;
-        }
-        match character {
-            ')' | ']' => depth += 1,
-            '(' | '[' => depth = depth.checked_sub(1)?,
-            // The `>` of an arrow (`=>`) never closes a type-argument list.
-            '>' if depth == 0 && !code[..position].ends_with('=') => {
-                if let Some(open) = type_arguments_open(code, position, ignored) {
-                    position = open;
+    let mut stack = vec![HeadScan::new(end, stop_at_assignment, None)];
+    loop {
+        let scan = stack.last_mut()?;
+        // `Some(found)` once the innermost scan has ended.
+        let mut finished = match scan.advance(code, ignored) {
+            HeadStep::Found(keyword) => Some(Some(keyword)),
+            HeadStep::Missing => Some(None),
+            HeadStep::Brace(close) => {
+                let known = cache.starts.borrow().get(&close).copied();
+                match known {
+                    Some(Some(start)) => {
+                        scan.position = start;
+                        None
+                    }
+                    Some(None) => Some(None),
+                    None => match heritage_expression(code, close, ignored) {
+                        HeritageExpression::Decided(decision) => {
+                            cache.starts.borrow_mut().insert(close, decision);
+                            match decision {
+                                Some(start) => {
+                                    scan.position = start;
+                                    None
+                                }
+                                None => Some(None),
+                            }
+                        }
+                        HeritageExpression::ClassBody(open) => {
+                            stack.push(HeadScan::new(open, true, Some(close)));
+                            None
+                        }
+                    },
                 }
             }
-            '}' if depth == 0 => {
-                position = heritage_expression_start(code, position, ignored)?;
+        };
+        while let Some(found) = finished.take() {
+            let scan = stack.pop()?;
+            let Some(close) = scan.close else {
+                return found;
+            };
+            let start = found.filter(|keyword| extends_precedes(code, *keyword, ignored));
+            cache.starts.borrow_mut().insert(close, start);
+            let parent = stack.last_mut()?;
+            match start {
+                Some(start) => parent.position = start,
+                None => finished = Some(None),
             }
-            '{' | ';' if depth == 0 => return None,
-            '=' if depth == 0 && stop_at_assignment => return None,
-            _ => {}
         }
     }
-    word_end
-        .filter(|finish| depth == 0 && is_keyword(0, *finish))
-        .map(|_| 0)
 }
 
-/// The offset of the `class` or `function` keyword of the class or function
-/// expression whose body ends with the `}` at `close`, when that expression is
-/// the heritage of a class (`class C extends class { ... } {`). The keyword may
-/// follow `new` (`extends new class {} {`) and, for a function, `async`
-/// (`extends async function () {} {`). `None` for any other brace pair.
-fn heritage_expression_start(
-    code: &str,
-    close: usize,
-    ignored: &[(usize, usize)],
-) -> Option<usize> {
+/// How the brace pair that ends with a top-level `}` reads as a heritage
+/// expression.
+enum HeritageExpression {
+    /// Decided without a nested scan: the offset of the expression start when
+    /// it follows `extends`, or `None` for any other brace pair.
+    Decided(Option<usize>),
+    /// A class body opened at this offset; its heading decides the pair.
+    ClassBody(usize),
+}
+
+/// Reads the brace pair that ends with the `}` at `close` as the body of a
+/// heritage expression (`class C extends class { ... } {`,
+/// `class C extends function () { ... } {`).
+fn heritage_expression(code: &str, close: usize, ignored: &[(usize, usize)]) -> HeritageExpression {
     let mut nesting = 0usize;
     let mut position = close;
     let open = loop {
-        let character = code[..position].chars().next_back()?;
+        let Some(character) = code[..position].chars().next_back() else {
+            return HeritageExpression::Decided(None);
+        };
         position -= character.len_utf8();
         if in_ranges(ignored, position) {
             continue;
@@ -887,16 +1073,23 @@ fn heritage_expression_start(
             _ => {}
         }
     };
-    let keyword = class_keyword_scan(code, open, ignored, true, HeadKeyword::ClassOrFunction)?;
-    let mut before = strip_comments_for_prefix(code, keyword, ignored);
-    if code[keyword..].starts_with("function")
-        && extend_word_over_braced_escapes(before, trailing_word(before)) == "async"
-    {
-        before = strip_comments_for_prefix(code, before.len() - "async".len(), ignored);
+    match function_expression_start(code, open, ignored) {
+        Some(start) => {
+            HeritageExpression::Decided(extends_precedes(code, start, ignored).then_some(start))
+        }
+        None => HeritageExpression::ClassBody(open),
     }
-    // Each `new` applies to the expression after it (`new new class {}`).
+}
+
+/// Whether the expression that starts at `start` is the heritage of a class:
+/// the word before it, comments removed, is `extends`. Each `new` applies to
+/// the expression after it (`extends new class {} {`, `extends new new class {}
+/// {`). A member named `new` or `extends` (`a.new`, `#extends`) is not a
+/// keyword.
+fn extends_precedes(code: &str, start: usize, ignored: &[(usize, usize)]) -> bool {
+    let mut before = strip_comments_for_prefix(code, start, ignored);
     loop {
-        let word = extend_word_over_braced_escapes(before, trailing_word(before));
+        let word = trailing_word(before);
         let member = before[..before.len() - word.len()]
             .trim_end()
             .ends_with(['.', '#']);
@@ -904,10 +1097,60 @@ fn heritage_expression_start(
             "new" if !member => {
                 before = strip_comments_for_prefix(code, before.len() - word.len(), ignored);
             }
-            "extends" if !member => return Some(keyword),
-            _ => return None,
+            "extends" if !member => return true,
+            _ => return false,
         }
     }
+}
+
+/// The offset where the function expression whose body opens at `open` starts
+/// (`async function* name(params) {`, with `async` included), or `None` when
+/// the text before the brace is not a function head.
+fn function_expression_start(code: &str, open: usize, ignored: &[(usize, usize)]) -> Option<usize> {
+    let prefix = strip_comments_for_prefix(code, open, ignored);
+    if !prefix.ends_with(')') {
+        return None;
+    }
+    let mut depth = 0usize;
+    let mut position = prefix.len();
+    let parameters_open = loop {
+        let character = code[..position].chars().next_back()?;
+        position -= character.len_utf8();
+        if in_ranges(ignored, position) {
+            continue;
+        }
+        match character {
+            ')' | ']' => depth += 1,
+            '(' | '[' => {
+                depth = depth.checked_sub(1)?;
+                if depth == 0 {
+                    break position;
+                }
+            }
+            _ => {}
+        }
+    };
+    let mut head = strip_comments_for_prefix(code, parameters_open, ignored);
+    let name = trailing_word(head);
+    if name != "function" {
+        head = strip_comments_for_prefix(code, head.len() - name.len(), ignored);
+    }
+    if head.ends_with('*') {
+        head = strip_comments_for_prefix(code, head.len() - 1, ignored);
+    }
+    if trailing_word(head) != "function" {
+        return None;
+    }
+    let mut start = head.len() - "function".len();
+    // `a.function (` and `#function (` name a member, not a function head.
+    if code[..start].trim_end().ends_with(['.', '#']) {
+        return None;
+    }
+    let before = strip_comments_for_prefix(code, start, ignored);
+    if trailing_word(before) == "async" {
+        start = before.len() - "async".len();
+    }
+    Some(start)
 }
 
 /// The offset of the `<` that opens the type-argument list closed by the `>` at
@@ -941,11 +1184,7 @@ fn type_arguments_open(code: &str, close: usize, ignored: &[(usize, usize)]) -> 
             '<' if nesting == 0 => {
                 angles -= 1;
                 if angles == 0 {
-                    return code[..position]
-                        .chars()
-                        .next_back()
-                        .is_some_and(is_identifier_part)
-                        .then_some(position);
+                    return ends_with_identifier_part(&code[..position]).then_some(position);
                 }
             }
             _ => {}
@@ -1622,11 +1861,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         };
         // `if (eval) {`, `while (eval) {` and similar are conditions, not
         // parameter lists. `catch (eval) {` does bind `eval`.
-        let keyword = code[..whole.start()]
-            .trim_end()
-            .rsplit(|character: char| !is_identifier_part(character))
-            .next()
-            .unwrap_or("");
+        let keyword = trailing_word(code[..whole.start()].trim_end());
         if whole.as_str().ends_with('{')
             && is_control_flow_parentheses(&code, whole.start(), keyword)
         {
@@ -1678,11 +1913,7 @@ fn eval_shadow_scopes(source: &str, ignored: &[(usize, usize)]) -> Vec<(usize, u
         let Some((body, arrow)) = arrow_or_function_body(bytes, close) else {
             continue;
         };
-        let keyword = code[..open]
-            .trim_end()
-            .rsplit(|character: char| !is_identifier_part(character))
-            .next()
-            .unwrap_or("");
+        let keyword = trailing_word(code[..open].trim_end());
         if !arrow && is_control_flow_parentheses(&code, open, keyword) {
             continue;
         }
@@ -1880,17 +2111,6 @@ fn braced_identifier_escape_start(text: &str) -> Option<usize> {
     decode_identifier_escape(&text[escape_start..])
         .filter(|(character, _)| is_identifier_part(*character))
         .map(|_| escape_start)
-}
-
-/// Widens the trailing word `text` of `prefix` over the braced Unicode escapes
-/// that continue it to the left (`x\u{61}function` is one word).
-fn extend_word_over_braced_escapes<'a>(prefix: &'a str, text: &'a str) -> &'a str {
-    let mut start = prefix.len() - text.len();
-    while let Some(escape_start) = braced_identifier_escape_start(&prefix[..start]) {
-        start = escape_start;
-        start -= trailing_word(&prefix[..start]).len();
-    }
-    &prefix[start..]
 }
 
 /// End of an expression-bodied arrow function whose body starts at `from`:
@@ -2520,12 +2740,7 @@ fn is_control_flow_parentheses(code: &str, open: usize, keyword: &str) -> bool {
     let prefix = code[..open].trim_end();
     let await_start = prefix.len().saturating_sub("await".len());
     let before_await = prefix[..await_start].trim_end();
-    before_await.strip_suffix("for").is_some_and(|before_for| {
-        before_for
-            .chars()
-            .next_back()
-            .is_none_or(|character| !is_identifier_part(character))
-    })
+    trailing_word(before_await) == "for"
 }
 
 /// Finds the block that starts a function body after its parameter list.
@@ -2668,7 +2883,11 @@ fn named_function_is_expression(
 ) -> bool {
     let raw_prefix = &code[..start];
     let prefix = raw_prefix.trim_end();
-    let prefix = prefix.strip_suffix("async").unwrap_or(prefix).trim_end();
+    let prefix = if trailing_word(prefix) == "async" {
+        prefix[..prefix.len() - "async".len()].trim_end()
+    } else {
+        prefix
+    };
     if prefix.ends_with("=>") {
         return true;
     }
@@ -2679,18 +2898,14 @@ fn named_function_is_expression(
     if preceding.is_some_and(|byte| b"=([,:?!+-*/%&|^~".contains(&byte)) {
         return true;
     }
-    let keyword = prefix
-        .rsplit(|character: char| !is_identifier_part(character))
-        .next();
+    let keyword = trailing_word(prefix);
     if !matches!(
         keyword,
-        Some("return" | "throw" | "yield" | "await" | "void" | "new")
+        "return" | "throw" | "yield" | "await" | "void" | "new"
     ) {
         return false;
     }
-    let keyword_start = prefix
-        .len()
-        .saturating_sub(keyword.unwrap_or_default().len());
+    let keyword_start = prefix.len() - keyword.len();
     !raw_prefix[keyword_start..].contains(is_line_terminator)
 }
 
@@ -2837,6 +3052,7 @@ struct MemberScan<'a> {
     ignored: &'a [(usize, usize)],
     code: String,
     blocks: Vec<(usize, usize)>,
+    heritage: HeritageCache,
 }
 
 impl<'a> MemberScan<'a> {
@@ -2848,6 +3064,7 @@ impl<'a> MemberScan<'a> {
             ignored,
             code,
             blocks,
+            heritage: HeritageCache::default(),
         }
     }
 
@@ -2877,7 +3094,7 @@ impl<'a> MemberScan<'a> {
     /// the masked code by character, so non-ASCII names and type-argument
     /// lists with braces (`class C<T extends { a: 1 }> {`) are handled.
     fn has_class_header(&self, open: usize) -> bool {
-        class_heading_scan(&self.code, open, &[], true)
+        class_heading_scan(&self.code, open, &[], true, &self.heritage)
     }
 
     fn brace_kind(&self, open: usize) -> BraceKind {
@@ -4849,11 +5066,20 @@ y=/process.env.F/.test(z),process.env.G"#;
             "const D = class C extends class {} { eval(value) {} };",
             "class C extends class<T extends { a: 1 }> {} { eval(value) {} }",
             "class C extends class { eval(v) {} } { eval(value) {} }",
+            "class C extends function () {} { eval(value) {} }",
+            "class C extends function named(a, b = {}) { return { a } } { eval(value) {} }",
+            "class C extends async function* () {} { eval(value) {} }",
+            "class C extends function () {} /* c */ { eval(value) {} }",
         ]);
         // A class expression that is not the heritage ends the head, so the
         // block after it keeps its finding.
         assert_all_reported(&[
             ("const D = class {}\n{ eval(code) {} }", "eval(code)"),
+            ("const D = function () {}\n{ eval(code) {} }", "eval(code)"),
+            (
+                "class C extends B { m() {} }\n{ eval(code) {} }",
+                "eval(code)",
+            ),
             ("class C extends B {}\n{ eval(code) {} }", "eval(code)"),
             (
                 "const D = class extends B {};\nif (x) { eval(code) {} }",
@@ -5026,24 +5252,44 @@ y=/process.env.F/.test(z),process.env.G"#;
             let source = format!("class C extends {heritage} {{ if(x) {{}} }}");
             let open = source.rfind("{ if").unwrap();
             assert!(
-                brace_holds_members(&source, open, &non_code_ranges(&source)),
+                brace_holds_members(
+                    &source,
+                    open,
+                    &non_code_ranges(&source),
+                    &HeritageCache::default()
+                ),
                 "{source:?}"
             );
             assert!(
-                class_heading_precedes(&source, open, &non_code_ranges(&source)),
+                class_heading_precedes(
+                    &source,
+                    open,
+                    &non_code_ranges(&source),
+                    &HeritageCache::default()
+                ),
                 "{source:?}"
             );
             // A class declaration followed by a block is not a heritage.
             let source = "class C {}\n{ if(x) {} }";
             let open = source.rfind("{ if").unwrap();
             assert!(
-                !brace_holds_members(source, open, &non_code_ranges(source)),
+                !brace_holds_members(
+                    source,
+                    open,
+                    &non_code_ranges(source),
+                    &HeritageCache::default()
+                ),
                 "{source:?}"
             );
             let source = format!("const D = {heritage}\n{{ if(x) {{}} }}");
             let open = source.rfind("{ if").unwrap();
             assert!(
-                !class_heading_precedes(&source, open, &non_code_ranges(&source)),
+                !class_heading_precedes(
+                    &source,
+                    open,
+                    &non_code_ranges(&source),
+                    &HeritageCache::default()
+                ),
                 "{source:?}"
             );
         }
@@ -9878,6 +10124,414 @@ y=/process.env.F/.test(z),process.env.G"#;
         code.push_str("export {}");
         let ignored = non_code_ranges(&code);
         assert_eq!(await_operator_offsets(&code, &ignored).len(), 3000);
+    }
+
+    #[test]
+    fn async_methods_after_heritage_expressions_keep_their_context() {
+        let gate = await_gate();
+        for heritage in [
+            "class {}",
+            "class { run() {} }",
+            "class B { x = { a: { b: 1 } } }",
+            "class extends class {} {}",
+            "class /* c */ {} // d\n",
+            "function () {}",
+            "function* () { return { a: 1 } }",
+            "function named(a = {}, b = [{}]) { if (a) { run() } }",
+            "async function () {}",
+            "(class {})",
+            "(function () {})",
+            "Base",
+            "mix(Base)",
+            "mix({ a: 1 })",
+        ] {
+            for wrapper in ["{}", "function outer() { {} }"] {
+                let class = format!(
+                    "class C extends {heritage} {{ async m() {{ {gate} }} static async s() {{ \
+                     {gate} }} }}"
+                );
+                let code = wrapper.replace("{}", &class);
+                assert_await_is_an_operator(&code);
+                // The same layout with a plain method keeps `await` a call.
+                let plain = code
+                    .replace("async m", "m")
+                    .replace("static async s", "static s");
+                assert_await_is_a_call(&plain);
+            }
+        }
+    }
+
+    /// Spellings of the identifier `foo` that use Unicode escapes in every
+    /// position: first, middle and last character, four-digit and braced
+    /// forms, and names made of escapes only.
+    const ESCAPED_FOO_NAMES: [&str; 12] = [
+        "foo",
+        "\\u0066oo",
+        "f\\u006fo",
+        "fo\\u006f",
+        "\\u{66}oo",
+        "f\\u{6f}o",
+        "fo\\u{6f}",
+        "\\u{0066}oo",
+        "\\u0066\\u006f\\u006f",
+        "\\u{66}\\u{6f}\\u{6f}",
+        "\\u0066\\u{6f}\\u006f",
+        "fo\\u{6f}\\u006f",
+    ];
+
+    #[test]
+    fn trailing_word_reads_whole_escaped_names() {
+        let cases = [
+            ("", ""),
+            ("x = ", ""),
+            ("function foo", "foo"),
+            ("function fo\\u006f", "fo\\u006f"),
+            ("function \\u006fo", "\\u006fo"),
+            ("function \\u{6f}o", "\\u{6f}o"),
+            ("function fo\\u{6f}", "fo\\u{6f}"),
+            ("x \\u0061\\u{62}\\u0063", "\\u0061\\u{62}\\u0063"),
+            ("x \\u{61}\\u{62}", "\\u{61}\\u{62}"),
+            ("caf\u{e9}\\u0062", "caf\u{e9}\\u0062"),
+            ("a.\\u{61}b", "\\u{61}b"),
+            // Text that is not an identifier escape stays outside the word.
+            ("a \\u0020b", "u0020b"),
+            ("a \\u00zzb", "u00zzb"),
+            ("a \\u00", "u00"),
+            ("a \\u{}", ""),
+            ("a \\u{zz}", ""),
+            ("a \\u{110000}", ""),
+            ("a \\u{20}", ""),
+            ("a \\x61b", "x61b"),
+            ("a {61}", ""),
+        ];
+        for (text, expected) in cases {
+            assert_eq!(trailing_word(text), expected, "{text:?}");
+        }
+    }
+
+    #[test]
+    fn escaped_words_are_never_keywords() {
+        let cases = [
+            ("x = \\u0072eturn", "\\u0072eturn"),
+            ("x = \\u{72}eturn", "\\u{72}eturn"),
+            ("x = ret\\u0075rn", "ret\\u0075rn"),
+            ("x = ret\\u{75}rn", "ret\\u{75}rn"),
+            ("x = \\u{61}return", "\\u{61}return"),
+            ("x = \\u0061return", "\\u0061return"),
+            ("x = return\\u0061", "return\\u0061"),
+            ("x = return\\u{61}", "return\\u{61}"),
+        ];
+        for (text, word) in cases {
+            assert_eq!(trailing_word(text), word, "{text:?}");
+            assert!(
+                !OBJECT_VALUE_KEYWORDS.contains(&trailing_word(text)),
+                "{text:?}"
+            );
+            match previous_significant_token(text, text.len(), &[]) {
+                Token::Word { text, member } => assert_eq!((text, member), (word, false)),
+                token => panic!("{text:?} read as {token:?}"),
+            }
+        }
+        // The forward reader keeps an escape-continued word whole as well.
+        for (text, word) in [
+            ("in\\u0061 b", "in\\u0061"),
+            ("in\\u{61} b", "in\\u{61}"),
+            ("\\u0069n b", "\\u0069n"),
+            ("\\u{69}n b", "\\u{69}n"),
+            ("instanceof\\u{61} b", "instanceof\\u{61}"),
+            ("in b", "in"),
+        ] {
+            assert_eq!(
+                next_significant_token(text, 0, &[]),
+                (
+                    0,
+                    Token::Word {
+                        text: word,
+                        member: false
+                    }
+                ),
+                "{text:?}"
+            );
+        }
+    }
+
+    /// Whether the last `{` of `code` starts an object literal or class body.
+    fn last_brace_holds_members(code: &str) -> bool {
+        let open = code.rfind('{').expect("code ends with a brace");
+        let ignored = non_code_ranges(code);
+        brace_holds_members(code, open, &ignored, &HeritageCache::default())
+    }
+
+    #[test]
+    fn escaped_identifier_characters_keep_heritage_scans_whole() {
+        // Each head is a class heading whose heritage holds an escaped name,
+        // so the final brace is a class body.
+        let mut heads = Vec::new();
+        for name in ESCAPED_FOO_NAMES {
+            for heritage in [
+                format!("function {name}() {{}}"),
+                format!("function* {name}() {{}}"),
+                format!("function *{name}() {{}}"),
+                format!("function /* c */ {name} /* d */ () {{}}"),
+                format!("async function {name}() {{}}"),
+                format!("async function* {name}(a, b = {{}}) {{ return {{ a }} }}"),
+                format!("new function {name}() {{}}"),
+                format!("function {name}() {{}}.bind(this)"),
+                format!("mix(function {name}() {{}})"),
+                format!("function {name}(a = function {name}() {{}}) {{}}"),
+                format!("class {name} {{}}"),
+                format!("class {name} extends {name} {{}}"),
+                format!("function {name}() {{ class {name} {{}} }}"),
+            ] {
+                heads.push(format!("class C extends {heritage} {{"));
+                heads.push(format!("class {name} extends {heritage} {{"));
+                heads.push(format!(
+                    "class C extends function {name}() {{}} extends {heritage} {{"
+                ));
+            }
+        }
+        // Names, parameters and keywords written with escapes.
+        for (heritage, body) in [
+            ("function f(\\u0061, \\u{62} = {}) {}", "{"),
+            ("function f(\\u0061 = function \\u{62}() {}) {}", "{"),
+            ("function \\u{66}(\\u{61}) {}", "{"),
+            ("class \\u{43} {}", "{"),
+            ("class \\u0043 extends \\u{42} {}", "{"),
+        ] {
+            heads.push(format!("class C extends {heritage} {body}"));
+        }
+        for head in &heads {
+            assert!(last_brace_holds_members(head), "{head:?}");
+            // The same text inside a statement block stays a class body.
+            let nested = format!("function outer() {{ {head}");
+            assert!(last_brace_holds_members(&nested), "{nested:?}");
+        }
+    }
+
+    #[test]
+    fn escape_continued_keywords_do_not_start_a_class_heading() {
+        // A reserved word cannot be written with an escape, and a keyword
+        // glued to an escape continues one identifier. None of these is a
+        // `class` heading, so the final brace is a statement block.
+        let blocks = [
+            "class\\u0061 {",
+            "class\\u{61} {",
+            "class\\u0061\\u{62} {",
+            "\\u0061class {",
+            "\\u{61}class {",
+            "x\\u{61}class {",
+            "x\\u0061class {",
+            "cl\\u0061ss {",
+            "cl\\u{61}ss {",
+            "\\u0063lass {",
+            "\\u{63}lass {",
+            "foo(); class\\u0061 {",
+            "foo(); class\\u{61} {",
+            "{} class\\u{61} {",
+            "x = class\\u{61} {",
+            // Keywords that make an object literal are not keywords either.
+            "x = \\u{61}return {",
+            "x = \\u0061return {",
+            "x = return\\u0061 {",
+            "x = return\\u{61} {",
+            "x = \\u0072eturn {",
+            "x = \\u{72}eturn {",
+            "x = \\u{61}typeof {",
+            "x = typeof\\u{61} {",
+        ];
+        for code in blocks {
+            assert!(!last_brace_holds_members(code), "{code:?}");
+        }
+        // The same words without an escape do hold members.
+        for code in [
+            "class {",
+            "x = class {",
+            "x = return {",
+            "x = typeof {",
+            "foo(); class A {",
+        ] {
+            assert!(last_brace_holds_members(code), "{code:?}");
+        }
+        // An escaped `extends` does not make the function a heritage.
+        for name in [
+            "\\u0065xtends",
+            "\\u{65}xtends",
+            "extends\\u0061",
+            "extends\\u{61}",
+        ] {
+            let heritage = format!("const D = {name} function () {{}}\n{{");
+            assert!(!last_brace_holds_members(&heritage), "{heritage:?}");
+        }
+    }
+
+    #[test]
+    fn async_methods_after_escaped_heritage_names_keep_their_context() {
+        let gate = await_gate();
+        for name in ESCAPED_FOO_NAMES {
+            for heritage in [
+                format!("function {name}() {{}}"),
+                format!("function* {name}() {{}}"),
+                format!("async function {name}(a = {{}}) {{}}"),
+                format!("new function {name}() {{}}"),
+                format!("class {name} {{ run() {{}} }}"),
+                format!("class {name} extends function {name}() {{}} {{}}"),
+            ] {
+                for wrapper in ["{}", "function outer() { {} }"] {
+                    let class = format!(
+                        "class C extends {heritage} {{ async m() {{ {gate} }} static async s() {{ \
+                         {gate} }} }}"
+                    );
+                    let code = wrapper.replace("{}", &class);
+                    assert_await_is_an_operator(&code);
+                    // The same layout with plain methods keeps `await` a call.
+                    let plain = code
+                        .replace("async m", "m")
+                        .replace("static async s", "static s");
+                    assert_await_is_a_call(&plain);
+                }
+            }
+        }
+        // The reported shape: a named function expression as the heritage.
+        assert_await_is_an_operator(
+            "class C extends function f\\u006f() {} { async m() { if (await(process.env.FLAG)) \
+             run() } }",
+        );
+        // An escape-continued `class` is a plain block, whose `async m()` is
+        // a call followed by another block, outside an async function.
+        for keyword in [
+            "class\\u0061",
+            "class\\u{61}",
+            "\\u{61}class",
+            "cl\\u{61}ss",
+        ] {
+            assert_await_is_a_call(&format!("{keyword} {{ async m() {{ {gate} }} }}"));
+        }
+    }
+
+    #[test]
+    fn escaped_words_before_parentheses_and_braces_are_not_keywords() {
+        // `opens_type_literal` reads `extends`, `is` and `keyof` backwards.
+        for (code, expected) in [
+            ("a: extends {", true),
+            ("a: \\u{61}extends {", false),
+            ("a: \\u0061extends {", false),
+            ("a: extends\\u{61} {", false),
+            ("a: keyof {", true),
+            ("a: x\\u{61}keyof {", false),
+            ("a: is {", true),
+            ("a: \\u{61}is {", false),
+        ] {
+            let open = code.rfind('{').unwrap();
+            assert_eq!(opens_type_literal(code, open), expected, "{code:?}");
+        }
+        // `for await (` is a loop head; an escape-continued `for` is not.
+        for (code, expected) in [
+            ("for await (", true),
+            ("for /* c */ await (", false),
+            ("\\u{61}for await (", false),
+            ("\\u0061for await (", false),
+            ("for\\u{61} await (", false),
+            ("x; for await (", true),
+        ] {
+            let open = code.rfind('(').unwrap();
+            assert_eq!(
+                is_control_flow_parentheses(code, open, "await"),
+                expected,
+                "{code:?}"
+            );
+        }
+        // A named function expression is decided by the keyword before it.
+        for (prefix, expected) in [
+            ("x = return ", true),
+            ("x = \\u{61}return ", false),
+            ("x = \\u0061return ", false),
+            ("x = return\\u{61} ", false),
+            ("x = async ", true),
+            ("x = \\u{61}async ", false),
+            ("x = \\u0061async ", false),
+            ("x = new ", true),
+            ("x = \\u{6e}ew ", false),
+        ] {
+            let source = format!("{prefix}function eval() {{}}");
+            let code = masked_code(&source, &[]);
+            assert_eq!(
+                named_function_is_expression(&source, &code, &[], prefix.len()),
+                expected,
+                "{source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn escaped_words_before_parameter_lists_are_not_control_keywords() {
+        // A method named `\u{61}if` is not an `if (eval)` condition, so its
+        // `eval` parameter shadows the global `eval` in the body.
+        for source in [
+            "class C { \\u{61}if(eval) { eval(code) } }",
+            "class C { \\u0061if(eval) { eval(code) } }",
+            "class C { if\\u{61}(eval) { eval(code) } }",
+            "class C { x\\u{61}while(eval) { eval(code) } }",
+            "class C { \\u{61}for(eval) { eval(code) } }",
+        ] {
+            assert_eq!(direct_eval_line(source), None, "{source:?}");
+        }
+        // The unescaped keyword is a condition: the call stays reported.
+        assert_all_reported(&[
+            ("if (eval) { eval(code) }", "eval(code)"),
+            ("while (eval) { eval(code) }", "eval(code)"),
+        ]);
+    }
+
+    #[test]
+    fn ordinary_blocks_are_not_member_enclosures_for_async_methods() {
+        let gate = await_gate();
+        for block in [
+            "function f() {}",
+            "if (a) {}",
+            "class A {}",
+            "class A extends B {}",
+            "class A extends class {} {}",
+            "const f = function () {}",
+        ] {
+            // The brace after `foo()` is a block, so the enclosing async
+            // context stays.
+            let code = format!("async function outer() {{ {block}\n{{ foo()\n{{ {gate} }} }} }}");
+            assert_await_is_an_operator(&code);
+        }
+    }
+
+    #[test]
+    fn heritage_scans_survive_long_and_deep_brace_runs() {
+        let cache = HeritageCache::default();
+        // Sibling brace pairs never nest, however many precede the brace.
+        let siblings = format!(
+            "{}{{",
+            "function f() {} class A extends B {} ".repeat(20_000)
+        );
+        assert!(!brace_holds_members(
+            &siblings,
+            siblings.len() - 1,
+            &[],
+            &cache
+        ));
+        assert!(!class_heading_precedes(
+            &siblings,
+            siblings.len() - 1,
+            &[],
+            &cache
+        ));
+        // Heritage expressions nested deeply decide the outermost class
+        // heading without recursion.
+        let depth = 2_000;
+        let nested = format!(
+            "class A extends {}class {{}}{} {{",
+            "class extends ".repeat(depth),
+            " {}".repeat(depth)
+        );
+        let cache = HeritageCache::default();
+        assert!(brace_holds_members(&nested, nested.len() - 1, &[], &cache));
+        // A memoised decision answers the same question again.
+        assert!(brace_holds_members(&nested, nested.len() - 1, &[], &cache));
     }
 
     #[test]
