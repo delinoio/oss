@@ -1,0 +1,66 @@
+name: pnport Windows development
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "crates/pnport*/**"
+      - "crates/fspy*/**"
+      - "packages/pnport/**"
+      - "scripts/ci/pnport-windows*"
+      - ".github/workflows/pnport-windows.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - ".cargo/**"
+      - ".nvmrc"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - ".github/actions/setup-ci-node/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pnport-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plan:
+    runs-on: ubuntu-22.04
+    outputs:
+      matrix: ${{ steps.matrix.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - id: matrix
+        run: node scripts/ci/pnport-windows-matrix.mjs >> "$GITHUB_OUTPUT"
+
+  windows:
+    needs: plan
+    name: pnport Windows (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ci-node
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-09-28
+          targets: ${{ matrix.target }}
+      - name: Install locked workspace
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify source and installed development archive
+        shell: pwsh
+        run: ./scripts/ci/pnport-windows.ps1 -Target "${{ matrix.target }}" -Suffix "${{ matrix.suffix }}"

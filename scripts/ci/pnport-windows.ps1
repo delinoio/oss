@@ -14,7 +14,15 @@ if ([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString
 }
 function Invoke-Checked([string]$Program, [string[]]$Arguments) {
   & $Program @Arguments
-  if ($LASTEXITCODE -ne 0) { throw "[pnport.windows] validation command failed: $Program" }
+  if ($LASTEXITCODE -ne 0) {
+    if ($Program -eq "cargo" -and $Arguments -contains "windows") {
+      Write-Output "[pnport.windows] diagnostic Node replay; the original validation remains failed"
+      $env:PNPORT_WINDOWS_DEBUGGER = "1"
+      try { & $Program @Arguments "node_filesystem_crypto_loopback_and_replacement_environment" "--" "--exact" "--nocapture" }
+      finally { Remove-Item Env:PNPORT_WINDOWS_DEBUGGER -ErrorAction SilentlyContinue }
+    }
+    throw "[pnport.windows] validation command failed: $Program"
+  }
 }
 Write-Output (@{ event = "pnport_windows_development_validation"; target = $Target; revision = (& git rev-parse HEAD).Trim(); acceptance = "development-only" } | ConvertTo-Json -Compress)
 Invoke-Checked "cargo" @("build", "--locked", "-p", "pnport", "-p", "pnport-preload", "--target", $Target)

@@ -8,14 +8,16 @@
 //! fspy.
 
 use std::{
-    cell::Cell,
     collections::HashMap,
     ffi::{c_void, OsString},
     fs,
     os::windows::ffi::{OsStrExt, OsStringExt},
     path::{Path, PathBuf},
     ptr,
-    sync::{Arc, Mutex, OnceLock, PoisonError, RwLock, RwLockReadGuard},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, OnceLock, PoisonError, RwLock, RwLockReadGuard,
+    },
 };
 
 use ntapi::ntioapi::*;
@@ -35,7 +37,7 @@ use winapi::{
     um::{
         processthreadsapi::GetCurrentThread,
         synchapi::SetEvent,
-        winnt::{ACCESS_MASK, DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH},
+        winnt::{ACCESS_MASK, DLL_PROCESS_ATTACH, DLL_PROCESS_DETACH, DLL_THREAD_DETACH},
     },
 };
 
@@ -64,25 +66,95 @@ const MISSING: NTSTATUS = 0xc0000034u32 as i32;
 const INVALID: NTSTATUS = 0xc000000du32 as i32;
 const IO_ERROR: NTSTATUS = 0xc0000185u32 as i32;
 
-thread_local! { static ENTERED: Cell<bool> = const { Cell::new(false) }; }
+// The injected arm64 DLL faulted in Rust's image-based native TLS accessor
+// when Node entered a hook. Use OS-managed slots for hook-critical flags, as
+// in Detours' DLL samples; never depend on the host's static TLS layout here.
+// These slots live until process teardown because installed hooks remain live.
+struct ThreadFlag(OnceLock<DWORD>);
+impl ThreadFlag {
+    const fn new() -> Self {
+        Self(OnceLock::new())
+    }
+
+    fn initialize(&self) -> std::io::Result<()> {
+        use winapi::um::processthreadsapi::{TlsAlloc, TlsFree, TLS_OUT_OF_INDEXES};
+        let slot = unsafe { TlsAlloc() };
+        if slot == TLS_OUT_OF_INDEXES {
+            return Err(std::io::Error::last_os_error());
+        }
+        if self.0.set(slot).is_err() {
+            unsafe {
+                TlsFree(slot);
+            }
+            return Err(std::io::ErrorKind::AlreadyExists.into());
+        }
+        Ok(())
+    }
+
+    fn unavailable() -> ! {
+        // A flag write may allocate Windows' TLS expansion storage. If that
+        // fails, terminate instead of executing a file/process hook unguarded.
+        unsafe {
+            winapi::um::processthreadsapi::TerminateProcess(
+                winapi::um::processthreadsapi::GetCurrentProcess(),
+                125,
+            );
+        }
+        std::process::abort()
+    }
+
+    fn get(&self) -> bool {
+        use winapi::um::{
+            errhandlingapi::{GetLastError, SetLastError},
+            processthreadsapi::TlsGetValue,
+        };
+        let slot = self.0.get().copied().unwrap_or_else(|| Self::unavailable());
+        unsafe {
+            // TlsGetValue clears LastError on success. Native callers must
+            // still observe the error from the operation we intercepted.
+            let previous = GetLastError();
+            let value = TlsGetValue(slot);
+            let error = GetLastError();
+            SetLastError(previous);
+            if value.is_null() && error != 0 {
+                Self::unavailable();
+            }
+            !value.is_null()
+        }
+    }
+
+    fn set(&self, value: bool) {
+        use winapi::um::{
+            errhandlingapi::{GetLastError, SetLastError},
+            processthreadsapi::TlsSetValue,
+        };
+        let slot = self.0.get().copied().unwrap_or_else(|| Self::unavailable());
+        unsafe {
+            let previous = GetLastError();
+            let stored = TlsSetValue(slot, usize::from(value) as *mut _);
+            SetLastError(previous);
+            if stored == 0 {
+                Self::unavailable();
+            }
+        }
+    }
+}
+static ENTERED: ThreadFlag = ThreadFlag::new();
+static CREATING: ThreadFlag = ThreadFlag::new();
+static DETACHING: AtomicBool = AtomicBool::new(false);
 struct Guard;
 impl Guard {
     fn enter() -> Option<Self> {
-        ENTERED
-            .try_with(|entered| {
-                if entered.replace(true) {
-                    None
-                } else {
-                    Some(Self)
-                }
-            })
-            .ok()
-            .flatten()
+        if DETACHING.load(Ordering::Relaxed) || ENTERED.get() {
+            return None;
+        }
+        ENTERED.set(true);
+        Some(Self)
     }
 }
 impl Drop for Guard {
     fn drop(&mut self) {
-        let _ = ENTERED.try_with(|entered| entered.set(false));
+        ENTERED.set(false);
     }
 }
 
@@ -564,6 +636,8 @@ const FILE_DETOURS: &[DetourAny] = &[
 
 unsafe fn initialize() -> std::io::Result<()> {
     let context = crate::windows_launch::context()?;
+    ENTERED.initialize()?;
+    CREATING.initialize()?;
     let _guard = Guard::enter().ok_or(std::io::ErrorKind::Other)?;
     let _ = tracing_subscriber::fmt()
         .with_ansi(false)
@@ -640,10 +714,14 @@ unsafe extern "system" fn DllMain(_: HINSTANCE, reason: DWORD, _: *mut c_void) -
         if fspy_detours_sys::DetourRestoreAfterWith() == 0 || initialize().is_err() {
             return 0;
         }
+    } else if reason == DLL_THREAD_DETACH {
+        // The thread may still call hooked native functions while its Rust
+        // thread-local destructors run. Bypass runtime state during that phase.
+        ENTERED.set(true);
     } else if reason == DLL_PROCESS_DETACH {
         // During process teardown all owned handles and leases are released by
         // Windows. Do not reopen runtime state under the loader's detach lock.
-        let _ = ENTERED.try_with(|entered| entered.set(true));
+        DETACHING.store(true, Ordering::Relaxed);
     }
     1
 }

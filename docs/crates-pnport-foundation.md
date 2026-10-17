@@ -63,6 +63,20 @@ Exact native control endpoints used by the DLL loader, console, Node crypto
 provider and Winsock retain their operating-system semantics. This does not
 admit raw disk-device paths past package classification.
 
+Hook-critical Windows recursion and child-creation flags use OS-managed TLS
+slots allocated before attaching hooks. Slot access preserves the caller's
+last-error value, and unavailable storage fails closed. Thread teardown bypasses
+runtime state through its OS-managed guard, and process teardown disables runtime
+entry without touching image-based TLS. Native Node coverage includes cold ZIP
+reads, worker threads and replacement-environment child creation. This avoids
+relying on image-based native TLS for the injected DLL's hook entry guards.
+
+Initial direct-dependency command lookup resolves the existing Windows caller
+cwd through the guarded native spelling lookup before selecting its PnP owner.
+Short directory names and caller casing must identify the same package as the
+canonical manifest path. This preserves declared-bin precedence, ambiguity and
+package-escape rejection; it does not broaden the dependency search.
+
 Native process creation resolves a partial `lpApplicationName` against the
 caller's current drive and directory, never against the requested child
 `lpCurrentDirectory`. The Windows adapter keeps that rule for `CreateProcessW`

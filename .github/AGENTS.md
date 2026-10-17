@@ -6,6 +6,8 @@
 
 - Resolve CI platform matrices before runner allocation. Do not allocate macOS or iOS runners in CI; retain owning release gates.
 
+- The separate pnport Windows development workflow runs native x64/arm64 checks on affected PRs and manual dispatch. Keep CI.yml native exclusions and release gates unchanged.
+
 ## Owning contracts
 
 - [DeliDev native package verification](../docs/apps-delidev-packaging-contract.md)

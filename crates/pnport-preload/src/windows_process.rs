@@ -23,11 +23,10 @@ use winapi::{
 
 use super::*;
 
-thread_local! { static CREATING: Cell<bool> = const { Cell::new(false) }; }
 struct Creating;
 impl Drop for Creating {
     fn drop(&mut self) {
-        CREATING.with(|v| v.set(false));
+        CREATING.set(false);
     }
 }
 
@@ -292,7 +291,7 @@ unsafe fn create(
             return 0;
         }
     };
-    CREATING.with(|value| value.set(true));
+    CREATING.set(true);
     let creating = Creating;
     let created = (CREATE_W.real())(
         image.as_ref().map_or(application, |value| value.as_ptr()),
@@ -331,7 +330,7 @@ hook!(CREATE_W, winapi::um::processthreadsapi::CreateProcessW, c"CreateProcessW"
     create(application,command,process_attrs,thread_attrs,inherit,flags,env,cwd,startup,info)
 });
 hook!(CREATE_A, winapi::um::processthreadsapi::CreateProcessA, c"CreateProcessA", (application: LPCSTR, command: LPSTR, process_attrs: LPSECURITY_ATTRIBUTES, thread_attrs: LPSECURITY_ATTRIBUTES, inherit: BOOL, flags: DWORD, env: LPVOID, cwd: LPCSTR, startup: LPSTARTUPINFOA, info: LPPROCESS_INFORMATION) -> BOOL, {
-    if ENTERED.with(Cell::get) { return (CREATE_A.real())(application,command,process_attrs,thread_attrs,inherit,flags,env,cwd,startup,info); }
+    if ENTERED.get() { return (CREATE_A.real())(application,command,process_attrs,thread_attrs,inherit,flags,env,cwd,startup,info); }
     // STARTUPINFOEX carries an opaque attribute list whose handle inheritance
     // must remain native; A/W structures have identical layout except strings.
     if startup.is_null() { SetLastError(87); return 0; }
@@ -349,7 +348,7 @@ hook!(CREATE_A, winapi::um::processthreadsapi::CreateProcessA, c"CreateProcessA"
     create(if application.is_null() { ptr::null() } else { app.as_ptr() },if command.is_null() { ptr::null_mut() } else { cmd.as_mut_ptr() },process_attrs,thread_attrs,inherit,flags,env,if cwd.is_null() { ptr::null() } else { dir.as_ptr() },&mut wide.StartupInfo,info)
 });
 hook!(CREATE_NATIVE, ntapi::ntpsapi::NtCreateUserProcess, c"NtCreateUserProcess", (process: PHANDLE, thread: PHANDLE, process_access: ACCESS_MASK, thread_access: ACCESS_MASK, process_attrs: POBJECT_ATTRIBUTES, thread_attrs: POBJECT_ATTRIBUTES, process_flags: ULONG, thread_flags: ULONG, parameters: PVOID, create_info: PPS_CREATE_INFO, attributes: PPS_ATTRIBUTE_LIST) -> NTSTATUS, {
-    if !CREATING.with(Cell::get) { return UNSUPPORTED; }
+    if !CREATING.get() { return UNSUPPORTED; }
     (CREATE_NATIVE.real())(process,thread,process_access,thread_access,process_attrs,thread_attrs,process_flags,thread_flags,parameters,create_info,attributes)
 });
 

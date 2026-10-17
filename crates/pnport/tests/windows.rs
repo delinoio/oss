@@ -142,6 +142,157 @@ fn launch_worker(
     Ok((cwd, image))
 }
 
+/// Diagnostic replay uses an external debugger, so a corrupted target stack
+/// or loader lock cannot prevent reporting its faulting code location. Normal
+/// validation never sets this opt-in; replay cannot turn its first failure
+/// green.
+fn node_output(command: &mut Command) -> std::process::Output {
+    if std::env::var_os("PNPORT_WINDOWS_DEBUGGER").is_none() {
+        return command.output().unwrap();
+    }
+    use std::{collections::BTreeMap, os::windows::process::CommandExt};
+
+    use windows_sys::Win32::{
+        Foundation::{CloseHandle, DBG_CONTINUE, DBG_EXCEPTION_NOT_HANDLED, EXCEPTION_BREAKPOINT},
+        Storage::FileSystem::GetFinalPathNameByHandleW,
+        System::{Diagnostics::Debug::*, Threading::DEBUG_PROCESS},
+    };
+    let mut child = command
+        .creation_flags(DEBUG_PROCESS)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    let mut stdout = child.stdout.take().unwrap();
+    let mut stderr = child.stderr.take().unwrap();
+    let out = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stdout.read_to_end(&mut bytes).unwrap();
+        bytes
+    });
+    let err = std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stderr.read_to_end(&mut bytes).unwrap();
+        bytes
+    });
+    let mut modules = std::collections::HashMap::<u32, BTreeMap<usize, String>>::new();
+    let mut threads = std::collections::HashMap::new();
+    let mut active = 0usize;
+    let deadline = Instant::now() + Duration::from_secs(60);
+    loop {
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            panic!("diagnostic debugger timed out");
+        }
+        let mut event = DEBUG_EVENT::default();
+        if unsafe { WaitForDebugEvent(&mut event, 1000) } == 0 {
+            continue;
+        }
+        let mut disposition = DBG_CONTINUE;
+        unsafe {
+            let image = match event.dwDebugEventCode {
+                CREATE_PROCESS_DEBUG_EVENT => {
+                    active += 1;
+                    threads.insert(event.dwThreadId, event.u.CreateProcessInfo.hThread);
+                    Some((
+                        event.u.CreateProcessInfo.hFile,
+                        event.u.CreateProcessInfo.lpBaseOfImage as usize,
+                    ))
+                }
+                LOAD_DLL_DEBUG_EVENT => {
+                    Some((event.u.LoadDll.hFile, event.u.LoadDll.lpBaseOfDll as usize))
+                }
+                _ => None,
+            };
+            if let Some((file, base)) = image {
+                if !file.is_null() {
+                    let mut name = vec![0u16; 32768];
+                    let length =
+                        GetFinalPathNameByHandleW(file, name.as_mut_ptr(), name.len() as u32, 0)
+                            as usize;
+                    if length < name.len() {
+                        let path = String::from_utf16_lossy(&name[..length]);
+                        let name = path.rsplit('\\').next().unwrap_or("unknown").to_owned();
+                        modules
+                            .entry(event.dwProcessId)
+                            .or_default()
+                            .insert(base, name);
+                    }
+                    CloseHandle(file);
+                }
+            }
+            if event.dwDebugEventCode == CREATE_THREAD_DEBUG_EVENT {
+                threads.insert(event.dwThreadId, event.u.CreateThread.hThread);
+            }
+            if event.dwDebugEventCode == EXIT_THREAD_DEBUG_EVENT {
+                threads.remove(&event.dwThreadId);
+            }
+            if event.dwDebugEventCode == EXCEPTION_DEBUG_EVENT {
+                let exception = event.u.Exception;
+                let code = exception.ExceptionRecord.ExceptionCode;
+                if code != EXCEPTION_BREAKPOINT {
+                    disposition = DBG_EXCEPTION_NOT_HANDLED;
+                }
+                if code == 0xc0000005u32 as i32 {
+                    #[allow(unused_mut, reason = "ARM64 replay also inspects the link register")]
+                    let mut addresses = vec![exception.ExceptionRecord.ExceptionAddress as usize];
+                    #[cfg(target_arch = "aarch64")]
+                    if let Some(thread) = threads.get(&event.dwThreadId) {
+                        let mut context = CONTEXT {
+                            ContextFlags: CONTEXT_CONTROL_ARM64,
+                            ..CONTEXT::default()
+                        };
+                        if GetThreadContext(*thread, &mut context) != 0 {
+                            addresses.push(context.Anonymous.Anonymous.Lr as usize);
+                        }
+                    }
+                    for address in addresses {
+                        if let Some((base, name)) = modules
+                            .get(&event.dwProcessId)
+                            .and_then(|images| images.range(..=address).next_back())
+                        {
+                            let offset = address - base;
+                            eprintln!(
+                                "action=windows_exception_frame module={name} offset=0x{offset:x} \
+                                 first_chance={}",
+                                exception.dwFirstChance
+                            );
+                            if name.eq_ignore_ascii_case("pnport_preload.dll") {
+                                let image = PathBuf::from(env!("CARGO_BIN_EXE_pnport"))
+                                    .with_file_name(name);
+                                if let Ok(symbols) = Command::new("llvm-symbolizer.exe")
+                                    .arg("--relative-address")
+                                    .arg(format!("--obj={}", image.display()))
+                                    .arg(format!("0x{offset:x}"))
+                                    .output()
+                                {
+                                    eprintln!("{}", String::from_utf8_lossy(&symbols.stdout));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if event.dwDebugEventCode == EXIT_PROCESS_DEBUG_EVENT {
+                modules.remove(&event.dwProcessId);
+                active -= 1;
+            }
+            assert_ne!(
+                ContinueDebugEvent(event.dwProcessId, event.dwThreadId, disposition),
+                0
+            );
+        }
+        if active == 0 {
+            break;
+        }
+    }
+    std::process::Output {
+        status: child.wait().unwrap(),
+        stdout: out.join().unwrap(),
+        stderr: err.join().unwrap(),
+    }
+}
+
 fn binary() -> PathBuf {
     std::env::var_os("PNPORT_TEST_BINARY")
         .map(PathBuf::from)
@@ -259,6 +410,32 @@ fn native_child() {
             b"dependency"
         );
         let mut original = fs::File::open(&dependency).unwrap();
+        // NT status is returned directly; hook bookkeeping must not clear the
+        // caller's independent Win32 last-error slot through TlsGetValue.
+        {
+            use std::os::windows::io::AsRawHandle;
+
+            use ntapi::ntioapi::{
+                FileStandardInformation, NtQueryInformationFile, FILE_STANDARD_INFORMATION,
+                IO_STATUS_BLOCK,
+            };
+            use windows_sys::Win32::Foundation::{GetLastError, SetLastError};
+            let mut info: FILE_STANDARD_INFORMATION = unsafe { std::mem::zeroed() };
+            let mut ios: IO_STATUS_BLOCK = unsafe { std::mem::zeroed() };
+            let (status, error) = unsafe {
+                SetLastError(0x521);
+                let status = NtQueryInformationFile(
+                    original.as_raw_handle().cast(),
+                    &mut ios,
+                    (&raw mut info).cast(),
+                    std::mem::size_of_val(&info) as u32,
+                    FileStandardInformation,
+                );
+                (status, GetLastError())
+            };
+            assert!(status >= 0, "native information query failed {status:#x}");
+            assert_eq!(error, 0x521, "hook TLS changed the caller's last error");
+        }
         let mut duplicate = original.try_clone().unwrap();
         let mut first = [0; 4];
         duplicate.read_exact(&mut first).unwrap();
@@ -807,6 +984,32 @@ fn completion_port_directory_queries(root: &Path) {
     }
     unsafe { CloseHandle(synchronous) };
 
+    // Run the native control before the first intentional rejection starts
+    // the supervisor's shutdown grace interval. Its asynchronous completion
+    // wait must report its own timeout instead of being killed mid-control.
+    {
+        // A native-backed directory (no merged entries) keeps the native
+        // syscall.
+        let plain = root.join("plain");
+        fs::create_dir_all(&plain).unwrap();
+        fs::write(plain.join("file.txt"), b"plain").unwrap();
+        let native = open(&plain, true);
+        let port = associate(native);
+        assert!(!port.is_null(), "native association failed");
+        // Null APC context uses the explicit event on this native query;
+        // Windows does not enqueue a completion packet for it. Keep the
+        // associated-port rejection checks below separate from this control.
+        for api in apis {
+            let status = query(native, api, None);
+            assert!(status >= 0, "{api:?} native status {status:#x}");
+        }
+        assert_no_packet(port);
+        unsafe {
+            CloseHandle(native);
+            CloseHandle(port);
+        }
+    }
+
     // Repeat so a reopened handle that reuses the numeric value starts clean.
     for round in 0..2 {
         let directory = open(root, true);
@@ -852,6 +1055,11 @@ fn completion_port_directory_queries(root: &Path) {
     // `FileReplaceCompletionInformation` changes or removes the association
     // without `FileCompletionInformation`, and the recorded state must follow.
     let directory = open(root, true);
+    // Replacement changes an existing native association. Installing it on
+    // an unassociated object returns STATUS_INVALID_PARAMETER on Windows 2022.
+    // Keep both replacement and removal assertions after a real association.
+    let original_port = associate(directory);
+    assert!(!original_port.is_null(), "create original port");
     let port = unsafe { CreateIoCompletionPort(INVALID_HANDLE_VALUE, std::ptr::null_mut(), 1, 0) };
     assert!(!port.is_null(), "create replacement port");
     // `FileReplaceCompletionInformation` is available on every supported
@@ -892,6 +1100,7 @@ fn completion_port_directory_queries(root: &Path) {
     unsafe {
         CloseHandle(directory);
         CloseHandle(port);
+        CloseHandle(original_port);
     }
 
     // A read-only managed directory (a dependency container with merged
@@ -906,6 +1115,11 @@ fn completion_port_directory_queries(root: &Path) {
         let status = query(container, api, None);
         assert!(status >= 0, "{api:?} read-only unassociated {status:#x}");
     }
+    let original_container_port = associate(container);
+    assert!(
+        !original_container_port.is_null(),
+        "associate read-only container"
+    );
     let installed = replace_completion_port(container, container_port);
     assert!(
         installed >= 0,
@@ -928,23 +1142,9 @@ fn completion_port_directory_queries(root: &Path) {
     unsafe {
         CloseHandle(container);
         CloseHandle(container_port);
+        CloseHandle(original_container_port);
     }
 
-    // A native-backed directory (no merged entries) keeps the native syscall.
-    let plain = root.join("plain");
-    fs::create_dir_all(&plain).unwrap();
-    fs::write(plain.join("file.txt"), b"plain").unwrap();
-    let native = open(&plain, true);
-    let port = associate(native);
-    assert!(!port.is_null(), "native association failed");
-    for api in apis {
-        let status = query(native, api, Some(port));
-        assert!(status >= 0, "{api:?} native status {status:#x}");
-    }
-    unsafe {
-        CloseHandle(native);
-        CloseHandle(port);
-    }
     fs::write(root.join("completion-done.txt"), b"done").unwrap();
 }
 
@@ -964,30 +1164,37 @@ fn zip_library_mapping_cache_and_direct_dependency_binary() {
                 String::from_utf8_lossy(&output.stdout)
             );
         }
-        let output = Command::new(binary())
-            .arg("--project")
-            .arg(&root)
-            .arg("--cache-dir")
-            .arg(&cache)
-            .args([
-                "run",
-                "--",
-                "native-fixture",
-                "--exact",
-                "native_child",
-                "--nocapture",
-            ])
-            .env(MODE, "read")
-            .env(PROJECT, &root)
-            .current_dir(&root)
-            .output()
-            .unwrap();
-        assert!(
-            output.status.success(),
-            "ZIP executable failed: {} {}",
-            String::from_utf8_lossy(&output.stderr),
-            String::from_utf8_lossy(&output.stdout)
-        );
+        // Exercise the runner's TEMP alias and a deliberately different case.
+        // The manifest is canonicalized independently of the caller's cwd.
+        for cwd in [root.clone(), root.with_file_name("PROJECT 한글 SPACE")] {
+            let output = Command::new(binary())
+                .arg("--project")
+                .arg(&root)
+                .arg("--cache-dir")
+                .arg(&cache)
+                .args([
+                    "--log-level=debug",
+                    "--color=never",
+                    "run",
+                    "--",
+                    "native-fixture",
+                    "--exact",
+                    "native_child",
+                    "--nocapture",
+                ])
+                .env(MODE, "read")
+                .env(PROJECT, &root)
+                .current_dir(&cwd)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "ZIP executable failed from {}: {} {}",
+                cwd.display(),
+                String::from_utf8_lossy(&output.stderr),
+                String::from_utf8_lossy(&output.stdout)
+            );
+        }
     }
 }
 
@@ -1142,19 +1349,38 @@ fn node_filesystem_crypto_loopback_and_replacement_environment() {
     let fixture = fixture(false);
     let root = fixture.path().join("project 한글 space");
     let node = std::env::var_os("PNPORT_TEST_NODE").unwrap_or_else(|| "node".into());
+    let node = if Path::new(&node).is_absolute() {
+        PathBuf::from(node)
+    } else {
+        pnport::executable::find_on_path(&node, std::env::var_os("PATH").as_deref(), &root)
+            .expect("native Node executable is required")
+    };
     let script = r#"
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const root = process.argv[1];
+const stage = value => fs.writeSync(2, JSON.stringify({event: 'pnport_node_fixture', pid: process.pid, arch: process.arch, stage: value}) + '\n');
+stage('read');
 const dependency = path.join(root, 'node_modules/example/data.txt');
 assert.equal(fs.readFileSync(dependency, 'utf8'), 'dependency');
+stage('enumerate');
 assert(fs.readdirSync(root).includes('node_modules'));
+stage('worker_threads');
+const { Worker } = require('node:worker_threads');
+for (let index = 0; index < 4; index++) {
+  new Worker(`const { workerData } = require('node:worker_threads');
+    require('node:assert/strict').equal(require('node:fs').readFileSync(workerData, 'utf8'), 'dependency');`,
+    { eval: true, workerData: dependency }).on('error', error => { throw error; });
+}
+stage('crypto');
 assert.equal(require('node:crypto').randomBytes(32).length, 32);
+stage('child');
 const child = require('node:child_process').execFileSync(process.execPath,
-  ['-e', 'process.stdout.write(require("node:fs").readFileSync(process.argv[1]))', dependency],
+  ['-e', 'process.stderr.write(JSON.stringify({event: "pnport_node_fixture", pid: process.pid, stage: "child_read"}) + "\\n"); process.stdout.write(require("node:fs").readFileSync(process.argv[1]))', dependency],
   { env: { SystemRoot: process.env.SystemRoot, PATH: process.env.PATH } });
 assert.equal(child.toString(), 'dependency');
+stage('loopback');
 const net = require('node:net');
 const server = net.createServer(socket => socket.end('loopback'));
 server.listen(0, '127.0.0.1', () => {
@@ -1164,19 +1390,19 @@ server.listen(0, '127.0.0.1', () => {
   client.on('end', () => { assert.equal(received, 'loopback'); server.close(); });
 });
 "#;
-    let output = Command::new(binary())
-        .arg("--project")
-        .arg(&root)
-        .arg("--cache-dir")
-        .arg(fixture.path().join("cache"))
-        .args(["--log-level=debug", "--color=never", "run", "--"])
-        .arg(node)
-        .arg("-e")
-        .arg(script)
-        .arg(&root)
-        .current_dir(&root)
-        .output()
-        .unwrap();
+    let output = node_output(
+        Command::new(binary())
+            .arg("--project")
+            .arg(&root)
+            .arg("--cache-dir")
+            .arg(fixture.path().join("cache"))
+            .args(["--log-level=debug", "--color=never", "run", "--"])
+            .arg(node)
+            .arg("-e")
+            .arg(script)
+            .arg(&root)
+            .current_dir(&root),
+    );
     assert!(
         output.status.success(),
         "Node native fixture failed {:?}: {} {}",
