@@ -48,3 +48,35 @@ func RatePeriod(ctx context.Context, tx pgx.Tx, tenant, service, meter string, s
 	}
 	return total, remaining, rows.Err()
 }
+
+// HasAllowance matches the service-level paid authorization rule: any current
+// meter with remaining included units permits use of that service.
+func HasAllowance(ctx context.Context, tx pgx.Tx, tenant, service string, start time.Time) (bool, error) {
+	rows, e := tx.Query(ctx, "SELECT DISTINCT p.meter FROM entitlements en JOIN prices p ON p.id=en.price_id WHERE en.tenant_id=$1 AND p.service_id=$2 AND p.kind=1 AND en.ends_at IS NULL", tenant, service)
+	if e != nil {
+		return false, e
+	}
+	var meters []string
+	for rows.Next() {
+		var meter string
+		if e = rows.Scan(&meter); e != nil {
+			rows.Close()
+			return false, e
+		}
+		meters = append(meters, meter)
+	}
+	rows.Close()
+	if e = rows.Err(); e != nil {
+		return false, e
+	}
+	for _, meter := range meters {
+		_, remaining, e := RatePeriod(ctx, tx, tenant, service, meter, start)
+		if e != nil {
+			return false, e
+		}
+		if remaining.Cmp(accounting.Zero()) > 0 {
+			return true, nil
+		}
+	}
+	return false, nil
+}

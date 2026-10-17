@@ -1510,3 +1510,57 @@ func TestAuditRetentionIncludesActiveTenants(t *testing.T) {
 		t.Fatal("audit cutoff not applied", total, old, e)
 	}
 }
+
+func TestZeroBalanceNoticeMatchesAllowanceExhaustion(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	user, tenant := bootstrap(t, client)
+	svc, e := client.PutService(ctx, req(&pb.PutServiceRequest{RequestKey: key(), Reason: "notice fixture", Service: &pb.Service{Name: "notice", ClientId: "service", Capabilities: []string{"execute"}, Scopes: []string{"authorize", "usage:write"}}}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = client.PutMeter(ctx, req(&pb.PutMeterRequest{RequestKey: key(), Reason: "notice fixture", Meter: &pb.Meter{ServiceId: svc.Msg.Service.Id, Name: "units"}}, "owner")); e != nil {
+		t.Fatal(e)
+	}
+	var plan string
+	var start time.Time
+	if e = db.Pool.QueryRow(ctx, "SELECT plan_id::text,period_start FROM tenants WHERE id=$1", tenant).Scan(&plan, &start); e != nil {
+		t.Fatal(e)
+	}
+	price, e := client.CreatePrice(ctx, req(&pb.CreatePriceRequest{RequestKey: key(), Reason: "notice fixture", Price: &pb.Price{PlanId: plan, ServiceId: svc.Msg.Service.Id, Meter: "units", UnitPrice: "1", Included: "1", Currency: "USD"}}, "owner"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = db.Pool.Exec(ctx, "INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2,$3,$4)", key(), tenant, price.Msg.Price.Id, start); e != nil {
+		t.Fatal(e)
+	}
+	w := &worker.Worker{DB: db, Config: cfg}
+	check := func(want bool) {
+		t.Helper()
+		if e = w.Maintain(ctx, time.Now()); e != nil {
+			t.Fatal(e)
+		}
+		decision, err := client.Authorize(ctx, req(&pb.AuthorizeRequest{TenantId: tenant, UserId: user, Capability: "execute", Paid: true}, "service"))
+		if err != nil || decision.Msg.Allowed != want {
+			t.Fatal("authorization", decision, err)
+		}
+		var notice bool
+		if e = db.Pool.QueryRow(ctx, "SELECT EXISTS(SELECT 1 FROM billing_notices WHERE tenant_id=$1 AND reason='balance' AND active)", tenant).Scan(&notice); e != nil || notice == want {
+			t.Fatal("notice differs from authorization", notice, want, e)
+		}
+	}
+	check(true)
+	if _, e = client.ReportUsage(ctx, req(&pb.ReportUsageRequest{RequestKey: key(), Usage: &pb.Usage{TenantId: tenant, ServiceId: svc.Msg.Service.Id, Meter: "units", Quantity: "1", EventKey: key(), OccurredAt: timestamppb.Now()}}, "service")); e != nil {
+		t.Fatal(e)
+	}
+	check(false)
+	check(false)
+	var count int
+	if e = db.Pool.QueryRow(ctx, "SELECT count(*) FROM jobs WHERE tenant_id=$1 AND dedup_key LIKE 'notice:%:balance:%'", tenant).Scan(&count); e != nil || count != 1 {
+		t.Fatal("duplicate balance notices", count, e)
+	}
+	if _, e = db.Pool.Exec(ctx, "INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2,'credit',1,$1::uuid::text,now())", key(), tenant); e != nil {
+		t.Fatal(e)
+	}
+	check(true)
+}

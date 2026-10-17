@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/delinoio/oss/servers/delcore-api/internal/postgres"
 	"time"
 
 	"connectrpc.com/connect"
@@ -53,33 +54,11 @@ func (s *Server) Authorize(ctx context.Context, r *connect.Request[pb.AuthorizeR
 				if e = c.tx.QueryRow(c.ctx, "SELECT period_start FROM tenants WHERE id=$1", q.TenantId).Scan(&periodStart); e != nil {
 					return e
 				}
-				rows, e := c.tx.Query(c.ctx, "SELECT DISTINCT p.meter FROM entitlements en JOIN prices p ON p.id=en.price_id WHERE en.tenant_id=$1 AND p.service_id=$2 AND p.kind=1 AND en.ends_at IS NULL", q.TenantId, c.service)
+				remaining, e := postgres.HasAllowance(c.ctx, c.tx, q.TenantId, c.service, periodStart)
 				if e != nil {
 					return e
 				}
-				var meters []string
-				for rows.Next() {
-					var m string
-					if e = rows.Scan(&m); e != nil {
-						rows.Close()
-						return e
-					}
-					meters = append(meters, m)
-				}
-				rows.Close()
-				if e = rows.Err(); e != nil {
-					return e
-				}
-				for _, meter := range meters {
-					_, remaining, e := c.ratePeriod(q.TenantId, c.service, meter, periodStart)
-					if e != nil {
-						return e
-					}
-					if remaining.Cmp(accounting.Zero()) > 0 {
-						depleted = false
-						break
-					}
-				}
+				depleted = !remaining
 			}
 			for _, v := range []struct {
 				blocked bool
