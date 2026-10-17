@@ -1137,3 +1137,51 @@ func TestAutoTopupRequiresActiveSubscription(t *testing.T) {
 		t.Fatal("manual recovery unavailable", e)
 	}
 }
+
+func TestFreePlanTransitions(t *testing.T) {
+	db, client, cfg := setup(t)
+	ctx := context.Background()
+	_, tenant := bootstrap(t, client)
+	service := key()
+	if _, e := db.Pool.Exec(ctx, "INSERT INTO services VALUES($1,'free transitions','free-transition','{}','{}')", service); e != nil {
+		t.Fatal(e)
+	}
+	var plans, prices []string
+	for _, rank := range []int{10, 5} {
+		plan, price := key(), key()
+		plans = append(plans, plan)
+		prices = append(prices, price)
+		if _, e := db.Pool.Exec(ctx, "INSERT INTO plans(id,name,rank,free,postpaid) VALUES($1,'free', $2,true,false)", plan, rank); e != nil {
+			t.Fatal(e)
+		}
+		if _, e := db.Pool.Exec(ctx, "INSERT INTO prices(id,plan_id,service_id,meter,unit_price,included,currency,external_price_id,created_at) VALUES($1,$2,$3,'units',1,10,'USD','',now())", price, plan, service); e != nil {
+			t.Fatal(e)
+		}
+	}
+	for i, plan := range plans {
+		change, e := client.ChangeSubscription(ctx, req(&pb.ChangeSubscriptionRequest{RequestKey: key(), TenantId: tenant, PlanId: plan, PriceIds: []string{prices[i]}, ReturnUrl: cfg.ReturnURLs[0]}, "owner"))
+		if e != nil {
+			t.Fatal(e)
+		}
+		var active, state string
+		var end time.Time
+		if e = db.Pool.QueryRow(ctx, "SELECT plan_id::text,period_end,(SELECT state FROM jobs WHERE id=$2) FROM tenants WHERE id=$1", tenant, change.Msg.JobId).Scan(&active, &end, &state); e != nil {
+			t.Fatal(e)
+		}
+		if i == 0 && (active != plan || state != "done") {
+			t.Fatal("free upgrade not applied", active, state)
+		}
+		if i == 1 {
+			if active != plans[0] || state != "pending" {
+				t.Fatal("downgrade applied early")
+			}
+			w := &worker.Worker{DB: db, Config: cfg}
+			if e = w.Maintain(ctx, end.Add(time.Second)); e != nil {
+				t.Fatal(e)
+			}
+			if e = db.Pool.QueryRow(ctx, "SELECT plan_id::text FROM tenants WHERE id=$1", tenant).Scan(&active); e != nil || active != plan {
+				t.Fatal("free downgrade not applied", e)
+			}
+		}
+	}
+}

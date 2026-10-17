@@ -200,8 +200,19 @@ func (s *Server) ChangeSubscription(ctx context.Context, r *connect.Request[pb.C
 			if e = c.tx.QueryRow(c.ctx, "SELECT external_subscription_id,period_start,period_end FROM tenants WHERE id=$1", q.TenantId).Scan(&subscription, &start, &end); e != nil {
 				return e
 			}
-			if subscription != "" || q.PlanId != t.PlanId {
+			if subscription != "" {
 				return precondition("use cancellation to return to the default free plan")
+			}
+			if newRank < oldRank {
+				o.JobId, e = c.job(q.TenantId, "subscription", "request:"+q.RequestKey, map[string]any{"plan_id": q.PlanId, "price_ids": q.PriceIds, "timing": "free_next_period"})
+				if e != nil {
+					return e
+				}
+				_, e = c.tx.Exec(c.ctx, "UPDATE jobs SET available_at=$2 WHERE id=$1", o.JobId, end)
+				return e
+			}
+			if _, e = c.tx.Exec(c.ctx, "UPDATE tenants SET plan_id=$2 WHERE id=$1", q.TenantId, q.PlanId); e != nil {
+				return e
 			}
 			// An explicit free-plan price-version refresh has no fixed fee to
 			// collect. Preserve used allowance and add only a prorated increase.

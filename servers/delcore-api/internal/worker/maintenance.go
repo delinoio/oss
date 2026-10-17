@@ -13,6 +13,9 @@ import (
 
 func (w *Worker) Maintain(ctx context.Context, now time.Time) error {
 	return w.DB.Transaction(ctx, func(tx pgx.Tx) error {
+		if e := w.freePlanChanges(ctx, tx, now); e != nil {
+			return e
+		}
 		start := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.UTC)
 		// Free plans use calendar months even when their tenant was created mid-month.
 		if _, e := tx.Exec(ctx, "UPDATE tenants t SET period_start=$1,period_end=$2 FROM plans p WHERE t.plan_id=p.id AND p.free AND t.external_subscription_id='' AND t.period_end<=$3", start, start.AddDate(0, 1, 0), now); e != nil {
@@ -187,6 +190,55 @@ func notify(ctx context.Context, tx pgx.Tx, tenant, key, subject, text string, n
 	for _, r := range recipients {
 		payload, _ := json.Marshal(map[string]string{"to": r.email, "subject": subject, "text": text})
 		if _, e = tx.Exec(ctx, "INSERT INTO jobs(id,tenant_id,kind,dedup_key,payload,available_at,created_at,updated_at) VALUES($1,$2,'email',$3,$4,$5,$5,$5) ON CONFLICT(dedup_key) DO NOTHING", id(), tenant, key+":"+r.id, payload, now); e != nil {
+			return e
+		}
+	}
+	return nil
+}
+
+func (w *Worker) freePlanChanges(ctx context.Context, tx pgx.Tx, now time.Time) error {
+	rows, e := tx.Query(ctx, `SELECT j.id::text,j.tenant_id::text,j.payload,j.available_at FROM jobs j JOIN tenants t ON t.id=j.tenant_id WHERE j.kind='subscription' AND j.payload->>'timing'='free_next_period' AND j.state IN ('pending','reconcile') AND j.available_at<=$1 AND t.external_subscription_id='' AND t.deleted_at IS NULL`, now)
+	if e != nil {
+		return e
+	}
+	type change struct {
+		id, tenant string
+		payload    []byte
+		at         time.Time
+	}
+	var changes []change
+	for rows.Next() {
+		var c change
+		if e = rows.Scan(&c.id, &c.tenant, &c.payload, &c.at); e != nil {
+			rows.Close()
+			return e
+		}
+		changes = append(changes, c)
+	}
+	rows.Close()
+	if e = rows.Err(); e != nil {
+		return e
+	}
+	for _, c := range changes {
+		var p struct {
+			Plan   string   `json:"plan_id"`
+			Prices []string `json:"price_ids"`
+		}
+		if e = json.Unmarshal(c.payload, &p); e != nil {
+			return e
+		}
+		if _, e = tx.Exec(ctx, "UPDATE tenants SET plan_id=$2 WHERE id=$1", c.tenant, p.Plan); e != nil {
+			return e
+		}
+		if _, e = tx.Exec(ctx, "UPDATE entitlements SET ends_at=$2 WHERE tenant_id=$1 AND ends_at IS NULL AND starts_at<$2", c.tenant, c.at); e != nil {
+			return e
+		}
+		for _, price := range p.Prices {
+			if _, e = tx.Exec(ctx, "INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2,$3,$4)", id(), c.tenant, price, c.at); e != nil {
+				return e
+			}
+		}
+		if _, e = tx.Exec(ctx, "UPDATE jobs SET state='done',updated_at=$2 WHERE id=$1", c.id, now); e != nil {
 			return e
 		}
 	}
