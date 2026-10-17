@@ -39,8 +39,13 @@ func (s *Server) Authorize(ctx context.Context, r *connect.Request[pb.AuthorizeR
 			return nil
 		}
 		if q.Paid {
+			// A paid tenant is renewal-blocked when the provider failed a renewal
+			// or when the confirmed paid period has ended without a matching
+			// renewal advancing it. Free plans roll over by calendar month in
+			// maintenance and never expire here. The check uses the request clock
+			// and does not mutate state or call the provider.
 			var operator, renewal, deleting, dispute, negative, depleted, entitled bool
-			e = c.tx.QueryRow(c.ctx, `SELECT t.operator_block,t.renewal_failed,t.deleting_at IS NOT NULL,
+			e = c.tx.QueryRow(c.ctx, `SELECT t.operator_block,(t.renewal_failed OR (NOT p.free AND t.period_end<=$3)),t.deleting_at IS NOT NULL,
    EXISTS(SELECT 1 FROM disputes WHERE tenant_id=t.id AND active),
    COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),0)<0,
    (NOT p.postpaid AND COALESCE((SELECT sum(amount) FROM ledger WHERE tenant_id=t.id AND kind IN ('credit','usage','refund','correction')),0)<=0),

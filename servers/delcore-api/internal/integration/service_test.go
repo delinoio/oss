@@ -2762,3 +2762,139 @@ func TestAddOnPriceMustBelongToPriceService(t *testing.T) {
 		t.Fatal("accepted prices not recorded", gotPrices, gotAudits)
 	}
 }
+
+// clockClient serves the same database through a server whose request clock is
+// fixed, so period boundaries can be tested exactly.
+func clockClient(t *testing.T, f *subscriptionOrderFixture, now time.Time) delcorev1connect.DelcoreServiceClient {
+	t.Helper()
+	server := &rpc.Server{DB: f.db, Auth: verifier{}, Config: f.cfg, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Now: func() time.Time { return now }}
+	path, handler := server.Handler()
+	mux := http.NewServeMux()
+	mux.Handle(path, handler)
+	httpServer := httptest.NewServer(mux)
+	t.Cleanup(httpServer.Close)
+	return delcorev1connect.NewDelcoreServiceClient(httpServer.Client(), httpServer.URL)
+}
+
+func TestPaidAuthorizationEndsAtConfirmedPeriodEnd(t *testing.T) {
+	f := newSubscriptionOrderFixture(t)
+	ctx := context.Background()
+	f.pay(t)
+	if s := f.state(t); s.free || s.renewalFailed || s.activePaid != 1 {
+		t.Fatal("paid activation", s)
+	}
+	end := time.Now().UTC().Truncate(time.Microsecond).Add(24 * time.Hour)
+	if _, e := f.db.Pool.Exec(ctx, "UPDATE tenants SET period_start=$2,period_end=$3 WHERE id=$1", f.tenant, end.AddDate(0, -1, 0), end); e != nil {
+		t.Fatal(e)
+	}
+	authorize := func(client delcorev1connect.DelcoreServiceClient, paid bool) *pb.AuthorizeResponse {
+		t.Helper()
+		decision, e := client.Authorize(ctx, req(&pb.AuthorizeRequest{TenantId: f.tenant, UserId: f.userID, Capability: "execute", Paid: paid}, "service"))
+		if e != nil {
+			t.Fatal(e)
+		}
+		return decision.Msg
+	}
+	hasReason := func(d *pb.AuthorizeResponse, reason pb.BlockReason) bool {
+		for _, r := range d.Reasons {
+			if r == reason {
+				return true
+			}
+		}
+		return false
+	}
+	snapshot := func() string {
+		var s string
+		if e := f.db.Pool.QueryRow(ctx, "SELECT period_start::text||period_end::text||renewal_failed::text||(SELECT count(*) FROM audit)::text||(SELECT count(*) FROM jobs)::text FROM tenants WHERE id=$1", f.tenant).Scan(&s); e != nil {
+			t.Fatal(e)
+		}
+		return s
+	}
+	before := snapshot()
+	for _, tc := range []struct {
+		name    string
+		now     time.Time
+		allowed bool
+	}{
+		{"one microsecond before period end", end.Add(-time.Microsecond), true},
+		{"at period end", end, false},
+		{"one microsecond after period end", end.Add(time.Microsecond), false},
+		{"long after period end", end.AddDate(0, 6, 0), false},
+	} {
+		d := authorize(clockClient(t, f, tc.now), true)
+		if d.Allowed != tc.allowed || hasReason(d, pb.BlockReason_BLOCK_REASON_RENEWAL) == tc.allowed {
+			t.Fatal(tc.name, "unexpected decision", d)
+		}
+		if !tc.allowed && len(d.Reasons) != 1 {
+			t.Fatal(tc.name, "expected only the renewal reason", d.Reasons)
+		}
+	}
+	if snapshot() != before {
+		t.Fatal("authorization changed state")
+	}
+
+	expired := clockClient(t, f, end.Add(time.Hour))
+	// The postpaid plan is blocked with and without credits, even though the
+	// payment-failure flag is clear and the entitlement has no end.
+	if _, e := f.db.Pool.Exec(ctx, "INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2,'credit','100','test:credit',now())", key(), f.tenant); e != nil {
+		t.Fatal(e)
+	}
+	if d := authorize(expired, true); d.Allowed || !hasReason(d, pb.BlockReason_BLOCK_REASON_RENEWAL) {
+		t.Fatal("expired period allowed paid use with credits", d)
+	}
+	// Non-paid checks, and permission checks, are unchanged by expiry.
+	if d := authorize(expired, false); !d.Allowed || len(d.Reasons) != 0 {
+		t.Fatal("expired period changed non-paid authorization", d)
+	}
+	// Other blocks keep reporting alongside the expiry.
+	if _, e := f.db.Pool.Exec(ctx, "UPDATE tenants SET operator_block=true WHERE id=$1", f.tenant); e != nil {
+		t.Fatal(e)
+	}
+	if d := authorize(expired, true); d.Allowed || !hasReason(d, pb.BlockReason_BLOCK_REASON_OPERATOR) || !hasReason(d, pb.BlockReason_BLOCK_REASON_RENEWAL) {
+		t.Fatal("operator block lost or renewal block missing", d)
+	}
+	if _, e := f.db.Pool.Exec(ctx, "UPDATE tenants SET operator_block=false WHERE id=$1", f.tenant); e != nil {
+		t.Fatal(e)
+	}
+
+	// A matching confirmed renewal advances the period and restores access.
+	renewal := f.transaction
+	renewal.ID = "txn_renewal"
+	renewal.Origin = "subscription_recurring"
+	renewal.BillingPeriod.StartsAt = end
+	renewal.BillingPeriod.EndsAt = end.AddDate(0, 1, 0)
+	if e := f.w.ApplyTransaction(ctx, renewal, end); e != nil {
+		t.Fatal(e)
+	}
+	if d := authorize(expired, true); !d.Allowed || len(d.Reasons) != 0 {
+		t.Fatal("confirmed renewal did not restore paid use", d)
+	}
+	if d := authorize(clockClient(t, f, end.AddDate(0, 1, 0)), true); d.Allowed || !hasReason(d, pb.BlockReason_BLOCK_REASON_RENEWAL) {
+		t.Fatal("renewed period did not end at its own boundary", d)
+	}
+}
+
+func TestFreePlanAuthorizationIgnoresPeriodEnd(t *testing.T) {
+	f := newSubscriptionOrderFixture(t)
+	ctx := context.Background()
+	var free bool
+	if e := f.db.Pool.QueryRow(ctx, "SELECT p.free FROM tenants t JOIN plans p ON p.id=t.plan_id WHERE t.id=$1", f.tenant).Scan(&free); e != nil || !free {
+		t.Fatal("tenant should start on the free plan", free, e)
+	}
+	if _, e := f.db.Pool.Exec(ctx, "INSERT INTO entitlements(id,tenant_id,price_id,starts_at) VALUES($1,$2,$3,now()-interval '1 day')", key(), f.tenant, f.priceID); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := f.db.Pool.Exec(ctx, "INSERT INTO ledger(id,tenant_id,kind,amount,source_key,created_at) VALUES($1,$2,'credit','100','test:credit',now())", key(), f.tenant); e != nil {
+		t.Fatal(e)
+	}
+	var end time.Time
+	if e := f.db.Pool.QueryRow(ctx, "SELECT period_end FROM tenants WHERE id=$1", f.tenant).Scan(&end); e != nil {
+		t.Fatal(e)
+	}
+	// Free periods roll over in maintenance, so a stale free period is not a
+	// renewal failure.
+	d, e := clockClient(t, f, end.Add(time.Hour)).Authorize(ctx, req(&pb.AuthorizeRequest{TenantId: f.tenant, UserId: f.userID, Capability: "execute", Paid: true}, "service"))
+	if e != nil || !d.Msg.Allowed {
+		t.Fatal("free plan blocked at period end", d, e)
+	}
+}
