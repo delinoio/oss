@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from "node:child_process";
-import { accessSync, constants, statSync } from "node:fs";
+import { accessSync, constants, readFileSync, statSync } from "node:fs";
 import { createHash } from "node:crypto";
 import {
   lstat,
@@ -11,7 +11,14 @@ import {
 } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
-import { basename, delimiter, isAbsolute, join, resolve } from "node:path";
+import {
+  basename,
+  delimiter,
+  dirname,
+  isAbsolute,
+  join,
+  resolve,
+} from "node:path";
 
 export const versions = Object.freeze({
   framework: "0.0.0-dev.0",
@@ -66,6 +73,7 @@ export type Runner = (
 // Capture bounded output for checks only. Tool output can contain paths or secrets
 // and must not be copied into default diagnostics.
 export const runTool: Runner = (command, args, cwd) => {
+  command = resolveExecutable(command);
   const result = spawnSync(command, args, {
     cwd,
     encoding: "utf8",
@@ -93,6 +101,7 @@ export type ProbeRunner = (
 // is running. On POSIX, stop the process group, including compiler helpers.
 export const runProbeTool: ProbeRunner = (command, args, cwd, signal) =>
   new Promise((resolveResult) => {
+    command = resolveExecutable(command);
     if (signal?.aborted)
       return resolveResult({ status: null, stdout: "", failed: true });
     const child = spawn(command, args, {
@@ -134,19 +143,68 @@ export const runProbeTool: ProbeRunner = (command, args, cwd, signal) =>
     });
   });
 
-export function resolveExecutable(command: string): string {
-  if (isAbsolute(command)) return command;
-  if (/[/\\]/.test(command)) return resolve(command);
-  const extensions = process.platform === "win32" ? ["", ".exe", ".com"] : [""];
-  for (const entry of (process.env.PATH ?? "").split(delimiter)) {
+// ScriptC 0.3.5 installs a native bin/scriptc.exe behind npm's Windows shim.
+// Resolve that pinned package entry directly; never interpret a batch file or
+// interpolate user arguments into cmd.exe. Revisit when the pinned bin changes.
+export function resolveWindowsScriptcShim(shim: string): string {
+  if (!/\.cmd$/i.test(shim)) return shim;
+  if (basename(shim).toLowerCase() === "scriptc.cmd") {
+    const roots = [
+      join(dirname(shim), "node_modules", "scriptc"),
+      join(dirname(shim), "..", "scriptc"),
+    ];
+    for (const root of roots) {
+      try {
+        const manifest = JSON.parse(
+          readFileSync(join(root, "package.json"), "utf8"),
+        );
+        const executable = resolve(root, "bin", "scriptc.exe");
+        if (
+          manifest.name === "scriptc" &&
+          manifest.version === versions.scriptc &&
+          manifest.bin?.scriptc === "bin/scriptc.exe" &&
+          statSync(executable).isFile()
+        )
+          return executable;
+      } catch {
+        /* Try the other standard npm installation layout. */
+      }
+    }
+  }
+  throw new DiagnosticError(
+    Code.Tool,
+    "Select the ScriptC native executable or reinstall the pinned npm package.",
+  );
+}
+
+export function resolveExecutable(
+  command: string,
+  platform = process.platform,
+  searchPath = process.env.PATH ?? "",
+): string {
+  const select = (path: string) =>
+    platform === "win32" ? resolveWindowsScriptcShim(path) : path;
+  if (isAbsolute(command)) return select(command);
+  if (/[/\\]/.test(command)) return select(resolve(command));
+  const extensions =
+    platform === "win32"
+      ? /\.(exe|com|cmd)$/i.test(command)
+        ? [""]
+        : [".exe", ".com", ".cmd"]
+      : [""];
+  for (const entry of searchPath.split(
+    platform === "win32" ? ";" : delimiter,
+  )) {
     for (const extension of extensions) {
       const candidate = resolve(entry || ".", command + extension);
+      let exists = false;
       try {
         accessSync(candidate, constants.X_OK);
-        if (statSync(candidate).isFile()) return candidate;
+        exists = statSync(candidate).isFile();
       } catch {
         /* Continue to the next PATH entry. */
       }
+      if (exists) return select(candidate);
     }
   }
   return command;

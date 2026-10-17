@@ -44,3 +44,5 @@ The probe artifact digest identifies the bytes tested. It does not verify a fram
 This initial development version introduces scaffolding and prerequisite diagnostics only. There is no migration or rollback workflow for applications yet. Use [GitHub issues](https://github.com/delinoio/oss/issues) for support and remove sensitive content from reports.
 
 Repository-owned package content is Apache-2.0; see LICENSE and NOTICE.
+
+On Windows, the pinned npm ScriptC shim resolves to its installed native `bin/scriptc.exe`. The CLI invokes that executable directly without a command shell. A missing or mismatched npm installation must be repaired before running the probe.
