@@ -21,6 +21,35 @@ const require = createRequire(import.meta.url);
 const appPath = "apps/async-commit-hook";
 const controlPath = "control";
 
+// The fixture-owned receipt is the proof that the selected stand-in stage threw.
+// Turbo does not always forward the exception text, so console output is kept
+// only as an assertion diagnostic and never as the failure evidence.
+function verifyInjectedFailure(stage, result, receipts) {
+  assert.notEqual(result.code, 0, result.output);
+  assert.deepEqual(receipts, [stage], result.output);
+}
+
+test("injected failure verification relies on receipts, not console text", () => {
+  assert.doesNotThrow(() =>
+    verifyInjectedFailure("native", { code: 1, output: "task failed" }, [
+      "native",
+    ]),
+  );
+  assert.throws(() =>
+    verifyInjectedFailure(
+      "native",
+      { code: 1, output: "injected native failure" },
+      [],
+    ),
+  );
+  assert.throws(() =>
+    verifyInjectedFailure("frontend", { code: 1, output: "" }, ["validator"]),
+  );
+  assert.throws(() =>
+    verifyInjectedFailure("validator", { code: 0, output: "" }, ["validator"]),
+  );
+});
+
 test(
   "async-commit-hook aggregate serializes frontend readers and both rebuilds",
   { timeout: 300_000 },
@@ -126,6 +155,10 @@ import { fileURLToPath } from "node:url";
 export const control = fileURLToPath(new URL("../../control/", import.meta.url));
 export const state = JSON.parse(await readFile(control + "state.json", "utf8"));
 export const event = (name) => appendFile(control + "events", name + "\\n");
+export async function fault(stage) {
+  await appendFile(control + "failures", stage + "\\n");
+  throw new Error("injected " + stage + " failure");
+}
 export async function hold(marker) {
   const deadline = Date.now() + 60_000;
   while (!existsSync(control + marker)) {
@@ -138,9 +171,9 @@ export async function hold(marker) {
     await write(
       `${appPath}/fixture-frontend.mjs`,
       `import { mkdir, writeFile } from "node:fs/promises";
-import { event, state } from "./fixture-control.mjs";
+import { event, fault, state } from "./fixture-control.mjs";
 await event("frontend:start");
-if (state.fail === "frontend") throw new Error("injected frontend failure");
+if (state.fail === "frontend") await fault("frontend");
 await mkdir("dist/assets", { recursive: true });
 await writeFile("dist/index.html", '<html lang="en"><script src="/assets/app.12345678.js"></script><link rel="stylesheet" href="/assets/app.12345678.css"></html>');
 await writeFile("dist/assets/app.12345678.js", "export {};\\n");
@@ -163,10 +196,10 @@ await event("embedded:done");
       `${appPath}/fixture-contracts.mjs`,
       `import { spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
-import { control, event, hold, state } from "./fixture-control.mjs";
+import { control, event, fault, hold, state } from "./fixture-control.mjs";
 await event("contracts:start");
 if (existsSync(control + "pause-contracts")) await hold("release-contracts");
-if (state.fail === "validator") throw new Error("injected validator failure");
+if (state.fail === "validator") await fault("validator");
 const result = spawnSync(process.execPath, ["--test", "scripts/build.test.mjs"], { stdio: "inherit" });
 if (result.error) throw result.error;
 if (result.status !== 0) process.exit(result.status ?? 1);
@@ -183,7 +216,10 @@ const state = JSON.parse(await readFile(new URL("state.json", control), "utf8"))
 const event = (name) => appendFile(new URL("events", control), name + "\\n");
 if (task === "ci:ach:native") {
   await event("native:start");
-  if (state.fail === "native") throw new Error("injected native failure");
+  if (state.fail === "native") {
+    await appendFile(new URL("failures", control), "native\\n");
+    throw new Error("injected native failure");
+  }
   await event("native:done");
 } else if (task === "ci:ach:package") {
   await event("package:start");
@@ -207,6 +243,11 @@ if (task === "ci:ach:native") {
     };
     const events = async () =>
       (await readFile(join(control, "events"), "utf8"))
+        .trim()
+        .split("\n")
+        .filter(Boolean);
+    const receipts = async () =>
+      (await readFile(join(control, "failures"), "utf8").catch(() => ""))
         .trim()
         .split("\n")
         .filter(Boolean);
@@ -302,7 +343,7 @@ if (task === "ci:ach:native") {
       await prepare({ fail });
       const result = await run(false).finished;
       assert.notEqual(result.code, 0, result.output);
-      assert.match(result.output, new RegExp(`injected ${fail} failure`, "u"));
+      verifyInjectedFailure(fail, result, await receipts());
       const observed = await events();
       assert.ok(!observed.includes("package:start"), result.output);
       if (fail !== "native") assert.ok(!observed.includes("embedded:start"));
