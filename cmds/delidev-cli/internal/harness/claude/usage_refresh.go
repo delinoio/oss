@@ -82,6 +82,22 @@ func usageRefreshUnsupported() *domain.Error {
 	return domain.Fail(domain.Unsupported, "The Claude usage credential cannot be renewed.", "Connect the usage account again.")
 }
 
+// usageRefreshChild is the supervised child surface RunUsageRefresh drives. The
+// process handle implements it; tests substitute a fake to fail the start
+// barrier deterministically.
+type usageRefreshChild interface {
+	Resume() error
+	CloseInput() error
+	Done() <-chan struct{}
+	Wait() error
+	Close() error
+}
+
+// startUsageRefreshChild starts the suspended child behind its start barrier.
+var startUsageRefreshChild = func(ctx context.Context, config process.Config) (usageRefreshChild, error) {
+	return process.Start(ctx, config)
+}
+
 // RunUsageRefresh runs the one supervised refresh-login child and joins it. The
 // returned status is meaningful even when err is non-nil. It never repeats the
 // child: a caller that sees any status but UsageRefreshNotStarted must treat the
@@ -105,15 +121,21 @@ func RunUsageRefresh(ctx context.Context, config AuthConfig, bundle subscription
 	prepared.StartupObserver = nil
 	bounded, cancel := context.WithTimeout(ctx, UsageRefreshTimeout)
 	defer cancel()
-	handle, err := process.Start(bounded, prepared)
+	handle, err := startUsageRefreshChild(bounded, prepared)
 	if err != nil {
 		return UsageRefreshNotStarted, err
 	}
 	if err := handle.Resume(); err != nil {
+		// The launch message carries the single-use refresh token. A failed
+		// Resume may follow a write that already crossed the private channel, and
+		// stopping the process afterwards proves only that it is gone, not that
+		// the child never received the token. The process layer cannot prove a
+		// start-barrier failure happened before transmission, so the exchange is
+		// uncertain and the token is never offered again.
 		if handle.Close() != nil {
 			return UsageRefreshUncertain, streamUncertain()
 		}
-		return UsageRefreshNotStarted, err
+		return UsageRefreshUncertain, err
 	}
 	// The refresh needs no input: close stdin so a prompt can never wait.
 	closeInputErr := handle.CloseInput()

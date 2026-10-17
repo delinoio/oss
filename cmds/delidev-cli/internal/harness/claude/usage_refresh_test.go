@@ -3,6 +3,7 @@ package claude
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/delinoio/oss/cmds/delidev-cli/internal/process"
 	"github.com/delinoio/oss/cmds/delidev-cli/internal/subscription"
 )
 
@@ -130,5 +132,50 @@ func TestRunUsageRefreshWithoutRefreshTokenStartsNothing(t *testing.T) {
 	status, err := RunUsageRefresh(context.Background(), auth, bundle)
 	if status != UsageRefreshNotStarted || err == nil {
 		t.Fatalf("status = %q %v", status, err)
+	}
+}
+
+// refreshChildFake fails the start barrier like a broken private channel.
+type refreshChildFake struct {
+	resumeErr error
+	closeErr  error
+	closed    int
+}
+
+func (f *refreshChildFake) Resume() error         { return f.resumeErr }
+func (f *refreshChildFake) CloseInput() error     { return nil }
+func (f *refreshChildFake) Done() <-chan struct{} { return make(chan struct{}) }
+func (f *refreshChildFake) Wait() error           { return nil }
+func (f *refreshChildFake) Close() error          { f.closed++; return f.closeErr }
+
+func TestRunUsageRefreshResumeFailureIsUncertainBecauseTheTokenMayHaveBeenSent(t *testing.T) {
+	for name, closeErr := range map[string]error{"stopped": nil, "stop unconfirmed": errors.New("cleanup unconfirmed")} {
+		t.Run(name, func(t *testing.T) {
+			auth := usageRefreshScript(t, `exit 0`)
+			child := &refreshChildFake{resumeErr: errors.New("write unix: broken pipe"), closeErr: closeErr}
+			previous := startUsageRefreshChild
+			startUsageRefreshChild = func(context.Context, process.Config) (usageRefreshChild, error) { return child, nil }
+			defer func() { startUsageRefreshChild = previous }()
+			status, err := RunUsageRefresh(context.Background(), auth, usageRefreshBundle())
+			if status != UsageRefreshUncertain || err == nil {
+				t.Fatalf("a failed start barrier = %q %v, want uncertain", status, err)
+			}
+			if child.closed != 1 {
+				t.Fatalf("the child was closed %d times, want once", child.closed)
+			}
+		})
+	}
+}
+
+func TestRunUsageRefreshStartFailureStaysNotStarted(t *testing.T) {
+	auth := usageRefreshScript(t, `exit 0`)
+	previous := startUsageRefreshChild
+	startUsageRefreshChild = func(context.Context, process.Config) (usageRefreshChild, error) {
+		return nil, errors.New("spawn failed")
+	}
+	defer func() { startUsageRefreshChild = previous }()
+	status, err := RunUsageRefresh(context.Background(), auth, usageRefreshBundle())
+	if status != UsageRefreshNotStarted || err == nil {
+		t.Fatalf("a failed spawn = %q %v, want not started", status, err)
 	}
 }
