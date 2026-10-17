@@ -893,6 +893,22 @@ it("treats a malformed usage section as unreadable instead of guessing a connect
   expect(within(section).queryAllByRole("button")).toHaveLength(0);
 });
 
+it("rejects a connecting or confirming section that omits its login operation", () => {
+  for (const connection of ["connecting", "confirming"])
+    expect(
+      claudeUsageSection({ claude_usage: { connection, generation } }).kind,
+    ).toBe("unreadable");
+  expect(
+    claudeUsageSection({
+      claude_usage: {
+        connection: "connecting",
+        generation,
+        operation: operation("preparing"),
+      },
+    }).kind,
+  ).toBe("present");
+});
+
 it("projects only closed fields and identifies a manually linked row only with observations", () => {
   expect(claudeUsageSection({}).kind).toBe("absent");
   expect(

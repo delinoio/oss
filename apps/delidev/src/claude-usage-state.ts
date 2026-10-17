@@ -178,6 +178,14 @@ export function claudeUsageSection(
       codeSubmitted: text(op.code_submission_id) !== "",
     };
   }
+  // The connecting and confirming lifecycles are always owned by one login
+  // operation; a section that omits it cannot be acted on and is unreadable.
+  if (
+    (connection === ClaudeUsageConnection.Connecting ||
+      connection === ClaudeUsageConnection.Confirming) &&
+    !operation
+  )
+    return { kind: "unreadable" };
   const lastSuccessAt = raw.last_success_at
       ? instant(raw.last_success_at)
       : undefined,
