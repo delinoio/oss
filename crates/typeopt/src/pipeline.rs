@@ -598,7 +598,9 @@ fn compression_drops(
         let files: BTreeSet<&str> = items
             .iter()
             .flat_map(|&i| accepted[i].0.edits.iter().map(|e| e.file.as_str()))
-            .filter(|file| texts[*file].len() >= COMPRESSION_GATE_MIN_BYTES)
+            .filter(|file| {
+                crate::bundle::chunk_code_len(&texts[*file]) >= COMPRESSION_GATE_MIN_BYTES
+            })
             .collect();
         let before = total(texts, accepted, kept, &files, measure)?;
         let with_items: Vec<usize> = kept.iter().chain(items).copied().collect();
@@ -855,7 +857,7 @@ impl<B: Backend> Pipeline<'_, B> {
             // shrink the chunk text but grow its gzip or Brotli size, then
             // plan again so the remaining decisions do not depend on them.
             let dropped = compression_drops(&outcome.texts, &accepted, &|text| {
-                crate::minify::compressed(&text[..crate::bundle::chunk_code_len(text)])
+                crate::minify::compressed(&crate::bundle::chunk_code(text))
             })?;
             if !dropped.is_empty() {
                 for &index in &dropped {
@@ -1161,6 +1163,30 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    #[test]
+    fn compression_guard_measures_code_without_the_source_map_comment() {
+        // A large inline map must not lift a small chunk over the threshold,
+        // and the comment is removed, not sliced off by length.
+        let map = format!(
+            "\n//# sourceMappingURL=data:application/json;base64,{}",
+            "A".repeat(COMPRESSION_GATE_MIN_BYTES)
+        );
+        let texts = sources(&format!("aaaa bbbb{map}"));
+        let accepted = vec![accepted_bundle(
+            "grow",
+            vec![FileEdit::replace("a.ts", 5, 9, "xxxx")],
+        )];
+        assert!(
+            compression_drops(&texts, &accepted, &weighted)
+                .unwrap()
+                .is_empty()
+        );
+        let text = "f();//# sourceMappingURL=a\n";
+        let code = crate::bundle::chunk_code(text);
+        assert!(code.starts_with("f();") && !code.contains("sourceMappingURL"));
+        assert_eq!(code.len(), crate::bundle::chunk_code_len(text));
     }
 
     #[test]
