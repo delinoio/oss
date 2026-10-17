@@ -800,7 +800,10 @@ impl<'a> Parser<'a> {
         let abrupt_capable = match token.kind {
             TokenKind::Punct => token.text == "{",
             TokenKind::Word => {
-                matches!(token.text, "if" | "return" | "throw" | "break" | "continue")
+                matches!(
+                    token.text,
+                    "if" | "return" | "throw" | "break" | "continue" | "try"
+                ) || is_label(self.at(1), token.text)
             }
             _ => false,
         };
@@ -935,10 +938,20 @@ impl<'a> Parser<'a> {
                 self.skip_import();
             }
             "export" => self.parse_export(),
-            text if is_punct(self.at(1), ":") && !matches!(text, "default" | "case") => {
+            text if is_label(self.at(1), text) => {
                 self.bump();
                 self.bump();
+                let target = self.jumps.len();
+                let start = self.exit_count();
                 self.parse_jump_body(Jump::Label(word_name(text)));
+                // A `break` to the label completes the statement normally.
+                if self.abrupt
+                    && self
+                        .exits_since(start)
+                        .any(|exit| matches!(exit, Exit::Jump(t) if t == target))
+                {
+                    self.abrupt = false;
+                }
             }
             _ => self.expression_statement(),
         }
@@ -958,6 +971,22 @@ impl<'a> Parser<'a> {
         if let Some(frame) = self.returns.last_mut() {
             frame.exits.push(target.map_or(Exit::Function, Exit::Jump));
         }
+    }
+
+    /// The number of completions recorded so far in the current function body.
+    fn exit_count(&self) -> usize {
+        self.returns.last().map_or(0, |frame| frame.exits.len())
+    }
+
+    /// The completions recorded since [`Self::exit_count`] returned `start`.
+    fn exits_since(&self, start: usize) -> impl Iterator<Item = Exit> + '_ {
+        self.returns
+            .last()
+            .map_or(&[][..], |frame| {
+                &frame.exits[start.min(frame.exits.len())..]
+            })
+            .iter()
+            .copied()
     }
 
     fn expression_statement(&mut self) {
@@ -1137,6 +1166,9 @@ impl<'a> Parser<'a> {
             return;
         }
         self.jumps.push(Jump::Switch);
+        // Statements after an abrupt one are unreachable up to the next
+        // `case` or `default` label, which the switch dispatch can reach.
+        let mut unreachable = false;
         loop {
             match self.tok() {
                 None => break,
@@ -1145,22 +1177,35 @@ impl<'a> Parser<'a> {
                     break;
                 }
                 Some(token) if token.kind == TokenKind::Word && token.text == "case" => {
+                    if std::mem::take(&mut unreachable) {
+                        self.dead -= 1;
+                    }
                     self.bump();
                     self.parse_expr();
                     self.eat_punct(":");
                 }
                 Some(token) if token.kind == TokenKind::Word && token.text == "default" => {
+                    if std::mem::take(&mut unreachable) {
+                        self.dead -= 1;
+                    }
                     self.bump();
                     self.eat_punct(":");
                 }
                 Some(_) => {
                     let before = self.pos;
                     self.parse_statement();
+                    if self.abrupt && !unreachable {
+                        unreachable = true;
+                        self.dead += 1;
+                    }
                     if self.pos == before {
                         self.bump();
                     }
                 }
             }
+        }
+        if unreachable {
+            self.dead -= 1;
         }
         self.jumps.pop();
     }
@@ -1181,6 +1226,7 @@ impl<'a> Parser<'a> {
             .last()
             .map_or((0, 0), |frame| (frame.values.len(), frame.exits.len()));
         self.within(Self::parse_block);
+        let mut abrupt = self.abrupt;
         if self.eat_word("catch") {
             // The `catch` clause handles every `throw` that leaves the `try`
             // block, however deeply nested and whatever `finally` block it
@@ -1196,6 +1242,7 @@ impl<'a> Parser<'a> {
                 self.parse_call_arguments();
             }
             self.within(Self::parse_block);
+            abrupt &= self.abrupt;
         }
         let (middle, pending) = self
             .returns
@@ -1204,6 +1251,7 @@ impl<'a> Parser<'a> {
         if self.eat_word("finally") {
             let base = self.jumps.len();
             self.within(Self::parse_block);
+            abrupt |= self.abrupt;
             if let Some(frame) = self.returns.last_mut() {
                 let pending = pending.min(frame.exits.len());
                 if frame.exits[pending..].iter().any(|exit| exit.leaves(base)) {
@@ -1212,6 +1260,10 @@ impl<'a> Parser<'a> {
                 }
             }
         }
+        // The `try` statement completes abruptly when its `finally` block
+        // does, or when the `try` block and the `catch` clause (if any) both
+        // do.
+        self.abrupt = abrupt;
     }
 
     fn skip_import(&mut self) {
@@ -2266,6 +2318,11 @@ impl<'a> Parser<'a> {
 
 fn is_punct(token: Option<Token<'_>>, text: &str) -> bool {
     token.is_some_and(|token| token.kind == TokenKind::Punct && token.text == text)
+}
+
+/// Whether the word `text`, followed by `next`, is a statement label.
+fn is_label(next: Option<Token<'_>>, text: &str) -> bool {
+    is_punct(next, ":") && !matches!(text, "default" | "case")
 }
 
 fn is_word(token: Option<Token<'_>>, text: &str) -> bool {
@@ -4899,12 +4956,224 @@ mod tests {
                 "try{try{throw 1}catch(_){}}finally{cleanup()}try{throw 2}finally{cleanup()}",
                 None,
             ),
+            // The statements of a `switch` clause after an abrupt one are
+            // unreachable up to the next `case` or `default` label.
+            (
+                "switch clause break after a break",
+                "switch(x){case 0:break;break outer}",
+                Some("and"),
+            ),
+            (
+                "switch clause continue after a break",
+                "switch(x){case 0:break;continue outer}",
+                Some("and"),
+            ),
+            (
+                "switch clause break after a throw",
+                "try{switch(x){case 0:throw 1;break outer}}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "switch clause break after a block that breaks",
+                "switch(x){case 0:{break}break outer}",
+                Some("and"),
+            ),
+            (
+                "switch clause break after an if and else that break",
+                "switch(x){case 0:if(a)break;else break;break outer}",
+                Some("and"),
+            ),
+            (
+                "switch clause throw after a break",
+                "switch(x){case 0:break;throw 1}",
+                Some("and"),
+            ),
+            (
+                "switch default clause break after a break",
+                "switch(x){default:break;break outer}",
+                Some("and"),
+            ),
+            (
+                "switch clause with several unreachable statements",
+                "switch(x){case 0:break;f();break outer;continue outer}",
+                Some("and"),
+            ),
+            (
+                "switch next case is reachable",
+                "switch(x){case 0:break;case 1:break outer}",
+                None,
+            ),
+            (
+                "switch default is reachable",
+                "switch(x){case 0:break;default:break outer}",
+                None,
+            ),
+            (
+                "switch next case after several unreachable statements",
+                "switch(x){case 0:break;f();case 1:break outer}",
+                None,
+            ),
+            (
+                "switch first clause is reachable",
+                "switch(x){case 0:break outer}",
+                None,
+            ),
+            (
+                "switch clause break after a conditional break",
+                "switch(x){case 0:if(a)break;break outer}",
+                None,
+            ),
+            (
+                "switch clause break after a call",
+                "switch(x){case 0:f();break outer}",
+                None,
+            ),
+            (
+                "break after a switch with an unreachable tail",
+                "switch(x){case 0:break;break outer}break outer",
+                None,
+            ),
+            (
+                "break after a switch that ends in a throw",
+                "try{switch(x){case 0:throw 1}break outer}catch(_){}",
+                None,
+            ),
+            // A `try` statement completes abruptly when its `finally` block
+            // does, or when its `try` block and `catch` clause both do.
+            (
+                "break after a try block that throws",
+                "try{try{throw 1}finally{cleanup()}break outer}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "break after a try block and a catch clause that throw",
+                "try{try{throw 1}catch(e){throw 2}break outer}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "break after a finally block that breaks to a label",
+                "a:{try{f()}finally{break a}break outer}",
+                Some("and"),
+            ),
+            (
+                "break after a try block that throws and a catch that completes",
+                "try{try{throw 1}catch(e){}break outer}catch(_){}",
+                None,
+            ),
+            (
+                "break after a try block that completes and a catch that throws",
+                "try{try{f()}catch(e){throw 1}break outer}catch(_){}",
+                None,
+            ),
+            (
+                "break after a try block that completes",
+                "try{f()}finally{cleanup()}break outer",
+                None,
+            ),
+            (
+                "break after a finally block that breaks conditionally",
+                "a:{try{f()}finally{if(x)break a}break outer}",
+                None,
+            ),
+            // A labelled statement completes abruptly when its body does and
+            // no `break` reaches its label.
+            (
+                "break after a labelled block that throws",
+                "try{a:{throw 1}break outer}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "break after a labelled if and else that throw",
+                "try{a:if(x)throw 1;else throw 2;break outer}catch(_){}",
+                Some("and"),
+            ),
+            (
+                "break after a labelled block that is left by a break",
+                "a:{break a}break outer",
+                None,
+            ),
+            (
+                "break after a labelled block with a conditional break",
+                "try{a:{if(x)break a;throw 1}break outer}catch(_){}",
+                None,
+            ),
+            (
+                "break after a labelled loop",
+                "try{a:for(;;){throw 1}break outer}catch(_){}",
+                None,
+            ),
+            (
+                "break after a labelled block that breaks to an outer label",
+                "b:{a:{break b}break outer}",
+                Some("and"),
+            ),
         ];
         for &(shape, finally_body, expected) in rows {
             let code = format!(
                 "(function(){{outer:for(;;){{try{{return \
                  process.env.FLAG}}finally{{{finally_body}}}}}}})()&&run()"
             );
+            assert_eq!(flag_guard(&code), expected, "{shape}: {code}");
+        }
+    }
+
+    /// Reachability of `return` statements around abrupt statements.
+    #[test]
+    fn unreachable_return_rows() {
+        let rows: &[(&str, &str, Option<&str>)] = &[
+            (
+                "return in a switch clause after a return",
+                "switch(x){case 0:return 1;return process.env.FLAG}",
+                None,
+            ),
+            (
+                "return in a switch clause after a break",
+                "switch(x){case 0:break;return process.env.FLAG}",
+                None,
+            ),
+            (
+                "return in the next switch clause",
+                "switch(x){case 0:return 1;case 1:return process.env.FLAG}",
+                Some("and"),
+            ),
+            (
+                "return in the default switch clause",
+                "switch(x){case 0:break;default:return process.env.FLAG}",
+                Some("and"),
+            ),
+            (
+                "return after a switch that ends in a return",
+                "switch(x){case 0:return 1}return process.env.FLAG",
+                Some("and"),
+            ),
+            (
+                "return after a try block that returns",
+                "try{return 1}finally{cleanup()}return process.env.FLAG",
+                None,
+            ),
+            (
+                "return after a try block and a catch clause that return",
+                "try{return 1}catch(e){return 2}return process.env.FLAG",
+                None,
+            ),
+            (
+                "return after a try block that returns and a catch that completes",
+                "try{return 1}catch(e){}return process.env.FLAG",
+                Some("and"),
+            ),
+            (
+                "return after a labelled block that returns",
+                "a:{return 1}return process.env.FLAG",
+                None,
+            ),
+            (
+                "return after a labelled block left by a break",
+                "a:{break a}return process.env.FLAG",
+                Some("and"),
+            ),
+        ];
+        for &(shape, body, expected) in rows {
+            let code = format!("(function(){{{body}}})()&&run()");
             assert_eq!(flag_guard(&code), expected, "{shape}: {code}");
         }
     }
