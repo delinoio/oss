@@ -6,6 +6,58 @@
 
 use crate::decision::{LanguageValidator, Validation};
 
+/// SCOWL/ESDB Hunspell validator. Affix flags belong to each dictionary
+/// entry; a listed noun does not automatically acquire verb inflections.
+pub struct HunspellValidator {
+    dictionary: spellbook::Dictionary,
+}
+
+impl HunspellValidator {
+    /// Loads the pinned US English dictionary compiled into the application.
+    ///
+    /// # Errors
+    ///
+    /// Returns the parser's error if the bundled dictionary cannot be loaded.
+    pub fn bundled() -> Result<Self, spellbook::ParseDictionaryError> {
+        Self::from_hunspell(
+            include_str!("../assets/en-us/en_US.aff"),
+            include_str!("../assets/en-us/en_US.dic"),
+        )
+    }
+
+    /// Loads a Hunspell dictionary with case-insensitive entry comparison.
+    /// Original affix flags and rule conditions are preserved.
+    ///
+    /// # Errors
+    ///
+    /// Returns the parser's error for invalid dictionary or affix data.
+    pub fn from_hunspell(
+        affixes: &str,
+        entries: &str,
+    ) -> Result<Self, spellbook::ParseDictionaryError> {
+        // Lowercase only the entry, never its case-sensitive affix flags or
+        // morphology fields. This also handles mixed-case listed names.
+        let mut folded = String::with_capacity(entries.len());
+        for line in entries.lines() {
+            let split = line.find(['/', '\t', ' ']).unwrap_or(line.len());
+            folded.push_str(&line[..split].to_lowercase());
+            folded.push_str(&line[split..]);
+            folded.push('\n');
+        }
+        spellbook::Dictionary::new(affixes, &folded).map(|dictionary| Self { dictionary })
+    }
+}
+
+impl LanguageValidator for HunspellValidator {
+    fn validate(&self, candidate: &str) -> Validation {
+        if !candidate.is_empty() && self.dictionary.check(&candidate.to_lowercase()) {
+            Validation::Accepted
+        } else {
+            Validation::Rejected
+        }
+    }
+}
+
 /// Lexicon entry class.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EntryClass {

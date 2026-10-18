@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 1,
+  "english": {
+    "repository": "https://github.com/en-wl/wordlist",
+    "version": "rel-2026.02.25",
+    "asset": "hunspell-en_US-2026.02.25.zip",
+    "sha256": "ac8e73310e951d88c52c2cf2ba54ceaca34f8486a81630ac8a75dc5f931179f9",
+    "license": "SCOWL and Ispell notices in en-us/README_en_US.txt"
+  },
+  "korean": {
+    "repository": "https://github.com/lindera/mecab-ko-dic",
+    "revision": "12439fb32808b9244ded56d7dfed96e4b8d76869",
+    "version": "2.1.1-20180720",
+    "license": "Apache-2.0",
+    "builder": "mecab-ko-dict-builder 0.7.2",
+    "command": "mecab-ko-dict-builder --input <source> --output <output> --encoding utf8 --compression 0",
+    "entryCount": 816283
+  },
+  "analyzer": {
+    "repository": "https://github.com/hephaex/mecab-ko",
+    "version": "0.7.2",
+    "revision": "d92b405475909dccd5a580003cf7df01f04801f1",
+    "license": "MIT OR Apache-2.0",
+    "crateChecksums": "Cargo.lock"
+  },
+  "hunspellEngine": {
+    "repository": "https://github.com/helix-editor/spellbook",
+    "version": "0.4.2",
+    "license": "MPL-2.0",
+    "crateChecksums": "Cargo.lock"
+  },
+  "files": {
+    "en-us/README_en_US.txt": "d63c711523fc9504fb71e1278489c6d7bb8cafcba75158c107cd17844955470f",
+    "en-us/en_US.aff": "526e1dc32d1c0e8806dd72809c017b5546f2104b08b9424a4c47311aca526cca",
+    "en-us/en_US.dic": "ab012ae86ce4b46b60db5b150869288de9c4a87bc747911764e582125b1b961e",
+    "ko/AUTHORS": "29804e123814efb1c983677cfc9875540a77823f201973b27999b650726586eb",
+    "ko/COPYING": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4",
+    "ko/entries.bin": "d46bf4f176adf9e2e102dd0f95ecb4884bda57c64209bb55de0cdb45b7605b67",
+    "ko/matrix.bin": "e558a8064721b4492c465f9ed55dabd5655257b63bbe68fb15bf7d054bb5a7cc",
+    "ko/sys.dic": "81d30eefbcc649b1d4655e69810fe0b51cda58595126ffd6aba3e98c39fd817a",
+    "notices/mecab-ko-LICENSE-APACHE": "11514dc4adea727c83f40e132a91cc18a9c6ddd2b5c6975732b3bda6853ad952",
+    "notices/mecab-ko-LICENSE-MIT": "e78700be52cb6bb2abb8fd944c88710ce51da81d06353870a9496be70a5418a0",
+    "notices/spellbook-LICENSE": "1f256ecad192880510e84ad60474eab7589218784b9a50bc7ceee34c2b91f1d5"
+  }
+}

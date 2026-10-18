@@ -79,6 +79,14 @@ Validators:
 - US English uses SCOWL/ESDB-based data with dictionary inflection rules. Compare case-insensitively. Accept proper nouns and abbreviations only when the selected dictionary lists them.
 - Dictionaries are bundled so correction works offline from first launch. They update only with application releases. There are no separate dictionary downloads and no user dictionary editing.
 
+### Bundled dictionary resources
+
+- `crates/fixkey-core/assets/manifest.json` pins resource sources, versions, source revisions, build command, licenses and SHA-256 hashes. Rust dependency archive checksums remain in `Cargo.lock`. Preserve `assets/en-us/README_en_US.txt`, `assets/ko/COPYING`, `assets/ko/AUTHORS` and `assets/notices/` in application distributions alongside the dictionary data.
+- English data is the official `en-wl/wordlist` US English size-60 Hunspell release `rel-2026.02.25`, loaded through `spellbook` `0.4.2`. Fold dictionary entry surfaces and candidates to lowercase without changing case-sensitive affix flags or morphology fields. Apply the supplied `.aff` rules and each entry's flags; the generic `Lexicon` helper is a fixture interface, not the bundled validator.
+- Korean data is the complete `mecab-ko-dic` `2.1.1-20180720` source at `lindera/mecab-ko-dic` revision `12439fb32808b9244ded56d7dfed96e4b8d76869`, compiled with `mecab-ko-dict-builder` `0.7.2`. The selected hephaex MeCab-Ko engine and dictionary reader are pinned to `0.7.2`. Load `sys.dic`, `matrix.bin` and `entries.bin` from an explicit application resource directory; do not discover a user-installed dictionary or consult environment overrides.
+- Use the public dictionary and lattice interfaces to retain node provenance and propagate lookup failures. Rank complete dictionary-backed paths with the dictionary's word/connection costs subject to the existing POS start, connection and end rules. A sentence tokenizer may prefer `XSV+EC` for `해`; a separate, dictionary-listed `XSV+EF` analysis is eligible when it completes the word. Do not relabel a connective as sentence-final. If no complete path exists, retain the analyzer's known/unknown evidence for rejection by the validator.
+- Hydrate the three exact-path LFS resources before full-dictionary tests or packaging. Source regeneration requires the pinned dictionary checkout, including its LFS `matrix.def`, and the pinned builder. Copy only the three runtime files, preserve notices, and update hashes when deliberately changing resources. No runtime dictionary downloads occur.
+
 Correction and undo state:
 
 - Keep one active correction context per user session. Never share input state across users or applications.
