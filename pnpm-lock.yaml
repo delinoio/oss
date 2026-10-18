@@ -195,6 +195,31 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
+  apps/delitools:
+    dependencies:
+      react:
+        specifier: 19.2.8
+        version: 19.2.8
+      react-dom:
+        specifier: 19.2.8
+        version: 19.2.8(react@19.2.8)
+    devDependencies:
+      '@rsbuild/core':
+        specifier: 2.1.10
+        version: 2.1.10
+      '@rsbuild/plugin-react':
+        specifier: 2.0.1
+        version: 2.0.1(@rsbuild/core@2.1.10)(@rspack/core@2.2.9(@swc/helpers@0.5.23))
+      '@types/react':
+        specifier: 19.2.14
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: 19.2.3
+        version: 19.2.3(@types/react@19.2.14)
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+
   apps/devhud:
     dependencies:
       '@connectrpc/connect':

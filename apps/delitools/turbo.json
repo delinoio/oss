@@ -1,0 +1,20 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "outputs": ["dist/**"]
+    },
+    "build:frontend": {
+      "outputs": ["dist/**"]
+    },
+    "typecheck": {
+      "outputs": []
+    },
+    "test": {
+      "outputs": ["dist/**"]
+    },
+    "ci:checks": {
+      "outputs": ["dist/**"]
+    }
+  }
+}

@@ -22,6 +22,10 @@ DeliDev retains only a blank desktop window. Its `delidev-frontend` job checks f
 
 Repository workflows are reviewed as source-backed contracts. Workflow IDs, job IDs, artifact names, permissions, triggers, protected environments, and publication boundaries must match the checked-in YAML and the static workflow tests.
 
+## DeliTools mobile shell
+
+The `delitools-frontend` job joins affected repository CI and checks mobile release helpers, frontend types and production output on Ubuntu. The main-only `release-delitools-mobile.yml` dispatch uses the protected `delitools-mobile` environment for signed Android AAB and iOS IPA builds. Its `publish` input defaults to false; enabling it uploads to Google Play internal testing and TestFlight. Android uses Ubuntu and iOS uses macOS only in this separate release workflow. Neither platform adds macOS to PR, main-push or affected manual CI. See the [application contract](apps-delitools-foundation.md) for configuration and acceptance boundaries.
+
 ## Renovate scheduling
 
 Root `renovate.json` extends `github>delinoio/renovate-config` and defines this
@@ -666,7 +670,7 @@ Release automation baseline:
 
 - Root `turbo.json`, `package.json`, `pnpm-lock.yaml` and `pnpm-workspace.yaml` changes select `rust-fmt`, `forge-test` and `forge-render` through their job-specific path rules. Preserve the existing native `FORCE_RUN` commands and event eligibility; these root inputs do not globally force unrelated jobs.
 
-- Preserve the central validated Rust package selection. `run-rust.mjs` selects an explicit uncached Turbo graph with only the selected owners' build prerequisites; it must not expand the Cargo package list or bypass empty-selection rejection.
+- Preserve the central validated Rust package selection. `run-rust.mjs` selects an explicit uncached Turbo graph with only the selected owners' build prerequisites; it must not expand the Cargo package list or bypass empty-selection rejection. A selected `delitools-shell` package requires `delitools#build:frontend` before Rust tests or clippy, including restoration of its generated `dist` output from cache. DeliTools also selects the existing Linux desktop development libraries. Rust selections without DeliTools do not build its frontend.
 
 - Cache deterministic leaves only. Go/Rust execution, DB/OS/render/benchmark, repeated clean builds, embedded generation and protocol freshness run every time. Declare actual outputs and external inputs, plus task-local platform/tool/option hashes.
 
