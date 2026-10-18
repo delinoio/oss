@@ -53,6 +53,7 @@ jobs:
       TAURI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.DELITOOLS_ANDROID_KEYSTORE_PASSWORD }}
       TAURI_ANDROID_KEY_ALIAS: ${{ secrets.DELITOOLS_ANDROID_KEY_ALIAS }}
       TAURI_ANDROID_KEY_PASSWORD: ${{ secrets.DELITOOLS_ANDROID_KEY_PASSWORD }}
+      DELITOOLS_ANDROID_CERTIFICATE_SHA256: ${{ vars.DELITOOLS_ANDROID_CERTIFICATE_SHA256 }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with: { persist-credentials: false, lfs: true }
@@ -84,7 +85,7 @@ jobs:
           test "${#bundles[@]}" -eq 1
           cp "${bundles[0]}" "mobile-artifacts/delitools-android.aab"
           jarsigner -verify "mobile-artifacts/delitools-android.aab"
-          keytool -printcert -jarfile "mobile-artifacts/delitools-android.aab" > /dev/null
+          node apps/delitools/scripts/verify-android-signing.mjs "mobile-artifacts/delitools-android.aab"
           cp LICENSE NOTICE mobile-artifacts/
           printf 'revision=%s\nbuild_number=%s\nplatform=android\n' "$GITHUB_SHA" "$DELITOOLS_BUILD_NUMBER" > "mobile-artifacts/build.txt"
       - uses: actions/upload-artifact@v7

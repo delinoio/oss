@@ -103,3 +103,23 @@ for (const [platform, stepName, filename] of [
     }
   });
 }
+
+test("DeliTools verifies the protected Android upload identity before retaining candidates", () => {
+  const job = workflow.jobs.android;
+  assert.equal(
+    job.env.DELITOOLS_ANDROID_CERTIFICATE_SHA256,
+    "${{ vars.DELITOOLS_ANDROID_CERTIFICATE_SHA256 }}",
+  );
+  const verify = job.steps.find(
+    (step) => step.name === "Collect and verify signed bundle",
+  );
+  assert.equal(verify.if, undefined);
+  assert.match(
+    verify.run,
+    /node apps\/delitools\/scripts\/verify-android-signing.mjs/,
+  );
+  const archive = job.steps.find((step) =>
+    step.uses?.startsWith("actions/upload-artifact@"),
+  );
+  assert.ok(job.steps.indexOf(verify) < job.steps.indexOf(archive));
+});
