@@ -361,15 +361,7 @@ fn run_worker(
         let enabled = status == "active";
         let changed = runtime.status != status;
         runtime.status = status.into();
-        runtime.active = enabled;
-        active.store(enabled, Ordering::Release);
-        if let Ok(mut policy) = runtime.input_policy.write() {
-            *policy = enabled.then(|| runtime.preferences.current().clone());
-        }
-        runtime
-            .preferences
-            .session()
-            .set_permission_granted(enabled);
+        set_active(&mut runtime, active, enabled);
         let mut hide = false;
         if !enabled || lost.swap(false, Ordering::AcqRel) {
             adapter.clear();
@@ -432,6 +424,18 @@ fn run_worker(
         }
         publish_status(app, status, changed, diagnostic.as_deref());
     }
+}
+
+fn set_active(runtime: &mut crate::desktop::Runtime, active: &AtomicBool, enabled: bool) {
+    runtime.active = enabled;
+    active.store(enabled, Ordering::Release);
+    if let Ok(mut policy) = runtime.input_policy.write() {
+        *policy = enabled.then(|| runtime.preferences.current().clone());
+    }
+    runtime
+        .preferences
+        .session()
+        .set_permission_granted(enabled);
 }
 
 // Idle status checks read metadata only. Text snapshots follow keys, focus
