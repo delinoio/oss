@@ -125,6 +125,7 @@ enum CandidateValidation {
 `NotRecognized` candidates are selectable and labeled as not recognized by the dictionary. `ValidatorUnavailable` candidates are shown with a distinct "could not be checked" label, never as not recognized, and are selectable explicitly. The label never relies on color alone.
 
 - Revalidate the target before applying a manual choice. Switching applications or changing the target invalidates the list.
+- The core manual session owns one explicit word range immediately before the source caret, its candidate selection and its captured source snapshot. Keyboard navigation wraps through every displayed candidate. Choosing the original or closing the session performs no write. Applying consumes the session before revalidation, so stale targets and failures cannot trigger a later retry. Partial writes use the same guarded recovery rule as automatic correction.
 
 ## Storage
 

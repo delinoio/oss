@@ -21,6 +21,7 @@ pub mod decision;
 pub mod english;
 pub mod korean;
 pub mod layout;
+pub mod manual;
 pub mod mecab;
 pub mod session;
 pub mod tokenizer;

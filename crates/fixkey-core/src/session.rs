@@ -230,12 +230,12 @@ impl RestoredState {
 }
 
 /// A replacement that is being written, kept for partial-write recovery.
-struct PendingWrite<'a> {
-    before: &'a FieldSnapshot,
-    start: usize,
-    end: usize,
-    original: &'a str,
-    boundary: &'a str,
+pub(crate) struct PendingWrite<'a> {
+    pub(crate) before: &'a FieldSnapshot,
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) original: &'a str,
+    pub(crate) boundary: &'a str,
 }
 
 fn char_slice(text: &str, start: usize, end: usize) -> String {
@@ -486,7 +486,7 @@ impl CorrectionSession {
 
     /// Restores the original only when the target still matches the expected
     /// intermediate state; otherwise stops without further writes.
-    fn recover_partial_write(
+    pub(crate) fn recover_partial_write(
         error: &WriteError,
         write: &PendingWrite<'_>,
         accessibility: &mut dyn Accessibility,
