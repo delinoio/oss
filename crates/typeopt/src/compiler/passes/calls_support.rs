@@ -894,6 +894,14 @@ pub(super) fn runtime_dependency(ctx: &mut Ctx, file: usize, statement: Node) ->
     if statement.module_specifier().is_nil() {
         return false;
     }
+    if statement.kind() == SyntaxKind::ImportDeclaration {
+        let clause = statement.import_clause();
+        if clause.is_some() && clause.is_type_only() {
+            return false;
+        }
+    } else if statement.is_type_only() {
+        return false;
+    }
     if ctx.files[file].js
         || ctx
             .checker
@@ -939,9 +947,6 @@ pub(super) fn runtime_dependency(ctx: &mut Ctx, file: usize, statement: Node) ->
             }
         }
         return names.into_iter().any(|name| value_used(ctx, name));
-    }
-    if statement.is_type_only() {
-        return false;
     }
     let clause = statement.export_clause();
     if clause.is_nil() || clause.kind() != SyntaxKind::NamedExports {

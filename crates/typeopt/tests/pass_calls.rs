@@ -432,6 +432,43 @@ console.log("late", self["run"]());
 }
 
 #[test]
+fn ignores_type_only_self_imports_when_proving_late_calls() {
+    let files: &[(&str, &str)] = &[(
+        "main.ts",
+        r#"import type { Run as ImportedRun } from "./main.ts";
+export type Run = () => number;
+export const run: ImportedRun = () => late(2);
+const late = (value: number) => value * 2;
+console.log(run());
+"#,
+    )];
+    let config = r#"{"compilerOptions":{"target":"ES2022","module":"ESNext","moduleResolution":"bundler","strict":true,"verbatimModuleSyntax":true,"rewriteRelativeImportExtensions":true}}"#;
+
+    let baseline = project(files);
+    std::fs::write(baseline.path().join("tsconfig.json"), config).unwrap();
+    optimize(baseline.path(), &args(&only(&[])));
+    let original = run_optimized(baseline.path());
+    assert!(
+        original.status.success(),
+        "{}",
+        String::from_utf8_lossy(&original.stderr)
+    );
+    assert_eq!(original.stdout, b"4\n");
+
+    let temp = project(files);
+    std::fs::write(temp.path().join("tsconfig.json"), config).unwrap();
+    let report = optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+    assert!(applied_count(&report, INLINE) > 0, "{report:#}");
+    let optimized = run_optimized(temp.path());
+    assert!(
+        optimized.status.success(),
+        "{}",
+        String::from_utf8_lossy(&optimized.stderr)
+    );
+    assert_eq!(optimized.stdout, original.stdout);
+}
+
+#[test]
 fn keeps_exported_functions_reachable_early_through_an_import_cycle() {
     let temp = project(&[
         (
