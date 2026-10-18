@@ -1,8 +1,9 @@
 //! English validation over a bundled SCOWL/ESDB-derived lexicon with
 //! inflection rules.
 //!
-//! Comparison is case-insensitive. Proper nouns and abbreviations are accepted
-//! only when the lexicon lists them, and only common words inflect.
+//! Comparison is case-insensitive. Bundled validation uses each dictionary
+//! entry's affix flags and the supplied rule conditions. The [`Lexicon`]
+//! fixture interface also provides a smaller class-based inflection rule set.
 
 use crate::decision::{LanguageValidator, Validation};
 
