@@ -79,6 +79,11 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Project index](project-delidev.md)
 - [Desktop client](apps-delidev-desktop-contract.md)
 
+### delitools
+
+- [Project index](project-delitools.md)
+- [Application foundation](apps-delitools-foundation.md)
+
 ### React Forge
 
 - [Project index](project-react-forge.md)

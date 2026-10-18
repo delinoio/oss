@@ -210,3 +210,5 @@
 
 - `docs/project-typenative.md`: TypeNative native application framework project index.
 - [Delcore project](docs/project-delcore.md): shared server tenant, authorization and billing ownership.
+
+- [DeliTools project](docs/project-delitools.md): blank desktop/mobile application and mobile distribution ownership.

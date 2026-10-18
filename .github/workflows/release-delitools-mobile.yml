@@ -1,0 +1,156 @@
+name: Release DeliTools Mobile
+
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Mobile platform to build
+        required: true
+        type: choice
+        options: [all, android, ios]
+        default: all
+      build_number:
+        description: Positive build number, greater than all previous store uploads
+        required: true
+        type: string
+      publish:
+        description: Upload to Google Play internal testing and TestFlight
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-delitools-mobile
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with: { persist-credentials: false }
+      - uses: ./.github/actions/setup-ci-node
+      - name: Validate release identity
+        env:
+          DELITOOLS_BUILD_NUMBER: ${{ inputs.build_number }}
+        run: |
+          node --input-type=module -e 'import { releaseConfig } from "./apps/delitools/scripts/mobile.mjs"; releaseConfig(process.env.DELITOOLS_BUILD_NUMBER)'
+          echo "Source revision: $GITHUB_SHA" >> "$GITHUB_STEP_SUMMARY"
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm --filter delitools test
+
+  android:
+    needs: preflight
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'android' }}
+    runs-on: ubuntu-22.04
+    environment: delitools-mobile
+    env:
+      DELITOOLS_BUILD_NUMBER: ${{ inputs.build_number }}
+      TAURI_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.DELITOOLS_ANDROID_KEYSTORE_PASSWORD }}
+      TAURI_ANDROID_KEY_ALIAS: ${{ secrets.DELITOOLS_ANDROID_KEY_ALIAS }}
+      TAURI_ANDROID_KEY_PASSWORD: ${{ secrets.DELITOOLS_ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with: { persist-credentials: false, lfs: true }
+      - uses: ./.github/actions/setup-ci-node
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-09-28
+          targets: aarch64-linux-android,armv7-linux-androideabi
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with: { distribution: temurin, java-version: "17" }
+      - name: Install pinned Android SDK packages
+        run: |
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-37" "build-tools;37.0.0" "ndk;29.0.14206865"
+          echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.14206865" >> "$GITHUB_ENV"
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - run: pnpm --filter delitools mobile:android:init --ci
+      - name: Restore upload keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.DELITOOLS_ANDROID_KEYSTORE_B64 }}
+        run: |
+          node --input-type=module -e 'import { writeFileSync } from "node:fs"; for (const key of ["KEYSTORE_B64", "TAURI_ANDROID_KEYSTORE_PASSWORD", "TAURI_ANDROID_KEY_ALIAS", "TAURI_ANDROID_KEY_PASSWORD"]) { if (!process.env[key]) throw new Error(`Missing ${key}`); } writeFileSync(`${process.env.RUNNER_TEMP}/delitools-upload.jks`, Buffer.from(process.env.KEYSTORE_B64, "base64"), { mode: 0o600 });'
+          echo "TAURI_ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/delitools-upload.jks" >> "$GITHUB_ENV"
+      - run: pnpm --filter delitools build:android --ci --target aarch64 --target armv7 --aab
+      - name: Collect and verify signed bundle
+        run: |
+          set -euo pipefail
+          mkdir -p mobile-artifacts
+          mapfile -t bundles < <(find "apps/delitools/src-tauri/gen/android/app/build/outputs/bundle" -name '*.aab' -type f)
+          test "${#bundles[@]}" -eq 1
+          cp "${bundles[0]}" "mobile-artifacts/delitools-android.aab"
+          jarsigner -verify "mobile-artifacts/delitools-android.aab"
+          keytool -printcert -jarfile "mobile-artifacts/delitools-android.aab" > /dev/null
+          cp LICENSE NOTICE mobile-artifacts/
+          printf 'revision=%s\nbuild_number=%s\nplatform=android\n' "$GITHUB_SHA" "$DELITOOLS_BUILD_NUMBER" > "mobile-artifacts/build.txt"
+      - name: Upload to Google Play internal testing
+        if: ${{ inputs.publish }}
+        env:
+          DELITOOLS_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DELITOOLS_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: node apps/delitools/scripts/publish-android.mjs mobile-artifacts/delitools-android.aab
+      - uses: actions/upload-artifact@v7
+        with:
+          name: delitools-android-${{ inputs.build_number }}-${{ github.sha }}
+          path: mobile-artifacts/
+          if-no-files-found: error
+      - name: Remove signing material
+        if: ${{ always() }}
+        run: rm -f "$RUNNER_TEMP/delitools-upload.jks"
+
+  ios:
+    needs: preflight
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'ios' }}
+    runs-on: macos-15
+    environment: delitools-mobile
+    env:
+      DELITOOLS_BUILD_NUMBER: ${{ inputs.build_number }}
+      APPLE_DEVELOPMENT_TEAM: ${{ vars.DELITOOLS_APPLE_TEAM_ID }}
+      APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+      APPLE_API_KEY: ${{ secrets.APPLE_API_KEY_ID }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with: { persist-credentials: false, lfs: true }
+      - uses: ./.github/actions/setup-ci-node
+      - uses: dtolnay/rust-toolchain@v1
+        with:
+          toolchain: nightly-2026-09-28
+          targets: aarch64-apple-ios
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Restore App Store Connect API key
+        env:
+          PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
+        run: |
+          node --input-type=module -e 'import { writeFileSync } from "node:fs"; for (const key of ["PRIVATE_KEY_B64", "APPLE_DEVELOPMENT_TEAM", "APPLE_API_ISSUER", "APPLE_API_KEY"]) { if (!process.env[key]) throw new Error(`Missing ${key}`); } writeFileSync(`${process.env.RUNNER_TEMP}/delitools-auth.p8`, Buffer.from(process.env.PRIVATE_KEY_B64, "base64"), { mode: 0o600 });'
+          echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/delitools-auth.p8" >> "$GITHUB_ENV"
+      - run: pnpm --filter delitools mobile:ios:init --ci
+      - run: pnpm --filter delitools build:ios --ci --target aarch64 --export-method app-store-connect
+      - name: Collect and verify signed IPA
+        run: |
+          set -euo pipefail
+          mkdir -p mobile-artifacts
+          node --input-type=module -e 'import { globSync, copyFileSync } from "node:fs"; const files = globSync("apps/delitools/src-tauri/gen/apple/**/*.ipa"); if (files.length !== 1) throw new Error("Expected exactly one IPA"); copyFileSync(files[0], "mobile-artifacts/delitools-ios.ipa");'
+          unzip -q "mobile-artifacts/delitools-ios.ipa" -d "$RUNNER_TEMP/delitools-ipa"
+          codesign --verify --deep --strict "$RUNNER_TEMP/delitools-ipa/Payload/"*.app
+          cp LICENSE NOTICE mobile-artifacts/
+          printf 'revision=%s\nbuild_number=%s\nplatform=ios\n' "$GITHUB_SHA" "$DELITOOLS_BUILD_NUMBER" > "mobile-artifacts/build.txt"
+      - name: Upload to TestFlight
+        if: ${{ inputs.publish }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/delitools-keys"
+          cp "$APPLE_API_KEY_PATH" "$RUNNER_TEMP/delitools-keys/AuthKey_$APPLE_API_KEY.p8"
+          API_PRIVATE_KEYS_DIR="$RUNNER_TEMP/delitools-keys" xcrun altool --upload-app --type ios --file "mobile-artifacts/delitools-ios.ipa" --apiKey "$APPLE_API_KEY" --apiIssuer "$APPLE_API_ISSUER"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: delitools-ios-${{ inputs.build_number }}-${{ github.sha }}
+          path: mobile-artifacts/
+          if-no-files-found: error
+      - name: Remove signing material
+        if: ${{ always() }}
+        run: |
+          rm -f "$RUNNER_TEMP/delitools-auth.p8"
+          rm -rf "$RUNNER_TEMP/delitools-keys" "$RUNNER_TEMP/delitools-ipa"

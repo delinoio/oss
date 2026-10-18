@@ -767,5 +767,23 @@
       "docs/protos-delcore-v1-contract.md"
     ],
     "native": false
+  },
+  "delitools-frontend": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "turbo.json",
+      "apps/delitools/**",
+      ".github/workflows/release-delitools-mobile.yml",
+      "scripts/tauri-cli.mjs",
+      "scripts/prebuilt-dependencies.mjs",
+      "docs/project-delitools.md",
+      "docs/apps-delitools-foundation.md"
+    ],
+    "workspace": "delitools",
+    "workspacePaths": ["apps/delitools/**"]
   }
 }

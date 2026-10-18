@@ -1,0 +1,11 @@
+{
+  "build": {
+    "features": ["mobile-host"]
+  },
+  "bundle": {
+    "iOS": {
+      "minimumSystemVersion": "16.0",
+      "bundleVersion": "1"
+    }
+  }
+}

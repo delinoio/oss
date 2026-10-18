@@ -1,0 +1,11 @@
+{
+  "build": {
+    "features": ["mobile-host"]
+  },
+  "bundle": {
+    "android": {
+      "minSdkVersion": 29,
+      "versionCode": 1
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "DeliTools",
+  "version": "0.1.0",
+  "identifier": "io.delino.delitools",
+  "build": {
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
+    "frontendDist": "../dist",
+    "devUrl": "http://127.0.0.1:46312",
+    "features": ["desktop-host"]
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "capabilities": [],
+      "csp": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src ipc: http://ipc.localhost",
+      "devCsp": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost ws://127.0.0.1:46312"
+    }
+  },
+  "bundle": {
+    "active": false,
+    "license": "Apache-2.0",
+    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "resources": {
+      "../../../LICENSE": "notices/LICENSE",
+      "../../../NOTICE": "notices/NOTICE",
+      "notices/CEF-LICENSE.txt": "notices/CEF-LICENSE.txt"
+    },
+    "macOS": {
+      "minimumSystemVersion": "13.0"
+    }
+  }
+}

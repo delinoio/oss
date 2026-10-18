@@ -22,6 +22,10 @@ DeliDev retains only a blank desktop window. Its `delidev-frontend` job checks f
 
 Repository workflows are reviewed as source-backed contracts. Workflow IDs, job IDs, artifact names, permissions, triggers, protected environments, and publication boundaries must match the checked-in YAML and the static workflow tests.
 
+## DeliTools mobile shell
+
+The `delitools-frontend` job joins affected repository CI and checks mobile release helpers, frontend types and production output on Ubuntu. The main-only `release-delitools-mobile.yml` dispatch uses the protected `delitools-mobile` environment for signed Android AAB and iOS IPA builds. Its `publish` input defaults to false; enabling it uploads to Google Play internal testing and TestFlight. Android uses Ubuntu and iOS uses macOS only in this separate release workflow. Neither platform adds macOS to PR, main-push or affected manual CI. See the [application contract](apps-delitools-foundation.md) for configuration and acceptance boundaries.
+
 ## Renovate scheduling
 
 Root `renovate.json` extends `github>delinoio/renovate-config` and defines this

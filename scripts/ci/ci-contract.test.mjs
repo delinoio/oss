@@ -84,6 +84,7 @@ const devhudJobs = [
 const delcoreJobs = ["delcore-api"];
 const achJobs = ["async-commit-hook"];
 const delidevJobs = ["delidev-frontend"];
+const delitoolsJobs = ["delitools-frontend"];
 
 function step(job, id) {
   return job.steps.find((candidate) => candidate.id === id);
@@ -451,6 +452,7 @@ test("CI keeps every legacy check and aggregates every required job", () => {
     ...delcoreJobs,
     ...achJobs,
     ...delidevJobs,
+    ...delitoolsJobs,
     "ci-result",
   ])
     assert.ok(jobs.includes(id), id);
@@ -478,6 +480,7 @@ test("one change plan gates every domain job before runner allocation", () => {
       ...delcoreJobs,
       ...achJobs,
       ...delidevJobs,
+      ...delitoolsJobs,
     ].sort(),
   );
   for (const id of [
@@ -486,6 +489,7 @@ test("one change plan gates every domain job before runner allocation", () => {
     ...delcoreJobs,
     ...achJobs,
     ...delidevJobs,
+    ...delitoolsJobs,
   ]) {
     const job = workflow.jobs[id];
     assert.deepEqual(job.needs, "changes", id);
