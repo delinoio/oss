@@ -1,7 +1,7 @@
 //! Language validators and the automatic replacement decision.
 
 use crate::{
-    layout::{Reconstruction, reconstruct},
+    layout::{Reconstruction, detect_language, keys_from_text, reconstruct},
     types::{CandidateValidation, CorrectionOutcome, Language, LanguageSet},
 };
 
@@ -152,10 +152,26 @@ pub fn manual_candidates(
     enabled: LanguageSet,
     validators: &Validators<'_>,
 ) -> Vec<ManualCandidate> {
-    let mut candidates = validate_all(reconstruct(word, enabled), validators)
+    let Some(original_language) = detect_language(word) else {
+        return Vec::new();
+    };
+    if keys_from_text(word, original_language).is_none() {
+        return Vec::new();
+    }
+    let mut reconstructions = vec![Reconstruction {
+        language: original_language,
+        text: word.to_owned(),
+    }];
+    reconstructions.extend(
+        reconstruct(word, enabled)
+            .into_iter()
+            .filter(|candidate| candidate.language != original_language),
+    );
+    validate_all(reconstructions, validators)
         .into_iter()
-        .map(|candidate| ManualCandidate {
-            is_original: candidate.text == word,
+        .enumerate()
+        .map(|(index, candidate)| ManualCandidate {
+            is_original: index == 0,
             language: candidate.language,
             text: candidate.text,
             validation: match candidate.validation {
@@ -164,10 +180,7 @@ pub fn manual_candidates(
                 Validation::Unavailable => CandidateValidation::ValidatorUnavailable,
             },
         })
-        .collect::<Vec<_>>();
-    // The original is listed first even when its language is disabled.
-    candidates.sort_by_key(|candidate| !candidate.is_original);
-    candidates
+        .collect()
 }
 
 #[cfg(test)]
@@ -351,5 +364,90 @@ mod tests {
             unavailable[1].validation,
             CandidateValidation::ValidatorUnavailable
         );
+    }
+
+    #[test]
+    fn manual_candidates_keep_disabled_layout_original_once() {
+        let unavailable = MissingValidator;
+        let validators = Validators {
+            korean: &unavailable,
+            english: &unavailable,
+        };
+        for (word, disabled, original, alternate) in [
+            ("키보드가", Language::KoDubeolsik, "키보드가", "zlqhemrk"),
+            ("rPthrgo", Language::EnUsQwerty, "rPthrgo", "계속해"),
+        ] {
+            for enabled in [all(), all().with(disabled, false)] {
+                let list = manual_candidates(word, enabled, &validators);
+                assert_eq!(list.len(), 2, "word: {word}, enabled: {enabled:?}");
+                assert_eq!(list[0].language, disabled);
+                assert_eq!(list[0].text, original);
+                assert!(list[0].is_original);
+                assert_eq!(list[1].text, alternate);
+                assert!(!list[1].is_original);
+                assert_eq!(
+                    list.iter()
+                        .filter(|candidate| candidate.is_original)
+                        .count(),
+                    1
+                );
+                assert!(list.iter().all(|candidate| {
+                    candidate.validation == CandidateValidation::ValidatorUnavailable
+                }));
+            }
+        }
+    }
+
+    #[test]
+    fn manual_candidates_preserve_validation_and_filter_disabled_alternates() {
+        let accepted_korean = Fixed(&["키보드가"]);
+        let accepted_english = Fixed(&["zlqhemrk"]);
+        let rejected = Fixed(&[]);
+        let unavailable = MissingValidator;
+        let korean_disabled = all().with(Language::KoDubeolsik, false);
+
+        for (korean, english, original_validation, alternate_validation) in [
+            (
+                &accepted_korean as &dyn LanguageValidator,
+                &rejected as &dyn LanguageValidator,
+                CandidateValidation::Recognized,
+                CandidateValidation::NotRecognized,
+            ),
+            (
+                &rejected,
+                &accepted_english,
+                CandidateValidation::NotRecognized,
+                CandidateValidation::Recognized,
+            ),
+            (
+                &unavailable,
+                &unavailable,
+                CandidateValidation::ValidatorUnavailable,
+                CandidateValidation::ValidatorUnavailable,
+            ),
+        ] {
+            let validators = Validators { korean, english };
+            let list = manual_candidates("키보드가", korean_disabled, &validators);
+            assert_eq!(list.len(), 2);
+            assert_eq!(list[0].language, Language::KoDubeolsik);
+            assert_eq!(list[0].text, "키보드가");
+            assert_eq!(list[0].validation, original_validation);
+            assert_eq!(list[1].language, Language::EnUsQwerty);
+            assert_eq!(list[1].text, "zlqhemrk");
+            assert_eq!(list[1].validation, alternate_validation);
+        }
+
+        let english_disabled = all().with(Language::EnUsQwerty, false);
+        let list = manual_candidates(
+            "키보드가",
+            english_disabled,
+            &Validators {
+                korean: &accepted_korean,
+                english: &unavailable,
+            },
+        );
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].text, "키보드가");
+        assert!(list[0].is_original);
     }
 }
