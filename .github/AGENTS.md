@@ -12,3 +12,5 @@
 
 - [pnport](../docs/project-pnport.md)
 - [Repository Workflow Contract](../docs/repository-workflow-contract.md)
+
+- [FixKey desktop and gated release](../docs/apps-fixkey-desktop-contract.md)

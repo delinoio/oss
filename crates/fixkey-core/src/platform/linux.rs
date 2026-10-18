@@ -1,13 +1,12 @@
 //! X11 hardware-key observation and AT-SPI editable-text transactions.
 //!
-//! XTEST devices and SendEvent input are never accepted as typed input. Only
-//! focused, enabled, non-password Text/Entry objects exposing EditableText and
-//! Text are read. A bounded tree search reads states and interfaces, not labels
-//! or document text. Wayland is deliberately unsupported.
+//! XTEST devices and `SendEvent` input are never accepted as typed input. Only
+//! focused, enabled, non-password Text/Entry objects exposing `EditableText`
+//! and Text are read. A bounded tree search reads states and interfaces, not
+//! labels or document text. Wayland is deliberately unsupported.
 
 use std::{
     collections::HashSet,
-    hash::{Hash, Hasher},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -42,6 +41,7 @@ const EDITABLE: &str = "org.a11y.atspi.EditableText";
 const ROOT: &str = "/org/a11y/atspi/accessible/root";
 
 pub struct Adapter {
+    allowed: Option<Identity>,
     bus: Option<Bus>,
     x: Option<RustConnection>,
     last: Option<(Object, FieldSnapshot)>,
@@ -52,6 +52,13 @@ impl Default for Adapter {
     }
 }
 fn bus() -> Result<Bus, SkipReason> {
+    if std::env::var("DBUS_SESSION_BUS_ADDRESS").is_ok_and(|address| {
+        !address
+            .split(';')
+            .all(|address| address.starts_with("unix:"))
+    }) {
+        return Err(SkipReason::PermissionMissing);
+    }
     let session = Builder::session()
         .map_err(|_| SkipReason::PermissionMissing)?
         .method_timeout(Duration::from_millis(50))
@@ -61,6 +68,12 @@ fn bus() -> Result<Bus, SkipReason> {
         .map_err(|_| SkipReason::PermissionMissing)?
         .call("GetAddress", &())
         .map_err(|_| SkipReason::PermissionMissing)?;
+    if !address
+        .split(';')
+        .all(|address| address.starts_with("unix:"))
+    {
+        return Err(SkipReason::PermissionMissing);
+    }
     Builder::address(address.as_str())
         .map_err(|_| SkipReason::PermissionMissing)?
         .method_timeout(Duration::from_millis(50))
@@ -135,10 +148,9 @@ fn active(x: &RustConnection) -> Result<(u32, Application), SkipReason> {
     application(x, window)
 }
 fn target(object: &Object) -> TargetId {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    object.hash(&mut hasher);
-    TargetId(hasher.finish())
+    super::identity_token(format!("{}:{}", object.0, object.1))
 }
+
 fn state(bus: &Bus, object: &Object) -> Result<Vec<u32>, SkipReason> {
     proxy(bus, object, ACCESSIBLE)?
         .call("GetState", &())
@@ -178,30 +190,48 @@ fn eligible(bus: &Bus, object: &Object) -> Result<(), SkipReason> {
     Ok(())
 }
 impl Adapter {
+    #[must_use]
     pub fn new() -> Self {
         if !Self::permission() {
             return Self {
+                allowed: None,
                 bus: None,
                 x: None,
                 last: None,
             };
         }
         Self {
+            allowed: None,
             bus: bus().ok(),
             x: x11rb::connect(None).ok().map(|(x, _)| x),
             last: None,
         }
     }
 
+    pub fn clear(&mut self) {
+        self.last = None;
+        self.allowed = None;
+    }
+
+    /// Restricts future text reads to the application approved by the caller.
+    pub fn set_application(&mut self, identity: &Identity) {
+        self.allowed = Some(identity.clone());
+    }
+
+    #[must_use]
     pub fn permission() -> bool {
         std::env::var("XDG_SESSION_TYPE").is_ok_and(|kind| kind == "x11")
-            && std::env::var_os("DISPLAY").is_some()
+            && std::env::var("DISPLAY")
+                .is_ok_and(|display| display.starts_with(':') || display.starts_with("unix:"))
             && std::env::var_os("WAYLAND_DISPLAY").is_none()
     }
 
     fn focus(&self) -> Result<(Object, Application), SkipReason> {
         let bus = self.bus.as_ref().ok_or(SkipReason::PermissionMissing)?;
         let (pid, application) = active(self.x.as_ref().ok_or(SkipReason::PermissionMissing)?)?;
+        if pid == std::process::id() {
+            return Err(SkipReason::UnknownField);
+        }
         let desktop = (
             "org.a11y.atspi.Registry".into(),
             OwnedObjectPath::try_from(ROOT).map_err(|_| SkipReason::UnknownField)?,
@@ -244,11 +274,17 @@ impl Adapter {
         Err(SkipReason::UnknownField)
     }
 
+    /// Gets a classified X11/AT-SPI target without reading its text.
+    /// # Errors
+    /// Refuses unknown identities, roles, state or safe-write interfaces.
     pub fn metadata(&mut self) -> Result<(TargetId, Application), SkipReason> {
         let (object, application) = self.focus()?;
         Ok((target(&object), application))
     }
 
+    /// Gets the AT-SPI insertion geometry.
+    /// # Errors
+    /// Refuses unknown or inaccessible screen coordinates.
     pub fn location(&mut self) -> Result<(f64, f64), SkipReason> {
         let (object, _) = self.focus()?;
         let bus = self.bus.as_ref().ok_or(SkipReason::PermissionMissing)?;
@@ -262,14 +298,20 @@ impl Adapter {
         if height <= 0 {
             return Err(SkipReason::UnknownField);
         }
-        Ok((f64::from(x), f64::from(y + height)))
+        Ok((
+            f64::from(x),
+            f64::from(y.checked_add(height).ok_or(SkipReason::UnknownField)?),
+        ))
     }
 
+    /// Runs hardware-only `XInput2` observation on the calling thread.
+    /// # Errors
+    /// Refuses unsupported sessions and unavailable X11/accessibility services.
     pub fn observe(
-        active: Arc<AtomicBool>,
-        ready: Arc<AtomicBool>,
-        gate: Gate,
-        handler: Handler,
+        active: &Arc<AtomicBool>,
+        ready: &Arc<AtomicBool>,
+        gate: &Gate,
+        handler: &Handler,
     ) -> Result<(), SkipReason> {
         if !Self::permission() {
             return Err(SkipReason::PermissionMissing);
@@ -300,7 +342,11 @@ impl Adapter {
             let Event::XinputRawKeyPress(event) = event else {
                 continue;
             };
-            if !active.load(Ordering::Acquire) || !gate() {
+            if !active.load(Ordering::Acquire) {
+                continue;
+            }
+            let (target, application) = adapter.metadata()?;
+            if !gate(&application) {
                 continue;
             }
             // Query the current source on every event, so hotplug/reused device
@@ -328,7 +374,6 @@ impl Adapter {
                 .reply()
                 .map_err(|_| SkipReason::UnknownField)?;
             let has_node = matches!(&property.items,XIGetPropertyItems::Data8(bytes) if bytes.starts_with(b"/dev/input/event"));
-            let (target, _) = adapter.metadata()?;
             let pointer = x
                 .query_pointer(x.setup().roots[screen].root)
                 .map_err(|_| SkipReason::UnknownField)?
@@ -337,7 +382,7 @@ impl Adapter {
             let modifiers = u16::from(pointer.mask);
             let shift = modifiers & 1 != 0;
             let caps = modifiers & 2 != 0;
-            let scan = event.detail.checked_sub(8).unwrap_or(0);
+            let scan = event.detail.saturating_sub(8);
             let key = if !physical || !has_node || event.response_type & 0x80 != 0 {
                 Key::Untrusted
             } else if modifiers & 4 != 0 && scan == 47 {
@@ -347,15 +392,73 @@ impl Adapter {
             } else {
                 super::pc_key(scan, shift, caps)
             };
-            handler(KeyEvent { key, target });
+            if !matches!(key, Key::Modifier) {
+                handler(KeyEvent { key, target });
+            }
         })();
         ready.store(false, Ordering::Release);
         result
     }
 }
+impl Adapter {
+    // EditableText range methods preserve untouched text and rich-text spans.
+    // Insertion lengths are UTF-8 bytes; start/end remain character offsets.
+    fn write_range(
+        &mut self,
+        object: &Object,
+        before: &FieldSnapshot,
+        start: usize,
+        end: usize,
+        replacement: &str,
+        expected: &str,
+    ) -> Result<(), WriteError> {
+        let bus = self.bus.clone().ok_or(WriteError::Failed)?;
+        let editable = proxy(&bus, object, EDITABLE).map_err(|_| WriteError::Failed)?;
+        let first = i32::try_from(start).map_err(|_| WriteError::Failed)?;
+        let last = i32::try_from(end).map_err(|_| WriteError::Failed)?;
+        let length = i32::try_from(replacement.len()).map_err(|_| WriteError::Failed)?;
+        let mut intermediate = before.clone();
+        let mut chars: Vec<char> = before.text.chars().collect();
+        chars.drain(start..end);
+        intermediate.text = chars.into_iter().collect();
+        intermediate.caret = before.caret.saturating_sub(end - start);
+        if start != end {
+            let deleted: bool = editable
+                .call("DeleteText", &(first, last))
+                .map_err(|_| WriteError::Uncertain)?;
+            if !deleted {
+                return Err(WriteError::Uncertain);
+            }
+        }
+        if self.snapshot().map_err(|_| WriteError::Uncertain)? != intermediate
+            || self.focus().map_err(|_| WriteError::Uncertain)?.0 != *object
+        {
+            return Err(WriteError::Uncertain);
+        }
+        let inserted: Result<bool, _> = editable.call("InsertText", &(first, replacement, length));
+        let after = self.snapshot().map_err(|_| WriteError::Uncertain)?;
+        if !inserted.unwrap_or(false) {
+            return Err(if after == intermediate {
+                WriteError::Partial {
+                    written: String::new(),
+                }
+            } else {
+                WriteError::Uncertain
+            });
+        }
+        if after.target != before.target || after.text != expected || after.selection_len != 0 {
+            return Err(WriteError::Uncertain);
+        }
+        Ok(())
+    }
+}
+
 impl Accessibility for Adapter {
     fn snapshot(&mut self) -> Result<FieldSnapshot, SkipReason> {
-        let (object, _) = self.focus()?;
+        let (object, application) = self.focus()?;
+        if self.allowed.as_ref() != Some(&application.identity) {
+            return Err(SkipReason::ExcludedApp);
+        }
         let bus = self.bus.as_ref().ok_or(SkipReason::PermissionMissing)?;
         let text = proxy(bus, &object, TEXT)?;
         let caret: i32 = text
@@ -418,24 +521,9 @@ impl Accessibility for Adapter {
         let mut chars: Vec<char> = before.text.chars().collect();
         chars.splice(start..end, replacement.chars());
         let expected: String = chars.into_iter().collect();
-        let bus = self.bus.as_ref().ok_or(WriteError::Failed)?;
-        let written: bool = proxy(bus, &object, EDITABLE)
-            .map_err(|_| WriteError::Failed)?
-            .call("SetTextContents", &(expected.as_str(),))
-            .map_err(|_| WriteError::Uncertain)?;
-        if !written {
-            return Err(WriteError::Uncertain);
-        }
-        if self.focus().map_err(|_| WriteError::Uncertain)?.0 != object {
-            return Err(WriteError::Uncertain);
-        }
+        self.write_range(&object, &before, start, end, replacement, &expected)?;
+        let bus = self.bus.as_ref().ok_or(WriteError::Uncertain)?;
         let text = proxy(bus, &object, TEXT).map_err(|_| WriteError::Uncertain)?;
-        let actual: String = text
-            .call("GetText", &(0i32, -1i32))
-            .map_err(|_| WriteError::Uncertain)?;
-        if actual != expected {
-            return Err(WriteError::Uncertain);
-        }
         let caret = before.caret.saturating_sub(end - start) + replacement.chars().count();
         let changed: bool = text
             .call(
@@ -460,6 +548,7 @@ impl Accessibility for Adapter {
         Ok(())
     }
 }
+#[must_use]
 pub fn available_applications() -> Vec<Application> {
     let Ok((x, screen)) = x11rb::connect(None) else {
         return Vec::new();
@@ -473,7 +562,9 @@ pub fn available_applications() -> Vec<Application> {
         return Vec::new();
     };
     windows
-        .chunks_exact(4)
+        .as_chunks::<4>()
+        .0
+        .iter()
         .filter_map(|bytes| word(bytes).ok())
         .filter_map(|window| application(&x, window).ok())
         .filter(|(pid, _)| *pid != std::process::id())

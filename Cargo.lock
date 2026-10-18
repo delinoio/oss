@@ -2998,8 +2998,10 @@ checksum = "1d674e81391d1e1ab681a28d99df07927c6d4aa5b027d7da16ba32d1d21ecd99"
 name = "fixkey"
 version = "0.0.1"
 dependencies = [
+ "base64 0.22.1",
  "dirs 6.0.0",
  "fixkey-core",
+ "minisign-verify",
  "notify-rust",
  "plist",
  "reqwest 0.12.28",

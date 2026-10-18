@@ -708,3 +708,7 @@ The shared release planner exports `cargo_publish` from the central project poli
 The coordinator resolves it before configuration validation and version commits,
 then uses it to select Cargo registry credentials, Rust setup, caching and
 publication. Non-Cargo projects still validate their immutable source and tag.
+
+## FixKey validation and release
+
+FixKey uses the central affected planner for `fixkey-frontend` and main-push-only `fixkey-desktop`. Frontend and release-helper fixtures run on Linux; desktop feature tests and clippy run on Linux and Windows without native application interaction. PRs and affected manual validation preserve native-job exclusions. Mac runners belong only to the separate manual-main release workflow. The owning [desktop contract](apps-fixkey-desktop-contract.md#release-assembly) defines exact-source native-acceptance approval, protected signing/publication environments, immutable release tags, complete signed updater artifacts and license assembly. Builds, fixtures and signature checks must not be reported as native application or installer acceptance.

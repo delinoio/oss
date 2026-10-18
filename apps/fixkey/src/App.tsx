@@ -201,6 +201,11 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
             )}
           </div>
         )}
+        {data.diagnosticError && (
+          <p role="alert">
+            {t.reason}: <code>{data.diagnosticError}</code>
+          </p>
+        )}
         <fieldset disabled={busy} className="controls">
           {section === Section.General && (
             <>
@@ -496,14 +501,24 @@ export function CandidatePicker({
     items: [],
   });
   const [error, setError] = useState<string | null>(null);
-  const t = messages[language];
+  const t = messages[state.language ?? language];
+  useEffect(() => {
+    document.documentElement.dataset.theme = state.theme ?? "system";
+    document.documentElement.lang = state.language ?? language;
+  }, [state.theme, state.language, language]);
   useEffect(() => {
     let cancelled = false;
     let stop: (() => void) | undefined;
     void api
       .candidates((next) => {
         if (!cancelled)
-          setState((old) => (next.generation >= old.generation ? next : old));
+          setState((old) =>
+            next.generation > old.generation ||
+            (next.generation === old.generation &&
+              (next.revision ?? 0) >= (old.revision ?? 0))
+              ? next
+              : old,
+          );
       })
       .then((unsubscribe) => {
         if (cancelled) unsubscribe();
@@ -556,7 +571,9 @@ export function CandidatePicker({
             >
               <strong>{item.text}</strong>
               <small>
-                {item.isOriginal ? `${t.original} · ` : ""}
+                {item.isOriginal
+                  ? `${t.original} · `
+                  : `${item.language === "ko-dubeolsik" ? t.korean : t.english} · `}
                 {item.validation === "recognized"
                   ? t.recognized
                   : item.validation === "not-recognized"

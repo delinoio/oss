@@ -23,7 +23,7 @@ use tauri_plugin_global_shortcut::{GlobalShortcutExt, Shortcut, ShortcutState};
 use crate::{
     diagnostics::{Logs, platform},
     preferences::{IntegrationError, Preferences, SystemPreferences},
-    settings::{ExcludedApp, Settings, SettingsStore},
+    settings::{ExcludedApp, Settings, SettingsStore, Theme, UiLanguage},
     updates::{
         UpdateState,
         desktop::{SharedUpdater, Updater},
@@ -38,12 +38,32 @@ pub struct NativePreferences {
 impl SystemPreferences for NativePreferences {
     fn set_login_startup(&mut self, enabled: bool) -> Result<(), IntegrationError> {
         let manager = self.app.autolaunch();
-        if enabled {
+        let previous = manager
+            .is_enabled()
+            .map_err(|_| IntegrationError::Uncertain)?;
+        if previous == enabled {
+            return Ok(());
+        }
+        let result = if enabled {
             manager.enable()
         } else {
             manager.disable()
+        };
+        let actual = manager.is_enabled().ok();
+        if result.is_ok() && actual == Some(enabled) {
+            return Ok(());
         }
-        .map_err(|_| IntegrationError::LoginStartupFailed)
+        if actual != Some(previous) {
+            let _ = if previous {
+                manager.enable()
+            } else {
+                manager.disable()
+            };
+            if manager.is_enabled().ok() != Some(previous) {
+                return Err(IntegrationError::Uncertain);
+            }
+        }
+        Err(IntegrationError::LoginStartupFailed)
     }
 
     fn set_shortcut(&mut self, next: Option<&str>) -> Result<(), IntegrationError> {
@@ -86,11 +106,14 @@ pub struct Runtime {
     pub(crate) preferences: Preferences<NativePreferences>,
     pub(crate) manual: ManualSession,
     pub(crate) generation: u64,
+    pub(crate) candidate_revision: u64,
     pub(crate) korean: Option<KoreanValidator<MecabAnalyzer>>,
     pub(crate) english: Option<HunspellValidator>,
     pub(crate) status: String,
     pub(crate) active: bool,
     pub(crate) stopping: bool,
+    pub(crate) last_error: Option<String>,
+    pub(crate) refused_target: Option<(fixkey_core::session::TargetId, &'static str)>,
     pub(crate) revision: u64,
     pub(crate) input_policy: Arc<RwLock<Option<Settings>>>,
     logs: Logs,
@@ -128,6 +151,7 @@ struct DesktopState {
     active: bool,
     settings_error: Option<String>,
     logs_healthy: bool,
+    diagnostic_error: Option<String>,
     unresolved_apps: Vec<usize>,
     update: UpdateState,
 }
@@ -136,8 +160,11 @@ struct DesktopState {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct CandidateState {
     pub generation: u64,
+    pub revision: u64,
     pub selected: usize,
     pub items: Vec<Candidate>,
+    pub language: Option<&'static str>,
+    pub theme: Option<Theme>,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -150,6 +177,9 @@ pub(crate) struct Candidate {
 pub(crate) fn candidates(runtime: &Runtime) -> CandidateState {
     CandidateState {
         generation: runtime.generation,
+        revision: runtime.candidate_revision,
+        language: Some(interface_language(runtime)),
+        theme: Some(runtime.preferences.current().theme),
         selected: runtime.manual.selected().unwrap_or(0),
         items: runtime
             .manual
@@ -185,6 +215,7 @@ async fn desktop_state(
             .storage_error()
             .map(|error| error.to_string()),
         logs_healthy: runtime.logs.is_healthy(),
+        diagnostic_error: runtime.last_error.clone(),
         unresolved_apps: Vec::new(),
         update: UpdateState::default(),
     };
@@ -222,10 +253,13 @@ async fn save_settings(
         runtime.manual.close();
         runtime.generation += 1;
         runtime.revision += 1;
+        runtime.refused_target = None;
+        runtime.last_error = None;
         runtime.active = false;
         runtime.status = "rechecking".into();
     }
     hide_candidates(&app);
+    refresh_tray(&app);
     desktop_state(shared, updater).await
 }
 
@@ -284,14 +318,18 @@ async fn desktop_action(
                 runtime.preferences.reconcile()
             };
             runtime.revision += 1;
+            runtime.refused_target = None;
+            runtime.last_error = None;
+            drop(runtime);
+            refresh_tray(&app);
             result.map_err(|error| error.to_string())
         }
     }
 }
 
 #[tauri::command]
-async fn available_apps() -> Result<Vec<ExcludedApp>, String> {
-    crate::native::available_apps().map_err(str::to_owned)
+async fn available_apps() -> Vec<ExcludedApp> {
+    crate::native::available_apps()
 }
 
 #[tauri::command]
@@ -306,7 +344,7 @@ async fn candidate_state(
     Ok(candidates(&runtime))
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Copy, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub(crate) enum CandidateAction {
     Next,
@@ -369,15 +407,35 @@ pub(crate) fn show_candidates(
     let window = app
         .get_webview_window("candidates")
         .ok_or("candidate-window-unavailable")?;
+    // AX reports macOS screen points; Windows UIA and X11 use screen pixels.
+    #[cfg(target_os = "macos")]
+    let (x, y) = window
+        .available_monitors()
+        .map_err(|_| "candidate-location-unavailable")?
+        .into_iter()
+        .find_map(|monitor| {
+            let scale = monitor.scale_factor();
+            let position = monitor.position().to_logical::<f64>(scale);
+            let size = monitor.size().to_logical::<f64>(scale);
+            (x >= position.x
+                && y >= position.y
+                && x < position.x + size.width
+                && y < position.y + size.height)
+                .then_some((x * scale, y * scale))
+        })
+        .ok_or("candidate-location-unavailable")?;
     let monitor = window
         .monitor_from_point(x, y)
         .map_err(|_| "candidate-location-unavailable")?
         .ok_or("candidate-location-unavailable")?;
     let scale = monitor.scale_factor();
-    let origin = monitor.position();
-    let size = monitor.size();
-    let width = 360.0 * scale;
-    let height = 240.0 * scale;
+    let origin = monitor.work_area().position;
+    let size = monitor.work_area().size;
+    let width = (360.0 * scale).min(f64::from(size.width));
+    let height = (240.0 * scale).min(f64::from(size.height));
+    window
+        .set_size(tauri::PhysicalSize::new(width, height))
+        .map_err(|_| "candidate-location-unavailable")?;
     let left = x
         .max(f64::from(origin.x))
         .min(f64::from(origin.x) + f64::from(size.width) - width);
@@ -392,10 +450,91 @@ pub(crate) fn show_candidates(
         .map_err(|_| "candidate-window-unavailable")
 }
 
-pub fn notify(_app: &AppHandle, code: &str) {
+const fn interface_language(runtime: &Runtime) -> &'static str {
+    match runtime.preferences.current().ui_language {
+        UiLanguage::System => runtime.os_language,
+        UiLanguage::Ko => "ko",
+        UiLanguage::En => "en",
+    }
+}
+struct TrayMenus {
+    pause: MenuItem<tauri::DynRuntime>,
+    settings: MenuItem<tauri::DynRuntime>,
+    exit: MenuItem<tauri::DynRuntime>,
+}
+pub(crate) fn refresh_tray(app: &AppHandle) {
+    let shared = app.state::<Shared>();
+    let Ok(runtime) = shared.0.lock() else {
+        return;
+    };
+    let korean = interface_language(&runtime) == "ko";
+    let paused = runtime.preferences.current().paused;
+    let status = runtime
+        .last_error
+        .clone()
+        .unwrap_or_else(|| runtime.status.clone());
+    drop(runtime);
+    if let Some(menu) = app.try_state::<TrayMenus>() {
+        let _ = menu.pause.set_text(match (korean, paused) {
+            (true, true) => "교정 재개",
+            (true, false) => "교정 일시 정지",
+            (false, true) => "Resume correction",
+            (false, false) => "Pause correction",
+        });
+        let _ = menu
+            .settings
+            .set_text(if korean { "설정" } else { "Settings" });
+        let _ = menu.exit.set_text(if korean { "종료" } else { "Exit" });
+    }
+    if let Some(tray) = app.tray_by_id("fixkey") {
+        let _ = tray.set_tooltip(Some(format!(
+            "FixKey · {} · {status}",
+            if korean {
+                "교정 상태"
+            } else {
+                "Correction status"
+            }
+        )));
+    }
+}
+pub(crate) fn record_error(app: &AppHandle, reason: &'static str) {
+    let changed = app.state::<Shared>().0.lock().is_ok_and(|mut runtime| {
+        let changed = runtime.last_error.as_deref() != Some(reason);
+        runtime.last_error = Some(reason.into());
+        changed
+    });
+    tracing::warn!(reason, "fixkey operation failed");
+    refresh_tray(app);
+    if changed {
+        notify(app, reason);
+    }
+}
+pub(crate) fn notify(app: &AppHandle, code: &str) {
+    let korean = app
+        .try_state::<Shared>()
+        .and_then(|shared| {
+            shared
+                .0
+                .lock()
+                .ok()
+                .map(|runtime| interface_language(&runtime) == "ko")
+        })
+        .unwrap_or(false);
+    let message = match (korean, code) {
+        (true, "active") => "자동 교정이 활성화되었습니다.",
+        (false, "active") => "Automatic correction is active.",
+        (true, "paused") => "자동 교정을 일시 정지했습니다.",
+        (false, "paused") => "Automatic correction is paused.",
+        (true, "update-available") => {
+            "새 업데이트가 있습니다. 설정에서 확인하고 설치할 수 있습니다."
+        }
+        (false, "update-available") => "An update is available. Review and install it in Settings.",
+        (true, _) => "FixKey 상태를 확인해 주세요. 설정에서 원인 코드를 확인할 수 있어요.",
+        (false, _) => "FixKey needs attention. Check the reason code in Settings.",
+    };
     if notify_rust::Notification::new()
         .summary("FixKey")
-        .body(code)
+        .body(&format!("{message}\n{code}"))
         .appname("FixKey")
         .show()
         .is_err()
@@ -420,8 +559,153 @@ fn open_resource(value: &str) -> Result<(), String> {
         .map_err(|_| "open-resource-failed".into())
 }
 
-pub fn run() {
+fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     let started = Instant::now();
+    let logs = Logs::open(app.path().app_log_dir()?)?;
+    logs.install()?;
+    let dictionary = app.path().resource_dir()?.join("dictionaries/ko");
+    let korean = MecabAnalyzer::load(&dictionary)
+        .ok()
+        .map(KoreanValidator::new);
+    let english = HunspellValidator::bundled().ok();
+    let store = SettingsStore::load(app.path().app_config_dir()?.join("settings.json"));
+    let mut preferences = Preferences::new(
+        store,
+        NativePreferences {
+            app: app.handle().clone(),
+            shortcut: None,
+            uncertain: false,
+        },
+    );
+    let _ = preferences.reconcile();
+    let os_language = crate::native::os_language();
+    let language = match preferences.current().ui_language {
+        crate::settings::UiLanguage::Ko => "ko",
+        crate::settings::UiLanguage::En => "en",
+        crate::settings::UiLanguage::System => os_language,
+    };
+    WebviewWindowBuilder::new(
+        app,
+        "candidates",
+        WebviewUrl::App(format!("index.html?window=candidates&language={language}").into()),
+    )
+    .title("FixKey")
+    .inner_size(360.0, 240.0)
+    .visible(false)
+    .focused(false)
+    .focusable(false)
+    .skip_taskbar(true)
+    .always_on_top(true)
+    .decorations(false)
+    .build()?;
+    let shared = Shared(Arc::new(Mutex::new(Runtime {
+        preferences,
+        manual: ManualSession::default(),
+        generation: 1,
+        candidate_revision: 0,
+        korean,
+        english,
+        status: "initializing".into(),
+        active: false,
+        stopping: false,
+        refused_target: None,
+        last_error: None,
+        revision: 1,
+        input_policy: Arc::new(RwLock::new(None)),
+        logs: logs.clone(),
+        os_language,
+    })));
+    app.manage(shared.clone());
+    let updater: SharedUpdater = Arc::new(Mutex::new(Updater::default()));
+    app.manage(updater.clone());
+    create_tray(app)?;
+    refresh_tray(app.handle());
+    crate::native::start(app.handle().clone(), shared);
+    crate::updates::desktop::start(app.handle().clone(), updater);
+    std::thread::spawn(move || {
+        loop {
+            std::thread::sleep(std::time::Duration::from_secs(60));
+            let _ = logs.prune(std::time::SystemTime::now());
+        }
+    });
+    tracing::info!(
+        reason = "desktop-started",
+        duration_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
+        "fixkey desktop initialized"
+    );
+    Ok(())
+}
+
+fn create_tray(app: &tauri::App) -> tauri::Result<()> {
+    let pause = MenuItem::with_id(app, "pause", "Pause / Resume", true, None::<&str>)?;
+    let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
+    let exit = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&pause, &settings, &exit])?;
+    TrayIconBuilder::with_id("fixkey")
+        .icon(tauri::include_image!("icons/32x32.png"))
+        .menu(&menu)
+        .tooltip("FixKey · initializing")
+        .on_menu_event(|app, event| {
+            let app = app.clone();
+            let id = event.id().as_ref().to_owned();
+            tauri::async_runtime::spawn(async move {
+                match id.as_str() {
+                    "settings" => {
+                        if let Some(window) = app.get_webview_window("settings") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                    }
+                    "pause" => {
+                        if let Ok(mut runtime) = app.state::<Shared>().0.lock() {
+                            if let Ok(mut policy) = runtime.input_policy.write() {
+                                *policy = None;
+                            }
+                            let mut next = runtime.preferences.current().clone();
+                            next.paused = !next.paused;
+                            match runtime.preferences.apply(next) {
+                                Ok(()) => {
+                                    runtime.manual.close();
+                                    runtime.generation += 1;
+                                    runtime.revision += 1;
+                                    runtime.last_error = None;
+                                }
+                                Err(error) => {
+                                    runtime.last_error = Some(error.to_string());
+                                    tracing::warn!(
+                                        reason = "tray-preference-failed",
+                                        "fixkey tray preference failed"
+                                    );
+                                }
+                            }
+                        }
+                        hide_candidates(&app);
+                        refresh_tray(&app);
+                    }
+                    "exit" => {
+                        if let Ok(mut runtime) = app.state::<Shared>().0.lock() {
+                            runtime.stop_for_update();
+                        }
+                        app.exit(0);
+                    }
+                    _ => {}
+                }
+            });
+        })
+        .build(app)?;
+    app.manage(TrayMenus {
+        pause,
+        settings,
+        exit,
+    });
+    Ok(())
+}
+
+/// Starts the desktop event loop.
+///
+/// # Panics
+/// Panics if native shell initialization fails before the event loop starts.
+pub fn run() {
     tauri::Builder::default()
         .runtime(tauri_runtime_wry::Wry::default())
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
@@ -442,129 +726,11 @@ pub fn run() {
                     if event.state() != ShortcutState::Pressed {
                         return;
                     }
-                    let app = app.clone();
-                    let shortcut = *shortcut;
-                    tauri::async_runtime::spawn(async move {
-                        crate::native::shortcut(&app, shortcut);
-                    });
+                    crate::native::enqueue_shortcut(app, *shortcut);
                 })
                 .build(),
         )
-        .setup(move |app| {
-            let logs = Logs::open(app.path().app_log_dir()?)?;
-            logs.install()?;
-            let dictionary = app.path().resource_dir()?.join("dictionaries/ko");
-            let korean = MecabAnalyzer::load(&dictionary)
-                .ok()
-                .map(KoreanValidator::new);
-            let english = HunspellValidator::bundled().ok();
-            let store = SettingsStore::load(app.path().app_config_dir()?.join("settings.json"));
-            let mut preferences = Preferences::new(
-                store,
-                NativePreferences {
-                    app: app.handle().clone(),
-                    shortcut: None,
-                    uncertain: false,
-                },
-            );
-            let _ = preferences.reconcile();
-            let os_language = crate::native::os_language();
-            let language = match preferences.current().ui_language {
-                crate::settings::UiLanguage::Ko => "ko",
-                crate::settings::UiLanguage::En => "en",
-                crate::settings::UiLanguage::System => os_language,
-            };
-            WebviewWindowBuilder::new(
-                app,
-                "candidates",
-                WebviewUrl::App(format!("index.html?window=candidates&language={language}").into()),
-            )
-            .title("FixKey")
-            .inner_size(360.0, 240.0)
-            .visible(false)
-            .focused(false)
-            .focusable(false)
-            .skip_taskbar(true)
-            .always_on_top(true)
-            .decorations(false)
-            .build()?;
-            let shared = Shared(Arc::new(Mutex::new(Runtime {
-                preferences,
-                manual: ManualSession::default(),
-                generation: 1,
-                korean,
-                english,
-                status: "initializing".into(),
-                active: false,
-                stopping: false,
-                revision: 1,
-                input_policy: Arc::new(RwLock::new(None)),
-                logs: logs.clone(),
-                os_language,
-            })));
-            app.manage(shared.clone());
-            let updater: SharedUpdater = Arc::new(Mutex::new(Updater::default()));
-            app.manage(updater.clone());
-            let pause = MenuItem::with_id(app, "pause", "Pause / Resume", true, None::<&str>)?;
-            let settings = MenuItem::with_id(app, "settings", "Settings", true, None::<&str>)?;
-            let exit = MenuItem::with_id(app, "exit", "Exit", true, None::<&str>)?;
-            let menu = Menu::with_items(app, &[&pause, &settings, &exit])?;
-            TrayIconBuilder::with_id("fixkey")
-                .icon(tauri::include_image!("icons/32x32.png"))
-                .menu(&menu)
-                .tooltip("FixKey · initializing")
-                .on_menu_event(|app, event| {
-                    let app = app.clone();
-                    let id = event.id().as_ref().to_owned();
-                    tauri::async_runtime::spawn(async move {
-                        match id.as_str() {
-                            "settings" => {
-                                if let Some(window) = app.get_webview_window("settings") {
-                                    let _ = window.show();
-                                    let _ = window.set_focus();
-                                }
-                            }
-                            "pause" => {
-                                if let Ok(mut runtime) = app.state::<Shared>().0.lock() {
-                                    if let Ok(mut policy) = runtime.input_policy.write() {
-                                        *policy = None;
-                                    }
-                                    let mut next = runtime.preferences.current().clone();
-                                    next.paused = !next.paused;
-                                    if runtime.preferences.apply(next).is_ok() {
-                                        runtime.manual.close();
-                                        runtime.generation += 1;
-                                        runtime.revision += 1;
-                                    }
-                                }
-                                hide_candidates(&app);
-                            }
-                            "exit" => {
-                                if let Ok(mut runtime) = app.state::<Shared>().0.lock() {
-                                    runtime.stop_for_update();
-                                }
-                                app.exit(0);
-                            }
-                            _ => {}
-                        }
-                    });
-                })
-                .build(app)?;
-            crate::native::start(app.handle().clone(), shared);
-            crate::updates::desktop::start(app.handle().clone(), updater);
-            std::thread::spawn(move || {
-                loop {
-                    std::thread::sleep(std::time::Duration::from_secs(60));
-                    let _ = logs.prune(std::time::SystemTime::now());
-                }
-            });
-            tracing::info!(
-                reason = "desktop-started",
-                duration_us = u64::try_from(started.elapsed().as_micros()).unwrap_or(u64::MAX),
-                "fixkey desktop initialized"
-            );
-            Ok(())
-        })
+        .setup(setup)
         .on_window_event(|window, event| {
             if window.label() == "settings"
                 && let tauri::WindowEvent::CloseRequested { api, .. } = event

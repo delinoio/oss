@@ -246,6 +246,9 @@
         "$TURBO_ROOT$/go.sum"
       ],
       "outputs": []
+    },
+    "ci:desktop": {
+      "cache": false
     }
   }
 }

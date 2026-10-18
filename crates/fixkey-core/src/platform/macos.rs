@@ -61,7 +61,7 @@ unsafe extern "C" {
 #[link(name = "CoreFoundation", kind = "framework")]
 unsafe extern "C" {
     fn CFRelease(value: Ref);
-    fn CFHash(value: Ref) -> usize;
+    fn CFRetain(value: Ref) -> Ref;
     fn CFEqual(a: Ref, b: Ref) -> bool;
     fn CFGetTypeID(value: Ref) -> usize;
     fn CFStringGetTypeID() -> usize;
@@ -305,18 +305,22 @@ fn application(element: Ref) -> Result<Application, SkipReason> {
     })
 }
 
-pub struct Adapter {
+struct RawAdapter {
+    allowed: Option<Identity>,
     last: Option<(Owned, FieldSnapshot)>,
 }
-impl Default for Adapter {
+impl Default for RawAdapter {
     fn default() -> Self {
         Self::new()
     }
 }
-impl Adapter {
+impl RawAdapter {
     #[must_use]
     pub const fn new() -> Self {
-        Self { last: None }
+        Self {
+            allowed: None,
+            last: None,
+        }
     }
 
     #[must_use]
@@ -330,23 +334,16 @@ impl Adapter {
     ///
     /// # Errors
     /// Refuses missing permissions, protected controls or unsupported writes.
-    pub fn metadata(&mut self) -> Result<(TargetId, Application), SkipReason> {
+    pub fn metadata() -> Result<(TargetId, Application), SkipReason> {
         let element = focus()?;
-        Ok((
-            TargetId(
-                // SAFETY: The focused AX element is retained throughout this call.
-                u64::try_from(unsafe { CFHash(element.0) })
-                    .map_err(|_| SkipReason::UnknownField)?,
-            ),
-            application(element.0)?,
-        ))
+        Ok((target(&element), application(element.0)?))
     }
 
     /// Returns the accessible insertion location in screen points.
     ///
     /// # Errors
     /// Refuses unknown or inaccessible text geometry.
-    pub fn location(&mut self) -> Result<(f64, f64), SkipReason> {
+    pub fn location() -> Result<(f64, f64), SkipReason> {
         let element = focus()?;
         let range = range(element.0)?;
         // SAFETY: The stack CFRange matches AXValue type 4 and remains live
@@ -379,6 +376,8 @@ impl Adapter {
         if unsafe { checked_value(bounds.0, 3, (&raw mut rect).cast()) }
             && rect.origin.x.is_finite()
             && rect.origin.y.is_finite()
+            && rect.size.height.is_finite()
+            && rect.size.height > 0.0
         {
             Ok((rect.origin.x, rect.origin.y + rect.size.height))
         } else {
@@ -391,19 +390,19 @@ impl Adapter {
     /// # Errors
     /// Refuses missing input monitoring permission or failed tap creation.
     pub fn observe(
-        active: Arc<AtomicBool>,
-        ready: Arc<AtomicBool>,
-        gate: Gate,
-        handler: Handler,
+        active: &Arc<AtomicBool>,
+        ready: &Arc<AtomicBool>,
+        gate: &Gate,
+        handler: &Handler,
     ) -> Result<(), SkipReason> {
         if !Self::permission() {
             return Err(SkipReason::PermissionMissing);
         }
         let context = Box::new(Tap {
-            active,
-            ready,
-            gate,
-            handler,
+            active: active.clone(),
+            ready: ready.clone(),
+            gate: gate.clone(),
+            handler: handler.clone(),
         });
         let pointer = Box::into_raw(context);
         // SAFETY: The callback context stays boxed until the tap is disabled
@@ -446,10 +445,13 @@ impl Adapter {
         Ok(())
     }
 }
-impl Accessibility for Adapter {
+impl Accessibility for RawAdapter {
     fn snapshot(&mut self) -> Result<FieldSnapshot, SkipReason> {
         let element = focus()?;
-        let _ = application(element.0)?;
+        let application = application(element.0)?;
+        if self.allowed.as_ref() != Some(&application.identity) {
+            return Err(SkipReason::ExcludedApp);
+        }
         if attribute(element.0, "AXMarkedTextRange").is_ok_and(|value| {
             let mut range = Range {
                 location: 0,
@@ -480,11 +482,7 @@ impl Accessibility for Adapter {
         )
         .ok_or(SkipReason::UnknownField)?;
         let snapshot = FieldSnapshot {
-            target: TargetId(
-                // SAFETY: The focused AX element is retained throughout this call.
-                u64::try_from(unsafe { CFHash(element.0) })
-                    .map_err(|_| SkipReason::UnknownField)?,
-            ),
+            target: target(&element),
             sensitivity: FieldSensitivity::Normal,
             supports_write: true,
             text: content,
@@ -603,6 +601,14 @@ impl Accessibility for Adapter {
                 written: replacement.into(),
             });
         }
+        let after = self.snapshot().map_err(|_| WriteError::Uncertain)?;
+        if after.target != target
+            || after.text != expected
+            || after.caret != caret
+            || after.selection_len != 0
+        {
+            return Err(WriteError::Uncertain);
+        }
         Ok(())
     }
 }
@@ -627,13 +633,16 @@ extern "C" fn callback(_: Ref, kind: u32, event: Ref, info: *mut c_void) -> Ref 
             }
             return;
         }
-        if kind != 10 || !context.active.load(Ordering::Acquire) || !(context.gate)() {
+        if kind != 10 || !context.active.load(Ordering::Acquire) {
             return;
         }
         let mut adapter = Adapter::new();
-        let Ok((target, _)) = adapter.metadata() else {
+        let Ok((target, application)) = adapter.metadata() else {
             return;
         };
+        if !(context.gate)(&application) {
+            return;
+        }
         // SAFETY: The event is borrowed from the active callback and remains
         // live until return.
         let flags = unsafe { CGEventGetFlags(event) };
@@ -654,19 +663,6 @@ extern "C" fn callback(_: Ref, kind: u32, event: Ref, info: *mut c_void) -> Ref 
         } else {
             map_key(code, flags & (1 << 17) != 0, flags & (1 << 16) != 0)
         };
-        // Selection offsets are observed before the host processes this key.
-        // No field text is retained by the event callback.
-        let Ok(element) = focus() else { return };
-        let Ok(selected) = range(element.0) else {
-            return;
-        };
-        if selected.length != 0 {
-            (context.handler)(KeyEvent {
-                key: Key::Reset,
-                target,
-            });
-            return;
-        }
         (context.handler)(KeyEvent { key, target });
     }));
     event
@@ -746,4 +742,151 @@ fn map_key(code: i64, shift: bool, caps: bool) -> Key {
         .map_or(Key::Reset, |(_, plain, upper)| {
             Key::Character(if shift { *upper } else { *plain })
         })
+}
+
+// AX operations and their retained target identity stay on the UI thread.
+// Event observation runs on its own run loop and sends only physical keys.
+#[link(name = "System")]
+unsafe extern "C" {
+    static _dispatch_main_q: c_void;
+    fn dispatch_sync_f(queue: Ref, context: *mut c_void, work: extern "C" fn(*mut c_void));
+    fn pthread_main_np() -> i32;
+}
+fn on_main<T: Send, F: FnOnce() -> T + Send>(operation: F) -> T {
+    struct Call<F, T> {
+        operation: Option<F>,
+        result: Option<std::thread::Result<T>>,
+    }
+    extern "C" fn perform<T: Send, F: FnOnce() -> T + Send>(pointer: *mut c_void) {
+        // SAFETY: dispatch_sync_f receives this exact live stack allocation;
+        // the caller stays blocked, and the callback executes exactly once.
+        let call = unsafe { &mut *pointer.cast::<Call<F, T>>() };
+        call.result = Some(std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+            || call.operation.take().expect("one main-thread operation")(),
+        )));
+    }
+    // SAFETY: pthread_main_np is a parameterless thread-identity query.
+    if unsafe { pthread_main_np() } != 0 {
+        return operation();
+    }
+    let mut call = Call {
+        operation: Some(operation),
+        result: None,
+    };
+    // SAFETY: The main queue is process-owned. Send bounds allow the operation
+    // and result to cross threads; synchronous dispatch keeps the stack live.
+    unsafe {
+        dispatch_sync_f(
+            (&raw const _dispatch_main_q).cast(),
+            (&raw mut call).cast(),
+            perform::<T, F>,
+        );
+    }
+    match call.result.expect("main-thread operation completed") {
+        Ok(value) => value,
+        Err(error) => std::panic::resume_unwind(error),
+    }
+}
+thread_local! {
+    static CURRENT: std::cell::RefCell<RawAdapter> = const { std::cell::RefCell::new(RawAdapter::new()) };
+    static TARGET: std::cell::RefCell<Option<(Owned,TargetId)>> = const { std::cell::RefCell::new(None) };
+}
+fn target(element: &Owned) -> TargetId {
+    TARGET.with(|target| {
+        let mut target = target.borrow_mut();
+        // SAFETY: Both arguments are live retained AX objects on this thread.
+        if let Some((previous, id)) = &*target
+            // SAFETY: Both AX elements are retained on this UI thread.
+            && unsafe { CFEqual(previous.0, element.0) }
+        {
+            return *id;
+        }
+        let id = super::next_target();
+        // SAFETY: Retain the live AX object so identity cannot be reused after
+        // release. Equality, replacement and release remain on this UI thread.
+        *target = Some((Owned(unsafe { CFRetain(element.0) }), id));
+        id
+    })
+}
+/// UI-thread accessibility facade with a separate listen-only event loop.
+pub struct Adapter;
+impl Default for Adapter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+impl Adapter {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+
+    #[must_use]
+    pub fn permission() -> bool {
+        on_main(RawAdapter::permission)
+    }
+
+    /// Clears captured field content when correction loses its context.
+    pub fn clear(&mut self) {
+        on_main(|| {
+            CURRENT.with(|current| {
+                let mut current = current.borrow_mut();
+                current.last = None;
+                current.allowed = None;
+            });
+        });
+    }
+
+    /// Restricts future text reads to the application approved by the caller.
+    pub fn set_application(&mut self, identity: &Identity) {
+        let identity = identity.clone();
+        on_main(move || CURRENT.with(|current| current.borrow_mut().allowed = Some(identity)));
+    }
+
+    /// Gets a classified target without reading its text.
+    /// # Errors
+    /// Refuses unknown, protected or unsupported controls and permissions.
+    pub fn metadata(&mut self) -> Result<(TargetId, Application), SkipReason> {
+        on_main(RawAdapter::metadata)
+    }
+
+    /// Gets the accessible insertion geometry.
+    /// # Errors
+    /// Refuses unknown bounds or unsupported controls.
+    pub fn location(&mut self) -> Result<(f64, f64), SkipReason> {
+        on_main(RawAdapter::location)
+    }
+
+    /// Runs a listen-only key tap on the calling thread.
+    /// # Errors
+    /// Refuses unavailable monitoring permission or tap setup.
+    pub fn observe(
+        active: &Arc<AtomicBool>,
+        ready: &Arc<AtomicBool>,
+        gate: &Gate,
+        handler: &Handler,
+    ) -> Result<(), SkipReason> {
+        RawAdapter::observe(active, ready, gate, handler)
+    }
+}
+impl Accessibility for Adapter {
+    fn snapshot(&mut self) -> Result<FieldSnapshot, SkipReason> {
+        on_main(|| CURRENT.with(|current| current.borrow_mut().snapshot()))
+    }
+
+    fn replace(
+        &mut self,
+        target: TargetId,
+        start: usize,
+        end: usize,
+        replacement: &str,
+    ) -> Result<(), WriteError> {
+        on_main(|| {
+            CURRENT.with(|current| {
+                current
+                    .borrow_mut()
+                    .replace(target, start, end, replacement)
+            })
+        })
+    }
 }

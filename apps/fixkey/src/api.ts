@@ -38,11 +38,15 @@ export interface DesktopState {
   active: boolean;
   settingsError: string | null;
   logsHealthy: boolean;
+  diagnosticError?: string | null;
   unresolvedApps: number[];
   update: UpdateState;
 }
 export interface CandidateState {
+  language?: "en" | "ko" | null;
+  theme?: "system" | "light" | "dark" | null;
   generation: number;
+  revision?: number;
   selected: number;
   items: {
     text: string;

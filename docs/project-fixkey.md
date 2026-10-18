@@ -13,7 +13,7 @@ Correct words typed with the wrong keyboard layout without requiring users to sw
 `crates/fixkey-core` and `apps/fixkey/src-tauri` are explicit Rust workspace members. `apps/fixkey` owns the desktop shell and frontend.
 
 - `crates/fixkey-core` (`core`): Rust engine for layout reconstruction, language validation, correction and undo state, and platform accessibility adapters. It has no UI dependency.
-- `apps/fixkey` (`desktop`): Tauri 2 desktop shell with a React and Rsbuild settings UI. The Rust shell lives in `apps/fixkey/src-tauri`.
+- `apps/fixkey` (`desktop`): Tauri 2 desktop shell with a React and Rsbuild settings UI. The Rust shell lives in `apps/fixkey/src-tauri`. This component also owns `.github/workflows/release-fixkey.yml` and the `scripts/release/fixkey*` artifact, license and release-contract helpers.
 
 ## Domain Contract Documents
 

@@ -1,0 +1,38 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "cache": false,
+      "dependsOn": []
+    },
+    "build": {
+      "cache": false,
+      "dependsOn": []
+    },
+    "build:frontend": {
+      "cache": true,
+      "dependsOn": [],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/pnpm-lock.yaml",
+        "$TURBO_ROOT$/.nvmrc"
+      ],
+      "outputs": ["dist/**"]
+    },
+    "ci:check": {
+      "cache": false,
+      "dependsOn": []
+    },
+    "ci:desktop": {
+      "cache": false,
+      "dependsOn": ["build:frontend"],
+      "passThroughEnv": [
+        "CARGO_HOME",
+        "RUSTUP_HOME",
+        "CARGO_NET_OFFLINE",
+        "CARGO_TARGET_DIR",
+        "PKG_CONFIG_PATH"
+      ]
+    }
+  }
+}

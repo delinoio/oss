@@ -1,0 +1,1 @@
+Update verification fixtures come from the `verify_prehashed` test in `minisign-verify` 0.2.5, https://github.com/jedisct1/rust-minisign-verify. The signed bytes are `test`. The public key and signature are test-only; no private key is present. Preserve `LICENSE-minisign-verify`.

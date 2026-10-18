@@ -1,11 +1,10 @@
 //! Windows UI Automation value/selection transactions and listen-only hooks.
 //!
-//! Only non-password Edit controls with writable ValuePattern and verifiable
-//! TextPattern selections are eligible. Other controls are refused.
+//! Only non-password Edit controls with writable `ValuePattern` and verifiable
+//! `TextPattern` selections are eligible. Other controls are refused.
 
 use std::{
     cell::RefCell,
-    hash::{Hash, Hasher},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -29,18 +28,19 @@ use windows_sys::Win32::{
     Storage::Packaging::Appx::GetApplicationUserModelId,
     System::{
         ProcessStatus::K32EnumProcesses,
-        Threading::{
-            GetCurrentProcessId, OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION,
-            QueryFullProcessImageNameW,
-        },
+        Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW},
     },
     UI::{
         Input::KeyboardAndMouse::{GetAsyncKeyState, GetKeyState},
-        WindowsAndMessaging::*,
+        WindowsAndMessaging::{
+            CallNextHookEx, DispatchMessageW, GetMessageW, KBDLLHOOKSTRUCT, LLKHF_INJECTED,
+            LLKHF_LOWER_IL_INJECTED, MSG, SetWindowsHookExW, TranslateMessage, UnhookWindowsHookEx,
+            WH_KEYBOARD_LL, WM_KEYDOWN, WM_SYSKEYDOWN,
+        },
     },
 };
 
-use super::{Application, Gate, Handler, Identity, Key, KeyEvent, utf16_offset};
+use super::{Application, Gate, Handler, Identity, Key, KeyEvent};
 use crate::{
     SkipReason,
     session::{Accessibility, FieldSensitivity, FieldSnapshot, TargetId, WriteError},
@@ -48,8 +48,10 @@ use crate::{
 
 pub struct Adapter {
     automation: Option<UIAutomation>,
+    allowed: Option<Identity>,
     last: Option<(Vec<i32>, FieldSnapshot)>,
     initialized: bool,
+    thread: std::marker::PhantomData<std::rc::Rc<()>>,
 }
 impl Default for Adapter {
     fn default() -> Self {
@@ -61,6 +63,9 @@ impl Drop for Adapter {
         self.last = None;
         self.automation = None;
         if self.initialized {
+            // SAFETY: All COM references are released first; the non-Send
+            // adapter balances its successful initialization on this same
+            // thread.
             unsafe {
                 CoUninitialize();
             }
@@ -68,7 +73,10 @@ impl Drop for Adapter {
     }
 }
 impl Adapter {
+    #[must_use]
     pub fn new() -> Self {
+        // SAFETY: The reserved pointer is null and the MTA flags are valid.
+        // Successful initialization is balanced on this thread.
         let initialized = unsafe { CoInitializeEx(None, COINIT_MULTITHREADED) }.is_ok();
         let automation = if initialized {
             UIAutomation::new_direct().ok()
@@ -77,6 +85,8 @@ impl Adapter {
         };
         let automation = automation.filter(|automation| {
             let raw: &IUIAutomation = automation.as_ref();
+            // SAFETY: This is a live COM interface; both timeouts are finite
+            // and bound provider calls.
             raw.cast::<IUIAutomation2>().is_ok_and(|automation| unsafe {
                 automation.SetConnectionTimeout(40).is_ok()
                     && automation.SetTransactionTimeout(40).is_ok()
@@ -84,11 +94,24 @@ impl Adapter {
         });
         Self {
             automation,
+            allowed: None,
             last: None,
             initialized,
+            thread: std::marker::PhantomData,
         }
     }
 
+    pub fn clear(&mut self) {
+        self.last = None;
+        self.allowed = None;
+    }
+
+    /// Restricts future text reads to the application approved by the caller.
+    pub fn set_application(&mut self, identity: &Identity) {
+        self.allowed = Some(identity.clone());
+    }
+
+    #[must_use]
     pub const fn permission() -> bool {
         true
     }
@@ -127,8 +150,18 @@ impl Adapter {
         Ok(element)
     }
 
+    /// Gets a classified target without reading its text.
+    /// # Errors
+    /// Refuses unknown, protected or unsupported controls.
     pub fn metadata(&mut self) -> Result<(TargetId, Application), SkipReason> {
         let element = self.focus()?;
+        if element
+            .get_process_id()
+            .map_err(|_| SkipReason::UnknownField)?
+            == std::process::id()
+        {
+            return Err(SkipReason::UnknownField);
+        }
         Ok((
             target(&element)?,
             application(
@@ -139,45 +172,64 @@ impl Adapter {
         ))
     }
 
+    /// Gets accessible input geometry.
+    /// # Errors
+    /// Refuses controls without valid bounds.
     pub fn location(&mut self) -> Result<(f64, f64), SkipReason> {
         let element = self.focus()?;
         let rect = element
             .get_bounding_rectangle()
             .map_err(|_| SkipReason::UnsupportedWrite)?;
-        Ok((
-            f64::from(rect.get_left()),
-            f64::from(rect.get_top() + rect.get_height()),
-        ))
+        if rect.get_width() <= 0 || rect.get_height() <= 0 {
+            return Err(SkipReason::UnknownField);
+        }
+        let bottom = rect
+            .get_top()
+            .checked_add(rect.get_height())
+            .ok_or(SkipReason::UnknownField)?;
+        Ok((f64::from(rect.get_left()), f64::from(bottom)))
     }
 
+    /// Runs a listen-only keyboard hook on the calling thread.
+    /// # Errors
+    /// Refuses a failed hook installation.
     pub fn observe(
-        active: Arc<AtomicBool>,
-        ready: Arc<AtomicBool>,
-        gate: Gate,
-        handler: Handler,
+        active: &Arc<AtomicBool>,
+        ready: &Arc<AtomicBool>,
+        gate: &Gate,
+        handler: &Handler,
     ) -> Result<(), SkipReason> {
         TAP.with(|context| {
             *context.borrow_mut() = Some(Hook {
-                active,
-                gate,
-                handler,
-            })
+                active: active.clone(),
+                gate: gate.clone(),
+                handler: handler.clone(),
+            });
         });
         let hook =
+            // SAFETY: The callback has the required ABI and its thread-local context outlives the hook and message loop.
             unsafe { SetWindowsHookExW(WH_KEYBOARD_LL, Some(callback), std::ptr::null_mut(), 0) };
         if hook.is_null() {
             TAP.with(|context| *context.borrow_mut() = None);
             return Err(SkipReason::PermissionMissing);
         }
         ready.store(true, Ordering::Release);
+        // SAFETY: MSG is a C record of integers and pointers, all of which
+        // permit zero initialization.
         let mut message = unsafe { std::mem::zeroed::<MSG>() };
+        // SAFETY: message is a writable MSG; the null window selects this
+        // thread's message queue.
         while unsafe { GetMessageW(&raw mut message, std::ptr::null_mut(), 0, 0) } > 0 {
+            // SAFETY: The initialized message came from GetMessageW on this
+            // thread and stays live during dispatch.
             unsafe {
                 TranslateMessage(&raw const message);
                 DispatchMessageW(&raw const message);
             }
         }
         ready.store(false, Ordering::Release);
+        // SAFETY: The handle came from a successful installation and its
+        // context is still alive.
         unsafe {
             UnhookWindowsHookEx(hook);
         }
@@ -186,33 +238,37 @@ impl Adapter {
     }
 }
 fn target(element: &UIElement) -> Result<TargetId, SkipReason> {
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    element
+    let runtime = element
         .get_runtime_id()
-        .map_err(|_| SkipReason::UnknownField)?
-        .hash(&mut hasher);
-    element
+        .map_err(|_| SkipReason::UnknownField)?;
+    let pid = element
         .get_process_id()
-        .map_err(|_| SkipReason::UnknownField)?
-        .hash(&mut hasher);
-    Ok(TargetId(hasher.finish()))
+        .map_err(|_| SkipReason::UnknownField)?;
+    Ok(super::identity_token(format!("{pid}:{runtime:?}")))
 }
+struct Process(windows_sys::Win32::Foundation::HANDLE);
+impl Drop for Process {
+    fn drop(&mut self) {
+        // SAFETY: Process owns this valid handle exclusively and closes it
+        // exactly once.
+        unsafe {
+            CloseHandle(self.0);
+        }
+    }
+}
+
 fn application(pid: u32) -> Result<Application, SkipReason> {
+    // SAFETY: The PID is native metadata and only limited query access is
+    // requested; the handle is checked and closed.
     let process = unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid) };
     if process.is_null() {
         return Err(SkipReason::UnknownField);
     }
-    struct Process(windows_sys::Win32::Foundation::HANDLE);
-    impl Drop for Process {
-        fn drop(&mut self) {
-            unsafe {
-                CloseHandle(self.0);
-            }
-        }
-    }
     let process = Process(process);
     let mut path = vec![0u16; 32768];
     let mut length = 32768;
+    // SAFETY: The path buffer contains length writable UTF-16 units and the
+    // length output is valid.
     if unsafe { QueryFullProcessImageNameW(process.0, 0, path.as_mut_ptr(), &raw mut length) } == 0
     {
         return Err(SkipReason::UnknownField);
@@ -221,11 +277,14 @@ fn application(pid: u32) -> Result<Application, SkipReason> {
         String::from_utf16(&path[..length as usize]).map_err(|_| SkipReason::UnknownField)?;
     let mut length = 0;
     let result =
+        // SAFETY: The process handle is live and the supplied output length describes either a null size probe or the allocated UTF-16 buffer.
         unsafe { GetApplicationUserModelId(process.0, &raw mut length, std::ptr::null_mut()) };
     let identity = if result == 15703 {
         Identity::WindowsExecutable(path.clone())
     } else if result == 122 && length > 0 {
         let mut id = vec![0u16; length as usize];
+        // SAFETY: The process handle is live and the supplied output length
+        // describes either a null size probe or the allocated UTF-16 buffer.
         if unsafe { GetApplicationUserModelId(process.0, &raw mut length, id.as_mut_ptr()) } != 0 {
             return Err(SkipReason::UnknownField);
         }
@@ -244,13 +303,16 @@ fn application(pid: u32) -> Result<Application, SkipReason> {
         .to_owned();
     Ok(Application { identity, name })
 }
+#[must_use]
 pub fn available_applications() -> Vec<Application> {
     let mut pids = vec![0u32; 16384];
     let mut bytes = 0;
+    // SAFETY: The buffer has 16384 u32 slots, exactly the 65536 bytes supplied;
+    // bytes is a valid output.
     if unsafe { K32EnumProcesses(pids.as_mut_ptr(), 65536, &raw mut bytes) } == 0 {
         return Vec::new();
     }
-    let own = unsafe { GetCurrentProcessId() };
+    let own = std::process::id();
     pids[..(bytes as usize / 4).min(pids.len())]
         .iter()
         .filter(|pid| **pid != own)
@@ -260,11 +322,23 @@ pub fn available_applications() -> Vec<Application> {
 impl Accessibility for Adapter {
     fn snapshot(&mut self) -> Result<FieldSnapshot, SkipReason> {
         let element = self.focus()?;
-        let _ = application(
+        let application = application(
             element
                 .get_process_id()
                 .map_err(|_| SkipReason::UnknownField)?,
         )?;
+        if self.allowed.as_ref() != Some(&application.identity) {
+            return Err(SkipReason::ExcludedApp);
+        }
+        if let Ok(edit) = element.get_pattern::<uiautomation::patterns::UITextEditPattern>()
+            && let Ok(composition) = edit.get_active_composition()
+            && !composition
+                .get_text(-1)
+                .map_err(|_| SkipReason::UnknownField)?
+                .is_empty()
+        {
+            return Err(SkipReason::Composing);
+        }
         let value = element
             .get_pattern::<UIValuePattern>()
             .map_err(|_| SkipReason::UnsupportedWrite)?
@@ -378,9 +452,26 @@ impl Accessibility for Adapter {
                 written: replacement.into(),
             });
         }
+        if self
+            .focus()
+            .map_err(|_| WriteError::Uncertain)?
+            .get_runtime_id()
+            .map_err(|_| WriteError::Uncertain)?
+            != runtime_id
+        {
+            return Err(WriteError::Uncertain);
+        }
         range.select().map_err(|_| WriteError::Partial {
             written: replacement.into(),
         })?;
+        let after = self.snapshot().map_err(|_| WriteError::Uncertain)?;
+        if after.target != id
+            || after.text != expected
+            || after.caret != caret
+            || after.selection_len != 0
+        {
+            return Err(WriteError::Uncertain);
+        }
         Ok(())
     }
 }
@@ -395,23 +486,39 @@ unsafe extern "system" fn callback(code: i32, wparam: usize, lparam: isize) -> i
         TAP.with(|context| {
             let context = context.borrow();
             let Some(context) = &*context else { return };
-            if code < 0
+            if code != 0
                 || (wparam != WM_KEYDOWN as usize && wparam != WM_SYSKEYDOWN as usize)
                 || !context.active.load(Ordering::Acquire)
-                || !(context.gate)()
             {
                 return;
             }
-            let event = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
             let mut adapter = Adapter::new();
-            let Ok((target, _)) = adapter.metadata() else {
+            let Ok((target, application)) = adapter.metadata() else {
                 return;
             };
+            // SAFETY: Only documented modifier virtual-key constants are
+            // queried after the safety gate.
+            if !(context.gate)(&application) {
+                return;
+            }
+            // SAFETY: HC_ACTION plus a key-down message establishes the
+            // Windows-provided KBDLLHOOKSTRUCT pointer, borrowed only for this
+            // callback.
+            let event = unsafe { &*(lparam as *const KBDLLHOOKSTRUCT) };
+            // SAFETY: Query the documented Control modifier after the safety
+            // gate.
             let ctrl = unsafe { GetAsyncKeyState(0x11) } < 0;
+            // SAFETY: Only documented modifier virtual-key constants are
+            // queried after the safety gate.
             let alt = unsafe { GetAsyncKeyState(0x12) } < 0;
             let meta =
+                // SAFETY: Only documented modifier virtual-key constants are queried after the safety gate.
                 unsafe { GetAsyncKeyState(0x5b) } < 0 || unsafe { GetAsyncKeyState(0x5c) } < 0;
+            // SAFETY: Only documented modifier virtual-key constants are
+            // queried after the safety gate.
             let shift = unsafe { GetAsyncKeyState(0x10) } < 0;
+            // SAFETY: The documented Caps Lock virtual key is queried after the
+            // safety gate.
             let caps = unsafe { GetKeyState(0x14) } & 1 != 0;
             let key = if event.flags & (LLKHF_INJECTED | LLKHF_LOWER_IL_INJECTED) != 0 {
                 Key::Untrusted
@@ -422,8 +529,12 @@ unsafe extern "system" fn callback(code: i32, wparam: usize, lparam: isize) -> i
             } else {
                 super::pc_key(event.scanCode, shift, caps)
             };
-            (context.handler)(KeyEvent { key, target });
-        })
+            if !matches!(key, Key::Modifier) {
+                (context.handler)(KeyEvent { key, target });
+            }
+        });
     });
+    // SAFETY: Forward the unchanged callback parameters; FixKey never consumes
+    // or modifies input.
     unsafe { CallNextHookEx(std::ptr::null_mut(), code, wparam, lparam) }
 }

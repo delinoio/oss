@@ -180,7 +180,11 @@ impl<H: SystemPreferences> Preferences<H> {
             return Err(PreferenceError::Integration(error));
         }
         if startup_changed && let Err(error) = self.host.set_login_startup(next.login_startup) {
-            self.rollback(&previous, shortcut_changed, false)?;
+            self.rollback(
+                &previous,
+                shortcut_changed,
+                error == IntegrationError::Uncertain,
+            )?;
             return Err(PreferenceError::Integration(error));
         }
         if let Err(error) = self.store.save(next) {

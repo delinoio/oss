@@ -14,9 +14,8 @@ use std::{
 };
 
 use fixkey_core::{
-    Language,
     decision::{MissingValidator, Validators},
-    layout::text_from_keys,
+    observation::{can_start, completed_word, pending_matches},
     platform::{Adapter, Application, Identity, Key, KeyEvent},
     session::{Accessibility, CapturedContext, FieldSnapshot},
     tokenizer::{TokenOutcome, Tokenizer},
@@ -66,7 +65,7 @@ fn allowed(application: &Application, settings: &crate::settings::Settings) -> b
             .any(|app| app.identity == identity(&application.identity))
 }
 
-pub fn available_apps() -> Result<Vec<ExcludedApp>, &'static str> {
+pub fn available_apps() -> Vec<ExcludedApp> {
     #[cfg(target_os = "macos")]
     {
         let mut apps = Vec::new();
@@ -128,7 +127,7 @@ pub fn available_apps() -> Result<Vec<ExcludedApp>, &'static str> {
             }
         }
         apps.sort_by(|a, b| a.display_name.cmp(&b.display_name));
-        Ok(apps)
+        apps
     }
     #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
@@ -141,11 +140,11 @@ pub fn available_apps() -> Result<Vec<ExcludedApp>, &'static str> {
             .collect();
         apps.sort_by(|a, b| a.display_name.cmp(&b.display_name));
         apps.dedup_by(|a, b| a.identity == b.identity);
-        Ok(apps)
+        apps
     }
 }
 pub fn unresolved_apps(excluded: &[ExcludedApp]) -> Vec<usize> {
-    let available = available_apps().unwrap_or_default();
+    let available = available_apps();
     excluded
         .iter()
         .enumerate()
@@ -175,6 +174,7 @@ pub fn open_permission_settings() -> Result<(), &'static str> {
 struct Context {
     before: FieldSnapshot,
     tokenizer: Tokenizer,
+    keys: Vec<char>,
 }
 pub fn start(app: AppHandle, shared: Shared) {
     let active = Arc::new(AtomicBool::new(false));
@@ -186,19 +186,35 @@ pub fn start(app: AppHandle, shared: Shared) {
         .expect("desktop state initialized")
         .input_policy
         .clone();
-    let gate: fixkey_core::platform::Gate = Arc::new(move || {
-        let settings = policy.read().ok().and_then(|policy| policy.clone());
-        let Some(settings) = settings else {
-            return false;
-        };
-        Adapter::new()
-            .metadata()
-            .is_ok_and(|(_, app)| allowed(&app, &settings))
+    let gate: fixkey_core::platform::Gate = Arc::new(move |application| {
+        policy
+            .read()
+            .ok()
+            .and_then(|policy| policy.clone())
+            .is_some_and(|settings| allowed(application, &settings))
     });
     let handler_lost = lost.clone();
+    let handler_active = active.clone();
     let handler: fixkey_core::platform::Handler = Arc::new(move |event| {
+        if !handler_active.load(Ordering::Acquire) {
+            return;
+        }
         if sender.try_send(event).is_err() {
             handler_lost.store(true, Ordering::Release);
+        }
+    });
+    let (shortcuts, shortcut_events) = mpsc::sync_channel::<Shortcut>(16);
+    app.manage(ShortcutQueue {
+        sender: shortcuts,
+        lost: lost.clone(),
+    });
+    let shortcut_app = app.clone();
+    let shortcut_lost = lost.clone();
+    std::thread::spawn(move || {
+        while let Ok(key) = shortcut_events.recv() {
+            if !shortcut_lost.load(Ordering::Acquire) {
+                shortcut(&shortcut_app, key);
+            }
         }
     });
     let observer_ready = Arc::new(AtomicBool::new(false));
@@ -207,196 +223,351 @@ pub fn start(app: AppHandle, shared: Shared) {
     std::thread::spawn(move || {
         loop {
             if Adapter::permission() {
-                let _ = Adapter::observe(
-                    observer_active.clone(),
-                    thread_ready.clone(),
-                    gate.clone(),
-                    handler.clone(),
-                );
+                let _ = Adapter::observe(&observer_active, &thread_ready, &gate, &handler);
             }
             std::thread::sleep(Duration::from_secs(1));
         }
     });
-    std::thread::spawn(move || {
-        let mut adapter = Adapter::new();
-        let mut last: Option<FieldSnapshot> = None;
-        let mut context: Option<Context> = None;
-        let mut revision = 0;
-        loop {
-            let event = receiver.recv_timeout(Duration::from_millis(12)).ok();
-            // Wait for the host to commit this physical event before acquiring
-            // state. The observer remains independent during this bounded wait.
-            if event.is_some() {
-                std::thread::sleep(Duration::from_millis(8));
-            }
-            let Ok(mut runtime) = shared.0.lock() else {
-                break;
-            };
-            if runtime.stopping {
-                active.store(false, Ordering::Release);
-                break;
-            }
-            if revision != runtime.revision {
-                revision = runtime.revision;
-                context = None;
-                last = None;
-                while receiver.try_recv().is_ok() {}
-                runtime.preferences.session().clear_transient();
-            }
-            let metadata = adapter.metadata();
-            let status = if runtime.preferences.needs_reconciliation() {
-                "preferences-reconciliation-required"
-            } else if runtime.preferences.current().paused {
-                "paused"
-            } else if !runtime.preferences.current().korean_enabled
-                && !runtime.preferences.current().english_enabled
-            {
-                "languages-disabled"
-            } else if !runtime.dictionaries_ready() {
-                "dictionary-unavailable"
-            } else if !Adapter::permission() {
-                "permission-missing"
-            } else if !observer_ready.load(Ordering::Acquire) {
-                "input-observer-unavailable"
-            } else {
-                match &metadata {
-                    Ok((_, application))
-                        if !allowed(application, runtime.preferences.current()) =>
-                    {
-                        "excluded-app"
-                    }
-                    Ok(_) => "active",
-                    Err(reason) => reason.as_str(),
-                }
-            };
-            let enabled = status == "active";
-            let changed = runtime.status != status;
-            runtime.status = status.into();
-            runtime.active = enabled;
-            active.store(enabled, Ordering::Release);
-            if let Ok(mut policy) = runtime.input_policy.write() {
-                *policy = enabled.then(|| runtime.preferences.current().clone());
-            }
-            runtime
-                .preferences
-                .session()
-                .set_permission_granted(enabled);
-            let mut hide = false;
-            if !enabled || lost.swap(false, Ordering::AcqRel) {
-                context = None;
-                last = None;
-                runtime.preferences.session().clear_transient();
-                if runtime.manual.selected().is_some() {
-                    runtime.manual.close();
-                    runtime.generation += 1;
-                    hide = true;
-                }
-            }
-            if enabled {
-                let observed = adapter.snapshot();
-                let composing = matches!(observed, Err(fixkey_core::SkipReason::Composing));
-                let snapshot = observed.ok();
-                if let Some(snapshot) = &snapshot {
-                    runtime.preferences.session().observe(snapshot);
-                    let was_open = runtime.manual.selected().is_some();
-                    runtime.manual.observe(snapshot);
-                    if was_open && runtime.manual.selected().is_none() {
-                        runtime.generation += 1;
-                        hide = true;
-                    }
-                }
-                if let Some(event) = event {
-                    if metadata
-                        .as_ref()
-                        .map_or(true, |(target, _)| *target != event.target)
-                        || (snapshot.is_none() && !composing)
-                    {
-                        context = None;
-                    } else if runtime.manual.selected().is_none() {
-                        match event.key {
-                            Key::Backspace => {
-                                context = None;
-                                runtime.preferences.session().on_backspace(&mut adapter);
-                            }
-                            Key::Reset | Key::Paste | Key::Untrusted => {
-                                context = None;
-                                runtime.preferences.session().clear_transient();
-                            }
-                            Key::Character(ch) => {
-                                if context.is_none()
-                                    && let Some(before) = &last
-                                    && before.target == event.target
-                                    && before.selection_len == 0
-                                {
-                                    runtime.preferences.session().next_word_started();
-                                    context = Some(Context {
-                                        before: before.clone(),
-                                        tokenizer: Tokenizer::new(),
-                                    });
-                                }
-                                if let Some(pending) = &mut context
-                                    && let Some(outcome) = pending.tokenizer.feed_char(ch)
-                                {
-                                    if let TokenOutcome::Evaluate { word, boundary } = outcome {
-                                        if let Ok(current) = adapter.snapshot() {
-                                            evaluate(
-                                                &mut runtime,
-                                                &mut adapter,
-                                                &pending.before,
-                                                &current,
-                                                &word,
-                                                &boundary,
-                                            );
-                                        }
-                                    }
-                                    context = None;
-                                }
-                            }
-                            Key::Enter | Key::Tab => {
-                                if let Some(pending) = &mut context
-                                    && let Some(TokenOutcome::Evaluate { word, boundary }) =
-                                        pending.tokenizer.feed_enter_or_tab()
-                                    && let Some(current) = &snapshot
-                                {
-                                    // Enter/Tab itself is never part of the
-                                    // replacement. A committed host edit makes
-                                    // this proof fail and discards held
-                                    // punctuation.
-                                    evaluate(
-                                        &mut runtime,
-                                        &mut adapter,
-                                        &pending.before,
-                                        current,
-                                        &word,
-                                        &boundary,
-                                    );
-                                }
-                                context = None;
-                            }
-                        }
-                    }
-                } else if context.is_none() {
-                    runtime
-                        .preferences
-                        .session()
-                        .observe_after_backspace(&mut adapter);
-                }
-                if !composing {
-                    last = adapter.snapshot().ok();
-                }
-            }
-            drop(runtime);
-            if hide {
-                hide_candidates(&app);
-            }
-            if changed {
-                if let Some(tray) = app.tray_by_id("fixkey") {
-                    let _ = tray.set_tooltip(Some(format!("FixKey · {status}")));
-                }
-                crate::desktop::notify(&app, status);
+    let control = Arc::new(std::sync::Mutex::new(None));
+    app.manage(WorkerControl(control.clone()));
+    let handle = std::thread::spawn(move || {
+        run_worker(&app, &shared, &active, &lost, &observer_ready, &receiver);
+    });
+    if let Ok(mut worker) = control.lock() {
+        *worker = Some(handle);
+    }
+}
+
+struct ShortcutQueue {
+    sender: mpsc::SyncSender<Shortcut>,
+    lost: Arc<AtomicBool>,
+}
+pub fn enqueue_shortcut(app: &AppHandle, key: Shortcut) {
+    if let Some(queue) = app.try_state::<ShortcutQueue>()
+        && queue.sender.try_send(key).is_err()
+    {
+        queue.lost.store(true, Ordering::Release);
+    }
+}
+
+struct WorkerControl(Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>);
+
+pub fn stop_for_update(app: &AppHandle) -> Result<(), &'static str> {
+    app.state::<Shared>()
+        .0
+        .lock()
+        .map_err(|_| "desktop-state-unavailable")?
+        .stop_for_update();
+    hide_candidates(app);
+    let control = app.state::<WorkerControl>();
+    let handle = control
+        .0
+        .lock()
+        .map_err(|_| "update-stop-failed")?
+        .take()
+        .ok_or("update-stop-failed")?;
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while !handle.is_finished() {
+        if std::time::Instant::now() >= deadline {
+            *control.0.lock().map_err(|_| "update-stop-failed")? = Some(handle);
+            return Err("update-stop-failed");
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    handle.join().map_err(|_| "update-stop-failed")
+}
+
+fn run_worker(
+    app: &AppHandle,
+    shared: &Shared,
+    active: &AtomicBool,
+    lost: &AtomicBool,
+    observer_ready: &AtomicBool,
+    receiver: &mpsc::Receiver<KeyEvent>,
+) {
+    let mut adapter = Adapter::new();
+    let mut baseline: Option<FieldSnapshot> = None;
+    let mut context: Option<Context> = None;
+    let mut revision = 0;
+    loop {
+        let event = receiver.recv_timeout(Duration::from_millis(12)).ok();
+        // Wait for the host to commit this physical event before acquiring
+        // state. The observer remains independent during this bounded wait.
+        if event.is_some() {
+            std::thread::sleep(Duration::from_millis(8));
+        }
+        let Ok(mut runtime) = shared.0.lock() else {
+            break;
+        };
+        if runtime.stopping {
+            active.store(false, Ordering::Release);
+            adapter.clear();
+            break;
+        }
+        if revision != runtime.revision {
+            revision = runtime.revision;
+            context = None;
+            baseline = None;
+            while receiver.try_recv().is_ok() {}
+            runtime.preferences.session().clear_transient();
+        }
+        let previous_error = runtime.last_error.clone();
+        let metadata = adapter.metadata();
+        let status = status(&runtime, &metadata, observer_ready.load(Ordering::Acquire));
+        let enabled = status == "active";
+        let changed = runtime.status != status;
+        runtime.status = status.into();
+        runtime.active = enabled;
+        active.store(enabled, Ordering::Release);
+        if let Ok(mut policy) = runtime.input_policy.write() {
+            *policy = enabled.then(|| runtime.preferences.current().clone());
+        }
+        runtime
+            .preferences
+            .session()
+            .set_permission_granted(enabled);
+        let mut hide = false;
+        if !enabled || lost.swap(false, Ordering::AcqRel) {
+            adapter.clear();
+            context = None;
+            baseline = None;
+            runtime.preferences.session().clear_transient();
+            if runtime.manual.selected().is_some() {
+                runtime.manual.close();
+                runtime.generation += 1;
+                hide = true;
             }
         }
-    });
+        if enabled {
+            if let Ok((_, application)) = &metadata {
+                adapter.set_application(&application.identity);
+            }
+            let (snapshot, composing) = capture(
+                &mut runtime,
+                &mut adapter,
+                metadata.as_ref().ok().map(|(target, _)| *target),
+                &mut hide,
+            );
+            if let Some(event) = event {
+                if metadata
+                    .as_ref()
+                    .map_or(true, |(target, _)| *target != event.target)
+                    || (snapshot.is_none() && !composing)
+                {
+                    context = None;
+                } else if runtime.manual.selected().is_none() {
+                    process_key(
+                        &mut runtime,
+                        &mut adapter,
+                        &mut context,
+                        baseline.as_ref(),
+                        event,
+                        snapshot.as_ref(),
+                    );
+                }
+            } else if context.is_none() {
+                runtime
+                    .preferences
+                    .session()
+                    .observe_after_backspace(&mut adapter);
+            }
+            if !composing {
+                update_baseline(&mut adapter, &mut baseline, &mut context);
+            }
+        }
+        let diagnostic = runtime
+            .last_error
+            .clone()
+            .filter(|error| Some(error) != previous_error.as_ref());
+        drop(runtime);
+        if hide {
+            hide_candidates(app);
+        }
+        publish_status(app, status, changed, diagnostic.as_deref());
+    }
+}
+
+fn publish_status(app: &AppHandle, status: &'static str, changed: bool, diagnostic: Option<&str>) {
+    if let Some(reason) = diagnostic {
+        crate::desktop::refresh_tray(app);
+        crate::desktop::notify(app, reason);
+    } else if changed {
+        tracing::info!(reason = status, "fixkey correction status changed");
+        crate::desktop::refresh_tray(app);
+        crate::desktop::notify(app, status);
+    }
+}
+
+fn capture(
+    runtime: &mut crate::desktop::Runtime,
+    adapter: &mut Adapter,
+    target: Option<fixkey_core::session::TargetId>,
+    hide: &mut bool,
+) -> (Option<FieldSnapshot>, bool) {
+    match adapter.snapshot() {
+        Ok(snapshot) => {
+            *hide |= observe_snapshot(runtime, &snapshot);
+            (Some(snapshot), false)
+        }
+        Err(reason) => {
+            if runtime.manual.selected().is_some() {
+                runtime.manual.close();
+                runtime.generation += 1;
+                *hide = true;
+            }
+            if reason != fixkey_core::SkipReason::Composing {
+                runtime.refused_target = target.map(|target| (target, reason.as_str()));
+            }
+            (None, reason == fixkey_core::SkipReason::Composing)
+        }
+    }
+}
+
+fn update_baseline(
+    adapter: &mut Adapter,
+    baseline: &mut Option<FieldSnapshot>,
+    context: &mut Option<Context>,
+) {
+    let next = adapter.snapshot().ok();
+    if let Some(pending) = context.as_ref()
+        && next.as_ref().is_none_or(|snapshot| {
+            baseline.as_ref().is_some_and(|previous| {
+                previous.target == snapshot.target && snapshot.caret < previous.caret
+            }) || !pending_matches(&pending.before, snapshot, &pending.keys)
+        })
+    {
+        *context = None;
+    }
+    *baseline = next;
+}
+
+fn observe_snapshot(runtime: &mut crate::desktop::Runtime, snapshot: &FieldSnapshot) -> bool {
+    runtime.preferences.session().observe(snapshot);
+    let was_open = runtime.manual.selected().is_some();
+    runtime.manual.observe(snapshot);
+    if was_open && runtime.manual.selected().is_none() {
+        runtime.generation += 1;
+        return true;
+    }
+    false
+}
+
+fn status(
+    runtime: &crate::desktop::Runtime,
+    metadata: &Result<(fixkey_core::session::TargetId, Application), fixkey_core::SkipReason>,
+    observer_ready: bool,
+) -> &'static str {
+    if runtime.preferences.needs_reconciliation() {
+        "preferences-reconciliation-required"
+    } else if runtime.preferences.current().paused {
+        "paused"
+    } else if !runtime.preferences.current().korean_enabled
+        && !runtime.preferences.current().english_enabled
+    {
+        "languages-disabled"
+    } else if !runtime.dictionaries_ready() {
+        "dictionary-unavailable"
+    } else if !Adapter::permission() {
+        "permission-missing"
+    } else if !observer_ready {
+        "input-observer-unavailable"
+    } else {
+        match metadata {
+            Ok((_, application)) if !allowed(application, runtime.preferences.current()) => {
+                "excluded-app"
+            }
+            Ok((target, _)) => runtime
+                .refused_target
+                .filter(|(refused, _)| refused == target)
+                .map_or("active", |(_, reason)| reason),
+            Err(reason) => reason.as_str(),
+        }
+    }
+}
+
+fn process_key(
+    runtime: &mut crate::desktop::Runtime,
+    adapter: &mut Adapter,
+    context: &mut Option<Context>,
+    baseline: Option<&FieldSnapshot>,
+    event: KeyEvent,
+    snapshot: Option<&FieldSnapshot>,
+) {
+    match event.key {
+        Key::Backspace => {
+            *context = None;
+            if runtime.preferences.session().on_backspace(adapter)
+                == fixkey_core::session::BackspaceAction::Failed
+            {
+                runtime.refused_target = Some((event.target, "undo-failed"));
+                runtime.last_error = Some("undo-failed".into());
+            }
+        }
+        Key::Reset | Key::Paste | Key::Untrusted => {
+            *context = None;
+            runtime.preferences.session().clear_transient();
+        }
+        Key::Character(ch) => {
+            if context.is_none()
+                && ch.is_ascii_alphabetic()
+                && let Some(before) = baseline
+                && before.target == event.target
+                && can_start(before)
+            {
+                runtime.preferences.session().next_word_started();
+                *context = Some(Context {
+                    before: before.clone(),
+                    tokenizer: Tokenizer::new(),
+                    keys: Vec::new(),
+                });
+            }
+            if let Some(pending) = context.as_mut() {
+                pending.keys.push(ch);
+            }
+            if context
+                .as_ref()
+                .is_some_and(|pending| pending.keys.len() > 256)
+            {
+                *context = None;
+                tracing::debug!(
+                    reason = "word-context-too-long",
+                    "fixkey input context discarded"
+                );
+            }
+            if let Some(pending) = context.as_mut()
+                && let Some(outcome) = pending.tokenizer.feed_char(ch)
+            {
+                if let TokenOutcome::Evaluate { word, boundary } = outcome
+                    && let Ok(current) = adapter.snapshot()
+                {
+                    evaluate(
+                        runtime,
+                        adapter,
+                        &pending.before,
+                        &current,
+                        &word,
+                        &boundary,
+                    );
+                }
+                *context = None;
+            }
+        }
+        Key::Modifier => {}
+        Key::Enter | Key::Tab => {
+            if let Some(pending) = context.as_mut()
+                && let Some(TokenOutcome::Evaluate { word, boundary }) =
+                    pending.tokenizer.feed_enter_or_tab()
+                && let Some(current) = snapshot
+            {
+                // Enter/Tab itself is never part of the
+                // replacement. A committed host edit makes
+                // this proof fail and discards held
+                // punctuation.
+                evaluate(runtime, adapter, &pending.before, current, &word, &boundary);
+            }
+            *context = None;
+        }
+    }
 }
 
 fn evaluate(
@@ -408,23 +579,7 @@ fn evaluate(
     boundary: &str,
 ) {
     let keys: Vec<char> = word_keys.chars().collect();
-    for language in Language::ALL {
-        let Some(word) = text_from_keys(&keys, language) else {
-            continue;
-        };
-        let mut expected: Vec<char> = before.text.chars().collect();
-        expected.splice(
-            before.caret..before.caret,
-            format!("{word}{boundary}").chars(),
-        );
-        let expected: String = expected.into_iter().collect();
-        if current.target != before.target
-            || current.selection_len != 0
-            || current.text != expected
-            || current.caret != before.caret + word.chars().count() + boundary.chars().count()
-        {
-            continue;
-        }
+    if let Some(word) = completed_word(before, current, &keys, boundary) {
         let validators = Validators {
             korean: runtime
                 .korean
@@ -439,7 +594,7 @@ fn evaluate(
                     validator as &dyn fixkey_core::decision::LanguageValidator
                 }),
         };
-        runtime.preferences.session().on_word_complete(
+        let evaluation = runtime.preferences.session().on_word_complete(
             &word,
             &keys,
             boundary,
@@ -450,8 +605,31 @@ fn evaluate(
             adapter,
             &validators,
         );
-        break;
+        if evaluation.skip_reason == Some(fixkey_core::SkipReason::UnsupportedWrite) {
+            runtime.refused_target = Some((current.target, "unsupported-write"));
+            runtime.last_error = Some("unsupported-write".into());
+        }
+    } else {
+        tracing::debug!(
+            reason = "stale-provenance",
+            "fixkey input context discarded"
+        );
     }
+}
+
+fn picker_action(key: Shortcut) -> Option<CandidateAction> {
+    PICKER_KEYS
+        .iter()
+        .position(|name| {
+            name.parse::<Shortcut>()
+                .is_ok_and(|candidate| candidate == key)
+        })
+        .map(|index| match index {
+            0 => CandidateAction::Next,
+            1 => CandidateAction::Previous,
+            2 => CandidateAction::Apply,
+            _ => CandidateAction::Close,
+        })
 }
 
 pub fn shortcut(app: &AppHandle, key: Shortcut) {
@@ -461,22 +639,11 @@ pub fn shortcut(app: &AppHandle, key: Shortcut) {
         .lock()
         .ok()
         .and_then(|runtime| runtime.manual.selected().map(|_| runtime.generation));
-    if let Some(generation) = picker {
-        for (index, name) in PICKER_KEYS.iter().enumerate() {
-            if name
-                .parse::<Shortcut>()
-                .is_ok_and(|candidate| candidate == key)
-            {
-                let action = match index {
-                    0 => CandidateAction::Next,
-                    1 => CandidateAction::Previous,
-                    2 => CandidateAction::Apply,
-                    _ => CandidateAction::Close,
-                };
-                let _ = candidate_action(app, generation, action, None);
-                return;
-            }
-        }
+    if let Some(generation) = picker
+        && let Some(action) = picker_action(key)
+    {
+        let _ = candidate_action(app, generation, action, None);
+        return;
     }
     let mut adapter = Adapter::new();
     let Ok((_, application)) = adapter.metadata() else {
@@ -500,7 +667,10 @@ pub fn shortcut(app: &AppHandle, key: Shortcut) {
     {
         return;
     }
+    adapter.set_application(&application.identity);
     let Ok((x, y)) = adapter.location() else {
+        drop(runtime);
+        crate::desktop::record_error(app, "candidate-location-unavailable");
         return;
     };
     let Ok(snapshot) = adapter.snapshot() else {
@@ -513,6 +683,7 @@ pub fn shortcut(app: &AppHandle, key: Shortcut) {
     {
         start -= 1;
     }
+    runtime.last_error = None;
     let settings = runtime.preferences.current().clone();
     // Split field borrows: validators remain immutable while the manual
     // session captures the source and validates every candidate.
@@ -591,27 +762,32 @@ pub fn candidate_action(
                 }
             }
             let mut adapter = Adapter::new();
-            if !runtime.active
-                || !adapter
-                    .metadata()
-                    .is_ok_and(|(_, app)| allowed(&app, runtime.preferences.current()))
-            {
+            let metadata = adapter.metadata().ok().filter(|(_, application)| {
+                runtime.active && allowed(application, runtime.preferences.current())
+            });
+            let Some((target, application)) = metadata else {
                 runtime.manual.close();
                 runtime.generation += 1;
                 drop(runtime);
                 hide_candidates(app);
                 return Err("candidate-target-unavailable");
-            }
+            };
+            adapter.set_application(&application.identity);
             let result = runtime
                 .manual
                 .apply(&mut adapter)
                 .map_err(|_| "candidate-apply-failed");
+            if result.is_err() {
+                runtime.refused_target = Some((target, "candidate-apply-failed"));
+                runtime.last_error = Some("candidate-apply-failed".into());
+            }
             runtime.generation += 1;
             drop(runtime);
             hide_candidates(app);
             return result;
         }
     }
+    runtime.candidate_revision += 1;
     let state = candidates(&runtime);
     drop(runtime);
     if close {

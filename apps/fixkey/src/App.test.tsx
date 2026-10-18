@@ -208,10 +208,65 @@ it("keeps manual candidates ephemeral and distinguishes unavailable validation",
     return () => {};
   });
   render(<CandidatePicker api={api} />);
-  await screen.findByText("Could not be checked");
+  await screen.findByText(/Could not be checked/);
   fireEvent.keyDown(screen.getByRole("main"), { key: "ArrowDown" });
   expect(api.candidateAction).toHaveBeenCalledWith(4, "next", undefined);
   fireEvent.keyDown(screen.getByRole("main"), { key: "Escape" });
   await screen.findByText("The source context is no longer available.");
   expect(screen.queryByText("zlqhemrk")).toBeNull();
+});
+
+it("retains the latest candidate generation and applies the current presentation", async () => {
+  const { api } = fixture();
+  vi.mocked(api.candidates).mockImplementation(async (callback) => {
+    callback({
+      generation: 5,
+      revision: 2,
+      selected: 0,
+      language: "ko",
+      theme: "dark",
+      items: [
+        {
+          text: "키보드가",
+          language: "ko-dubeolsik",
+          isOriginal: false,
+          validation: "recognized",
+        },
+      ],
+    });
+    callback({
+      generation: 5,
+      revision: 1,
+      selected: 0,
+      items: [
+        {
+          text: "late-initial-snapshot",
+          language: "en-us-qwerty",
+          isOriginal: true,
+          validation: "recognized",
+        },
+      ],
+    });
+    callback({
+      generation: 4,
+      selected: 0,
+      items: [
+        {
+          text: "stale",
+          language: "en-us-qwerty",
+          isOriginal: true,
+          validation: "recognized",
+        },
+      ],
+    });
+    return () => {};
+  });
+  render(<CandidatePicker api={api} />);
+  await screen.findByText("키보드가");
+  expect(screen.queryByText("stale")).toBeNull();
+  expect(screen.queryByText("late-initial-snapshot")).toBeNull();
+  expect(document.documentElement.lang).toBe("ko");
+  expect(document.documentElement.dataset.theme).toBe("dark");
+  fireEvent.keyDown(screen.getByRole("main"), { key: "Enter" });
+  expect(api.candidateAction).toHaveBeenCalledWith(5, "apply", undefined);
 });

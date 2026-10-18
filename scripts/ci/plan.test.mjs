@@ -430,6 +430,7 @@ test("PR never allocates native package jobs, including changes to CI itself", (
     "linux-packages",
     "pnport-native",
     ...devhudNative,
+    "fixkey-desktop",
   ]);
 });
 
@@ -1726,6 +1727,25 @@ test("CI Result requires every selected formatting job to succeed", () => {
       const needs = results(event, ["docs/guide.md"]);
       needs["source-format"].result = result;
       assert.throws(() => validateResults(needs), /source-format/);
+    }
+  }
+});
+
+test("FixKey frontend and desktop ownership preserve event eligibility", () => {
+  for (const source of [
+    "apps/fixkey/src/App.tsx",
+    "crates/fixkey-core/src/platform/macos.rs",
+    ".github/workflows/release-fixkey.yml",
+    "scripts/release/fixkey.mjs",
+  ]) {
+    for (const event of Object.values(Event)) {
+      const plan = planJobs(event, [source]);
+      assert.equal(plan.jobs["fixkey-frontend"], true);
+      assert.equal(plan.jobs["fixkey-desktop"], event === Event.Push);
+      assert.equal(
+        plan.forced["fixkey-frontend"],
+        !source.startsWith("apps/fixkey/"),
+      );
     }
   }
 });

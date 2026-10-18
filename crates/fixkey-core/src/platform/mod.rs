@@ -26,6 +26,7 @@ pub struct Application {
 pub enum Key {
     Character(char),
     Backspace,
+    Modifier,
     Enter,
     Tab,
     Reset,
@@ -33,13 +34,14 @@ pub enum Key {
     Untrusted,
 }
 /// Safe target identity observed before dispatching a key.
+#[derive(Clone, Copy)]
 pub struct KeyEvent {
     pub key: Key,
     pub target: TargetId,
 }
 /// Callback invoked before any key is retained. It must establish permission,
 /// field safety and exclusion policy without reading text from unsafe fields.
-pub type Gate = Arc<dyn Fn() -> bool + Send + Sync>;
+pub type Gate = Arc<dyn Fn(&Application) -> bool + Send + Sync>;
 pub type Handler = Arc<dyn Fn(KeyEvent) + Send + Sync>;
 
 #[cfg(target_os = "macos")]
@@ -81,6 +83,9 @@ pub fn character_offset(text: &str, units: usize) -> Option<usize> {
 
 #[cfg(any(target_os = "windows", target_os = "linux", test))]
 pub(super) fn pc_key(scan: u32, shift: bool, caps: bool) -> Key {
+    if matches!(scan, 42 | 54 | 58) {
+        return Key::Modifier;
+    }
     if scan == 14 {
         return Key::Backspace;
     }
@@ -132,6 +137,28 @@ pub(super) fn pc_key(scan: u32, shift: bool, caps: bool) -> Key {
         .map_or(Key::Reset, |(_, plain, upper)| {
             Key::Character(if shift { *upper } else { *plain })
         })
+}
+
+/// Assigns an equality-checked identity token; a hash alone is not target
+/// identity.
+#[cfg(any(target_os = "windows", target_os = "linux"))]
+fn identity_token(key: String) -> TargetId {
+    static CURRENT: std::sync::Mutex<Option<(String, TargetId)>> = std::sync::Mutex::new(None);
+    let mut current = CURRENT
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((previous, id)) = &*current
+        && previous == &key
+    {
+        return *id;
+    }
+    let id = next_target();
+    *current = Some((key, id));
+    id
+}
+fn next_target() -> TargetId {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    TargetId(NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
 }
 
 #[cfg(test)]

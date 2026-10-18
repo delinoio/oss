@@ -638,6 +638,7 @@ mod tests {
     enum Fault {
         None,
         FailWrite,
+        UncertainWrite,
         /// The first write leaves this text in place of the range.
         PartialWrite(&'static str),
         /// Every write fails after a partial one, including the restore.
@@ -728,6 +729,10 @@ mod tests {
             self.writes += 1;
             match self.fault {
                 Fault::FailWrite => return Err(WriteError::Failed),
+                Fault::UncertainWrite => {
+                    self.apply(start, end, "unknown");
+                    return Err(WriteError::Uncertain);
+                }
                 Fault::PartialWrite(written) if self.writes == 1 => {
                     self.apply(start, end, written);
                     return Err(WriteError::Partial {
@@ -900,6 +905,39 @@ mod tests {
             },
         );
         (result, field, session)
+    }
+
+    #[test]
+    fn proven_deletion_before_failed_range_insertion_restores_original_once() {
+        let mut field = MockField::new("rPthrgo ");
+        field.fault = Fault::PartialWrite("");
+        let mut session = new_session();
+        assert_eq!(
+            run(&mut field, &mut session, "rPthrgo").skip_reason,
+            Some(SkipReason::UnsupportedWrite)
+        );
+        assert_eq!(field.text(), "rPthrgo ");
+        assert_eq!(field.writes, 2);
+        assert!(!session.has_undo());
+    }
+
+    #[test]
+    fn uncertain_native_writes_never_trigger_recovery_or_retry() {
+        let mut field = MockField::new("rPthrgo ");
+        field.fault = Fault::UncertainWrite;
+        let mut session = new_session();
+        assert_eq!(
+            run(&mut field, &mut session, "rPthrgo").skip_reason,
+            Some(SkipReason::UnsupportedWrite)
+        );
+        assert_eq!(field.writes, 1);
+        assert_eq!(field.text(), "unknown ");
+        assert!(!session.has_undo());
+        assert_eq!(
+            session.on_backspace(&mut field),
+            BackspaceAction::PassThrough
+        );
+        assert_eq!(field.writes, 1);
     }
 
     #[test]
