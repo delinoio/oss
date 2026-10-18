@@ -102,7 +102,9 @@ function notices(directory, explicit, owner, pkg) {
     .filter(
       (entry) =>
         entry.isFile() &&
-        /^(licen[cs]e|copying|notice|copyright)([._-]|$)/iu.test(entry.name),
+        /^(unlicen[cs]e|licen[cs]e|copying|notice|copyright)([._-]|$)/iu.test(
+          entry.name,
+        ),
     )
     .map((entry) => path.join(directory, entry.name));
   if (explicit) candidates.push(path.resolve(directory, explicit));

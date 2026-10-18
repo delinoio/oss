@@ -15,7 +15,7 @@ tempfile.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 tracing-subscriber = { version = "=0.3.22", features = ["env-filter", "json"] }
-dirs = "=6.0.0"
+dirs = { version = "=6.0.0", optional = true }
 base64.workspace = true
 minisign-verify = "=0.2.5"
 tauri = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975", optional = true, default-features = false, features = ["tray-icon", "image-png"] }
@@ -36,7 +36,7 @@ tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43
 
 [features]
 default = []
-desktop = ["fixkey-core/native", "dep:tauri", "dep:tauri-runtime-wry", "dep:tauri-build", "dep:tauri-plugin-autostart", "dep:tauri-plugin-global-shortcut", "dep:notify-rust", "dep:tauri-plugin-single-instance", "dep:tauri-plugin-updater", "dep:reqwest", "dep:semver", "dep:tokio", "dep:plist", "dep:sys-locale"]
+desktop = ["fixkey-core/native", "dep:dirs", "dep:tauri", "dep:tauri-runtime-wry", "dep:tauri-build", "dep:tauri-plugin-autostart", "dep:tauri-plugin-global-shortcut", "dep:notify-rust", "dep:tauri-plugin-single-instance", "dep:tauri-plugin-updater", "dep:reqwest", "dep:semver", "dep:tokio", "dep:plist", "dep:sys-locale"]
 custom-protocol = ["tauri/custom-protocol"]
 
 [[bin]]
