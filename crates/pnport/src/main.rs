@@ -501,8 +501,7 @@ mod command_resolution_tests {
 
         let bare = OsString::from("tool");
         let error = command_target_with_lookup(&cwd, &bare, unsupported)
-            .err()
-            .expect("bare command must perform guarded lookup");
+            .expect_err("bare command must perform guarded lookup");
         assert_eq!(error.code, Code::PnportUnsupportedOperation);
         assert_eq!(calls.get(), 1);
 
