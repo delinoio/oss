@@ -183,7 +183,7 @@ test("repository contract catalog and validation commands use canonical paths", 
   );
   assert.match(
     catalog,
-    /`docs\/repository-workflow-contract\.md` \(repository-level workflow/u,
+    /\[[^\]\n]+\]\(repository-workflow-contract\.md\) \(repository-level workflow/u,
   );
   assert.match(
     agents,
