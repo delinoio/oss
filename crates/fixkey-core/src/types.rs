@@ -144,7 +144,7 @@ pub enum SkipReason {
     ExcludedApp,
     /// Correction is paused.
     Paused,
-    /// The text is FixKey's own replacement.
+    /// The text is `FixKey`'s own replacement.
     SelfReplacement,
     /// The word was just restored by undo.
     RestoredWord,
