@@ -1203,6 +1203,7 @@ fn directory_file_ids(root: &Path) {
     const FILE_NAMES_INFORMATION: i32 = 12;
     const FILE_ID_BOTH_DIRECTORY_INFORMATION: i32 = 37;
     const FILE_ID_FULL_DIRECTORY_INFORMATION: i32 = 38;
+    const STATUS_BUFFER_OVERFLOW: i32 = 0x8000_0005u32 as i32;
     const STATUS_NO_MORE_FILES: i32 = 0x8000_0006u32 as i32;
     const SL_RESTART_SCAN: u32 = 1;
     const SL_RETURN_SINGLE_ENTRY: u32 = 2;
@@ -1272,7 +1273,7 @@ fn directory_file_ids(root: &Path) {
             (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow)
         })
     }
-    /// One query. Returns the status and the bytes written.
+    /// One query. Preserve the status block's byte count on warning statuses.
     fn query(
         directory: HANDLE,
         api: Query,
@@ -1280,7 +1281,7 @@ fn directory_file_ids(root: &Path) {
         capacity: usize,
         single: bool,
         restart: bool,
-    ) -> (i32, Vec<u8>) {
+    ) -> (i32, usize, Vec<u8>) {
         let mut ios: IO_STATUS_BLOCK = unsafe { std::mem::zeroed() };
         // 8-byte aligned storage, as native callers provide.
         let mut storage = vec![0u64; capacity.div_ceil(8)];
@@ -1314,13 +1315,14 @@ fn directory_file_ids(root: &Path) {
                 ),
             }
         };
-        let used = if status >= 0 { ios.Information } else { 0 };
+        let used = ios.Information;
+        assert!(used <= capacity, "{api:?} wrote beyond the query buffer");
         let bytes: Vec<u8> = storage
             .iter()
             .flat_map(|word| word.to_le_bytes())
             .take(used)
             .collect();
-        (status, bytes)
+        (status, used, bytes)
     }
     /// Parses a chain of records into `(name, file id)` pairs, checking the
     /// chaining, alignment and name offset of every record.
@@ -1370,7 +1372,7 @@ fn directory_file_ids(root: &Path) {
         let mut all = Vec::new();
         let mut restart = true;
         loop {
-            let (status, bytes) = query(directory, api, class, capacity, single, restart);
+            let (status, _, bytes) = query(directory, api, class, capacity, single, restart);
             restart = false;
             if status == STATUS_NO_MORE_FILES {
                 return all;
@@ -1391,6 +1393,87 @@ fn directory_file_ids(root: &Path) {
     };
     let directory = open(root, FILE_LIST_DIRECTORY);
     for api in [Query::Classic, Query::Extended] {
+        // A first query can return a fixed header and a truncated name with
+        // overflow. Later no-fit queries return success and zero bytes. Use a
+        // duplicate for the no-fit call to check that the pending cursor is
+        // shared by the underlying file object.
+        let retry_directory = open(root, FILE_LIST_DIRECTORY);
+        let (status, information, partial) = query(
+            retry_directory,
+            api,
+            FILE_NAMES_INFORMATION,
+            12,
+            true,
+            false,
+        );
+        assert_eq!(status, STATUS_BUFFER_OVERFLOW, "{api:?} first no-fit");
+        assert_eq!(information, 12, "{api:?} first partial header");
+        assert_eq!(partial.len(), information);
+        assert_eq!(u32::from_le_bytes(partial[8..12].try_into().unwrap()), 2);
+        let (status, _, first) = query(
+            retry_directory,
+            api,
+            FILE_NAMES_INFORMATION,
+            14,
+            true,
+            false,
+        );
+        assert_eq!(status, 0, "{api:?} first retry");
+        assert_eq!(parse(&first, FILE_NAMES_INFORMATION)[0].0, ".");
+        let mut duplicate: HANDLE = std::ptr::null_mut();
+        assert_ne!(
+            unsafe {
+                DuplicateHandle(
+                    GetCurrentProcess(),
+                    retry_directory,
+                    GetCurrentProcess(),
+                    &mut duplicate,
+                    0,
+                    0,
+                    DUPLICATE_SAME_ACCESS,
+                )
+            },
+            0,
+            "duplicate retry directory handle"
+        );
+        let (status, information, empty) =
+            query(duplicate, api, FILE_NAMES_INFORMATION, 12, true, false);
+        assert_eq!(status, 0, "{api:?} subsequent no-fit");
+        assert_eq!(information, 0, "{api:?} subsequent no-fit bytes");
+        assert!(empty.is_empty());
+        let (status, _, pending) = query(
+            retry_directory,
+            api,
+            FILE_NAMES_INFORMATION,
+            16,
+            true,
+            false,
+        );
+        assert_eq!(status, 0, "{api:?} pending retry");
+        assert_eq!(parse(&pending, FILE_NAMES_INFORMATION)[0].0, "..");
+        let (status, _, following) = query(
+            duplicate,
+            api,
+            FILE_NAMES_INFORMATION,
+            64 * 1024,
+            true,
+            false,
+        );
+        assert_eq!(status, 0, "{api:?} following entry");
+        assert_ne!(parse(&following, FILE_NAMES_INFORMATION)[0].0, "..");
+        let (status, information, empty) =
+            query(retry_directory, api, FILE_NAMES_INFORMATION, 12, true, true);
+        assert_eq!(status, 0, "{api:?} restart no-fit");
+        assert_eq!(information, 0, "{api:?} restart no-fit bytes");
+        assert!(empty.is_empty());
+        let (status, _, restarted) = query(duplicate, api, FILE_NAMES_INFORMATION, 14, true, false);
+        assert_eq!(status, 0, "{api:?} restart retry");
+        assert_eq!(parse(&restarted, FILE_NAMES_INFORMATION)[0].0, ".");
+        unsafe {
+            CloseHandle(duplicate);
+            CloseHandle(retry_directory);
+        }
+
         for class in [
             FILE_ID_BOTH_DIRECTORY_INFORMATION,
             FILE_ID_FULL_DIRECTORY_INFORMATION,
@@ -1478,14 +1561,14 @@ fn directory_file_ids(root: &Path) {
                 0,
                 "duplicate directory handle"
             );
-            let (status, first) = query(directory, api, class, 64 * 1024, true, true);
+            let (status, _, first) = query(directory, api, class, 64 * 1024, true, true);
             assert!(
                 status >= 0,
                 "{api:?} class {class} first status {status:#x}"
             );
             let mut resumed = parse(&first, class);
             loop {
-                let (status, bytes) = query(duplicate, api, class, 64 * 1024, false, false);
+                let (status, _, bytes) = query(duplicate, api, class, 64 * 1024, false, false);
                 if status == STATUS_NO_MORE_FILES {
                     break;
                 }

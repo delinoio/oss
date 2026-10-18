@@ -17,6 +17,7 @@ use winapi::um::{
 };
 
 use super::*;
+use crate::directory_query::QueryState;
 
 /// Byte offset of `FileId` in the ID-bearing record classes. Offsets follow
 /// `FILE_ID_BOTH_DIR_INFORMATION` (a 94-byte structure padded to the next
@@ -59,6 +60,7 @@ pub(super) struct Listing {
     items: Vec<Item>,
     index: usize,
     pattern: Vec<u16>,
+    query_state: QueryState,
 }
 
 unsafe extern "system" {
@@ -204,6 +206,7 @@ fn listing(file: &OpenFile, pattern: Vec<u16>) -> std::result::Result<Listing, N
         items,
         index: 0,
         pattern,
+        query_state: QueryState::new(),
     })
 }
 
@@ -223,6 +226,36 @@ fn put32(buffer: &mut [u8], offset: usize, value: u32) {
 }
 fn put64(buffer: &mut [u8], offset: usize, value: u64) {
     buffer[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+}
+
+fn write_record(buffer: &mut [u8], item: &Item, class: FILE_INFORMATION_CLASS, header: usize) {
+    buffer.fill(0);
+    if class != FileNamesInformation {
+        let attributes = &item.attributes;
+        put64(buffer, 8, attributes.creation_time);
+        put64(buffer, 16, attributes.last_access_time);
+        put64(buffer, 24, attributes.last_write_time);
+        put64(buffer, 32, attributes.last_write_time);
+        put64(buffer, 40, attributes.size);
+        put64(buffer, 48, attributes.size.saturating_add(4095) & !4095);
+        put32(buffer, 56, attributes.file_attributes);
+        put32(buffer, 60, (item.name.len() * 2) as u32);
+        match class {
+            FileIdBothDirectoryInformation => put64(buffer, BOTH_FILE_ID_OFFSET, item.file_id),
+            FileIdFullDirectoryInformation => put64(buffer, FULL_FILE_ID_OFFSET, item.file_id),
+            _ => {}
+        }
+    } else {
+        put32(buffer, 8, (item.name.len() * 2) as u32);
+    }
+    for (i, unit) in item
+        .name
+        .iter()
+        .take((buffer.len() - header) / 2)
+        .enumerate()
+    {
+        buffer[header + i * 2..header + i * 2 + 2].copy_from_slice(&unit.to_le_bytes());
+    }
 }
 
 #[allow(
@@ -281,6 +314,9 @@ unsafe fn query(
         Err(_) => return Some(IO_ERROR),
     };
     if restart || cursor.is_none() {
+        let query_state = cursor
+            .as_ref()
+            .map_or_else(QueryState::new, |value| value.query_state);
         let pattern = if let Some(previous) = cursor.as_ref() {
             previous.pattern.clone()
         } else if pattern.is_null() {
@@ -292,7 +328,10 @@ unsafe fn query(
             }
         };
         *cursor = match listing(&owned, pattern) {
-            Ok(value) => Some(value),
+            Ok(mut value) => {
+                value.query_state = query_state;
+                Some(value)
+            }
             Err(status) => return Some(status),
         };
     }
@@ -300,35 +339,24 @@ unsafe fn query(
     let bytes = std::slice::from_raw_parts_mut(buffer.cast::<u8>(), length as usize);
     let mut used = 0;
     let mut previous = None;
+    let mut partial = false;
     while let Some(item) = cursor.items.get(cursor.index) {
         let needed = header + item.name.len() * 2;
         let aligned = (needed + 7) & !7;
         if used + needed > bytes.len() {
+            if let Some(name_bytes) = cursor.query_state.partial_name_bytes(
+                header,
+                item.name.len() * 2,
+                bytes.len(),
+                used,
+            ) {
+                used = header + name_bytes;
+                write_record(&mut bytes[..used], item, class, header);
+                partial = true;
+            }
             break;
         }
-        let record = &mut bytes[used..used + needed];
-        record.fill(0);
-        if class != FileNamesInformation {
-            let attributes = &item.attributes;
-            put64(record, 8, attributes.creation_time);
-            put64(record, 16, attributes.last_access_time);
-            put64(record, 24, attributes.last_write_time);
-            put64(record, 32, attributes.last_write_time);
-            put64(record, 40, attributes.size);
-            put64(record, 48, attributes.size.saturating_add(4095) & !4095);
-            put32(record, 56, attributes.file_attributes);
-            put32(record, 60, (item.name.len() * 2) as u32);
-            match class {
-                FileIdBothDirectoryInformation => put64(record, BOTH_FILE_ID_OFFSET, item.file_id),
-                FileIdFullDirectoryInformation => put64(record, FULL_FILE_ID_OFFSET, item.file_id),
-                _ => {}
-            }
-        } else {
-            put32(record, 8, (item.name.len() * 2) as u32);
-        }
-        for (i, unit) in item.name.iter().enumerate() {
-            record[header + i * 2..header + i * 2 + 2].copy_from_slice(&unit.to_le_bytes());
-        }
+        write_record(&mut bytes[used..used + needed], item, class, header);
         if let Some(previous) = previous {
             put32(bytes, previous, (used - previous) as u32);
         }
@@ -343,13 +371,9 @@ unsafe fn query(
             break;
         }
     }
-    let status = if used != 0 {
-        0
-    } else if cursor.index >= cursor.items.len() {
-        0x80000006u32 as i32
-    } else {
-        0x80000005u32 as i32
-    };
+    let status = cursor
+        .query_state
+        .finish(used, cursor.index < cursor.items.len(), partial);
     (*ios).Information = used;
     (*ios).u.Status = status;
     if !event.is_null() {

@@ -117,6 +117,14 @@ or observes it, and never returns a packet-less result for an installed port. A
 rejected query leaves the enumeration cursor unchanged and writes no status.
 Native-backed directories and unassociated synchronous queries keep their
 behavior.
+For a merged synchronous directory query, the first call on a file object can
+return `STATUS_BUFFER_OVERFLOW` with the fixed record fields and the part of the
+first name that fits. The entry stays pending for a larger retry. After that
+first call, a buffer that cannot hold the next complete record returns
+`STATUS_SUCCESS` with `IoStatusBlock.Information = 0`; the next record stays
+pending. Restarting a scan does not restore first-call behavior, and duplicated
+handles share the query state and cursor. Once no entries remain, the query
+returns `STATUS_NO_MORE_FILES`. Both native query entry points use these rules.
 Merged `FileIdBothDirectoryInformation` and `FileIdFullDirectoryInformation`
 records carry the native file reference number (the 64-bit volume file index)
 of the backing object each entry represents, including `.`, `..` and virtual
