@@ -4,7 +4,8 @@
 //! *key sequence* expressed with the characters the US QWERTY layout produces
 //! (shift is implied by case). Any word can be turned into its key sequence
 //! under the layout it currently appears in and re-interpreted under every
-//! enabled layout.
+//! enabled layout. Text-only reverse inference is available for manual
+//! candidates; automatic correction requires the recorded physical keys.
 
 use crate::types::{Language, LanguageSet};
 
@@ -454,8 +455,42 @@ pub struct Reconstruction {
     pub text: String,
 }
 
-/// Reconstructs `word` under every enabled language, including its current
-/// representation.
+/// Reconstructs a directly typed word from its recorded physical keys.
+///
+/// The caller must supply keys observed for this word in the same input
+/// context. Empty, unsupported or mismatched keys return `None`; inferred
+/// keys must not be passed here as input provenance. The rendered word is
+/// checked separately so its original representation remains authoritative.
+#[must_use]
+pub fn reconstruct_from_keys(
+    word: &str,
+    recorded_keys: &[char],
+    enabled: LanguageSet,
+) -> Option<Vec<Reconstruction>> {
+    let current = detect_language(word)?;
+    // Preserve the text-only decoder's rejection of unsupported Korean input,
+    // including standalone compound compatibility jamo.
+    keys_from_text(word, current)?;
+    if !is_word_with_internal_separators(recorded_keys.iter().copied(), |c| c.is_ascii_alphabetic())
+        || text_from_keys(recorded_keys, current).as_deref() != Some(word)
+    {
+        return None;
+    }
+    Some(
+        enabled
+            .enabled()
+            .filter_map(|language| {
+                text_from_keys(recorded_keys, language)
+                    .map(|text| Reconstruction { language, text })
+            })
+            .collect(),
+    )
+}
+
+/// Infers keys from rendered `word` for manual candidate exploration.
+///
+/// This path cannot recover physical Shift state from Korean text and must not
+/// be used for automatic correction. It includes the current representation.
 ///
 /// Returns an empty list when `word` is not written in a supported layout;
 /// languages whose layout cannot represent the key sequence are omitted.
@@ -488,6 +523,45 @@ mod tests {
             .unwrap()
             .into_iter()
             .collect()
+    }
+
+    #[test]
+    fn recorded_keys_preserve_shifts_lost_by_korean_reverse_inference() {
+        let both = LanguageSet::default();
+        for typed in ["NASA", "nasa", "NaSa"] {
+            let recorded: Vec<char> = typed.chars().collect();
+            let rendered = text_from_keys(&recorded, Language::KoDubeolsik).unwrap();
+            assert_eq!(rendered, "ㅜㅁㄴㅁ");
+            let candidates = reconstruct_from_keys(&rendered, &recorded, both).unwrap();
+            assert_eq!(candidates[0].text, rendered);
+            assert_eq!(candidates[1].text, typed);
+        }
+        for typed in ["rK", "rk"] {
+            let recorded: Vec<char> = typed.chars().collect();
+            assert_eq!(
+                text_from_keys(&recorded, Language::KoDubeolsik),
+                Some("가".into())
+            );
+            assert_eq!(
+                reconstruct_from_keys("가", &recorded, both).unwrap()[1].text,
+                typed
+            );
+        }
+    }
+
+    #[test]
+    fn recorded_keys_reject_missing_mismatched_and_unsupported_provenance() {
+        let both = LanguageSet::default();
+        for recorded in ["", "xxxx", "na-sa", "nasa'"] {
+            assert!(
+                reconstruct_from_keys("ㅜㅁㄴㅁ", &recorded.chars().collect::<Vec<_>>(), both)
+                    .is_none()
+            );
+        }
+        assert!(reconstruct_from_keys("NASA", &"nasa".chars().collect::<Vec<_>>(), both).is_none());
+        assert!(reconstruct_from_keys("a가", &"nasa".chars().collect::<Vec<_>>(), both).is_none());
+        assert!(reconstruct_from_keys("ㅘ", &"hk".chars().collect::<Vec<_>>(), both).is_none());
+        assert!(reconstruct_from_keys("가", &"rK".chars().collect::<Vec<_>>(), both).is_some());
     }
 
     #[test]
@@ -628,6 +702,12 @@ mod tests {
             assert_eq!(ko(english), korean);
             assert_eq!(detect_language(korean), Some(Language::KoDubeolsik));
             assert_eq!(keys(korean, Language::KoDubeolsik), english);
+            let recorded: Vec<char> = english.chars().collect();
+            for rendered in [english, korean] {
+                let checked = reconstruct_from_keys(rendered, &recorded, both).unwrap();
+                assert_eq!(checked[0].text, korean);
+                assert_eq!(checked[1].text, english);
+            }
             assert_eq!(
                 reconstruct(english, both),
                 vec![
