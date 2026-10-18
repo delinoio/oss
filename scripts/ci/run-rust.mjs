@@ -16,8 +16,6 @@ export function rustTask(command, packages) {
     );
   const owners = [
     ["devhud", "devhud"],
-    ["delidev-desktop", "delidev"],
-    ["delitools-shell", "delitools"],
     ...(command === "test" ? [["pnport", "pnport"]] : []),
   ]
     .filter(([name]) => packages.includes(name))

@@ -76,6 +76,10 @@ test("schema baseline comparison ignores unavailable LFS assets but still reject
     "protos/delidev/v1/retired.proto",
     'syntax = "proto3";\npackage delidev.v1;\nmessage Retired { string value = 1; }\n',
   );
+  write(
+    "protos/delcore/v1/transferred.proto",
+    'syntax = "proto3";\npackage delcore.v1;\nmessage Transferred { string value = 1; }\n',
+  );
   git("add", "--all");
   git("commit", "-m", "schema baseline with unavailable LFS asset");
   const baseline = git("rev-parse", "HEAD");
@@ -102,6 +106,7 @@ test("schema baseline comparison ignores unavailable LFS assets but still reject
   };
   // Retiring DeliDev must not disable breaking checks for the remaining APIs.
   rmSync(join(cwd, "protos/delidev"), { recursive: true });
+  rmSync(join(cwd, "protos/delcore"), { recursive: true });
   let result = run(baseline);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(existsSync(join(cwd, ".git/lfs/objects/aa/aa", oid)), false);

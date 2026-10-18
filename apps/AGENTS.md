@@ -20,8 +20,6 @@
 - [async-commit-hook application contract](../docs/apps-async-commit-hook-contract.md)
 - [binpm public documentation foundation](../docs/apps-binpm-docs-foundation.md)
 - [clibox public documentation foundation](../docs/apps-clibox-docs-foundation.md)
-- [DeliTools application](../docs/apps-delitools-foundation.md)
-- [DeliDev desktop client](../docs/apps-delidev-desktop-contract.md)
 - [apps-devhud-foundation](../docs/apps-devhud-foundation.md)
 - [DevHud Desktop Updater Contract](../docs/apps-devhud-updater-contract.md)
 - [FixKey desktop application (planned app)](../docs/apps-fixkey-desktop-contract.md)

@@ -33,7 +33,6 @@ jobs:
       desktop_matrix: ${{ steps.plan.outputs.desktop_matrix }}
       react_forge_matrix: ${{ steps.plan.outputs.react_forge_matrix }}
       pnport_matrix: ${{ steps.plan.outputs.pnport_matrix }}
-      delidev_frontend_matrix: ${{ steps.plan.outputs.delidev_frontend_matrix }}
       base: ${{ steps.plan.outputs.base }}
       head: ${{ steps.plan.outputs.head }}
     steps:
@@ -519,7 +518,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Install DevHUD Linux prerequisites
-        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'devhud') || contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') || contains(fromJSON(needs.changes.outputs.rust_packages), 'delitools-shell') }}
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'devhud') }}
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
@@ -591,7 +590,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Install DevHUD Linux prerequisites
-        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'devhud') || contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') || contains(fromJSON(needs.changes.outputs.rust_packages), 'delitools-shell') }}
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'devhud') }}
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
@@ -1692,108 +1691,6 @@ jobs:
           path: ${{ steps.prebuilt.outputs.cache-path }}
           key: ${{ steps.prebuilt.outputs.cache-key }}
 
-  delidev-frontend:
-    needs: changes
-    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['delidev-frontend'] }}
-    name: DeliDev Desktop (${{ matrix.phase }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.changes.outputs.delidev_frontend_matrix) }}
-    permissions:
-      contents: read
-      pull-requests: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          fetch-depth: 0
-          lfs: true
-          persist-credentials: false
-      - name: Setup Node.js
-        id: ci-node
-        uses: ./.github/actions/setup-ci-node
-      - name: Setup Turbo remote cache
-        uses: ./.github/actions/setup-turbo-cache
-        with:
-          team: ${{ vars.TURBO_TEAM }}
-          policy: ${{ vars.TURBO_OIDC_POLICY }}
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Run affected desktop checks
-        env:
-          TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
-          TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
-          FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['delidev-frontend'] }}
-        run: node scripts/ci/run-affected.mjs delidev-desktop ci:${{ matrix.phase }}
-
-      - name: Save pnpm cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ steps.ci-node.outputs.cache-path }}
-          key: ${{ steps.ci-node.outputs.cache-key }}
-
-      - name: Preserve Turbo run summaries
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: turbo-delidev-frontend-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: .turbo/runs/*.json
-          if-no-files-found: ignore
-
-  delitools-frontend:
-    needs: changes
-    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['delitools-frontend'] }}
-    name: DeliTools Shell (${{ matrix.phase }})
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix: { include: [{ phase: checks }] }
-    permissions:
-      contents: read
-      pull-requests: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          fetch-depth: 0
-          lfs: true
-          persist-credentials: false
-      - name: Setup Node.js
-        id: ci-node
-        uses: ./.github/actions/setup-ci-node
-      - name: Setup Turbo remote cache
-        uses: ./.github/actions/setup-turbo-cache
-        with:
-          team: ${{ vars.TURBO_TEAM }}
-          policy: ${{ vars.TURBO_OIDC_POLICY }}
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Run affected desktop checks
-        env:
-          TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
-          TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
-          FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['delitools-frontend'] }}
-        run: node scripts/ci/run-affected.mjs delitools ci:${{ matrix.phase }}
-
-      - name: Save pnpm cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ steps.ci-node.outputs.cache-path }}
-          key: ${{ steps.ci-node.outputs.cache-key }}
-
-      - name: Preserve Turbo run summaries
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: turbo-delitools-frontend-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: .turbo/runs/*.json
-          if-no-files-found: ignore
-
   devhud-admin:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['devhud-admin'] }}
@@ -1838,139 +1735,6 @@ jobs:
         with:
           name: turbo-devhud-admin-${{ strategy.job-index }}-${{ github.run_attempt }}
           path: .turbo/runs/*.json
-          if-no-files-found: ignore
-
-  delcore-api:
-    needs: changes
-    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['delcore-api'] }}
-    name: Delcore API Integration
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-      id-token: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          lfs: true
-          fetch-depth: 0
-
-      - name: Setup Go
-        id: ci-go
-        uses: ./.github/actions/setup-ci-go
-        with:
-          cache-scope: delcore-api
-
-      - name: Setup Node.js
-        id: ci-node
-        uses: ./.github/actions/setup-ci-node
-
-      - name: Setup Turbo remote cache
-        uses: ./.github/actions/setup-turbo-cache
-        with:
-          team: ${{ vars.TURBO_TEAM }}
-          policy: ${{ vars.TURBO_OIDC_POLICY }}
-
-      - name: Install workspace tooling
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Check API formatting, vet, builds, and unit tests
-        id: delcore-unit
-        run: node scripts/ci/run-affected.mjs @delinoio/delcore-api ci:format ci:vet ci:build ci:unit
-        env:
-          FORCE_RUN: "true"
-
-      - name: Start PostgreSQL
-        run: |
-          set -euo pipefail
-          docker run --detach \
-            --name delcore-postgres \
-            --env POSTGRES_DB=delcore_api_test \
-            --env POSTGRES_PASSWORD=delcore \
-            --env POSTGRES_USER=delcore \
-            --publish 5432:5432 \
-            --health-cmd "pg_isready -U delcore -d delcore_api_test" \
-            --health-interval 5s \
-            --health-timeout 5s \
-            --health-retries 10 \
-            postgres:15-bookworm >/dev/null
-          for _ in {1..60}; do
-            status=$(docker inspect --format '{{.State.Health.Status}}' delcore-postgres)
-            if [ "$status" = healthy ]; then
-              exit 0
-            fi
-            if [ "$status" = unhealthy ]; then
-              break
-            fi
-            sleep 1
-          done
-          docker logs delcore-postgres
-          echo "Delcore API PostgreSQL did not become healthy" >&2
-          exit 1
-
-      - name: Run PostgreSQL migration and integration tests
-        id: delcore-integration
-        run: node scripts/ci/run-affected.mjs @delinoio/delcore-api ci:integration
-        env:
-          DELCORE_TEST_DATABASE_URL: postgres://delcore:delcore@127.0.0.1:5432/delcore_api_test?sslmode=disable
-          FORCE_RUN: "true"
-
-      - name: Validate OCI runtime and backup recovery
-        id: delcore-oci
-        run: node scripts/ci/run-affected.mjs @delinoio/delcore-api ci:oci
-        env:
-          FORCE_RUN: "true"
-
-      - name: Record validation boundary
-        if: ${{ always() }}
-        env:
-          SOURCE_REVISION: ${{ github.sha }}
-          UNIT_RESULT: ${{ steps.delcore-unit.outcome }}
-          INTEGRATION_RESULT: ${{ steps.delcore-integration.outcome }}
-          OCI_RESULT: ${{ steps.delcore-oci.outcome }}
-        run: |
-          node --input-type=module <<'NODE'
-          import { mkdirSync, writeFileSync } from 'node:fs';
-          mkdirSync('.turbo', { recursive: true });
-          writeFileSync('.turbo/delcore-validation.json', JSON.stringify({
-            sourceRevision: process.env.SOURCE_REVISION,
-            checks: [
-              { command: 'node scripts/ci/run-affected.mjs @delinoio/delcore-api ci:format ci:vet ci:build ci:unit', result: process.env.UNIT_RESULT },
-              { command: 'node scripts/ci/run-affected.mjs @delinoio/delcore-api ci:integration', result: process.env.INTEGRATION_RESULT },
-              { command: 'node scripts/ci/run-affected.mjs @delinoio/delcore-api ci:oci', result: process.env.OCI_RESULT }
-            ],
-            unperformed: ['Live Logto, Paddle and Cloudflare account acceptance', 'Production deployment and image publication'],
-            boundary: 'Disposable PostgreSQL, generated Connect clients, mocked providers and local OCI execution'
-          }, null, 2));
-          NODE
-
-      - name: Stop PostgreSQL
-        if: ${{ always() }}
-        run: docker rm --force delcore-postgres >/dev/null 2>&1 || true
-
-      - name: Save pnpm cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ steps.ci-node.outputs.cache-path }}
-          key: ${{ steps.ci-node.outputs.cache-key }}
-
-      - name: Save Go cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ steps.ci-go.outputs.cache-path }}
-          key: ${{ steps.ci-go.outputs.cache-key }}
-
-      - name: Preserve Turbo run summaries
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: turbo-delcore-api-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: |
-            .turbo/runs/*.json
-            .turbo/delcore-validation.json
           if-no-files-found: ignore
 
   devhud-api:
@@ -2642,10 +2406,7 @@ jobs:
       - devhud-desktop
       - devhud-mobile-contracts
       - devhud-android-emulator
-      - delidev-frontend
-      - delitools-frontend
       - devhud-admin
-      - delcore-api
       - devhud-api
       - devhud-oci
       - devhud-supply-chain

@@ -99,7 +99,6 @@ export function matricesForEvent(event, mode = Mode.Affected) {
     environmentMatrix: hosts("ubuntu-latest"),
     forgeMatrix: hosts("ubuntu-latest"),
     cliboxMatrix: hosts("ubuntu-22.04"),
-    delidevFrontendMatrix: { include: [{ phase: "checks" }] },
     desktopMatrix: {
       include: nativeMatrices["devhud-desktop"].filter(
         (row) => row.os !== "macos",
@@ -286,7 +285,6 @@ export function main(env = process.env) {
     desktop_matrix: JSON.stringify(matrices.desktopMatrix),
     react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix),
     pnport_matrix: JSON.stringify(matrices.pnportMatrix),
-    delidev_frontend_matrix: JSON.stringify(matrices.delidevFrontendMatrix),
   };
   appendFileSync(
     env.GITHUB_OUTPUT,

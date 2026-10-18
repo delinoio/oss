@@ -184,7 +184,6 @@ test("hidden app and shared inputs retain ownership and workspace forcing", () =
   for (const event of [Event.PullRequest, Event.Push]) {
     for (const root of [
       "apps/devhud",
-      "apps/delidev",
       "apps/public-docs",
       "packages/devhud-api-client",
     ]) {
@@ -941,7 +940,7 @@ test("DevHud generated inputs select shared freshness without selecting DeliDev 
       const plan = planJobs(event, [path]);
       assert.equal(plan.jobs["async-commit-hook"], true, `${event}: ${path}`);
       for (const id of ["delidev-frontend"]) {
-        assert.equal(plan.jobs[id], false, `${event}: ${path}: ${id}`);
+        assert.equal(plan.jobs[id], undefined, `${event}: ${path}: ${id}`);
       }
       for (const id of ["devhud-frontend", "devhud-admin", "devhud-api"]) {
         assert.equal(plan.jobs[id], true, `${event}: ${path}: ${id}`);
@@ -995,7 +994,7 @@ test("workspace, shared, runtime, and external contract inputs select their owne
       ],
     ],
     ["protos/devhud/v1/account.proto", ["devhud-api", "devhud-frontend"]],
-    ["apps/delidev/src/App.tsx", ["delidev-frontend"]],
+    ["apps/delidev/src/App.tsx", []],
     [
       ".nvmrc",
       [
@@ -1215,7 +1214,6 @@ function results(event, paths, mode = Mode.Affected) {
         go_test_matrix: JSON.stringify(matrices.goTestMatrix),
         desktop_matrix: JSON.stringify(matrices.desktopMatrix),
         react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix),
-        delidev_frontend_matrix: JSON.stringify(matrices.delidevFrontendMatrix),
       },
     },
     "ci-contracts": { result: "success" },

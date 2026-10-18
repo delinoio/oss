@@ -15,5 +15,3 @@
 - [bundlewhy v1 protocol contract](../docs/protos-bundlewhy-v1-contract.md)
 - [async-commit-hook v1 protocol contract](../docs/protos-async-commit-hook-v1-contract.md)
 - [protos-devhud-v1-contract](../docs/protos-devhud-v1-contract.md)
-
-- [Delcore v1 protocol](../docs/protos-delcore-v1-contract.md)

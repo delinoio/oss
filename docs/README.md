@@ -51,12 +51,6 @@ Record new implementation status, validation results and unresolved limits in pu
 
 ## Project Catalog
 
-### delcore
-
-- [Project index](project-delcore.md)
-- [Server contract](servers-delcore-api-contract.md)
-- [Protocol contract](protos-delcore-v1-contract.md)
-
 ### bundlewhy
 
 - [Project index](project-bundlewhy.md)
@@ -75,14 +69,6 @@ Record new implementation status, validation results and unresolved limits in pu
 
 - [Project index](project-typeopt.md)
 - [Rust CLI foundation](crates-typeopt-foundation.md)
-
-- [Project index](project-delidev.md)
-- [Desktop client](apps-delidev-desktop-contract.md)
-
-### delitools
-
-- [Project index](project-delitools.md)
-- [Application foundation](apps-delitools-foundation.md)
 
 ### React Forge
 
@@ -204,3 +190,7 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [Project index](project-typenative.md)
 - [SDK and developer workflow](packages-typenative-foundation.md)
 - [Native host](crates-typenative-foundation.md)
+
+## Transferred projects
+
+Delcore, DeliDev, and DeliTools, including their contracts and historical DeliDev validation records, are maintained in [delino-apps](https://github.com/delinoio/delino-apps). This repository no longer owns their runtime paths or CI jobs.

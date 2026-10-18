@@ -77,7 +77,7 @@ test("native and mobile consumers restore/verify before building and save only s
 });
 
 test("consumer manifests never compile a CLI wrapper and retain platform runtime isolation", () => {
-  for (const app of ["devhud", "delidev"]) {
+  for (const app of ["devhud"]) {
     const cargo = read(`apps/${app}/src-tauri/Cargo.toml`);
     assert.doesNotMatch(cargo, /tauri-cli|features = \["cef"|tauri\/cef/u);
     assert.match(cargo, /tauri-runtime-cef =/u);

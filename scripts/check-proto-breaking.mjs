@@ -30,9 +30,12 @@ try {
     original,
   );
   const baseline = JSON.parse(readFileSync(original, "utf8"));
-  // DeliDev intentionally retired its entire API. Keep FILE checks for every
-  // remaining package. Remove this projection once all baselines omit it.
-  baseline.file = baseline.file.filter((file) => file.package !== "delidev.v1");
+  // DeliDev retired its API and Delcore moved to delino-apps. Keep FILE
+  // checks for owned packages. Remove this projection once all baselines
+  // omit the retired and transferred schemas.
+  baseline.file = baseline.file.filter(
+    (file) => !["delidev.v1", "delcore.v1"].includes(file.package),
+  );
   writeFileSync(projected, JSON.stringify(baseline));
   run("breaking", "--against", projected);
 } finally {

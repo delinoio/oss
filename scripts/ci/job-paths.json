@@ -173,7 +173,6 @@
       ".nvmrc",
       "Cargo.lock",
       "Cargo.toml",
-      "apps/delidev/src-tauri/**",
       "apps/devhud/src-tauri/**",
       "crates/**",
       "package.json",
@@ -715,24 +714,6 @@
       "scripts/release/project.mjs"
     ]
   },
-  "delidev-frontend": {
-    "paths": [
-      ".npmrc",
-      ".nvmrc",
-      "go.mod",
-      "go.sum",
-      "package.json",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      "turbo.json",
-      "apps/delidev/**",
-      "scripts/ci/fixture-binary*",
-      "scripts/spawn-dev-server.mjs",
-      "scripts/dev-environment/process.mjs"
-    ],
-    "workspace": "delidev-desktop",
-    "workspacePaths": ["apps/delidev/**"]
-  },
   "source-format": {
     "paths": [
       "**/*.js",
@@ -752,38 +733,5 @@
       "**/*.md",
       "**/*.mdx"
     ]
-  },
-  "delcore-api": {
-    "paths": [
-      "servers/delcore-api/**",
-      "protos/delcore/**",
-      "protos/gen/go/delcore/**",
-      "go.mod",
-      "go.sum",
-      "buf.gen.yaml",
-      "buf.yaml",
-      "docs/project-delcore.md",
-      "docs/servers-delcore-api-contract.md",
-      "docs/protos-delcore-v1-contract.md"
-    ],
-    "native": false
-  },
-  "delitools-frontend": {
-    "paths": [
-      ".npmrc",
-      ".nvmrc",
-      "package.json",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      "turbo.json",
-      "apps/delitools/**",
-      ".github/workflows/release-delitools-mobile.yml",
-      "scripts/tauri-cli.mjs",
-      "scripts/prebuilt-dependencies.mjs",
-      "docs/project-delitools.md",
-      "docs/apps-delitools-foundation.md"
-    ],
-    "workspace": "delitools",
-    "workspacePaths": ["apps/delitools/**"]
   }
 }

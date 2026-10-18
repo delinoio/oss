@@ -39,7 +39,6 @@ Treat project IDs as stable enum-style values:
 
 ```ts
 enum ProjectId {
-  Delcore = "delcore",
   Binpm = "binpm",
   Bundlewhy = "bundlewhy",
   CargoMono = "cargo-mono",
@@ -53,8 +52,6 @@ enum ProjectId {
   PublicDocs = "public-docs",
   DevHud = "devhud",
   AsyncCommitHook = "async-commit-hook",
-  DeliDev = "delidev",
-  DeliTools = "delitools",
   Forge = "forge",
   ReactForge = "react-forge",
   FixKey = "fixkey",
