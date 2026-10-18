@@ -2812,6 +2812,65 @@ mod tests {
     }
 
     #[test]
+    fn unicode_spaces_keep_return_and_optional_chain_read_offsets() {
+        let read = "process.env.FLAG";
+        for gap in ["\u{00a0}", "\u{2003}", "\u{feff}"] {
+            for code in [
+                format!("function f(){{{gap}return({read})?.trim()}}"),
+                format!("function f(){{return{gap}({read})?.trim()}}"),
+                format!("function f(){{{gap}return{gap}({gap}{read}{gap})?.trim()}}"),
+            ] {
+                let start = code.find(read).unwrap();
+                let tokens = tokenize(&code, &[]);
+                assert!(
+                    tokens.iter().any(|token| token.text == "return"),
+                    "{code:?}"
+                );
+                let process = tokens.iter().find(|token| token.text == "process").unwrap();
+                assert_eq!((process.start, process.end), (start, start + 7), "{code:?}");
+                assert!(start > code[..start].chars().count(), "{code:?}");
+                assert_eq!(
+                    env_guards(&code, &[(start, start + read.len())], &[]),
+                    [Some(EnvGuard::OptionalChain)],
+                    "{code:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unicode_spaces_preserve_call_arguments_and_return_line_terminators() {
+        let read = "process.env.FLAG";
+        for gap in ["\u{00a0}", "\u{2003}", "\u{feff}"] {
+            for name in ["αreturn", "run"] {
+                let code = format!("{name}({gap}{read}{gap})?.trim()");
+                let start = code.find(read).unwrap();
+                assert_eq!(
+                    env_guards(&code, &[(start, start + read.len())], &[]),
+                    [None],
+                    "{code:?}"
+                );
+            }
+            let code = format!("(function(){{return{gap}({read})}})()&&run()");
+            let start = code.find(read).unwrap();
+            assert_eq!(
+                env_guards(&code, &[(start, start + read.len())], &[]),
+                [Some(EnvGuard::ShortCircuitAnd)],
+                "{code:?}"
+            );
+        }
+        for terminator in ["\n", "\r", "\r\n", "\u{2028}", "\u{2029}"] {
+            let code = format!("(function(){{return{terminator}({read})}})()&&run()");
+            let start = code.find(read).unwrap();
+            assert_eq!(
+                env_guards(&code, &[(start, start + read.len())], &[]),
+                [None],
+                "{code:?}"
+            );
+        }
+    }
+
+    #[test]
     fn statically_nullish_optional_chain_skips_unevaluated_keys() {
         let guard = |code: &str| {
             let read = "process.env.FLAG";
