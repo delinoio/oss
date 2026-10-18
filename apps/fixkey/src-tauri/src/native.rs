@@ -342,12 +342,7 @@ fn run_worker(
             if let Ok((_, application)) = &metadata {
                 adapter.set_application(&application.identity);
             }
-            let (snapshot, composing) = capture(
-                &mut runtime,
-                &mut adapter,
-                metadata.as_ref().ok().map(|(target, _)| *target),
-                &mut hide,
-            );
+            let (snapshot, composing) = capture(&mut runtime, &mut adapter, &mut hide);
             if let Some(event) = event {
                 if metadata
                     .as_ref()
@@ -401,7 +396,6 @@ fn publish_status(app: &AppHandle, status: &'static str, changed: bool, diagnost
 fn capture(
     runtime: &mut crate::desktop::Runtime,
     adapter: &mut Adapter,
-    target: Option<fixkey_core::session::TargetId>,
     hide: &mut bool,
 ) -> (Option<FieldSnapshot>, bool) {
     match adapter.snapshot() {
@@ -415,8 +409,11 @@ fn capture(
                 runtime.generation += 1;
                 *hide = true;
             }
+            // A read failure discards this observation but does not quarantine
+            // the target. Only failed writes require an explicit recheck.
             if reason != fixkey_core::SkipReason::Composing {
-                runtime.refused_target = target.map(|target| (target, reason.as_str()));
+                runtime.preferences.session().clear_transient();
+                tracing::debug!(reason = reason.as_str(), "fixkey snapshot unavailable");
             }
             (None, reason == fixkey_core::SkipReason::Composing)
         }
