@@ -1,0 +1,355 @@
+//! Language validators and the automatic replacement decision.
+
+use crate::{
+    layout::{Reconstruction, reconstruct},
+    types::{CandidateValidation, CorrectionOutcome, Language, LanguageSet},
+};
+
+/// Result of validating one candidate.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Validation {
+    /// The language accepts the candidate.
+    Accepted,
+    /// The language definitively rejects the candidate.
+    Rejected,
+    /// The validator is unavailable or failed; this is not a rejection.
+    Unavailable,
+}
+
+/// Validates candidate text for one language.
+pub trait LanguageValidator {
+    /// Validates `candidate`.
+    fn validate(&self, candidate: &str) -> Validation;
+}
+
+/// Validator used when a required dictionary is missing.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct MissingValidator;
+
+impl LanguageValidator for MissingValidator {
+    fn validate(&self, _candidate: &str) -> Validation {
+        Validation::Unavailable
+    }
+}
+
+/// The validators for every supported language.
+pub struct Validators<'a> {
+    /// Korean validator.
+    pub korean: &'a dyn LanguageValidator,
+    /// English validator.
+    pub english: &'a dyn LanguageValidator,
+}
+
+impl Validators<'_> {
+    fn validate(&self, language: Language, candidate: &str) -> Validation {
+        match language {
+            Language::KoDubeolsik => self.korean.validate(candidate),
+            Language::EnUsQwerty => self.english.validate(candidate),
+        }
+    }
+}
+
+/// One validated interpretation of a word.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Candidate {
+    /// Layout the candidate was reconstructed under.
+    pub language: Language,
+    /// Candidate text.
+    pub text: String,
+    /// Validation result.
+    pub validation: Validation,
+}
+
+/// The decision for one completed word.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Decision {
+    /// Outcome category.
+    pub outcome: CorrectionOutcome,
+    /// Replacement text when [`CorrectionOutcome::Replaced`].
+    pub replacement: Option<String>,
+    /// Language that supplied the replacement.
+    pub language: Option<Language>,
+}
+
+impl Decision {
+    const fn preserved(outcome: CorrectionOutcome) -> Self {
+        Self {
+            outcome,
+            replacement: None,
+            language: None,
+        }
+    }
+}
+
+fn validate_all(
+    reconstructions: Vec<Reconstruction>,
+    validators: &Validators<'_>,
+) -> Vec<Candidate> {
+    reconstructions
+        .into_iter()
+        .map(|reconstruction| Candidate {
+            validation: validators.validate(reconstruction.language, &reconstruction.text),
+            language: reconstruction.language,
+            text: reconstruction.text,
+        })
+        .collect()
+}
+
+/// Decides whether `word` is replaced automatically.
+///
+/// Replaces only when exactly one enabled language accepts its candidate and
+/// that candidate differs from `word`. If any required enabled-language
+/// validator is unavailable the word is preserved, because an unavailable
+/// validator is not an invalid result.
+#[must_use]
+pub fn decide(word: &str, enabled: LanguageSet, validators: &Validators<'_>) -> Decision {
+    let candidates = validate_all(reconstruct(word, enabled), validators);
+    if candidates.is_empty() {
+        return Decision::preserved(CorrectionOutcome::PreservedNoMatch);
+    }
+    if candidates
+        .iter()
+        .any(|candidate| candidate.validation == Validation::Unavailable)
+    {
+        return Decision::preserved(CorrectionOutcome::PreservedValidatorUnavailable);
+    }
+    let mut accepted = candidates
+        .into_iter()
+        .filter(|candidate| candidate.validation == Validation::Accepted);
+    match (accepted.next(), accepted.next()) {
+        (None, _) => Decision::preserved(CorrectionOutcome::PreservedNoMatch),
+        (Some(_), Some(_)) => Decision::preserved(CorrectionOutcome::PreservedAmbiguous),
+        (Some(winner), None) if winner.text == word => {
+            Decision::preserved(CorrectionOutcome::PreservedUnchanged)
+        }
+        (Some(winner), None) => Decision {
+            outcome: CorrectionOutcome::Replaced,
+            replacement: Some(winner.text),
+            language: Some(winner.language),
+        },
+    }
+}
+
+/// One entry of the manual candidate list.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ManualCandidate {
+    /// Layout the candidate was reconstructed under.
+    pub language: Language,
+    /// Candidate text.
+    pub text: String,
+    /// Whether this entry is the word as typed.
+    pub is_original: bool,
+    /// Validation state shown with the candidate.
+    pub validation: CandidateValidation,
+}
+
+/// Builds the manual candidate list: the original first, then each other
+/// enabled-language candidate. Candidates that are layout-convertible but
+/// invalid stay selectable.
+#[must_use]
+pub fn manual_candidates(
+    word: &str,
+    enabled: LanguageSet,
+    validators: &Validators<'_>,
+) -> Vec<ManualCandidate> {
+    let mut candidates = validate_all(reconstruct(word, enabled), validators)
+        .into_iter()
+        .map(|candidate| ManualCandidate {
+            is_original: candidate.text == word,
+            language: candidate.language,
+            text: candidate.text,
+            validation: match candidate.validation {
+                Validation::Accepted => CandidateValidation::Recognized,
+                Validation::Rejected => CandidateValidation::NotRecognized,
+                Validation::Unavailable => CandidateValidation::ValidatorUnavailable,
+            },
+        })
+        .collect::<Vec<_>>();
+    // The original is listed first even when its language is disabled.
+    candidates.sort_by_key(|candidate| !candidate.is_original);
+    candidates
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct Fixed(&'static [&'static str]);
+
+    impl LanguageValidator for Fixed {
+        fn validate(&self, candidate: &str) -> Validation {
+            if self.0.contains(&candidate) {
+                Validation::Accepted
+            } else {
+                Validation::Rejected
+            }
+        }
+    }
+
+    fn all() -> LanguageSet {
+        LanguageSet::default()
+    }
+
+    #[test]
+    fn exactly_one_accepting_language_replaces() {
+        let ko = Fixed(&["계속해", "키보드가"]);
+        let en = Fixed(&["keyboard"]);
+        let validators = Validators {
+            korean: &ko,
+            english: &en,
+        };
+        for (word, expected) in [("rPthrgo", "계속해"), ("zlqhemrk", "키보드가")] {
+            let decision = decide(word, all(), &validators);
+            assert_eq!(decision.outcome, CorrectionOutcome::Replaced);
+            assert_eq!(decision.replacement.as_deref(), Some(expected));
+            assert_eq!(decision.language, Some(Language::KoDubeolsik));
+        }
+        let reverse = decide(
+            "키보드가",
+            all(),
+            &Validators {
+                korean: &Fixed(&[]),
+                english: &Fixed(&["zlqhemrk"]),
+            },
+        );
+        assert_eq!(reverse.replacement.as_deref(), Some("zlqhemrk"));
+        assert_eq!(reverse.language, Some(Language::EnUsQwerty));
+    }
+
+    #[test]
+    fn zero_accepting_languages_preserve() {
+        let none = Fixed(&[]);
+        let decision = decide(
+            "rPthrgo",
+            all(),
+            &Validators {
+                korean: &none,
+                english: &none,
+            },
+        );
+        assert_eq!(decision.outcome, CorrectionOutcome::PreservedNoMatch);
+        assert_eq!(decision.replacement, None);
+    }
+
+    #[test]
+    fn multiple_accepting_languages_preserve() {
+        let ko = Fixed(&["계속해"]);
+        let en = Fixed(&["rPthrgo"]);
+        let decision = decide(
+            "rPthrgo",
+            all(),
+            &Validators {
+                korean: &ko,
+                english: &en,
+            },
+        );
+        assert_eq!(decision.outcome, CorrectionOutcome::PreservedAmbiguous);
+    }
+
+    #[test]
+    fn an_unchanged_winner_is_preserved() {
+        let ko = Fixed(&[]);
+        let en = Fixed(&["hello"]);
+        let decision = decide(
+            "hello",
+            all(),
+            &Validators {
+                korean: &ko,
+                english: &en,
+            },
+        );
+        assert_eq!(decision.outcome, CorrectionOutcome::PreservedUnchanged);
+    }
+
+    #[test]
+    fn disabled_languages_are_ignored() {
+        let ko = Fixed(&["계속해"]);
+        let en = Fixed(&[]);
+        let validators = Validators {
+            korean: &ko,
+            english: &en,
+        };
+        let english_only = all().with(Language::KoDubeolsik, false);
+        assert_eq!(
+            decide("rPthrgo", english_only, &validators).outcome,
+            CorrectionOutcome::PreservedNoMatch
+        );
+    }
+
+    #[test]
+    fn an_unavailable_validator_preserves_even_if_another_language_accepts() {
+        let en = Fixed(&[]);
+        let decision = decide(
+            "rPthrgo",
+            all(),
+            &Validators {
+                korean: &MissingValidator,
+                english: &en,
+            },
+        );
+        assert_eq!(
+            decision.outcome,
+            CorrectionOutcome::PreservedValidatorUnavailable
+        );
+        // A disabled language's unavailable validator is not required.
+        let ko_off = all().with(Language::KoDubeolsik, false);
+        assert_eq!(
+            decide(
+                "rPthrgo",
+                ko_off,
+                &Validators {
+                    korean: &MissingValidator,
+                    english: &en,
+                }
+            )
+            .outcome,
+            CorrectionOutcome::PreservedNoMatch
+        );
+    }
+
+    #[test]
+    fn unsupported_words_have_no_match() {
+        let none = Fixed(&[]);
+        let decision = decide(
+            "a가",
+            all(),
+            &Validators {
+                korean: &none,
+                english: &none,
+            },
+        );
+        assert_eq!(decision.outcome, CorrectionOutcome::PreservedNoMatch);
+    }
+
+    #[test]
+    fn manual_candidates_list_the_original_first_with_validation_labels() {
+        let ko = Fixed(&[]);
+        let en = Fixed(&["rPthrgo"]);
+        let list = manual_candidates(
+            "rPthrgo",
+            all(),
+            &Validators {
+                korean: &ko,
+                english: &en,
+            },
+        );
+        assert_eq!(list.len(), 2);
+        assert!(list[0].is_original);
+        assert_eq!(list[0].validation, CandidateValidation::Recognized);
+        assert_eq!(list[1].text, "계속해");
+        assert_eq!(list[1].validation, CandidateValidation::NotRecognized);
+
+        let unavailable = manual_candidates(
+            "rPthrgo",
+            all(),
+            &Validators {
+                korean: &MissingValidator,
+                english: &en,
+            },
+        );
+        assert_eq!(
+            unavailable[1].validation,
+            CandidateValidation::ValidatorUnavailable
+        );
+    }
+}
