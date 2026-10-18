@@ -108,6 +108,7 @@ jobs:
     runs-on: macos-15
     environment: delitools-mobile
     env:
+      DEVELOPER_DIR: /Applications/Xcode_26.3.app/Contents/Developer
       DELITOOLS_BUILD_NUMBER: ${{ inputs.build_number }}
       APPLE_DEVELOPMENT_TEAM: ${{ vars.DELITOOLS_APPLE_TEAM_ID }}
       APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
@@ -121,6 +122,13 @@ jobs:
           toolchain: nightly-2026-09-28
           targets: aarch64-apple-ios
       - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Verify selected Xcode and iOS SDK
+        run: |
+          set -euo pipefail
+          test -d "$DEVELOPER_DIR"
+          xcodebuild -version
+          sdk=$(xcrun --sdk iphoneos --show-sdk-version)
+          [[ "$sdk" == 26.* ]]
       - name: Restore App Store Connect API key
         env:
           PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}

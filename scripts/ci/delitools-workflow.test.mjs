@@ -123,3 +123,19 @@ test("DeliTools verifies the protected Android upload identity before retaining 
   );
   assert.ok(job.steps.indexOf(verify) < job.steps.indexOf(archive));
 });
+
+test("DeliTools pins an upload-compatible Xcode before iOS project generation", () => {
+  const job = workflow.jobs.ios;
+  assert.equal(
+    job.env.DEVELOPER_DIR,
+    "/Applications/Xcode_26.3.app/Contents/Developer",
+  );
+  const verify = job.steps.find(
+    (step) => step.name === "Verify selected Xcode and iOS SDK",
+  );
+  assert.match(verify.run, /xcodebuild -version/);
+  assert.match(verify.run, /xcrun --sdk iphoneos --show-sdk-version/);
+  assert.match(verify.run, /26\.\*/);
+  const init = job.steps.find((step) => step.run?.includes("mobile:ios:init"));
+  assert.ok(job.steps.indexOf(verify) < job.steps.indexOf(init));
+});

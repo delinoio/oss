@@ -40,7 +40,7 @@ Frontend builds and workflow fixtures do not establish device or store acceptanc
 
 ## Dependencies and Integrations
 
-Use the shared verified Tauri CLI wrapper. CEF notices remain attached to desktop packaging. Android requires Java 17, the Android SDK and NDK; iOS requires Xcode and an Apple Developer team. Store uploads use Google's Android Publisher API and Apple's altool.
+Use the shared verified Tauri CLI wrapper. CEF notices remain attached to desktop packaging. Android requires Java 17, the Android SDK and NDK; iOS requires Xcode and an Apple Developer team. The release job explicitly selects the hosted image's Xcode 26.3 through `DEVELOPER_DIR` and verifies the iOS 26 SDK before project generation; it does not use the macOS image's default Xcode. Store uploads use Google's Android Publisher API and Apple's altool.
 
 ## Change Triggers
 
@@ -53,3 +53,4 @@ Keep the project index, workspace registrations, owning instructions and workflo
 - [Workflow contract](repository-workflow-contract.md)
 - [Tauri Android signing](https://v2.tauri.app/distribute/sign/android/)
 - [Tauri iOS signing](https://v2.tauri.app/distribute/sign/ios/)
+- [Apple build upload requirements](https://developer.apple.com/help/app-store-connect/manage-builds/upload-builds)
