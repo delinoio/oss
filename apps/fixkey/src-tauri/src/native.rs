@@ -289,8 +289,9 @@ fn run_worker(
     let mut baseline: Option<FieldSnapshot> = None;
     let mut context: Option<Context> = None;
     let mut revision = 0;
+    let mut awaiting_ime = false;
     loop {
-        let event = receiver.recv_timeout(Duration::from_millis(12)).ok();
+        let event = receiver.recv_timeout(Duration::from_millis(250)).ok();
         // Wait for the host to commit this physical event before acquiring
         // state. The observer remains independent during this bounded wait.
         if event.is_some() {
@@ -311,6 +312,7 @@ fn run_worker(
             adapter = Adapter::new();
             context = None;
             baseline = None;
+            awaiting_ime = false;
             while receiver.try_recv().is_ok() {}
             runtime.preferences.session().clear_transient();
         }
@@ -334,6 +336,7 @@ fn run_worker(
             adapter.clear();
             context = None;
             baseline = None;
+            awaiting_ime = false;
             runtime.preferences.session().clear_transient();
             if runtime.manual.selected().is_some() {
                 runtime.manual.close();
@@ -341,11 +344,18 @@ fn run_worker(
                 hide = true;
             }
         }
-        if enabled {
+        let needs_snapshot = snapshot_required(
+            event.is_some(),
+            awaiting_ime || runtime.preferences.session().backspace_pending(),
+            baseline.as_ref().map(|snapshot| snapshot.target),
+            metadata.as_ref().ok().map(|(target, _)| *target),
+        );
+        if enabled && needs_snapshot {
             if let Ok((_, application)) = &metadata {
                 adapter.set_application(&application.identity);
             }
             let (snapshot, composing) = capture(&mut runtime, &mut adapter, &mut hide);
+            awaiting_ime = composing;
             if let Some(event) = event {
                 if metadata
                     .as_ref()
@@ -383,6 +393,17 @@ fn run_worker(
         }
         publish_status(app, status, changed, diagnostic.as_deref());
     }
+}
+
+// Idle status checks read metadata only. Text snapshots follow keys, focus
+// transitions or an IME/undo operation whose host commit is still pending.
+fn snapshot_required(
+    has_event: bool,
+    awaiting_commit: bool,
+    baseline: Option<fixkey_core::session::TargetId>,
+    focused: Option<fixkey_core::session::TargetId>,
+) -> bool {
+    has_event || awaiting_commit || baseline != focused
 }
 
 fn publish_status(app: &AppHandle, status: &'static str, changed: bool, diagnostic: Option<&str>) {
@@ -797,4 +818,24 @@ pub fn candidate_action(
         let _ = app.emit_to("candidates", "fixkey-candidates", state);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use fixkey_core::session::TargetId;
+
+    use super::snapshot_required;
+
+    #[test]
+    fn idle_targets_do_not_request_text_but_events_and_pending_commits_do() {
+        let first = Some(TargetId(1));
+        let second = Some(TargetId(2));
+        for _ in 0..1000 {
+            assert!(!snapshot_required(false, false, first, first));
+        }
+        assert!(snapshot_required(true, false, first, first));
+        assert!(snapshot_required(false, true, first, first));
+        assert!(snapshot_required(false, false, first, second));
+        assert!(snapshot_required(false, false, None, first));
+    }
 }

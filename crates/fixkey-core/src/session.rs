@@ -325,6 +325,14 @@ impl CorrectionSession {
         }
     }
 
+    /// Whether an observed Backspace still awaits the host's deletion.
+    #[must_use]
+    pub fn backspace_pending(&self) -> bool {
+        self.undo
+            .as_ref()
+            .is_some_and(|undo| undo.backspace_pending)
+    }
+
     /// Handles the accessibility observation after a previously observed
     /// Backspace key has reached the host. A matching host deletion completes
     /// the pending undo; an unchanged snapshot leaves it pending.
