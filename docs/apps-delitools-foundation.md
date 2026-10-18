@@ -34,7 +34,7 @@ Native hosts emit structured startup, window-ready, failure and shutdown events 
 
 ## Build and Test
 
-Run package-local `pnpm test` and root `cargo test`. Frontend validation joins affected repository CI on Ubuntu; no macOS runner is added to PR, main-push or affected manual CI. The separate main-only release dispatch builds Android arm64/armv7 AABs on Ubuntu and iOS arm64 IPAs on macOS. Its positive build number must increase for each store upload. The checked-in application version is 0.1.0. Artifacts include license notices and a revision record. Signed build-only mode does not upload to stores; `publish` enables test-channel submission. Always remove temporary signing material and generated `dist` after validation.
+Run package-local `pnpm test` and root `cargo test`. Frontend validation joins affected repository CI on Ubuntu; no macOS runner is added to PR, main-push or affected manual CI. The separate main-only release dispatch builds Android arm64/armv7 AABs on Ubuntu and iOS arm64 IPAs on macOS. Its shared build number must be an integer from 1 to 9999 and increase for each store upload. This keeps the single-component iOS `CFBundleVersion` within its four-digit limit. The checked-in application version is 0.1.0. Artifacts include license notices and a revision record. Signed build-only mode does not upload to stores; `publish` enables test-channel submission. Always remove temporary signing material and generated `dist` after validation.
 
 Frontend builds and workflow fixtures do not establish device or store acceptance. Verify native launch, blank content, desktop resizing/exit, mobile lifecycle, signed install and account-backed upload separately. Preserve failed, skipped and unperformed checks in CI or PR evidence.
 

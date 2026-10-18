@@ -10,7 +10,7 @@ on:
         options: [all, android, ios]
         default: all
       build_number:
-        description: Positive build number, greater than all previous store uploads
+        description: Build number from 1 to 9999, greater than previous store uploads
         required: true
         type: string
       publish:

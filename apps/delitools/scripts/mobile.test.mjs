@@ -14,9 +14,10 @@ test("generated Android signing uses environment values and rejects template dri
   assert.equal(configureAndroid(result), result);
   assert.throws(() => configureAndroid(""), /Unsupported/);
 });
-test("store build numbers reject shell input, zero and Android overflow", () => {
-  for (const value of ["0", "-1", "1.2", "01", "2100000001", "$(id)"])
+test("shared store build numbers reject invalid input and iOS component overflow", () => {
+  for (const value of ["0", "-1", "1.2", "01", "10000", "2100000000", "$(id)"])
     assert.throws(() => releaseConfig(value));
+  assert.equal(releaseConfig("9999").bundle.iOS.bundleVersion, "9999");
   assert.deepEqual(releaseConfig("42"), {
     bundle: { android: { versionCode: 42 }, iOS: { bundleVersion: "42" } },
   });

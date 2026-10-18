@@ -36,10 +36,8 @@ ${anchor}`,
 }
 
 export function releaseConfig(buildNumber) {
-  if (!/^[1-9][0-9]*$/.test(buildNumber) || Number(buildNumber) > 2100000000)
-    throw new Error(
-      "Build number must be a positive integer at most 2100000000",
-    );
+  if (!/^[1-9][0-9]*$/.test(buildNumber) || Number(buildNumber) > 9999)
+    throw new Error("Build number must be a positive integer at most 9999");
   return {
     bundle: {
       android: { versionCode: Number(buildNumber) },
