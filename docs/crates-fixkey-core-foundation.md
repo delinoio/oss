@@ -102,7 +102,7 @@ Accessibility adapters:
 
 Manual candidates:
 
-- A candidate list contains the original and each enabled-language candidate with its validation result. A layout-convertible but invalid candidate is selectable and labeled as not recognized by the dictionary.
+- A candidate list contains the original first and exactly once, even when the original's layout is disabled. Each other candidate comes from an enabled language and keeps its validation result. A layout-convertible but invalid candidate is selectable and labeled as not recognized by the dictionary.
 - Each candidate carries a closed validation state:
 
 ```ts
