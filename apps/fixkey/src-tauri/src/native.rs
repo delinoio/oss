@@ -65,7 +65,7 @@ fn allowed(application: &Application, settings: &crate::settings::Settings) -> b
             .any(|app| app.identity == identity(&application.identity))
 }
 
-pub fn available_apps() -> Vec<ExcludedApp> {
+fn discover_apps() -> Vec<ExcludedApp> {
     #[cfg(target_os = "macos")]
     {
         let mut apps = Vec::new();
@@ -143,8 +143,47 @@ pub fn available_apps() -> Vec<ExcludedApp> {
         apps
     }
 }
+#[derive(Default)]
+struct ApplicationInventory {
+    fetched_at: Option<std::time::Instant>,
+    apps: Vec<ExcludedApp>,
+}
+impl ApplicationInventory {
+    fn get(
+        &mut self,
+        now: std::time::Instant,
+        refresh: bool,
+        discover: impl FnOnce() -> Vec<ExcludedApp>,
+    ) -> &[ExcludedApp] {
+        if refresh
+            || self
+                .fetched_at
+                .is_none_or(|at| now.duration_since(at) >= Duration::from_secs(30))
+        {
+            self.apps = discover();
+            self.fetched_at = Some(now);
+        }
+        &self.apps
+    }
+}
+fn application_inventory(refresh: bool) -> Vec<ExcludedApp> {
+    static INVENTORY: std::sync::OnceLock<std::sync::Mutex<ApplicationInventory>> =
+        std::sync::OnceLock::new();
+    INVENTORY
+        .get_or_init(Default::default)
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(std::time::Instant::now(), refresh, discover_apps)
+        .to_vec()
+}
+pub fn available_apps() -> Vec<ExcludedApp> {
+    application_inventory(true)
+}
 pub fn unresolved_apps(excluded: &[ExcludedApp]) -> Vec<usize> {
-    let available = available_apps();
+    if excluded.is_empty() {
+        return Vec::new();
+    }
+    let available = application_inventory(false);
     excluded
         .iter()
         .enumerate()
@@ -822,9 +861,35 @@ pub fn candidate_action(
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        cell::Cell,
+        time::{Duration, Instant},
+    };
+
     use fixkey_core::session::TargetId;
 
-    use super::snapshot_required;
+    use super::{ApplicationInventory, snapshot_required};
+
+    #[test]
+    fn settings_polls_reuse_inventory_until_expiry_or_explicit_refresh() {
+        let calls = Cell::new(0);
+        let discover = || {
+            calls.set(calls.get() + 1);
+            Vec::new()
+        };
+        let mut inventory = ApplicationInventory::default();
+        let now = Instant::now();
+        inventory.get(now, false, discover);
+        for seconds in 1..30 {
+            inventory.get(now + Duration::from_secs(seconds), false, discover);
+        }
+        assert_eq!(calls.get(), 1);
+        inventory.get(now + Duration::from_secs(30), false, discover);
+        assert_eq!(calls.get(), 2);
+        inventory.get(now + Duration::from_secs(31), true, discover);
+        assert_eq!(calls.get(), 3);
+        assert!(super::unresolved_apps(&[]).is_empty());
+    }
 
     #[test]
     fn idle_targets_do_not_request_text_but_events_and_pending_commits_do() {

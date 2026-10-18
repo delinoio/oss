@@ -33,6 +33,7 @@ enum SettingsSection {
 - Diagnostics and Help: error codes, open-log-folder, delete-logs, localized help and a GitHub Issues link. Help covers installation, permissions, supported layouts, correction, undo, manual candidates, exclusions, privacy, updates, troubleshooting and log deletion.
 - Apply and persist settings immediately. On persistence failure, keep the previous value and show an error. Scroll at smaller sizes or larger text scaling instead of clipping.
 - Coordinate shortcut and login-startup registration with atomic settings publication. Native registration failures leave the prior registration intact. If settings publication fails after registration, restore the previous OS registrations. If restoration fails, clear transient input, keep correction inactive and report that preference reconciliation is required; an explicit recheck reapplies the saved preferences before correction can resume.
+- Exclusion status skips application discovery for an empty list and reuses inventory for at most 30 seconds. Opening the application picker refreshes the inventory immediately.
 - There is no input history or correction-history screen.
 
 Permission dialog (reference viewport 540×440): explain why accessibility access is needed, that input stays on the device and that password fields are excluded. Adapt instructions and actions to the permission or accessibility service each OS requires. Provide the system-settings action, recheck and dismiss/later. Correction stays inactive until required permissions and dictionaries are ready, then activates.
