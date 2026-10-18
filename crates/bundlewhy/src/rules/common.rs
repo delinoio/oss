@@ -7881,6 +7881,106 @@ y=/process.env.F/.test(z),process.env.G"#;
         env_guard(code, start, start + read.len(), &non_code_ranges(code)).map(EnvGuard::evidence)
     }
 
+    fn unresolved_env_drafts(code: &str) -> Vec<DiagnosticDraft> {
+        let dir = tempfile::tempdir().unwrap();
+        let build_dir = dir.path().join("build");
+        std::fs::create_dir(&build_dir).unwrap();
+        std::fs::write(build_dir.join("main.js"), code).unwrap();
+        let chunk =
+            crate::chunks::Chunk::load(&build_dir, "main.js", None, true, dir.path()).unwrap();
+        let collection = crate::collect::Collection {
+            bundler: "rspack".to_owned(),
+            minify_enabled: true,
+            default_minifier: true,
+            ..crate::collect::Collection::default()
+        };
+        let mut context = Context::new(
+            &collection,
+            dir.path().to_path_buf(),
+            "app".to_owned(),
+            vec![chunk],
+            crate::sources::SourceStore::new(true),
+        );
+        let mut drafts = Vec::new();
+        run(&mut context, &mut drafts);
+        drafts
+            .into_iter()
+            .filter(|draft| draft.rule == RuleId::UnresolvedEnvCondition)
+            .collect()
+    }
+
+    #[test]
+    fn keyword_named_member_division_keeps_optional_chain_environment_guards() {
+        let read = "process.env.FLAG";
+        for code in [
+            "obj.default / process.env.FLAG?.length / divisor",
+            "obj.return / process.env.FLAG?.length / divisor",
+            "obj?.default / process.env.FLAG?.length / divisor",
+            "obj. /* c */ default / process.env.FLAG?.length / divisor",
+            "obj.normal / process.env.FLAG?.length / divisor",
+            "obj.xdefault / process.env.FLAG?.length / divisor",
+            "obj.await / process.env.FLAG?.length / divisor",
+        ] {
+            let ignored = non_code_ranges(code);
+            assert!(!in_ranges(&ignored, code.find(read).unwrap()), "{code}");
+            assert_eq!(
+                keyword_guard_in_code(code, read),
+                Some(EnvGuard::OptionalChain.evidence()),
+                "{code}"
+            );
+            let drafts = unresolved_env_drafts(code);
+            assert_eq!(drafts.len(), 1, "{code}");
+            assert_eq!(
+                drafts[0].conditions[1].detail,
+                EnvGuard::OptionalChain.evidence(),
+                "{code}"
+            );
+        }
+
+        for code in [
+            "export default /process.env.FLAG?.length/",
+            "return /process.env.FLAG?.length/",
+            "const s = 'process.env.FLAG?.length';",
+            "const s = `process.env.FLAG?.length`;",
+        ] {
+            assert!(
+                in_ranges(&non_code_ranges(code), code.find(read).unwrap()),
+                "{code}"
+            );
+            assert!(unresolved_env_drafts(code).is_empty(), "{code}");
+        }
+    }
+
+    #[test]
+    fn regex_operands_do_not_invent_unresolved_environment_conditions() {
+        let read = "process.env.FLAG";
+        for code in [
+            "candidate instanceof /process.env.FLAG?.x/.constructor",
+            "async function f(){ return await /process.env.FLAG?.x/; }",
+            "const r = /process.env.FLAG?.x/;",
+        ] {
+            assert!(
+                in_ranges(&non_code_ranges(code), code.find(read).unwrap()),
+                "{code}"
+            );
+            assert_eq!(keyword_guard_in_code(code, read), None, "{code}");
+            assert!(unresolved_env_drafts(code).is_empty(), "{code}");
+        }
+
+        for code in [
+            "const x = candidate / process.env.FLAG?.x;",
+            "if (process.env.FLAG) work();",
+            "const x = candidateinstanceof / process.env.FLAG?.x;",
+            "const x = xawait / process.env.FLAG?.x;",
+        ] {
+            assert!(
+                !in_ranges(&non_code_ranges(code), code.find(read).unwrap()),
+                "{code}"
+            );
+            assert_eq!(unresolved_env_drafts(code).len(), 1, "{code}");
+        }
+    }
+
     #[test]
     fn every_line_terminator_is_an_asi_boundary() {
         let read = "process.env.FLAG";
