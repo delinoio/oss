@@ -892,7 +892,7 @@ mod tests {
         assert_eq!(calls.get(), 2);
         inventory.get(now + Duration::from_secs(31), true, discover);
         assert_eq!(calls.get(), 3);
-        assert!(super::unresolved_apps(&[]).is_empty());
+        assert_eq!(super::unresolved_apps(&[]), Vec::<usize>::new());
     }
 
     #[test]
