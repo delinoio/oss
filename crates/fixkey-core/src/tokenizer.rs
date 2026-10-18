@@ -5,12 +5,15 @@
 //! role (internal word character or trailing punctuation) is decided by the
 //! next input, and it never triggers evaluation on Enter or Tab.
 
+use unicode_properties::{GeneralCategoryGroup, UnicodeEmoji, UnicodeGeneralCategory};
+
 use crate::types::SkipReason;
 
 /// Characters that can be internal to a word: apostrophes and hyphens.
 const JOINERS: [char; 3] = ['\'', '\u{2019}', '-'];
 /// Separators that can occur inside URLs and email addresses.
-const URL_SEPARATORS: [char; 6] = ['.', '/', ':', '@', '?', '#'];
+const URL_SEPARATORS: [char; 9] = ['.', '/', ':', '@', '?', '#', '=', '&', '+'];
+const URL_INDICATORS: [char; 6] = ['.', '/', ':', '@', '?', '#'];
 
 fn is_joiner(c: char) -> bool {
     JOINERS.contains(&c)
@@ -21,10 +24,13 @@ fn is_held_separator(c: char) -> bool {
 }
 
 fn is_emoji(c: char) -> bool {
-    matches!(
-        u32::from(c),
-        0x1F000..=0x1FAFF | 0x2600..=0x27BF | 0x2B00..=0x2BFF | 0xFE0F | 0x200D | 0x20E3
-    )
+    // Unicode Emoji includes ASCII keycap bases. They remain ordinary digits
+    // or punctuation until an emoji sequence component follows them.
+    !matches!(c, '0'..='9' | '#' | '*') && c.is_emoji_char_or_emoji_component()
+}
+
+fn is_mark(c: char) -> bool {
+    c.general_category_group() == GeneralCategoryGroup::Mark
 }
 
 fn is_hangul(c: char) -> bool {
@@ -60,12 +66,15 @@ pub fn classify_token(token: &str) -> Option<SkipReason> {
     }
     if token
         .chars()
-        .any(|c| URL_SEPARATORS.contains(&c) || c == '_')
+        .any(|c| URL_INDICATORS.contains(&c) || c == '_')
     {
         return Some(SkipReason::Url);
     }
     if token.chars().any(char::is_numeric) {
         return Some(SkipReason::Numeric);
+    }
+    if token.chars().any(is_mark) || token.chars().any(|c| matches!(c, '=' | '&' | '+')) {
+        return Some(SkipReason::MixedScript);
     }
     let has_hangul = token.chars().any(is_hangul);
     let has_ascii = token.chars().any(|c| c.is_ascii_alphabetic());
@@ -117,7 +126,7 @@ impl Tokenizer {
             self.held.push(c);
             return None;
         }
-        if c.is_alphanumeric() || is_emoji(c) {
+        if c.is_alphanumeric() || is_emoji(c) || is_mark(c) {
             if !self.held.is_empty() {
                 let held = std::mem::take(&mut self.held);
                 self.token.push_str(&held);
@@ -262,6 +271,124 @@ mod tests {
                 "{input}"
             );
         }
+    }
+
+    #[test]
+    fn unicode_marks_remain_attached_until_the_real_boundary() {
+        for marked in ["rPthrgo\u{301}", "rPthrgo\u{20dd}", "rPthrgo\u{301}x"] {
+            let mut t = Tokenizer::new();
+            assert_eq!(feed(&mut t, marked), Vec::<TokenOutcome>::new());
+            assert!(t.has_pending());
+            assert_eq!(classify_token(marked), Some(SkipReason::MixedScript));
+            assert_eq!(
+                t.feed_char(' '),
+                Some(TokenOutcome::Skipped(SkipReason::MixedScript)),
+                "{marked}"
+            );
+            assert!(!t.has_pending());
+        }
+        let mut t = Tokenizer::new();
+        assert_eq!(
+            feed(&mut t, "rPthrgó "),
+            vec![TokenOutcome::Skipped(SkipReason::MixedScript)]
+        );
+    }
+
+    #[test]
+    fn unicode_emoji_and_sequences_exclude_the_entire_pending_token() {
+        for emoji in [
+            "⌚",
+            "⌛",
+            "😀",
+            "©\u{fe0f}",
+            "1\u{fe0f}\u{20e3}",
+            "👨\u{200d}👩\u{200d}👧",
+        ] {
+            let token = format!("rPthrgo{emoji}");
+            let mut t = Tokenizer::new();
+            for c in token.chars() {
+                assert_eq!(t.feed_char(c), None, "{token}");
+            }
+            assert!(t.has_pending());
+            assert_eq!(classify_token(&token), Some(SkipReason::Emoji));
+            assert_eq!(
+                t.feed_char(' '),
+                Some(TokenOutcome::Skipped(SkipReason::Emoji)),
+                "{token}"
+            );
+            assert!(!t.has_pending());
+        }
+        let mut t = Tokenizer::new();
+        assert_eq!(
+            feed(&mut t, "42 "),
+            vec![TokenOutcome::Skipped(SkipReason::Numeric)]
+        );
+        assert_eq!(
+            feed(&mut t, "abc#def "),
+            vec![TokenOutcome::Skipped(SkipReason::Url)]
+        );
+        assert_eq!(feed(&mut t, "rPthrgo*"), vec![evaluate("rPthrgo", "*")]);
+    }
+
+    #[test]
+    fn query_and_plus_address_separators_wait_for_the_complete_token() {
+        let mut t = Tokenizer::new();
+        assert_eq!(classify_token("word+other"), Some(SkipReason::MixedScript));
+        assert_eq!(
+            feed(&mut t, "word+other "),
+            vec![TokenOutcome::Skipped(SkipReason::MixedScript)]
+        );
+        for input in [
+            "https://x.test?q=rPthrgo ",
+            "https://x.test?q&zlqhemrk ",
+            "https://x.test?q=abc&rPthrgo ",
+        ] {
+            let mut t = Tokenizer::new();
+            assert_eq!(
+                feed(&mut t, input),
+                vec![TokenOutcome::Skipped(SkipReason::Url)],
+                "{input}"
+            );
+        }
+        for input in ["rPthrgo+tag@example.com ", "me+rPthrgo@example.com "] {
+            let mut t = Tokenizer::new();
+            assert_eq!(
+                feed(&mut t, input),
+                vec![TokenOutcome::Skipped(SkipReason::Email)],
+                "{input}"
+            );
+        }
+        let mut t = Tokenizer::new();
+        assert_eq!(
+            feed(&mut t, "https://x.test?q=rPthrgo rPthrgo "),
+            vec![
+                TokenOutcome::Skipped(SkipReason::Url),
+                evaluate("rPthrgo", " ")
+            ]
+        );
+        assert_eq!(
+            feed(&mut t, "rPthrgo, rPthrgo!"),
+            vec![evaluate("rPthrgo", ","), evaluate("rPthrgo", "!")]
+        );
+    }
+
+    #[test]
+    fn held_query_separators_preserve_enter_tab_and_reset_behavior() {
+        let mut t = Tokenizer::new();
+        assert_eq!(feed(&mut t, "rPthrgo+"), vec![]);
+        assert_eq!(t.feed_enter_or_tab(), Some(evaluate("rPthrgo", "+")));
+        assert!(!t.has_pending());
+
+        assert_eq!(feed(&mut t, "https://x.test?q="), vec![]);
+        assert_eq!(
+            t.feed_enter_or_tab(),
+            Some(TokenOutcome::Skipped(SkipReason::Url))
+        );
+        assert!(!t.has_pending());
+
+        assert_eq!(feed(&mut t, "rPthrgo&"), vec![]);
+        t.reset();
+        assert_eq!(feed(&mut t, "word "), vec![evaluate("word", " ")]);
     }
 
     #[test]

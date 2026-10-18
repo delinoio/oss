@@ -9,6 +9,7 @@ description = "Keyboard-layout reconstruction and correction engine for FixKey"
 [dependencies]
 thiserror.workspace = true
 tracing.workspace = true
+unicode-properties = { version = "=0.1.4", default-features = false, features = ["emoji", "general-category"] }
 
 [lints]
 workspace = true
