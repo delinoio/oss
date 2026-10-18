@@ -469,6 +469,43 @@ console.log(run());
 }
 
 #[test]
+fn inlines_namespace_functions_created_after_late_binding() {
+    for kind in ["const", "let"] {
+        for value in [
+            "(value: number) => late(value)",
+            "function(value: number) { return late(value); }",
+        ] {
+            let source = format!(
+                "console.log(\"effect\");\nconst late = (value: number) => value * 2;\nnamespace \
+                 N {{ export {kind} run = {value}; }}\nconsole.log(N.run(1));\n"
+            );
+            let files = &[("main.ts", source.as_str())];
+
+            let baseline = project(files);
+            optimize(baseline.path(), &args(&only(&[])));
+            let original = run_optimized(baseline.path());
+            assert!(
+                original.status.success(),
+                "{}",
+                String::from_utf8_lossy(&original.stderr)
+            );
+            assert_eq!(original.stdout, b"effect\n2\n");
+
+            let temp = project(files);
+            let report = optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+            assert!(applied_count(&report, INLINE) > 0, "{report:#}");
+            let optimized = run_optimized(temp.path());
+            assert!(
+                optimized.status.success(),
+                "{}",
+                String::from_utf8_lossy(&optimized.stderr)
+            );
+            assert_eq!(optimized.stdout, original.stdout);
+        }
+    }
+}
+
+#[test]
 fn keeps_exported_functions_reachable_early_through_an_import_cycle() {
     let temp = project(&[
         (
