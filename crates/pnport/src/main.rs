@@ -426,6 +426,43 @@ fn resolve_command(view: &mut View, cwd: &Path, command: &OsString) -> Result<Pa
     ))
 }
 
+fn main() {
+    #[cfg(target_os = "linux")]
+    linux::dispatch_helper();
+    #[cfg(target_os = "macos")]
+    macos_owner::dispatch_helper();
+    let cli = Cli::parse();
+    let json = matches!(cli.command, Action::Doctor { json: true });
+    let ansi = !json
+        && match cli.color {
+            Color::Always => true,
+            Color::Never => false,
+            Color::Auto => std::env::var_os("NO_COLOR").is_none() && io::stderr().is_terminal(),
+        };
+    let level = match cli.log_level {
+        LogLevel::Error => tracing::Level::ERROR,
+        LogLevel::Warn => tracing::Level::WARN,
+        LogLevel::Info => tracing::Level::INFO,
+        LogLevel::Debug => tracing::Level::DEBUG,
+        LogLevel::Trace => tracing::Level::TRACE,
+    };
+    tracing_subscriber::fmt()
+        .with_writer(io::stderr)
+        .with_ansi(ansi)
+        .with_max_level(level)
+        .with_target(false)
+        .without_time()
+        .init();
+    let status = match execute(&cli) {
+        Ok(status) => status,
+        Err(error) => {
+            tracing::error!(code = error.code.as_str(), "{}", error.message);
+            error.exit_code()
+        }
+    };
+    std::process::exit(status);
+}
+
 #[cfg(test)]
 mod command_resolution_tests {
     use std::{
@@ -510,41 +547,4 @@ mod command_resolution_tests {
         }
         assert_eq!(calls.get(), 0);
     }
-}
-
-fn main() {
-    #[cfg(target_os = "linux")]
-    linux::dispatch_helper();
-    #[cfg(target_os = "macos")]
-    macos_owner::dispatch_helper();
-    let cli = Cli::parse();
-    let json = matches!(cli.command, Action::Doctor { json: true });
-    let ansi = !json
-        && match cli.color {
-            Color::Always => true,
-            Color::Never => false,
-            Color::Auto => std::env::var_os("NO_COLOR").is_none() && io::stderr().is_terminal(),
-        };
-    let level = match cli.log_level {
-        LogLevel::Error => tracing::Level::ERROR,
-        LogLevel::Warn => tracing::Level::WARN,
-        LogLevel::Info => tracing::Level::INFO,
-        LogLevel::Debug => tracing::Level::DEBUG,
-        LogLevel::Trace => tracing::Level::TRACE,
-    };
-    tracing_subscriber::fmt()
-        .with_writer(io::stderr)
-        .with_ansi(ansi)
-        .with_max_level(level)
-        .with_target(false)
-        .without_time()
-        .init();
-    let status = match execute(&cli) {
-        Ok(status) => status,
-        Err(error) => {
-            tracing::error!(code = error.code.as_str(), "{}", error.message);
-            error.exit_code()
-        }
-    };
-    std::process::exit(status);
 }
