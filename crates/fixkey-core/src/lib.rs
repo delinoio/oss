@@ -4,6 +4,9 @@
 //! The contract for this crate lives in
 //! `docs/crates-fixkey-core-foundation.md`.
 
+pub mod decision;
+pub mod english;
+pub mod korean;
 pub mod layout;
 pub mod tokenizer;
 pub mod types;
