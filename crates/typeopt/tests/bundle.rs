@@ -303,6 +303,94 @@ fn keeps_intrinsics_beside_globals_written_under_a_key_that_may_name_them() {
     assert!(index.contains("String("), "{index}");
 }
 
+#[test]
+fn replaced_writer_globals_cannot_hide_alias_patches() {
+    for code in [
+        r#"const writer="set";globalThis.Object={assign:Reflect[writer]};const assign=Object.assign;const custom=()=>"patched";assign({},"String",custom,globalThis);console.log(String(42));export{};"#,
+        r#"globalThis.Object={assign:Reflect.set};const assign=(Object)["assign"];const custom=()=>"patched";assign({},"String",custom,globalThis);console.log(String(42));export{};"#,
+        r#"Object.assign=Reflect.set;const custom=()=>"patched";Object.assign({},"String",custom,globalThis);console.log(String(42));export{};"#,
+    ] {
+        let (temp, report) = run(&[("index.js", code)]);
+        assert_eq!(node(&temp.path().join("out/index.js")).stdout, b"patched\n");
+        assert!(
+            out(temp.path(), "index.js").contains("String(42)"),
+            "{report:#}"
+        );
+    }
+}
+
+#[test]
+fn effectful_computed_keys_cannot_hide_intrinsic_patches() {
+    for key in [
+        "`app${suffix()}`",
+        "\"app\"+suffix()",
+        "Symbol(suffix())",
+        "suffix()",
+    ] {
+        let code = format!(
+            "const root=globalThis;function suffix(){{root.String=()=>\"patched\";return \
+             \"x\"}}globalThis[{key}]=1;console.log(String(42));export{{}};"
+        );
+        let (temp, report) = run(&[("index.js", code.as_str())]);
+        assert_eq!(node(&temp.path().join("out/index.js")).stdout, b"patched\n");
+        assert!(
+            out(temp.path(), "index.js").contains("String(42)"),
+            "{report:#}"
+        );
+    }
+}
+
+#[test]
+fn strict_writer_aliases_protect_external_constructor_prototypes() {
+    let harness = r#"const {install,run}=await import(process.argv[1]);
+let seen, result;
+const original=Array.prototype.pop;
+try {
+  install(Array,function(){seen=this[0].longPropertyName;return this[0]});
+  result=run();
+} finally {
+  Array.prototype.pop=original;
+}
+console.log(result,seen);"#;
+    for write in [
+        "assign(C.prototype,{pop:hostile})",
+        "assign(C[\"prototype\"],{pop:hostile})",
+        "define(C.prototype,\"pop\",{value:hostile,configurable:true})",
+    ] {
+        let alias = if write.starts_with("define(") {
+            "const define=Object.defineProperty;"
+        } else {
+            "const assign=Object.assign;"
+        };
+        let code = format!(
+            "{alias}export function install(C,hostile){{{write}}}export function run(){{const \
+             values=[{{longPropertyName:7}}];return values.pop().longPropertyName}}"
+        );
+        let temp = bundle(&[("index.js", code.as_str())]);
+        let report = optimize(temp.path(), &[]);
+        for path in [
+            temp.path().join("dist/index.js"),
+            temp.path().join("out/index.js"),
+        ] {
+            let output = Command::new("node")
+                .args(["--input-type=module", "-e", harness])
+                .arg(path)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{write}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(output.stdout, b"7 7\n", "{write}: {report:#}");
+        }
+        assert!(
+            out(temp.path(), "index.js").contains("longPropertyName"),
+            "{report:#}"
+        );
+    }
+}
+
 /// `// @ts-check` opts a chunk into semantic checking, but bundle types may
 /// be wrong: existing diagnostics do not block optimization.
 #[test]

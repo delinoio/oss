@@ -3,7 +3,7 @@
 //! finite-key-rewriting.
 #![cfg(any(target_os = "linux", target_os = "macos"))]
 mod common;
-use std::{fs, path::Path};
+use std::{fs, path::Path, process::Command};
 
 use common::*;
 use serde_json::Value;
@@ -13,6 +13,59 @@ const DISAMBIGUATION: &str = "property-disambiguation";
 const AMBIGUATION: &str = "property-ambiguation";
 const FINITE_KEYS: &str = "finite-key-rewriting";
 const RESIDUAL: &str = "residual-dependency-removal";
+
+#[test]
+fn strict_writer_aliases_protect_externally_selected_prototypes() {
+    for (target, write) in [
+        ("C.prototype", "assign(C.prototype, { pop: hostile })"),
+        (
+            "C[\"prototype\"]",
+            "assign(C[\"prototype\"], { pop: hostile })",
+        ),
+        (
+            "C.prototype",
+            "define(C.prototype, \"pop\", { value: hostile, configurable: true })",
+        ),
+    ] {
+        let alias = if write.starts_with("define(") {
+            "const define = Object.defineProperty;"
+        } else {
+            "const assign = Object.assign;"
+        };
+        let source = format!(
+            "{alias}\nexport function install(C: any, hostile: any) {{ {write}; }}\nexport \
+             function run() {{\n  const values = [{{ longPropertyName: 7 }}];\nreturn \
+             values.pop()!.longPropertyName;\n}}\n"
+        );
+        let temp = project(&[("main.ts", source.as_str())]);
+        let report = optimize(temp.path(), &args(&only(&[SHORTENING])));
+        run_optimized(temp.path());
+        let harness = r#"const {install,run}=await import(process.argv[1]);
+let seen, result;
+const original=Array.prototype.pop;
+try {
+  install(Array,function(){seen=this[0].longPropertyName;return this[0]});
+  result=run();
+} finally {
+  Array.prototype.pop=original;
+}
+console.log(result,seen);"#;
+        for path in [temp.path().join("main.ts"), temp.path().join("run/main.js")] {
+            let output = Command::new("node")
+                .args(["--input-type=module", "-e", harness])
+                .arg(path)
+                .output()
+                .unwrap();
+            assert!(
+                output.status.success(),
+                "{target}: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            assert_eq!(output.stdout, b"7 7\n", "{target}: {report:#}");
+        }
+        assert!(emitted(temp.path(), "main.ts").contains("longPropertyName"));
+    }
+}
 
 /// Optimizes a fresh copy of `files` with only `keep` enabled (all passes
 /// when `None`), checks Node behavior and returns the report.

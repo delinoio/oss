@@ -1801,6 +1801,7 @@ fn scan_patches(ctx: &mut Ctx) -> Patches {
     loop {
         let scanned = classify_writes(ctx, &writes, &escaping, patches.clone(), &replaced);
         let next: local_receiver::Replaced = local_receiver::fresh_library_classes()
+            .chain(["Object", "Reflect"])
             .filter(|name| {
                 scanned.record(&Owner::Global, name).is_some()
                     || scanned.unproven_record(name).is_some()
@@ -1824,7 +1825,15 @@ fn classify_writes(
     replaced: &local_receiver::Replaced,
 ) -> Patches {
     let mut symbol_keyed = false;
-    for (_, target, member, key, strict) in writes {
+    for (source, target, member, key, strict) in writes {
+        // A call-only alias is precise only while the global from which it
+        // captured the writer still denotes the library object. A replaced
+        // Object or Reflect can supply a writer with different arguments or
+        // effects; the fixed-point scan above discovers that replacement.
+        if *strict && lib_global_name(ctx, *source).is_some_and(|name| replaced.contains(name)) {
+            patches.add(Owner::Any, Member::Any);
+            continue;
+        }
         let member = member.clone();
         match write_owner(ctx, *target, replaced) {
             WriteOwner::App => {}
@@ -1842,8 +1851,12 @@ fn classify_writes(
             }
             WriteOwner::Owner(owner) => patches.add(owner, member),
             WriteOwner::Unknown => {
-                for name in escaping {
-                    patches.add(Owner::Named(name.clone()), member.clone());
+                if *strict {
+                    patches.add(Owner::Any, member);
+                } else {
+                    for name in escaping {
+                        patches.add(Owner::Named(name.clone()), member.clone());
+                    }
                 }
             }
             WriteOwner::Opaque => patches.add(Owner::Any, member),
@@ -2605,7 +2618,14 @@ fn key_shape(ctx: &mut Ctx, key: Node, depth: usize) -> KeyShape {
         }
         SyntaxKind::TemplateExpression => {
             let head = key.head().text();
-            if head.is_empty() || head.contains('\\') {
+            if head.is_empty()
+                || head.contains('\\')
+                || !key
+                    .template_spans()
+                    .nodes()
+                    .iter()
+                    .all(|span| key_evaluation_safe(ctx, span.expression(), depth + 1))
+            {
                 KeyShape::Unknown
             } else {
                 KeyShape::Prefix(head.to_owned())
@@ -2615,7 +2635,8 @@ fn key_shape(ctx: &mut Ctx, key: Node, depth: usize) -> KeyShape {
             match key_shape(ctx, key.left(), depth + 1) {
                 // A string on the left makes the sum a string with that start.
                 KeyShape::Prefix(prefix)
-                    if skip_outer(key.left()).kind() != SyntaxKind::Identifier =>
+                    if skip_outer(key.left()).kind() != SyntaxKind::Identifier
+                        && key_evaluation_safe(ctx, key.right(), depth + 1) =>
                 {
                     KeyShape::Prefix(prefix)
                 }
@@ -2633,7 +2654,12 @@ fn key_shape(ctx: &mut Ctx, key: Node, depth: usize) -> KeyShape {
                 || (callee.kind() == SyntaxKind::PropertyAccessExpression
                     && callee.name().text() == "for"
                     && symbol_global(ctx, skip_outer(callee.expression())));
-            if is_symbol {
+            if is_symbol
+                && key
+                    .arguments()
+                    .iter()
+                    .all(|arg| key_evaluation_safe(ctx, arg, depth + 1))
+            {
                 KeyShape::Symbol
             } else {
                 KeyShape::Unknown
@@ -2661,6 +2687,44 @@ fn key_shape(ctx: &mut Ctx, key: Node, depth: usize) -> KeyShape {
             key_shape(ctx, initializer, depth + 1)
         }
         _ => KeyShape::Unknown,
+    }
+}
+
+/// A narrow proof for the evaluated parts of a computed key. In particular,
+/// object coercion and calls can write globals while producing an unrelated
+/// prefix or symbol. This proof is independent of `Facts::pure`, which would
+/// recurse into the patch scan that is still being built.
+fn key_evaluation_safe(ctx: &mut Ctx, node: Node, depth: usize) -> bool {
+    if depth > 3 {
+        return false;
+    }
+    let node = skip_outer(node);
+    match node.kind() {
+        SyntaxKind::StringLiteral
+        | SyntaxKind::NoSubstitutionTemplateLiteral
+        | SyntaxKind::NumericLiteral
+        | SyntaxKind::BigIntLiteral
+        | SyntaxKind::TrueKeyword
+        | SyntaxKind::FalseKeyword
+        | SyntaxKind::NullKeyword => true,
+        SyntaxKind::Identifier => {
+            let symbol = ctx.resolve(node);
+            if symbol.is_nil() || !ctx.is_internal(symbol) {
+                return false;
+            }
+            let declaration = ctx.checker.sym(symbol).value_declaration;
+            !declaration.is_nil()
+                && declaration.kind() == SyntaxKind::VariableDeclaration
+                && !declaration.initializer().is_nil()
+                && ctx.checker.sym(symbol).declarations.len() == 1
+                && !ctx.refs(symbol).iter().any(|r| r.kind == RefKind::Write)
+                && key_evaluation_safe(ctx, declaration.initializer(), depth + 1)
+        }
+        SyntaxKind::BinaryExpression if node.operator_token().kind() == SyntaxKind::PlusToken => {
+            key_evaluation_safe(ctx, node.left(), depth + 1)
+                && key_evaluation_safe(ctx, node.right(), depth + 1)
+        }
+        _ => false,
     }
 }
 

@@ -12,6 +12,84 @@ const TDCF: &str = "type-directed-control-flow";
 const POS: &str = "primitive-operation-simplification";
 const IS: &str = "intrinsic-specialization";
 
+#[test]
+fn replaced_reflection_writer_globals_preserve_primitive_calls() {
+    for access in ["Object.assign", "(Object)[\"assign\"]"] {
+        let source = format!(
+            "const writer = \"set\";\nglobalThis.Object = {{ assign: Reflect[writer] }} as \
+             unknown as ObjectConstructor;\nconst assign = {access};\nconst custom = (_value: \
+             unknown) => \"patched\";\nassign({{}}, \"String\", custom, \
+             globalThis);\nconsole.log(String(42));\nexport {{}};\n"
+        );
+        for all in [false, true] {
+            let files = [("main.ts", source.as_str())];
+            let (temp, report) = if all {
+                run_all(&files)
+            } else {
+                run(&files, &[POS])
+            };
+            let result = run_optimized(temp.path());
+            assert_eq!(result.stdout, b"patched\n", "{access}: {report:#}");
+            assert!(emitted(temp.path(), "main.ts").contains("String(42)"));
+            assert!(
+                skipped_reasons(&report, POS).contains(&"intrinsic_may_be_replaced".to_owned()),
+                "{access}: {report:#}"
+            );
+        }
+    }
+}
+
+#[test]
+fn effectful_computed_global_keys_preserve_primitive_calls() {
+    for key in [
+        "`app${suffix()}`",
+        "\"app\" + suffix()",
+        "Symbol(suffix())",
+        "suffix()",
+    ] {
+        let source = format!(
+            "export {{}};\nconst root = globalThis;\nfunction suffix(): string {{\n  (root as \
+             any).String = () => \"patched\";\nreturn \"x\";\n}}\n(globalThis as any)[{key}] = \
+             1;\nconsole.log(String(42));\n"
+        );
+        for all in [false, true] {
+            let files = [("main.ts", source.as_str())];
+            let (temp, report) = if all {
+                run_all(&files)
+            } else {
+                run(&files, &[POS])
+            };
+            let result = run_optimized(temp.path());
+            assert_eq!(result.stdout, b"patched\n", "{key}: {report:#}");
+            assert!(emitted(temp.path(), "main.ts").contains("String(42)"));
+            assert!(
+                skipped_reasons(&report, POS).contains(&"intrinsic_may_be_replaced".to_owned()),
+                "{key}: {report:#}"
+            );
+        }
+    }
+}
+
+#[test]
+fn intact_writer_aliases_and_harmless_computed_keys_keep_simplifying() {
+    let files = [(
+        "main.ts",
+        r#"const assign = Object.assign;
+const box = assign({}, { value: 1 });
+const suffix = "x";
+(globalThis as any)[`app${suffix}`] = box;
+(globalThis as any)["app" + suffix] = box;
+(globalThis as any)[Symbol(suffix)] = box;
+console.log(String(42), box.value);
+export {};
+"#,
+    )];
+    let (temp, report) = run(&files, &[POS]);
+    assert_eq!(run_optimized(temp.path()).stdout, b"42 1\n");
+    assert!(applied(&report, POS) > 0, "{report:#}");
+    assert!(!emitted(temp.path(), "main.ts").contains("String(42)"));
+}
+
 /// Optimizes with only `keep` enabled and checks behavior equality.
 fn run(files: &[(&str, &str)], keep: &[&str]) -> (tempfile::TempDir, Value) {
     let temp = project(files);
