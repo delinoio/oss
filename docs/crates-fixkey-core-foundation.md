@@ -2,7 +2,7 @@
 
 ## Scope
 
-Owns the planned `crates/fixkey-core` crate (component `core`): layout reconstruction, language validation, correction and undo state, platform accessibility adapters, diagnostics events and update verification logic. The crate has no UI rendering dependency. The path is `planned` until its skeleton and workspace membership are created together with the first runtime implementation.
+Owns the `crates/fixkey-core` crate (component `core`): layout reconstruction, language validation, correction and undo state, platform accessibility adapters, diagnostics events and update verification logic. The crate has no UI rendering dependency. The crate is an explicit workspace member; engine capabilities are added incrementally and the crate's rustdoc lists what is implemented.
 
 ## Runtime and Language
 
