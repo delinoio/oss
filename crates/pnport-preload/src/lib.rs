@@ -3,6 +3,8 @@
 mod unix;
 
 #[cfg(windows)]
+mod directory_query;
+#[cfg(windows)]
 mod windows;
 // Reuse the pinned, patched Detours transaction helper rather than maintaining
 // a second trampoline implementation. Generic fspy remains an observer.
