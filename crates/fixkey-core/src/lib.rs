@@ -8,6 +8,7 @@ pub mod decision;
 pub mod english;
 pub mod korean;
 pub mod layout;
+pub mod session;
 pub mod tokenizer;
 pub mod types;
 
