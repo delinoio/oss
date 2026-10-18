@@ -2,9 +2,16 @@
 
 ## Purpose
 
-- [React Forge Figma contract](packages-react-forge-figma-contract.md).
-  `docs/` is the source of truth for repository contracts.
-  Each project must have one project index document and one or more domain contract documents.
+`docs/` is the source of truth for repository contracts.
+Each project must have one project index document and one or more domain contract documents.
+
+## Finding the owning contract
+
+Start with the [root task navigation](../AGENTS.md#task-navigation) and the project catalog below. Each project index lists its canonical paths, domain contracts and cross-domain invariants. Read the domain contracts for the paths and consumers affected by the task.
+
+For a known source path, search project indexes with `rg -n -F '<source-path>' docs/project-*.md`. If the full file path has no match, repeat with its owning directory. Repository-wide changes use the defaults and workflow links below. Scoped `AGENTS.md` files provide additional directory rules.
+
+Keep project-specific entries under their project heading and shared repository contracts under the repository sections. Preserve existing requirement, availability and validation annotations when moving entries.
 
 ## Repository Defaults
 
@@ -39,15 +46,17 @@ Record new implementation status, validation results and unresolved limits in pu
 
 ## Templates
 
-- `docs/repository-defaults.md`: repository-wide default technology choices and workflow defaults
-- `docs/project-template.md`: template for project index docs
-- `docs/domain-template.md`: template for domain contract docs
+- [repository-defaults.md](repository-defaults.md): repository-wide default technology choices and workflow defaults
+- [project-template.md](project-template.md): template for project index docs
+- [domain-template.md](domain-template.md): template for domain contract docs
 
 ## Repository Workflow
 
+- [Linux CLI package repositories](repository-linux-packages-contract.md): APT/DNF build compatibility, signing, publication, recovery and rollout.
+
 - [Prebuilt dependency distribution](repository-prebuilt-dependencies-contract.md): shared immutable host executables and consumer installation.
 
-- `docs/repository-workflow-contract.md`: CI selection and validation, manual CLI project/version releases, `delino-release-bot` setup, exact-commit recovery, Runmoor stable publication, and consolidated documentation publication.
+- [repository-workflow-contract.md](repository-workflow-contract.md): CI selection and validation, manual CLI project/version releases, `delino-release-bot` setup, exact-commit recovery, Runmoor stable publication, and consolidated documentation publication.
 
 ## Project Catalog
 
@@ -75,7 +84,7 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Project index](project-react-forge.md)
 - [Public documentation](apps-react-forge-docs-foundation.md) (`apps/public-docs/docs/react-forge`, canonical URL `https://oss.delino.io/react-forge/`, eighteen user-guide routes)
 - [Complete issue requirements](packages-react-forge-requirements.md)
-- [GLB/FBX scenes and animation](packages-react-forge-scene-contract.md) (static scenes released; animation unreleased)
+- [GLB/FBX scenes and animation](packages-react-forge-scene-contract.md) (static scenes released; animation unreleased): generation, materials, sessions and interoperability evidence requirements.
 - [Game SFX and WAV export](packages-react-forge-sfx-contract.md)
 - [Node sessions and CLI](packages-react-forge-contract.md)
 - [Sprite authoring and export](packages-react-forge-sprite-contract.md) (unreleased)
@@ -83,6 +92,7 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Native engines and preservation](crates-react-forge-contract.md)
 - [Validation and benchmarks](packages-react-forge-validation.md)
 - [Public npm release](packages-react-forge-release-contract.md)
+- [React Forge Figma contract](packages-react-forge-figma-contract.md).
 
 ### Forge
 
@@ -91,79 +101,77 @@ Record new implementation status, validation results and unresolved limits in pu
 
 ### binpm
 
-- `docs/project-binpm.md`
-- `docs/crates-binpm-foundation.md`
-- `docs/apps-binpm-docs-foundation.md` (`apps/public-docs/docs/binpm`, canonical URL `https://oss.delino.io/binpm`, routes published below `/binpm`: `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/releases`, `/troubleshooting`, `/reference`)
+- [project-binpm.md](project-binpm.md)
+- [crates-binpm-foundation.md](crates-binpm-foundation.md)
+- [apps-binpm-docs-foundation.md](apps-binpm-docs-foundation.md) (`apps/public-docs/docs/binpm`, canonical URL `https://oss.delino.io/binpm`, routes published below `/binpm`: `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/releases`, `/troubleshooting`, `/reference`)
 
 ### cargo-mono
 
-- `docs/project-cargo-mono.md`
-- `docs/crates-cargo-mono-foundation.md`
+- [project-cargo-mono.md](project-cargo-mono.md)
+- [crates-cargo-mono-foundation.md](crates-cargo-mono-foundation.md)
 
 ### clibox
 
-- `docs/project-clibox.md`
-- `docs/crates-clibox-foundation.md` (five private Rust crates: CLI composition, configuration, OS utilities, offline transformations, and TCP/HTTP/file readiness; npm/native distribution only)
-- `docs/crates-clibox-fspy-contract.md` (file-access workflows and observation requirements; implementation in progress)
-- `docs/packages-clibox-distribution-contract.md` (npm, signed native archives, Linux packages and macOS Homebrew publication)
-- `docs/apps-clibox-docs-foundation.md` (`apps/public-docs/docs/clibox`, canonical URL `https://oss.delino.io/clibox`, thirteen user-guide routes including the source-only fspy guide)
+- [project-clibox.md](project-clibox.md)
+- [crates-clibox-foundation.md](crates-clibox-foundation.md) (five private Rust crates: CLI composition, configuration, OS utilities, offline transformations, and TCP/HTTP/file readiness; npm/native distribution only)
+- [crates-clibox-fspy-contract.md](crates-clibox-fspy-contract.md) (file-access workflows and observation requirements; implementation in progress)
+- [packages-clibox-distribution-contract.md](packages-clibox-distribution-contract.md) (npm, signed native archives, Linux packages and macOS Homebrew publication)
+- [apps-clibox-docs-foundation.md](apps-clibox-docs-foundation.md) (`apps/public-docs/docs/clibox`, canonical URL `https://oss.delino.io/clibox`, thirteen user-guide routes including the source-only fspy guide)
 
 ### nodeup
 
-- `docs/project-nodeup.md`
-- `docs/crates-nodeup-foundation.md`
-- `docs/apps-nodeup-docs-foundation.md` (`apps/public-docs/docs/nodeup`, canonical URL `https://oss.delino.io/nodeup`, routes published below `/nodeup`: `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, `/reference`)
+- [project-nodeup.md](project-nodeup.md)
+- [crates-nodeup-foundation.md](crates-nodeup-foundation.md)
+- [apps-nodeup-docs-foundation.md](apps-nodeup-docs-foundation.md) (`apps/public-docs/docs/nodeup`, canonical URL `https://oss.delino.io/nodeup`, routes published below `/nodeup`: `/`, `/installation`, `/getting-started`, `/commands`, `/runtime-resolution`, `/shims-and-package-managers`, `/output`, `/completions`, `/releases`, `/troubleshooting`, `/reference`)
 
 ### with-watch
 
-- `docs/project-with-watch.md`
-- `docs/crates-with-watch-foundation.md`
+- [project-with-watch.md](project-with-watch.md)
+- [crates-with-watch-foundation.md](crates-with-watch-foundation.md)
 
 ### runmoor
 
-- `docs/project-runmoor.md`
-- `docs/cmds-runmoor-foundation.md`
-- `docs/apps-runmoor-docs-foundation.md` (`apps/public-docs/docs/runmoor`, canonical URL `https://oss.delino.io/runmoor`, routes published below `/runmoor`: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/host`, `/operations`)
+- [project-runmoor.md](project-runmoor.md)
+- [cmds-runmoor-foundation.md](cmds-runmoor-foundation.md)
+- [apps-runmoor-docs-foundation.md](apps-runmoor-docs-foundation.md) (`apps/public-docs/docs/runmoor`, canonical URL `https://oss.delino.io/runmoor`, routes published below `/runmoor`: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/host`, `/operations`)
 
 ### public-docs
 
-- `docs/project-public-docs.md`
-- `docs/apps-public-docs-foundation.md` (single `oss.delino.io` publisher, eight project subpaths including bundlewhy, site selector, and stable `/devhud` section)
-- `docs/packages-docs-site-switcher-contract.md` (shared accessible documentation site selector package and fixed site registry)
+- [project-public-docs.md](project-public-docs.md)
+- [apps-public-docs-foundation.md](apps-public-docs-foundation.md) (single `oss.delino.io` publisher, eight project subpaths including bundlewhy, site selector, and stable `/devhud` section)
+- [packages-docs-site-switcher-contract.md](packages-docs-site-switcher-contract.md) (shared accessible documentation site selector package and fixed site registry)
 
 ### serde-feather
 
-- `docs/project-serde-feather.md`
-- `docs/crates-serde-feather-core-foundation.md`
-- `docs/crates-serde-feather-macros-foundation.md`
+- [project-serde-feather.md](project-serde-feather.md)
+- [crates-serde-feather-core-foundation.md](crates-serde-feather-core-foundation.md)
+- [crates-serde-feather-macros-foundation.md](crates-serde-feather-macros-foundation.md)
 
 ### rustia
 
-- `docs/project-rustia.md`
-- `docs/crates-rustia-core-foundation.md`
-- `docs/crates-rustia-llm-foundation.md`
-- `docs/crates-rustia-macros-foundation.md`
+- [project-rustia.md](project-rustia.md)
+- [crates-rustia-core-foundation.md](crates-rustia-core-foundation.md)
+- [crates-rustia-llm-foundation.md](crates-rustia-llm-foundation.md)
+- [crates-rustia-macros-foundation.md](crates-rustia-macros-foundation.md)
 
 ### devhud
 
 The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS/Android system-webview hosts, production WidgetKit/AppWidgetProvider Deck widgets with backup-excluded coordinated iOS state and trusted Android configuration entry, synchronized Settings boundary, direct-client GitHub.com provider/setup and RealQA issue submission, desktop RealQA capture/editor/encrypted drafts/direct uploads, least-privilege Chrome context picker, authenticated Native Messaging broker, administrator SPA, and Admin API are implemented; other product-result surfaces and the remaining DevHUD domains are planned.
 
-- `docs/project-devhud.md`
-- `docs/apps-devhud-foundation.md`
-- `docs/apps-devhud-security-contract.md`
-- `docs/apps-devhud-updater-contract.md`
-- `docs/apps-devhud-chrome-extension-contract.md`
-- `docs/apps-devhud-admin-contract.md`
-- `docs/servers-devhud-api-contract.md`
-- `docs/servers-devhud-release-controller-contract.md`
-- `docs/protos-devhud-v1-contract.md`
-- `docs/packages-devhud-api-client-contract.md`
-- `docs/crates-devhud-native-messaging-host-contract.md`
-- `docs/apps-devhud-operations-contract.md` (internal maintainer release, recovery, support, and high-severity runbooks)
-- `docs/apps-devhud-support-contract.md` (administrator support, diagnostics, retention, and high-severity triage)
-- `docs/repository-workflow-contract.md` (repository-level workflow and read-only CEF review contract)
-
-- [Linux CLI package repositories](repository-linux-packages-contract.md): APT/DNF build compatibility, signing, publication, recovery and rollout.
+- [project-devhud.md](project-devhud.md)
+- [apps-devhud-foundation.md](apps-devhud-foundation.md)
+- [apps-devhud-security-contract.md](apps-devhud-security-contract.md)
+- [apps-devhud-updater-contract.md](apps-devhud-updater-contract.md)
+- [apps-devhud-chrome-extension-contract.md](apps-devhud-chrome-extension-contract.md)
+- [apps-devhud-admin-contract.md](apps-devhud-admin-contract.md)
+- [servers-devhud-api-contract.md](servers-devhud-api-contract.md)
+- [servers-devhud-release-controller-contract.md](servers-devhud-release-controller-contract.md)
+- [protos-devhud-v1-contract.md](protos-devhud-v1-contract.md)
+- [packages-devhud-api-client-contract.md](packages-devhud-api-client-contract.md)
+- [crates-devhud-native-messaging-host-contract.md](crates-devhud-native-messaging-host-contract.md)
+- [apps-devhud-operations-contract.md](apps-devhud-operations-contract.md) (internal maintainer release, recovery, support, and high-severity runbooks)
+- [apps-devhud-support-contract.md](apps-devhud-support-contract.md) (administrator support, diagnostics, retention, and high-severity triage)
+- [repository-workflow-contract.md](repository-workflow-contract.md) (repository-level workflow and read-only CEF review contract)
 
 ### async-commit-hook
 
@@ -172,7 +180,7 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [Complete requirements](cmds-async-commit-hook-requirements.md)
 - [Release and recovery](cmds-async-commit-hook-release-contract.md)
 
-- `apps-async-commit-hook-docs-foundation.md`: Rspress public documentation owned at `apps/public-docs/docs/async-commit-hook`, published below `/async-commit-hook`, with installer routes, the `/docs` migration route, and validation contract.
+- [apps-async-commit-hook-docs-foundation.md](apps-async-commit-hook-docs-foundation.md): Rspress public documentation owned at `apps/public-docs/docs/async-commit-hook`, published below `/async-commit-hook`, with installer routes, the `/docs` migration route, and validation contract.
 
 ### pnport
 
@@ -182,8 +190,6 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [Complete feature requirements and staged 0.1.0/0.2.0 releases](crates-pnport-requirements.md)
 - [npm/native distribution](packages-pnport-distribution-contract.md)
 - [Public documentation](apps-pnport-docs-foundation.md) (ten guides under `/pnport`, with 0.1.0 marked unreleased)
-
-- [React Forge static GLB/FBX scenes](packages-react-forge-scene-contract.md): generation, materials, sessions and interoperability evidence requirements.
 
 ### TypeNative
 
