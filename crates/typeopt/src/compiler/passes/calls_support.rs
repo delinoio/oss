@@ -178,8 +178,8 @@ impl Facts {
         components[a] == components[b]
     }
 
-    /// Whether no other module shares `index`'s import cycle, so every
-    /// importer starts evaluating after the module finished.
+    /// Whether no module, including `index` itself, can import `index`
+    /// while its bindings are still initializing.
     pub fn alone_in_component(&mut self, ctx: &mut Ctx, index: usize) -> bool {
         if self.components.is_none() {
             let edges = self.edges(ctx).clone();
@@ -187,6 +187,7 @@ impl Facts {
         }
         let components = self.components.as_ref().unwrap();
         (0..components.len()).all(|m| m == index || components[m] != components[index])
+            && !self.edges(ctx)[index].contains(&index)
     }
 
     fn first_impure(&mut self, ctx: &mut Ctx, index: usize) -> usize {
@@ -893,6 +894,14 @@ pub(super) fn runtime_dependency(ctx: &mut Ctx, file: usize, statement: Node) ->
     if statement.module_specifier().is_nil() {
         return false;
     }
+    if statement.kind() == SyntaxKind::ImportDeclaration {
+        let clause = statement.import_clause();
+        if clause.is_some() && clause.is_type_only() {
+            return false;
+        }
+    } else if statement.is_type_only() {
+        return false;
+    }
     if ctx.files[file].js
         || ctx
             .checker
@@ -938,9 +947,6 @@ pub(super) fn runtime_dependency(ctx: &mut Ctx, file: usize, statement: Node) ->
             }
         }
         return names.into_iter().any(|name| value_used(ctx, name));
-    }
-    if statement.is_type_only() {
-        return false;
     }
     let clause = statement.export_clause();
     if clause.is_nil() || clause.kind() != SyntaxKind::NamedExports {

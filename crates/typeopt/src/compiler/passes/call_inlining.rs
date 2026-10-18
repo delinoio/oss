@@ -1702,8 +1702,14 @@ fn function_runs_after(
             | SyntaxKind::GetAccessor
             | SyntaxKind::SetAccessor
     ) || function.parent().kind() == SyntaxKind::ModuleBlock
+        || (function.parent().kind() == SyntaxKind::VariableDeclaration
+            && function.parent().initializer() == function
+            && function.parent().parent().parent().parent().kind() == SyntaxKind::ModuleBlock
+            && has_syntactic_modifier(function.parent().parent().parent(), ModifierFlags::Export)
+            && Ctx::start(function) < declaration.end() as usize)
     {
-        // A namespace member is reachable through the namespace object.
+        // Exported namespace members are reachable through the namespace
+        // object, including functions stored in variable declarations.
         return false;
     }
     let before = visiting.assumptions;

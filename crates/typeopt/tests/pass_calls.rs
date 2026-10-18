@@ -310,8 +310,8 @@ console.log(early(2));
 
 #[test]
 fn keeps_sites_in_namespace_members_that_run_before_a_top_level_declaration() {
-    // Node cannot strip namespaces, so only the emitted calls are checked.
-    let temp = project(&[(
+    // Node cannot strip namespaces, so compare baseline and optimized emit.
+    let files = &[(
         "main.ts",
         r#"function attempt(f: () => number): number {
   try {
@@ -329,10 +329,180 @@ console.log(attempt(N.run));
 const late = (value: number) => value * 2;
 console.log(attempt(N.run));
 "#,
-    )]);
+    )];
+    let baseline = project(files);
+    optimize(baseline.path(), &args(&only(&[])));
+    let original = run_optimized(baseline.path());
+    assert!(
+        original.status.success(),
+        "{}",
+        String::from_utf8_lossy(&original.stderr)
+    );
+    assert_eq!(original.stdout, b"-1\n2\n");
+
+    let temp = project(files);
     optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
     let main = emitted(temp.path(), "main.ts");
     assert!(main.contains("late("), "{main}");
+    let optimized = run_optimized(temp.path());
+    assert!(
+        optimized.status.success(),
+        "{}",
+        String::from_utf8_lossy(&optimized.stderr)
+    );
+    assert_eq!(optimized.stdout, original.stdout, "{main}");
+}
+
+#[test]
+fn keeps_function_valued_namespace_exports_before_a_late_binding() {
+    for kind in ["const", "let"] {
+        for value in [
+            "(value: number) => late(value)",
+            "function(value: number) { return late(value); }",
+        ] {
+            let source = format!(
+                "namespace N {{ export {kind} run = {value}; }}\ntry {{ console.log(\"early\", \
+                 N.run(1)); }}\ncatch (error) {{ console.log(\"early\", (error as Error).name); \
+                 }}\nconst late = (value: number) => value * 2;\nconsole.log(\"late\", \
+                 N.run(1));\n"
+            );
+            for passes in [Some(only(&[INLINE, RESIDUAL])), None] {
+                let baseline = project(&[("main.ts", &source)]);
+                optimize(baseline.path(), &args(&only(&[])));
+                let original = run_optimized(baseline.path());
+                assert!(
+                    original.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&original.stderr)
+                );
+                assert_eq!(original.stdout, b"early ReferenceError\nlate 2\n");
+
+                let temp = project(&[("main.ts", &source)]);
+                let extra = passes.as_ref().map_or_else(Vec::new, |passes| args(passes));
+                optimize(temp.path(), &extra);
+                let main = emitted(temp.path(), "main.ts");
+                assert!(main.contains("late("), "{main}");
+                let optimized = run_optimized(temp.path());
+                assert!(
+                    optimized.status.success(),
+                    "{}",
+                    String::from_utf8_lossy(&optimized.stderr)
+                );
+                assert_eq!(optimized.stdout, original.stdout, "{main}");
+                assert_eq!(
+                    std::fs::read_to_string(temp.path().join("main.ts")).unwrap(),
+                    source
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn keeps_namespace_self_import_calls_before_a_late_binding() {
+    let files: &[(&str, &str)] = &[(
+        "main.ts",
+        r#"import * as self from "./main.ts";
+export const run = () => late(2);
+try {
+  console.log("early", self["run"]());
+} catch (error) {
+  console.log("early", (error as Error).name);
+}
+const late = (value: number) => value * 2;
+console.log("late", self["run"]());
+"#,
+    )];
+    for passes in [Some(only(&[INLINE])), None] {
+        let temp = project(files);
+        let extra = passes.as_ref().map_or_else(Vec::new, |passes| args(passes));
+        optimize(temp.path(), &extra);
+        let main = emitted(temp.path(), "main.ts");
+        assert!(main.contains("late("), "{main}");
+        same_behavior(temp.path());
+        assert_eq!(
+            run_optimized(temp.path()).stdout,
+            b"early ReferenceError\nlate 4\n"
+        );
+        assert_eq!(
+            std::fs::read_to_string(temp.path().join("main.ts")).unwrap(),
+            files[0].1
+        );
+    }
+}
+
+#[test]
+fn ignores_type_only_self_imports_when_proving_late_calls() {
+    let files: &[(&str, &str)] = &[(
+        "main.ts",
+        r#"import type { Run as ImportedRun } from "./main.ts";
+export type Run = () => number;
+export const run: ImportedRun = () => late(2);
+const late = (value: number) => value * 2;
+console.log(run());
+"#,
+    )];
+    let config = r#"{"compilerOptions":{"target":"ES2022","module":"ESNext","moduleResolution":"bundler","strict":true,"verbatimModuleSyntax":true,"rewriteRelativeImportExtensions":true}}"#;
+
+    let baseline = project(files);
+    std::fs::write(baseline.path().join("tsconfig.json"), config).unwrap();
+    optimize(baseline.path(), &args(&only(&[])));
+    let original = run_optimized(baseline.path());
+    assert!(
+        original.status.success(),
+        "{}",
+        String::from_utf8_lossy(&original.stderr)
+    );
+    assert_eq!(original.stdout, b"4\n");
+
+    let temp = project(files);
+    std::fs::write(temp.path().join("tsconfig.json"), config).unwrap();
+    let report = optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+    assert!(applied_count(&report, INLINE) > 0, "{report:#}");
+    let optimized = run_optimized(temp.path());
+    assert!(
+        optimized.status.success(),
+        "{}",
+        String::from_utf8_lossy(&optimized.stderr)
+    );
+    assert_eq!(optimized.stdout, original.stdout);
+}
+
+#[test]
+fn inlines_namespace_functions_created_after_late_binding() {
+    for kind in ["const", "let"] {
+        for value in [
+            "(value: number) => late(value)",
+            "function(value: number) { return late(value); }",
+        ] {
+            let source = format!(
+                "console.log(\"effect\");\nconst late = (value: number) => value * 2;\nnamespace \
+                 N {{ export {kind} run = {value}; }}\nconsole.log(N.run(1));\n"
+            );
+            let files = &[("main.ts", source.as_str())];
+
+            let baseline = project(files);
+            optimize(baseline.path(), &args(&only(&[])));
+            let original = run_optimized(baseline.path());
+            assert!(
+                original.status.success(),
+                "{}",
+                String::from_utf8_lossy(&original.stderr)
+            );
+            assert_eq!(original.stdout, b"effect\n2\n");
+
+            let temp = project(files);
+            let report = optimize(temp.path(), &args(&only(&[INLINE, RESIDUAL])));
+            assert!(applied_count(&report, INLINE) > 0, "{report:#}");
+            let optimized = run_optimized(temp.path());
+            assert!(
+                optimized.status.success(),
+                "{}",
+                String::from_utf8_lossy(&optimized.stderr)
+            );
+            assert_eq!(optimized.stdout, original.stdout);
+        }
+    }
 }
 
 #[test]
@@ -439,6 +609,7 @@ export const triple = (value: number) => value * 3;
         main.contains("* 2 + 1") && !main.contains("double"),
         "{main}\n{report:#}"
     );
+    assert!(saved(&report) > 0, "{report:#}");
     let module = emitted(temp.path(), "report.ts");
     assert!(module.contains("n * 3"), "{module}\n{report:#}");
     same_behavior(temp.path());
