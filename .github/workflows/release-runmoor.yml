@@ -50,7 +50,7 @@ jobs:
           const plan = main(['plan', '--version', version, '--revision', process.env.GITHUB_SHA, '--ref', process.env.GITHUB_REF, '--mode', mode, '--output', 'runmoor-release-plan.json']);
           appendFileSync(process.env.GITHUB_OUTPUT, `version=${plan.version}\nmode=${plan.mode}\ntag=${plan.tag}\n`);
           JS
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: runmoor-release-plan
           path: runmoor-release-plan.json
@@ -80,7 +80,7 @@ jobs:
           RELEASE_MODE: ${{ needs.plan.outputs.mode }}
           RELEASE_PLATFORM: ${{ matrix.platform }}
         run: node scripts/release/runmoor.mjs build --version "$RELEASE_VERSION" --revision "$GITHUB_SHA" --ref "$GITHUB_REF" --mode "$RELEASE_MODE" --platform "$RELEASE_PLATFORM" --output dist
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: runmoor-archive-${{ matrix.platform }}
           path: dist/*.tar.gz
@@ -95,7 +95,7 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: runmoor-archive-*
           merge-multiple: true
@@ -111,7 +111,7 @@ jobs:
           node scripts/release/runmoor-homebrew.mjs render \
             --version "$RELEASE_VERSION" --revision "$GITHUB_SHA" \
             --archives dist --output "$RUNNER_TEMP/runmoor.rb"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: runmoor-unsigned-archives
           path: dist/*
@@ -130,7 +130,7 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: runmoor-unsigned-archives
           path: dist

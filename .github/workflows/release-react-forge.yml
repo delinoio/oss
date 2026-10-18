@@ -144,7 +144,7 @@ jobs:
         run: bash packages/react-forge/scripts/validate-host.sh "${{ matrix.target }}"
       - name: Retain rendering and benchmark evidence
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: react-forge-validation-${{ matrix.id }}
           path: |
@@ -154,7 +154,7 @@ jobs:
             ${{ runner.temp }}/react-forge-travel-ir.pptx
           if-no-files-found: ignore
           retention-days: 7
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: react-forge-native-${{ matrix.id }}
           path: packages/react-forge/dist/release/tarballs/delino-react-forge-${{ matrix.id }}-${{ needs.prepare.outputs.version }}.tgz
@@ -181,7 +181,7 @@ jobs:
           version: 10.26.2
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter @delino/react-forge exec tsc -p tsconfig.json
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: react-forge-native-*
           path: packages/react-forge/dist/release/tarballs
@@ -191,7 +191,7 @@ jobs:
           node packages/react-forge/scripts/package.mjs main
           node packages/react-forge/scripts/package.mjs verify
           node packages/react-forge/scripts/publish.mjs
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: react-forge-complete-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
           path: packages/react-forge/dist/release/tarballs/
@@ -224,7 +224,7 @@ jobs:
       - run: npm install --global npm@11.15.0 --ignore-scripts --no-audit --no-fund
       - run: pnpm install --frozen-lockfile --ignore-scripts
       - run: pnpm --filter @delino/react-forge exec tsc -p tsconfig.json
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: react-forge-complete-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
           path: packages/react-forge/dist/release/tarballs

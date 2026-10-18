@@ -60,7 +60,7 @@ jobs:
           DEVHUD_PROTO_BASELINE: HEAD^
       - name: Build all six unsigned archives
         run: python3 scripts/release/build-async-commit-hook.py --output "$RUNNER_TEMP/ach-release"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ !inputs.dry_run }}
         with:
           name: ach-unsigned
@@ -80,7 +80,7 @@ jobs:
         with:
           persist-credentials: false
       - uses: ./.github/actions/setup-clibox
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: ach-unsigned
           path: release
@@ -113,7 +113,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: ach-unsigned
           path: release
