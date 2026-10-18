@@ -73,7 +73,7 @@ jobs:
         env:
           KEYSTORE_B64: ${{ secrets.DELITOOLS_ANDROID_KEYSTORE_B64 }}
         run: |
-          node --input-type=module -e 'import { writeFileSync } from "node:fs"; for (const key of ["KEYSTORE_B64", "TAURI_ANDROID_KEYSTORE_PASSWORD", "TAURI_ANDROID_KEY_ALIAS", "TAURI_ANDROID_KEY_PASSWORD"]) { if (!process.env[key]) throw new Error(`Missing ${key}`); } writeFileSync(`${process.env.RUNNER_TEMP}/delitools-upload.jks`, Buffer.from(process.env.KEYSTORE_B64, "base64"), { mode: 0o600 });'
+          node --input-type=module -e 'import { writeFileSync } from "node:fs"; for (const key of ["KEYSTORE_B64", "TAURI_ANDROID_KEYSTORE_PASSWORD", "TAURI_ANDROID_KEY_ALIAS", "TAURI_ANDROID_KEY_PASSWORD"]) { if (!process.env[key]) throw new Error("Missing " + key); } writeFileSync(process.env.RUNNER_TEMP + "/delitools-upload.jks", Buffer.from(process.env.KEYSTORE_B64, "base64"), { mode: 0o600 });'
           echo "TAURI_ANDROID_KEYSTORE_PATH=$RUNNER_TEMP/delitools-upload.jks" >> "$GITHUB_ENV"
       - run: pnpm --filter delitools build:android --ci --target aarch64 --target armv7 --aab
       - name: Collect and verify signed bundle
@@ -124,7 +124,7 @@ jobs:
         env:
           PRIVATE_KEY_B64: ${{ secrets.APPLE_API_PRIVATE_KEY_B64 }}
         run: |
-          node --input-type=module -e 'import { writeFileSync } from "node:fs"; for (const key of ["PRIVATE_KEY_B64", "APPLE_DEVELOPMENT_TEAM", "APPLE_API_ISSUER", "APPLE_API_KEY"]) { if (!process.env[key]) throw new Error(`Missing ${key}`); } writeFileSync(`${process.env.RUNNER_TEMP}/delitools-auth.p8`, Buffer.from(process.env.PRIVATE_KEY_B64, "base64"), { mode: 0o600 });'
+          node --input-type=module -e 'import { writeFileSync } from "node:fs"; for (const key of ["PRIVATE_KEY_B64", "APPLE_DEVELOPMENT_TEAM", "APPLE_API_ISSUER", "APPLE_API_KEY"]) { if (!process.env[key]) throw new Error("Missing " + key); } writeFileSync(process.env.RUNNER_TEMP + "/delitools-auth.p8", Buffer.from(process.env.PRIVATE_KEY_B64, "base64"), { mode: 0o600 });'
           echo "APPLE_API_KEY_PATH=$RUNNER_TEMP/delitools-auth.p8" >> "$GITHUB_ENV"
       - run: pnpm --filter delitools mobile:ios:init --ci
       - run: pnpm --filter delitools build:ios --ci --target aarch64 --export-method app-store-connect

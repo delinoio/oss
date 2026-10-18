@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { test } from "node:test";
 import yaml from "js-yaml";
 import { planJobs, Event } from "./plan.mjs";
@@ -56,3 +59,46 @@ test("DeliTools app and release changes select affected validation without unrel
     }
   }
 });
+
+for (const [platform, stepName, filename] of [
+  ["android", "Restore upload keystore", "delitools-upload.jks"],
+  ["ios", "Restore App Store Connect API key", "delitools-auth.p8"],
+]) {
+  test(`DeliTools ${platform} signing restore keeps Node expressions literal and writes private files`, () => {
+    const directory = mkdtempSync(join(tmpdir(), "delitools-signing-"));
+    try {
+      const step = workflow.jobs[platform].steps.find(
+        (step) => step.name === stepName,
+      );
+      const content = "fixture signing material";
+      const result = spawnSync("bash", ["-e", "-c", step.run], {
+        encoding: "utf8",
+        env: {
+          PATH: process.env.PATH,
+          RUNNER_TEMP: directory,
+          GITHUB_ENV: join(directory, "github-env"),
+          KEYSTORE_B64: Buffer.from(content).toString("base64"),
+          PRIVATE_KEY_B64: Buffer.from(content).toString("base64"),
+          TAURI_ANDROID_KEYSTORE_PASSWORD: "fixture-password",
+          TAURI_ANDROID_KEY_ALIAS: "fixture-alias",
+          TAURI_ANDROID_KEY_PASSWORD: "fixture-password",
+          APPLE_DEVELOPMENT_TEAM: "0000000000",
+          APPLE_API_ISSUER: "fixture-issuer",
+          APPLE_API_KEY: "fixture-key",
+        },
+      });
+      assert.equal(result.status, 0, result.stderr);
+      assert.equal(readFileSync(join(directory, filename), "utf8"), content);
+      assert.equal(statSync(join(directory, filename)).mode & 0o777, 0o600);
+      assert.ok(
+        readFileSync(join(directory, "github-env"), "utf8").includes(
+          join(directory, filename),
+        ),
+      );
+      assert.equal(result.stdout.includes(content), false);
+      assert.equal(result.stderr.includes(content), false);
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
+}
