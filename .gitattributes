@@ -1,5 +1,4 @@
 apps/devhud/src-tauri/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf filter=lfs diff=lfs merge=lfs -text
-apps/delidev/src-tauri/icons/icon-source@2x.png filter=lfs diff=lfs merge=lfs -text
 crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf filter=lfs diff=lfs merge=lfs -text
 packages/react-forge/examples/audio-studio-assets/brushed-normal.png filter=lfs diff=lfs merge=lfs -text
 packages/react-forge/examples/audio-studio-assets/brushed-roughness.png filter=lfs diff=lfs merge=lfs -text
@@ -14,7 +13,6 @@ packages/react-forge/examples/travel-ir-assets/product.png filter=lfs diff=lfs m
 servers/devhud-api/internal/r2/removal.png filter=lfs diff=lfs merge=lfs -text
 
 # Canonical Go-generated guidance bytes are compared across native platforms.
-apps/delidev/src-tauri/provider-guidance.generated.json text eol=lf
 
 # The pinned Tauri CLI serializes this manifest with LF on every build host.
 apps/delidev/src-tauri/Cargo.toml text eol=lf

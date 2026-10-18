@@ -11,33 +11,10 @@ import { runTestJson, writeTestReport } from "./go-test-report.mjs";
 export const GoTestShard = Object.freeze({
   All: "all",
   Core: "core",
-  Server: "server",
-  Harness: "harness",
-  Worker: "worker",
-  Workspace: "workspace",
 });
 
-const delidev = "github.com/delinoio/oss/cmds/delidev-cli";
-const within = (value, prefix) =>
-  value === prefix || value.startsWith(`${prefix}/`);
-
-export function shardForPackage(importPath) {
-  if (!within(importPath, delidev)) return GoTestShard.Core;
-  if (
-    ["server", "store"].some((name) =>
-      within(importPath, `${delidev}/internal/${name}`),
-    )
-  )
-    return GoTestShard.Server;
-  if (
-    ["cli", "harness"].some((name) =>
-      within(importPath, `${delidev}/internal/${name}`),
-    )
-  )
-    return GoTestShard.Harness;
-  if (within(importPath, `${delidev}/internal/workspace`))
-    return GoTestShard.Workspace;
-  return GoTestShard.Worker;
+export function shardForPackage(_importPath) {
+  return GoTestShard.Core;
 }
 
 export function selectPackages(output, shard) {
@@ -221,17 +198,8 @@ export async function runGoTests(
     );
     if (exitCode !== 0) return finish(exitCode, compilation.signal);
   }
-  // Hosted Windows Git, shell and SQLite fixtures can starve bounded protocols
-  // when package binaries share a runner. Separate runners provide parallelism;
-  // retain -p=1 until full native Windows evidence permits concurrent packages.
-  // Maximum-inventory workspace regressions perform thousands of durable
-  // claims across fresh recovery owners. Their aggregate Windows package time
-  // exceeds 20 minutes; this watchdog does not extend any product deadline.
-  // Reassess the larger budget after native fixture timings permit reduction.
-  const timeout =
-    windowsShard && [GoTestShard.Worker, GoTestShard.Workspace].includes(shard)
-      ? "45m"
-      : "20m";
+  // Serialize Windows package execution to avoid runner resource contention.
+  const timeout = "20m";
   // Subprocess command changes can leave a consumer's test binary unchanged.
   // Disable result reuse so TestMain runs; compiled objects remain cacheable.
   const args = [

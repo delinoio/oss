@@ -337,7 +337,6 @@ test("Rstack owns exclusions and retains Markdown prose and embedded code", (t) 
     "data/testdata/input.json",
     "pnpm-lock.yaml",
     "guidance.generated.json",
-    "apps/delidev/src/locales/resources.ts",
     "output/dist/code.ts",
   ];
   for (const name of ignored) f.write(name, "deliberately invalid {{{\n");

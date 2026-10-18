@@ -6,39 +6,13 @@ import test from "node:test";
 import { GoTestShard, runGoTests, selectPackages } from "./go-test.mjs";
 
 const root = "github.com/delinoio/oss";
-const delidev = `${root}/cmds/delidev-cli`;
 const fixtures = {
   [GoTestShard.Core]: [
     `${root}/cmds/async-commit-hook/internal/core`,
     `${root}/cmds/runmoor/internal/runmoor`,
     `${root}/servers/devhud-api/internal/server`,
-    `${root}/protos/gen/go/delidev/v1`,
+    `${root}/protos/gen/go/devhud/v1`,
     `${root}/new-windows-only-package`,
-    `${delidev}-tools`,
-  ],
-  [GoTestShard.Server]: [
-    `${delidev}/internal/server`,
-    `${delidev}/internal/store`,
-    `${delidev}/internal/server/new-feature`,
-  ],
-  [GoTestShard.Harness]: [
-    `${delidev}/internal/cli`,
-    `${delidev}/internal/harness`,
-    `${delidev}/internal/harness/codex`,
-    `${delidev}/internal/harness/new-adapter`,
-  ],
-  [GoTestShard.Worker]: [
-    delidev,
-    `${delidev}/internal/worker`,
-    `${delidev}/internal/workspaces`,
-    `${delidev}/internal/new-windows-feature`,
-    `${delidev}/internal/serverless`,
-    `${delidev}/internal/client`,
-    `${delidev}/internal/harness-tools`,
-  ],
-  [GoTestShard.Workspace]: [
-    `${delidev}/internal/workspace`,
-    `${delidev}/internal/workspace/new-feature`,
   ],
 };
 const packages = Object.values(fixtures).flat();
@@ -60,10 +34,6 @@ test("invalid shards, missing packages and invalid discovery cannot silently ski
   for (const output of ["", "\r\n", "bad package", "duplicate\nduplicate"]) {
     assert.throws(() => selectPackages(output, GoTestShard.Core));
   }
-  assert.throws(
-    () => selectPackages(`${delidev}/internal/server`, GoTestShard.Core),
-    /no packages/u,
-  );
 });
 
 function runner(
@@ -127,9 +97,7 @@ test("each Windows invocation discovers native packages and runs its whole shard
         "-count=1",
         "-json",
         "-p=1",
-        [GoTestShard.Worker, GoTestShard.Workspace].includes(shard)
-          ? "-timeout=45m"
-          : "-timeout=20m",
+        "-timeout=20m",
         ...fixtures[shard].toSorted(),
       ],
       options: { shell: false, stdio: "inherit" },
@@ -189,7 +157,7 @@ test("discovery failures never start tests, even with partial output", async () 
   ]) {
     const fixture = runner(failure);
     assert.equal(
-      await runGoTests(GoTestShard.Worker, fixture.options),
+      await runGoTests(GoTestShard.Core, fixture.options),
       failure.status ?? 1,
     );
     assert.equal(fixture.calls.length, 1);
@@ -242,7 +210,7 @@ test("test failures, signals and spawn errors cannot become success", async () =
   for (const failure of [{ status: 7 }, { status: null, signal: "SIGTERM" }]) {
     const fixture = runner({ status: 0, stdout: inventory }, failure);
     assert.equal(
-      await runGoTests(GoTestShard.Server, fixture.options),
+      await runGoTests(GoTestShard.Core, fixture.options),
       failure.status ?? 1,
     );
     assert.equal(fixture.events.at(-1).exitCode, failure.status ?? 1);

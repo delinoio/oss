@@ -10,7 +10,5 @@
 
 ## Owning contracts
 
-- [DeliDev native package verification](../docs/apps-delidev-packaging-contract.md)
-- [DeliDev provider and model catalog](../docs/cmds-delidev-catalog-contract.md)
 - [pnport](../docs/project-pnport.md)
 - [Repository Workflow Contract](../docs/repository-workflow-contract.md)

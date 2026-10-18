@@ -1,8 +1,0 @@
-{
-  "external-link.notInstalled": "The selected browser is not installed. Choose another browser in Settings > Browser.",
-  "external-link.launchFailed": "The link could not be opened in the selected browser. Check that the browser works, then choose a browser in Settings > Browser.",
-  "external-link.settingsUnreadable": "Browser settings could not be read, so the link was not opened. Review them in Settings > Browser.",
-  "external-link.invalid": "This link cannot be opened. Only http and https addresses are supported.",
-  "external-link.failed": "The link could not be opened. Review your browser in Settings > Browser.",
-  "external-link.dismiss": "Dismiss link error"
-}

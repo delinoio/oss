@@ -4,56 +4,31 @@
   "version": "0.1.0",
   "identifier": "io.delino.delidev",
   "build": {
+    "beforeDevCommand": "pnpm dev",
+    "beforeBuildCommand": "pnpm build",
     "frontendDist": "../dist",
     "devUrl": "http://127.0.0.1:46311",
     "features": ["desktop-host"]
   },
   "app": {
-    "windows": [
-      {
-        "label": "main",
-        "title": "DeliDev",
-        "create": false,
-        "width": 1280,
-        "height": 820,
-        "minWidth": 960,
-        "minHeight": 640,
-        "decorations": true,
-        "maximized": true
-      }
-    ],
+    "windows": [],
     "security": {
-      "capabilities": ["main", "saved", "tray-status"],
-      "csp": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' data: blob:; font-src 'self'; connect-src 'self' ipc: http://ipc.localhost; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'",
-      "devCsp": "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' ipc: http://ipc.localhost ws://127.0.0.1:46311; base-uri 'none'; form-action 'none'; frame-src 'none'; object-src 'none'"
+      "capabilities": [],
+      "csp": "default-src 'none'; script-src 'self'; style-src 'self'; connect-src ipc: http://ipc.localhost",
+      "devCsp": "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src ipc: http://ipc.localhost ws://127.0.0.1:46311"
     }
   },
   "bundle": {
-    "active": true,
+    "active": false,
     "license": "Apache-2.0",
+    "icon": ["icons/icon.png", "icons/icon.ico"],
     "resources": {
       "../../../LICENSE": "notices/LICENSE",
       "../../../NOTICE": "notices/NOTICE",
       "notices/CEF-LICENSE.txt": "notices/CEF-LICENSE.txt"
     },
-    "icon": ["icons/icon.png", "icons/icon-source@2x.png", "icons/icon.ico"],
-    "externalBin": ["binaries/delidev"],
     "macOS": {
-      "minimumSystemVersion": "13.0",
-      "entitlements": "entitlements.plist",
-      "files": {
-        "PlugIns/DeliDevWidget.appex": "../../../target/delidev-widget/Release/DeliDevWidget.appex",
-        "PlugIns/DeliDevWidgetSelection.appex": "../../../target/delidev-widget/Release/DeliDevWidgetSelection.appex"
-      }
-    },
-    "linux": {
-      "deb": {
-        "depends": [
-          "xdg-desktop-portal",
-          "xdg-desktop-portal-gtk | xdg-desktop-portal-gnome | xdg-desktop-portal-kde",
-          "zenity"
-        ]
-      }
+      "minimumSystemVersion": "13.0"
     }
   }
 }

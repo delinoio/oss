@@ -38,9 +38,6 @@ const achFiles = [
   "packaging/async-commit-hook/release-metadata.json",
 ];
 const files = [
-  "apps/delidev/package.json",
-  "apps/delidev/src-tauri/Cargo.toml",
-  "apps/delidev/src-tauri/tauri.conf.json",
   "Cargo.lock",
   "packages/clibox/package.json",
   "packages/pnport/package.json",
@@ -144,17 +141,15 @@ for (const project of Object.values(Project))
         );
       assert.equal(
         Object.keys(plan.changes).length,
-        project === Project.DeliDev
-          ? 4
-          : project === Project.Pnport
-            ? 5
-            : project === Project.AsyncCommitHook
-              ? 4
-              : project === Project.Clibox
-                ? 3
-                : plan.kind === Kind.Rust
-                  ? 2
-                  : 1,
+        project === Project.Pnport
+          ? 5
+          : project === Project.AsyncCommitHook
+            ? 4
+            : project === Project.Clibox
+              ? 3
+              : plan.kind === Kind.Rust
+                ? 2
+                : 1,
       );
       if (project === Project.AsyncCommitHook) {
         assert.equal(plan.kind, Kind.Go);
@@ -469,8 +464,7 @@ test("async-commit-hook rejects foreign identities and ambiguously formatted JSO
   }
 });
 
-test("Release tags use the project@v namespace for every project including DeliDev", () => {
-  assert.equal(releaseTag(Project.DeliDev, "1.2.3"), "delidev@v1.2.3");
+test("Release tags use the project@v namespace for every releasable project", () => {
   for (const project of Object.values(Project))
     assert.equal(releaseTag(project, "1.2.3"), `${project}@v1.2.3`);
 });

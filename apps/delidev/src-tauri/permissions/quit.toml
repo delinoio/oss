@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "quit-confirmation"
-description = "Original registered product documents can observe and decide their bounded native Quit attempt."
-commands.allow = ["present_quit_attempt", "read_quit_attempt", "observe_quit_attempt", "decide_quit_attempt"]

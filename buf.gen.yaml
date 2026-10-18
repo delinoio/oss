@@ -1,6 +1,5 @@
 version: v2
 clean: true
-
 plugins:
   - local:
       - go
@@ -21,7 +20,7 @@ plugins:
       - exec
       - protoc-gen-es
     types:
-      - "devhud.v1"
+      - devhud.v1
     out: packages/devhud-api-client/src/gen
     opt:
       - target=ts
@@ -31,19 +30,18 @@ plugins:
       - exec
       - protoc-gen-connect-query
     types:
-      - "devhud.v1"
+      - devhud.v1
     out: packages/devhud-api-client/src/gen
     opt:
       - target=ts
       - import_extension=js
-
   - local:
       - pnpm
       - exec
       - protoc-gen-es
     out: packages/async-commit-hook-api-client/src/gen
     types:
-      - "async_commit_hook.v1"
+      - async_commit_hook.v1
     opt:
       - target=ts
       - import_extension=js
@@ -53,39 +51,17 @@ plugins:
       - protoc-gen-connect-query
     out: packages/async-commit-hook-api-client/src/gen
     types:
-      - "async_commit_hook.v1"
+      - async_commit_hook.v1
     opt:
       - target=ts
       - import_extension=js
-
-  - local:
-      - pnpm
-      - exec
-      - protoc-gen-es
-    out: packages/delidev-api-client/src/gen
-    types:
-      - "delidev.v1"
-    opt:
-      - target=ts
-      - import_extension=js
-  - local:
-      - pnpm
-      - exec
-      - protoc-gen-connect-query
-    out: packages/delidev-api-client/src/gen
-    types:
-      - "delidev.v1"
-    opt:
-      - target=ts
-      - import_extension=js
-
   - local:
       - pnpm
       - exec
       - protoc-gen-es
     out: apps/bundlewhy-web/src/gen
     types:
-      - "bundlewhy.v1"
+      - bundlewhy.v1
     opt:
       - target=ts
       - import_extension=js
@@ -95,16 +71,14 @@ plugins:
       - protoc-gen-connect-query
     out: apps/bundlewhy-web/src/gen
     types:
-      - "bundlewhy.v1"
+      - bundlewhy.v1
     opt:
       - target=ts
       - import_extension=js
-
 inputs:
   - directory: protos
     paths:
       - protos/delcore/v1
       - protos/devhud/v1
       - protos/async_commit_hook/v1
-      - protos/delidev/v1
       - protos/bundlewhy/v1

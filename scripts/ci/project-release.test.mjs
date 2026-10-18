@@ -231,12 +231,7 @@ test("pnport publication defaults to a credential-free dry run and exact tag", (
   );
 });
 
-for (const project of [
-  Project.Clibox,
-  Project.Pnport,
-  Project.AsyncCommitHook,
-  Project.DeliDev,
-])
+for (const project of [Project.Clibox, Project.Pnport, Project.AsyncCommitHook])
   for (const [scenario, results] of [
     ["success", ["success", "success", "success"]],
     ["prepare failure", ["failure", "skipped", "skipped"]],
@@ -351,12 +346,6 @@ test("Source and tap tokens are separately scoped and project release triggers r
     const release = yaml.load(
       source(`.github/workflows/release-${project}.yml`),
     );
-    if (project === Project.DeliDev) {
-      assert.deepEqual(release.on.push.tags, ["delidev@v*"]);
-      assert.equal(release.jobs.package.environment, undefined);
-      assert.equal(release.jobs.sign.environment, "delidev-release");
-      continue;
-    }
     if (project === Project.AsyncCommitHook) {
       assert.deepEqual(Object.keys(release.on), ["workflow_dispatch"]);
       assert.equal(release.on.workflow_dispatch.inputs.dry_run.default, true);
@@ -443,7 +432,6 @@ test("non-Cargo projects reach source validation and tagging without Cargo publi
       env: { ...environment, RELEASE_PROJECT: project, RELEASE_BUMP: bump },
       stdio: "pipe",
     });
-  assert.doesNotThrow(() => runPreflight(Project.DeliDev));
   assert.doesNotThrow(() => runPreflight(Project.Clibox));
   assert.doesNotThrow(() => runPreflight(Project.Pnport, Bump.Minor));
   assert.doesNotThrow(() => runPreflight(Project.AsyncCommitHook));

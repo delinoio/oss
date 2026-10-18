@@ -27,17 +27,6 @@ export const ALLOWED_QUEUE_DECLARATIONS = Object.freeze([
     header: "    concurrency:",
     queueLine: "      queue: max",
   }),
-  Object.freeze({
-    file: "delidev-mobile-beta.yml",
-    scope: QueueScope.Workflow,
-    concurrency: Object.freeze({
-      group: "delidev-mobile-beta",
-      "cancel-in-progress": false,
-      queue: "max",
-    }),
-    header: "concurrency:",
-    queueLine: "  queue: max",
-  }),
 ]);
 
 const MASKED_LINE_PREFIX = "# queue:max validated by repository contract";

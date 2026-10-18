@@ -2224,50 +2224,12 @@ dependencies = [
 name = "delidev-desktop"
 version = "0.1.0"
 dependencies = [
- "base64 0.22.1",
  "cef",
- "dirs",
- "futures-lite",
- "libc",
- "mac-usernotifications",
- "objc2",
- "objc2-app-kit",
- "objc2-foundation",
- "plist",
- "raw-window-handle",
- "rfd",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "sys-locale",
  "tauri",
  "tauri-build",
  "tauri-runtime-cef",
- "tempfile",
- "tokio",
  "tracing",
  "tracing-subscriber",
- "url",
- "uuid",
- "windows 0.62.2",
- "windows-sys 0.61.2",
- "zbus",
- "zeroize",
-]
-
-[[package]]
-name = "delidev-mobile"
-version = "0.1.0"
-dependencies = [
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin",
- "tauri-runtime-wry",
- "tracing",
- "url",
- "uuid",
 ]
 
 [[package]]
@@ -5750,24 +5712,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c41e0c4fef86961ac6d6f8a82609f55f31b05e4fce149ac5710e439df7619ba4"
 
 [[package]]
-name = "mac-usernotifications"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08adbb1b9e11709f9ce628dd7471208e5dd3ad35a245dbc81e59a36dce3f3780"
-dependencies = [
- "block2",
- "futures-channel",
- "futures-lite",
- "futures-timer",
- "log",
- "objc2",
- "objc2-core-foundation",
- "objc2-foundation",
- "objc2-user-notifications",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "malloc_buf"
 version = "0.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6724,10 +6668,7 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9df9128cbbfef73cda168416ccf7f837b62737d748333bfe9ab71c245d76613e"
 dependencies = [
- "bitflags 2.11.0",
- "block2",
  "objc2",
- "objc2-core-location",
  "objc2-foundation",
 ]
 

@@ -4,12 +4,13 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, win32 } from "node:path";
-import test from "node:test";
+import test, { after } from "node:test";
 import {
   affectedGoPackages,
   commandConsumers,
@@ -30,15 +31,15 @@ const pkg = (directory, imports = []) => ({
   imports: imports.map(path),
 });
 const inventory = [
-  pkg("cmds/delidev-cli", ["cmds/delidev-cli/internal/worker"]),
-  pkg("cmds/delidev-cli/internal/apiproxy"),
-  pkg("cmds/delidev-cli/internal/worker", [
-    "cmds/delidev-cli/internal/apiproxy",
-    "cmds/delidev-cli/internal/workspace",
+  pkg("cmds/fixture", ["cmds/fixture/internal/worker"]),
+  pkg("cmds/fixture/internal/apiproxy"),
+  pkg("cmds/fixture/internal/worker", [
+    "cmds/fixture/internal/apiproxy",
+    "cmds/fixture/internal/workspace",
   ]),
-  pkg("cmds/delidev-cli/internal/workspace"),
-  pkg("cmds/delidev-cli/internal/cli"),
-  pkg("cmds/delidev-cli/internal/server"),
+  pkg("cmds/fixture/internal/workspace"),
+  pkg("cmds/fixture/internal/cli", ["cmds/fixture"]),
+  pkg("cmds/fixture/internal/server", ["cmds/fixture"]),
   pkg("servers/devhud-api"),
   pkg("cmds/runmoor/internal/runmoor"),
 ];
@@ -60,7 +61,7 @@ test("Go report runner inputs select the complete native package inventory", () 
 
 test("source changes include reverse and subprocess consumers without unrelated durable workspace tests", () => {
   assert.deepEqual(
-    affected("cmds/delidev-cli/internal/apiproxy/proxy.go"),
+    affected("cmds/fixture/internal/apiproxy/proxy.go"),
     inventory
       .slice(0, 6)
       .filter((item) => !item.directory.endsWith("/workspace"))
@@ -68,7 +69,7 @@ test("source changes include reverse and subprocess consumers without unrelated 
       .sort(),
   );
   assert.deepEqual(
-    affected("cmds/delidev-cli/internal/workspace/state.go"),
+    affected("cmds/fixture/internal/workspace/state.go"),
     inventory
       .slice(0, 6)
       .filter((item) => !item.directory.endsWith("/apiproxy"))
@@ -296,24 +297,22 @@ func TestHelper(t *testing.T) {
 
 test("test-only changes and testdata select their owner without propagating production dependencies", () => {
   for (const name of [
-    "cmds/delidev-cli/internal/apiproxy/proxy_test.go",
-    "cmds/delidev-cli/internal/apiproxy/testdata/nested/request.json",
+    "cmds/fixture/internal/apiproxy/proxy_test.go",
+    "cmds/fixture/internal/apiproxy/testdata/nested/request.json",
   ]) {
-    assert.deepEqual(affected(name), [
-      path("cmds/delidev-cli/internal/apiproxy"),
-    ]);
+    assert.deepEqual(affected(name), [path("cmds/fixture/internal/apiproxy")]);
   }
   assert.deepEqual(affected("apps/delidev/src/App.tsx"), []);
 });
 
 test("shared test embeds select every consumer before narrowing testdata ownership", () => {
-  const harness = "cmds/delidev-cli/internal/harness";
+  const harness = "cmds/fixture/internal/harness";
   const file = `${harness}/grok/testdata/initialize.json`;
   const packages = [
     { ...pkg(harness), testEmbedFiles: [file] },
     { ...pkg(`${harness}/grok`), testEmbedFiles: [file] },
     pkg(`${harness}/other`),
-    pkg("cmds/delidev-cli", [harness]),
+    pkg("cmds/fixture", [harness]),
   ];
   assert.deepEqual(
     selectAffected(packages, changes(file)).packages,
@@ -341,15 +340,15 @@ test("shared test embeds select every consumer before narrowing testdata ownersh
 });
 
 test("production embeds propagate to callers while external-test embeds seed only tests", () => {
-  const leaf = "cmds/delidev-cli/internal/leaf";
+  const leaf = "cmds/fixture/internal/leaf";
   const production = `${leaf}/assets/schema.json`,
     external = `${leaf}/assets/expected.json`;
   const packages = [
     { ...pkg(leaf), embedFiles: [production], xTestEmbedFiles: [external] },
-    pkg("cmds/delidev-cli", [leaf]),
-    pkg("cmds/delidev-cli/internal/cli"),
-    pkg("cmds/delidev-cli/internal/server"),
-    pkg("cmds/delidev-cli/internal/unrelated"),
+    pkg("cmds/fixture", [leaf]),
+    pkg("cmds/fixture/internal/cli", ["cmds/fixture"]),
+    pkg("cmds/fixture/internal/server", ["cmds/fixture"]),
+    pkg("cmds/fixture/internal/unrelated"),
   ];
   assert.deepEqual(
     selectAffected(packages, changes(production)).packages,
@@ -375,7 +374,7 @@ test("frontend source changes include their real Go embed owners and callers", (
   const packages = [
     pkg(embed),
     pkg("servers/devhud-api", [embed]),
-    pkg("cmds/delidev-cli"),
+    pkg("cmds/fixture"),
   ];
   for (const file of [
     "apps/devhud-admin/src/App.tsx",
@@ -397,9 +396,9 @@ test("frontend source changes include their real Go embed owners and callers", (
 
 test("deletions, moves and unknown domain resources expand conservatively", () => {
   for (const [name, status] of [
-    ["cmds/delidev-cli/removed/source.go", "D"],
-    ["cmds/delidev-cli/internal/worker/state.go", "T"],
-    ["cmds/delidev-cli/internal/worker/schema.json", "M"],
+    ["cmds/fixture/removed/source.go", "D"],
+    ["cmds/fixture/internal/worker/state.go", "T"],
+    ["cmds/fixture/internal/worker/schema.json", "M"],
   ]) {
     assert.deepEqual(
       affected(name, status),
@@ -616,9 +615,13 @@ test("Windows discovery accepts equivalent native paths and rejects other drives
 
 function mock(
   discovery = {},
-  selectedPath = "cmds/delidev-cli/internal/apiproxy/proxy.go",
+  selectedPath = "cmds/fixture/internal/apiproxy/proxy.go",
   failure = null,
 ) {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "go-selection-")));
+  after(() => rmSync(root, { recursive: true, force: true }));
+  for (const item of inventory)
+    mkdirSync(join(root, item.directory), { recursive: true });
   const calls = [],
     events = [];
   const run = (command, args, options) => {
@@ -667,70 +670,11 @@ function mock(
   };
 }
 
-test("empty affected Windows shards succeed without compiling or running fixtures", async () => {
-  const fixture = mock();
+test("empty affected Windows core selection skips compilation", async () => {
+  const fixture = mock({}, "apps/delidev/src/main.tsx");
   assert.equal(await runGoTests(GoTestShard.Core, fixture.options), 0);
   assert.equal(fixture.events.at(-1).event, "ci_go_test_empty");
   assert.ok(!fixture.calls.some((call) => call.args[0] === "test"));
-  const emptyWorkspace = mock();
-  assert.equal(
-    await runGoTests(GoTestShard.Workspace, emptyWorkspace.options),
-    0,
-  );
-  assert.ok(!emptyWorkspace.calls.some((call) => call.args[0] === "test"));
-  const workspace = mock(
-    {},
-    "cmds/delidev-cli/internal/workspace/claim_test.go",
-  );
-  assert.equal(
-    await runGoTests(GoTestShard.Workspace, {
-      ...workspace.options,
-      platform: "win32",
-    }),
-    0,
-  );
-  assert.deepEqual(workspace.calls.at(-1).args, [
-    "test",
-    "-count=1",
-    "-json",
-    "-p=1",
-    "-timeout=45m",
-    path("cmds/delidev-cli/internal/workspace"),
-  ]);
-  const worker = mock();
-  assert.equal(
-    await runGoTests(GoTestShard.Worker, {
-      ...worker.options,
-      platform: "win32",
-    }),
-    0,
-  );
-  assert.deepEqual(worker.calls.at(-2).args.slice(0, 4), [
-    "test",
-    "-c",
-    "-o",
-    "NUL",
-  ]);
-  assert.deepEqual(worker.calls.at(-1).args.slice(0, 5), [
-    "test",
-    "-count=1",
-    "-json",
-    "-p=1",
-    "-timeout=45m",
-  ]);
-  const unix = mock();
-  assert.equal(await runGoTests(GoTestShard.All, unix.options), 0);
-  assert.deepEqual(unix.calls.at(-1).args.slice(0, 4), [
-    "test",
-    "-count=1",
-    "-json",
-    "-timeout=20m",
-  ]);
-  assert.deepEqual(
-    unix.calls.find((call) => call.command === "go" && call.args[0] === "list")
-      .args,
-    ["list", "-mod=readonly", "-test", "-json", "./..."],
-  );
 });
 
 test("bad comparisons, discovery errors and partial inventories cannot silently pass", async () => {
@@ -869,7 +813,7 @@ test("real native embed discovery selects shared fixtures and exposes the omitte
     git("commit", "--quiet", "-m", "fixture change");
     return git("rev-parse", "HEAD");
   };
-  const harness = "cmds/delidev-cli/internal/harness";
+  const harness = "cmds/fixture/internal/harness";
   const production = "cmds/sample/production",
     external = "cmds/sample/external",
     consumer = "cmds/sample/consumer";
@@ -956,12 +900,7 @@ func TestExpected(t *testing.T) { if expected == "" { t.Fatal("empty expected") 
       [fixture],
     );
     assert.equal(selection.inventory.length, 6);
-    const partition = [
-      GoTestShard.Core,
-      GoTestShard.Server,
-      GoTestShard.Harness,
-      GoTestShard.Worker,
-    ].flatMap((shard) =>
+    const partition = [GoTestShard.Core].flatMap((shard) =>
       selection.inventory
         .filter((item) => shardForPackage(item.path) === shard)
         .map((item) => item.path),
@@ -1035,18 +974,18 @@ test("exact AGENTS.md metadata does not widen Go selection, including deletions 
     "AGENTS.md",
     ".github/AGENTS.md",
     "scripts/ci/AGENTS.md",
-    "cmds/delidev-cli/internal/worker/AGENTS.md",
+    "cmds/fixture/internal/worker/AGENTS.md",
   ]) {
     for (const status of ["A", "M", "D", "T"])
       assert.deepEqual(affected(name, status), []);
-    const source = changes("cmds/delidev-cli/internal/apiproxy/proxy.go");
+    const source = changes("cmds/fixture/internal/apiproxy/proxy.go");
     assert.deepEqual(
       selectAffected(inventory, [...source, ...changes(name)]).packages,
       selectAffected(inventory, source).packages,
     );
   }
   assert.deepEqual(
-    affected("cmds/delidev-cli/internal/worker/OTHER.md"),
+    affected("cmds/fixture/internal/worker/OTHER.md"),
     inventory
       .slice(0, 6)
       .map((item) => item.path)
@@ -1055,21 +994,21 @@ test("exact AGENTS.md metadata does not widen Go selection, including deletions 
 });
 
 test("actual AGENTS.md embeds retain production and test ownership", () => {
-  const name = "cmds/delidev-cli/internal/worker/AGENTS.md";
+  const name = "cmds/fixture/internal/worker/AGENTS.md";
   const embedded = inventory.map((item) => ({
     ...item,
     embedFiles: item.directory.endsWith("/apiproxy") ? [name] : [],
   }));
   assert.deepEqual(
     selectAffected(embedded, changes(name)).packages,
-    affected("cmds/delidev-cli/internal/apiproxy/proxy.go"),
+    affected("cmds/fixture/internal/apiproxy/proxy.go"),
   );
   const testEmbedded = inventory.map((item) => ({
     ...item,
     testEmbedFiles: item.directory.endsWith("/apiproxy") ? [name] : [],
   }));
   assert.deepEqual(selectAffected(testEmbedded, changes(name)).packages, [
-    path("cmds/delidev-cli/internal/apiproxy"),
+    path("cmds/fixture/internal/apiproxy"),
   ]);
   assert.deepEqual(
     selectAffected(embedded, changes(name, "D")).packages,
@@ -1085,9 +1024,9 @@ test("Ubuntu affected and forced shards execute the selection exactly once and r
     (shard) => shard !== GoTestShard.All,
   );
   for (const selectedPath of [
-    "cmds/delidev-cli/internal/apiproxy/proxy.go",
+    "cmds/fixture/internal/apiproxy/proxy.go",
     "go.mod",
-    "cmds/delidev-cli/internal/worker/AGENTS.md",
+    "cmds/fixture/internal/worker/AGENTS.md",
   ]) {
     const selected = affected(selectedPath);
     const executed = [];

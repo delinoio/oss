@@ -23,7 +23,6 @@ Record new implementation status, validation results and unresolved limits in pu
 ## Documentation Editing Rules
 
 - Do not add issue or pull-request links or identifying numbers to repository instruction files or documentation. Describe requirements directly and link to the owning repository-local contracts. Domain, service and technical-documentation links remain allowed; record issue/PR traceability in pull requests, issues or CI records instead.
-- DeliDev implementation status and validation results belong in pull requests, issues and CI logs/artifacts; do not add repository evidence documents. Project indexes route to domain contracts, and validation-only records do not require changes to project indexes or AGENTS files. See [source ownership](cmds-delidev-structure-contract.md).
 - These rules apply to documentation authoring and editing work, not general conversational summaries.
 - Do not arbitrarily omit, delete, or simplify requested or source-backed content during documentation edits unless the user explicitly asks for that outcome.
 - If documentation content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret.
@@ -71,62 +70,8 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Project index](project-typeopt.md)
 - [Rust CLI foundation](crates-typeopt-foundation.md)
 
-### delidev
-
-- [Mobile HTTPS client](apps-delidev-mobile-contract.md)
-- [Desktop English/Korean localization](apps-delidev-localization-contract.md)
-- [Parallel browser QA](apps-delidev-qa-contract.md)
-- [macOS status widget](apps-delidev-widget-contract.md)
-- [Native package verification](apps-delidev-packaging-contract.md)
-- [Protected account browser](cmds-delidev-browser-contract.md)
-- [Storage operations](cmds-delidev-storage-contract.md)
 - [Project index](project-delidev.md)
-- [Retained conversation search](cmds-delidev-search-contract.md)
-- [Retained activity](cmds-delidev-activity-contract.md)
-- [Exact native response usage](cmds-delidev-usage-contract.md)
-- [CLI/server/Worker contract](cmds-delidev-contract.md)
-- [Connect protocol](protos-delidev-v1-contract.md)
-- [TypeScript client and synchronization](packages-delidev-api-client-contract.md)
 - [Desktop client](apps-delidev-desktop-contract.md)
-- [AI Subscription settings](apps-delidev-subscription-settings-contract.md)
-- [Worker workspace preparation](cmds-delidev-workspace-contract.md)
-- [Session file explorer](cmds-delidev-files-contract.md)
-- [Portable configuration](cmds-delidev-configuration-transfer-contract.md)
-- [Owned process contract](cmds-delidev-process-contract.md)
-- [Worker-owned session terminals](cmds-delidev-terminals-contract.md)
-
-- [Optional current-user services](cmds-delidev-user-services-contract.md)
-- [Native subagent observations](cmds-delidev-subagents-contract.md)
-- [Native harness adapter contract](cmds-delidev-harness-contract.md)
-- [Codex OpenRouter native tools](cmds-delidev-openrouter-tools-contract.md)
-- [Native OpenCode testing runbook](cmds-delidev-opencode-native-testing.md)
-- [Direct execution startup](cmds-delidev-execution-startup-contract.md)
-- [Protected credential storage](cmds-delidev-credentials-contract.md)
-- [Read-only diagnostics](cmds-delidev-diagnostics-contract.md)
-- [Diagnostics presentation](apps-delidev-diagnostics-contract.md)
-- [Saved client connections](cmds-delidev-connections-contract.md)
-- [Session development-server forwarding](cmds-delidev-forwarding-contract.md)
-- [GitHub integration profiles](cmds-delidev-integrations-contract.md)
-- [Account lifecycle](cmds-delidev-accounts-contract.md)
-- [Managed Codex subscriptions](cmds-delidev-subscription-contract.md)
-- [OpenCode Go subscriptions](cmds-delidev-opencode-go-subscription-contract.md)
-- [Grok Build subscriptions (storage and lease layer implemented; login, execution and advertisement planned)](cmds-delidev-grok-subscription-contract.md)
-- [Provider inspection](cmds-delidev-providers-contract.md)
-- [Provider and model catalog](cmds-delidev-catalog-contract.md)
-- [Native Codex model observations (pending)](cmds-delidev-native-models-contract.md)
-- [API provider activation and new-work admission](cmds-delidev-provider-activation-contract.md)
-- [Native API relay](cmds-delidev-proxy-contract.md)
-- [Explicit outbound networking](cmds-delidev-network-contract.md)
-- [Session acceptance and input queue](cmds-delidev-sessions-contract.md)
-- [Claude native context and manual compaction](cmds-delidev-claude-compaction-contract.md)
-- [Same-account native Codex session forks](cmds-delidev-forks-contract.md)
-- [Native read-only Sidechat](cmds-delidev-sidechat-contract.md)
-
-- [Planned shared native session compaction](cmds-delidev-compaction-contract.md)
-- [Automatic session titles](cmds-delidev-session-titles-contract.md)
-- [Retained inbox and read-state contract](cmds-delidev-inbox-contract.md)
-- [Schedules and durable occurrences](cmds-delidev-schedules-contract.md)
-- [Complete feature requirements](cmds-delidev-requirements.md)
 
 ### React Forge
 
@@ -242,9 +187,6 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 - [Public documentation](apps-pnport-docs-foundation.md) (ten guides under `/pnport`, with 0.1.0 marked unreleased)
 
 - [React Forge static GLB/FBX scenes](packages-react-forge-scene-contract.md): generation, materials, sessions and interoperability evidence requirements.
-
-- [DeliDev signed updates](cmds-delidev-updates-contract.md)
-- [DeliDev SSH Worker setup](cmds-delidev-ssh-setup-contract.md)
 
 ### TypeNative
 

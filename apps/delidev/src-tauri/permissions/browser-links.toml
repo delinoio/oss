@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "device-browser-links"
-description = "Read or atomically update the device-local general and local browser destinations, refresh the native HTTP(S) handler inventory and open one user-activated HTTP(S) link; no server configuration, arbitrary paths, executable commands or non-HTTP(S) destinations."
-commands.allow = ["read_browser_preferences", "update_browser_preferences", "reset_browser_preferences", "read_browser_inventory", "open_external_url"]

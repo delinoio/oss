@@ -99,15 +99,7 @@ export function matricesForEvent(event, mode = Mode.Affected) {
     environmentMatrix: hosts("ubuntu-latest"),
     forgeMatrix: hosts("ubuntu-latest"),
     cliboxMatrix: hosts("ubuntu-22.04"),
-    delidevFrontendMatrix: {
-      include: [
-        { phase: "checks" },
-        { phase: "tests-1" },
-        { phase: "tests-2" },
-        { phase: "tests-3" },
-        { phase: "tests-4" },
-      ],
-    },
+    delidevFrontendMatrix: { include: [{ phase: "checks" }] },
     desktopMatrix: {
       include: nativeMatrices["devhud-desktop"].filter(
         (row) => row.os !== "macos",
