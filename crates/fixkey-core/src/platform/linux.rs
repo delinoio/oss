@@ -124,19 +124,51 @@ fn application(x: &RustConnection, window: u32) -> Result<(u32, Application), Sk
         .filter(|class| !class.is_empty())
         .ok_or(SkipReason::UnknownField)?
         .to_owned();
-    // WM_CLASS is the stable fallback when no unambiguous desktop entry can be
-    // established. Never use a window title as an application identity or name.
+    let hints: Vec<_> = [
+        b"_GTK_APPLICATION_ID".as_slice(),
+        b"_KDE_NET_WM_DESKTOP_FILE".as_slice(),
+    ]
+    .into_iter()
+    .filter_map(|name| property(x, window, name, AtomEnum::ANY).ok())
+    .filter_map(|value| String::from_utf8(value).ok())
+    .map(|value| value.trim_end_matches('\0').to_owned())
+    .collect();
+    let desktop_entry_id = super::linux_identity::resolve(&hints, &desktop_entry_roots());
+    // Explicit application hints must resolve to an installed desktop entry.
+    // WM_CLASS remains the fallback when no unique entry can be established.
     Ok((
         pid,
         Application {
             name: class.clone(),
             identity: Identity::Linux {
                 class,
-                desktop_entry_id: None,
+                desktop_entry_id,
             },
         },
     ))
 }
+fn desktop_entry_roots() -> Vec<std::path::PathBuf> {
+    let mut roots = Vec::new();
+    let data_home = std::env::var_os("XDG_DATA_HOME")
+        .map(std::path::PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .or_else(|| {
+            std::env::var_os("HOME").map(|home| std::path::PathBuf::from(home).join(".local/share"))
+        });
+    if let Some(home) = data_home.filter(|path| path.is_absolute()) {
+        roots.push(home.join("applications"));
+    }
+    let directories = std::env::var_os("XDG_DATA_DIRS")
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "/usr/local/share:/usr/share".into());
+    roots.extend(
+        std::env::split_paths(&directories)
+            .filter(|path| path.is_absolute())
+            .map(|path| path.join("applications")),
+    );
+    roots
+}
+
 fn active(x: &RustConnection) -> Result<(u32, Application), SkipReason> {
     let root = x
         .setup()

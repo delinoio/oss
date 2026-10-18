@@ -54,6 +54,9 @@ mod windows;
 #[cfg(target_os = "windows")]
 pub use windows::{Adapter, available_applications};
 
+#[cfg(any(target_os = "linux", test))]
+mod linux_identity;
+
 #[cfg(target_os = "linux")]
 mod linux;
 #[cfg(target_os = "linux")]
