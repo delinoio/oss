@@ -306,25 +306,50 @@ fn execute(cli: &Cli) -> Result<i32> {
     }
 }
 
-fn resolve_command(view: &mut View, cwd: &Path, command: &OsString) -> Result<PathBuf> {
-    // Windows keeps short names and caller casing in GetCurrentDirectory,
-    // while the graph is rooted at the canonical manifest directory. Resolve
-    // the existing cwd through the same guarded native lookup as file reads so
-    // direct dependency bins retain their package owner under those aliases.
-    #[cfg(windows)]
-    let native_cwd = pnport_core::windows::lookup_spelling(cwd, &view.graph)?;
-    #[cfg(windows)]
-    let cwd = native_cwd.as_path();
+#[derive(Debug)]
+enum CommandTarget<'a> {
+    Explicit(PathBuf),
+    Bare { cwd: PathBuf, name: &'a str },
+}
+
+fn command_target_with_lookup<'a>(
+    cwd: &Path,
+    command: &'a OsString,
+    lookup_cwd: impl FnOnce(&Path) -> Result<PathBuf>,
+) -> Result<CommandTarget<'a>> {
     let path = Path::new(command);
     if path.components().count() > 1 || path.is_absolute() {
-        return Ok(cwd.join(path));
+        return Ok(CommandTarget::Explicit(cwd.join(path)));
     }
+    let cwd = lookup_cwd(cwd)?;
     let Some(name) = command.to_str() else {
         return Err(Error::new(
             Code::PnportCommandNotFound,
             "The executable was not found.",
         ));
     };
+    Ok(CommandTarget::Bare { cwd, name })
+}
+
+fn resolve_command(view: &mut View, cwd: &Path, command: &OsString) -> Result<PathBuf> {
+    let target = command_target_with_lookup(cwd, command, |cwd| {
+        // Windows keeps short names and caller casing in GetCurrentDirectory,
+        // while the graph is rooted at the canonical manifest directory. Bare
+        // commands need guarded lookup to retain their direct-bin owner.
+        #[cfg(windows)]
+        {
+            pnport_core::windows::lookup_spelling(cwd, &view.graph)
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(cwd.to_owned())
+        }
+    })?;
+    let (cwd, name) = match target {
+        CommandTarget::Explicit(path) => return Ok(path),
+        CommandTarget::Bare { cwd, name } => (cwd, name),
+    };
+    let cwd = cwd.as_path();
     tracing::debug!(action = "command_lookup", cwd = %cwd.display(), command = name, owner = ?view.graph.package(cwd).map(|package| &package.package_location), "Resolving direct dependency executable");
     let dependencies: Vec<_> = view
         .graph
@@ -399,6 +424,92 @@ fn resolve_command(view: &mut View, cwd: &Path, command: &OsString) -> Result<Pa
         "Command not found in direct dependency bins or PATH; install it or use an explicit \
          executable path.",
     ))
+}
+
+#[cfg(test)]
+mod command_resolution_tests {
+    use std::{
+        cell::Cell,
+        ffi::OsString,
+        path::{Path, PathBuf},
+    };
+
+    use super::{command_target_with_lookup, Code, CommandTarget, Error};
+
+    #[test]
+    fn explicit_paths_skip_cwd_lookup_and_bare_commands_use_it() {
+        let cwd = std::env::current_dir().unwrap().join("caller");
+        let absolute = std::env::current_dir().unwrap().join("tool.exe");
+        let relative = PathBuf::from("bin").join("tool.exe");
+        let calls = Cell::new(0);
+        let unsupported = |_: &Path| {
+            calls.set(calls.get() + 1);
+            Err(Error::new(
+                Code::PnportUnsupportedOperation,
+                "The Windows pathname uses an unsupported reparse traversal.",
+            ))
+        };
+
+        for (command, expected) in [
+            (absolute.clone().into_os_string(), absolute),
+            (relative.clone().into_os_string(), cwd.join(relative)),
+        ] {
+            let target = command_target_with_lookup(&cwd, &command, unsupported).unwrap();
+            let CommandTarget::Explicit(path) = target else {
+                panic!("explicit command was treated as a bare command");
+            };
+            assert_eq!(path, expected);
+            assert_eq!(calls.get(), 0);
+        }
+
+        let bare = OsString::from("tool");
+        let error = command_target_with_lookup(&cwd, &bare, unsupported)
+            .err()
+            .expect("bare command must perform guarded lookup");
+        assert_eq!(error.code, Code::PnportUnsupportedOperation);
+        assert_eq!(calls.get(), 1);
+
+        let canonical = std::env::current_dir().unwrap().join("canonical-caller");
+        let target = command_target_with_lookup(&cwd, &bare, |seen| {
+            assert_eq!(seen, cwd);
+            calls.set(calls.get() + 1);
+            Ok(canonical.clone())
+        })
+        .unwrap();
+        let CommandTarget::Bare { cwd: owner, name } = target else {
+            panic!("bare command was treated as an explicit command");
+        };
+        assert_eq!(owner, canonical);
+        assert_eq!(name, "tool");
+        assert_eq!(calls.get(), 2);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_explicit_spellings_skip_guarded_lookup() {
+        let cwd = PathBuf::from(r"C:\caller\alias");
+        let calls = Cell::new(0);
+        for (command, expected) in [
+            (r"C:\tools\tool.exe", PathBuf::from(r"C:\tools\tool.exe")),
+            (r".\bin\tool.exe", cwd.join(r".\bin\tool.exe")),
+            (r"bin\tool.exe", cwd.join(r"bin\tool.exe")),
+        ] {
+            let command = OsString::from(command);
+            let target = command_target_with_lookup(&cwd, &command, |_| {
+                calls.set(calls.get() + 1);
+                Err(Error::new(
+                    Code::PnportUnsupportedOperation,
+                    "The Windows pathname uses an unsupported reparse traversal.",
+                ))
+            })
+            .unwrap();
+            let CommandTarget::Explicit(path) = target else {
+                panic!("explicit Windows command was treated as a bare command");
+            };
+            assert_eq!(path, expected);
+        }
+        assert_eq!(calls.get(), 0);
+    }
 }
 
 fn main() {
