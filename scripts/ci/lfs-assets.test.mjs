@@ -32,6 +32,9 @@ const assetExtensions = new Set([
 const lfsAssets = [
   "apps/devhud/src-tauri/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf",
   "crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf",
+  "crates/fixkey-core/assets/ko/entries.bin",
+  "crates/fixkey-core/assets/ko/matrix.bin",
+  "crates/fixkey-core/assets/ko/sys.dic",
   "packages/react-forge/examples/audio-studio-assets/brushed-roughness.png",
   "packages/react-forge/examples/audio-studio-assets/leather-normal.png",
   "packages/react-forge/examples/audio-studio-assets/leather-roughness.png",

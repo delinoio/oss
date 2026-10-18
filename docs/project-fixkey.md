@@ -10,10 +10,10 @@ Correct words typed with the wrong keyboard layout without requiring users to sw
 
 ## Domain Ownership Map
 
-`crates/fixkey-core` exists as a workspace member. `apps/fixkey` is `planned`; create its skeleton in the change that begins desktop runtime implementation.
+`crates/fixkey-core` and `apps/fixkey/src-tauri` are explicit Rust workspace members. `apps/fixkey` owns the desktop shell and frontend.
 
 - `crates/fixkey-core` (`core`): Rust engine for layout reconstruction, language validation, correction and undo state, and platform accessibility adapters. It has no UI dependency.
-- `apps/fixkey` (`desktop`): planned Tauri 2 desktop shell with a React and Rsbuild settings UI. The Rust shell lives in `apps/fixkey/src-tauri`.
+- `apps/fixkey` (`desktop`): Tauri 2 desktop shell with a React and Rsbuild settings UI. The Rust shell lives in `apps/fixkey/src-tauri`.
 
 ## Domain Contract Documents
 

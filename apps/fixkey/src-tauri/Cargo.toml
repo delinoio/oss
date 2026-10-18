@@ -1,0 +1,20 @@
+[package]
+name = "fixkey"
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.90"
+license = "Apache-2.0"
+publish = false
+description = "Local keyboard-layout correction desktop application"
+
+[dependencies]
+fixkey-core = { path = "../../../crates/fixkey-core" }
+serde = { workspace = true, features = ["derive"] }
+serde_json = "=1.0.149"
+tempfile.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber = { version = "=0.3.22", features = ["env-filter", "json"] }
+
+[lints]
+workspace = true

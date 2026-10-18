@@ -2,7 +2,7 @@
 
 ## Scope
 
-Owns the planned `apps/fixkey` Tauri 2 desktop application (component `desktop`): settings UI, permission dialog, candidate popup, tray, local settings, diagnostics, update flow and distribution. The path is `planned` until its skeleton is created together with the first runtime implementation.
+Owns the `apps/fixkey` Tauri 2 desktop application (component `desktop`): settings UI, permission dialog, candidate popup, tray, local settings, diagnostics, update flow and distribution. `apps/fixkey/src-tauri` is an explicit Rust workspace member.
 
 ## Runtime and Language
 
@@ -32,6 +32,7 @@ enum SettingsSection {
 - Updates: current version, manual check, available update, consent, progress and failures.
 - Diagnostics and Help: error codes, open-log-folder, delete-logs, localized help and a GitHub Issues link. Help covers installation, permissions, supported layouts, correction, undo, manual candidates, exclusions, privacy, updates, troubleshooting and log deletion.
 - Apply and persist settings immediately. On persistence failure, keep the previous value and show an error. Scroll at smaller sizes or larger text scaling instead of clipping.
+- Coordinate shortcut and login-startup registration with atomic settings publication. Native registration failures leave the prior registration intact. If settings publication fails after registration, restore the previous OS registrations. If restoration fails, clear transient input, keep correction inactive and report that preference reconciliation is required; an explicit recheck reapplies the saved preferences before correction can resume.
 - There is no input history or correction-history screen.
 
 Permission dialog (reference viewport 540×440): explain why accessibility access is needed, that input stays on the device and that password fields are excluded. Adapt instructions and actions to the permission or accessibility service each OS requires. Provide the system-settings action, recheck and dismiss/later. Correction stays inactive until required permissions and dictionaries are ready, then activates.
@@ -57,6 +58,7 @@ Updates and distribution:
 - Store settings locally for the current OS user. Preserve them across updates and manual recovery. Settings use a versioned format with a `schemaVersion` field. A newer release writes only changes that older supported releases can read, or first writes a backup of the previous file (`settings.v<N>.bak`) before migrating, so manual reinstallation of a previous signed package can restore it. An older binary that finds a newer unreadable schema leaves the file untouched, runs with defaults in memory, reports the reason in status, and offers restore from the backup. Never silently replace unreadable settings or user configuration.
 - Never persist input text, reconstructed candidates, document content, window titles or correction history.
 - Logs: retain at most seven days and at most 10 MiB total, deleting the oldest logs when either limit is exceeded. Settings provide log deletion and log-folder access.
+- `src-tauri/src/settings.rs` owns the persisted schema and atomic file replacement. `preferences.rs` coordinates native preference changes and the Rust correction session. `diagnostics.rs` owns bounded JSON diagnostic files, version/platform envelopes and the tracing filter. The filter accepts only FixKey targets; input text and configuration values must never be tracing fields. `NO_COLOR` disables operator-console ANSI output. Log deletion removes only owned log files and leaves unrelated files untouched.
 
 ## Security
 
@@ -71,6 +73,7 @@ Use `tracing` structured events without input content: errors, processing durati
 ## Build and Test
 
 - Frontend: `pnpm test` from the frontend directory. Rust: `cargo test` from the repository root, plus applicable formatting and build checks.
+- Desktop Rust source and resource changes participate in the central affected Rust test and clippy selection. Keep the default affected manual mode and native-runner eligibility unchanged.
 - Required automated tests: settings persistence failures, empty exclusion lists, localization, keyboard focus, accessible states, light and dark presentation; shortcut registration failure, candidate navigation, invalid-candidate labeling, Esc and target invalidation; log redaction, rotation, retention and deletion, and absence of input persistence or telemetry; mocked update checks, scheduling, offline behavior, consent, download failure, invalid signatures, installation failure and settings preservation.
 - Mocks, fixtures and builds do not establish actual OS or application behavior (accessibility reads and writes, global shortcuts, signing, package installation). Automated tests and package inspection are not substitutes for native acceptance. Native acceptance on each target platform is a separate activity required before claiming verified compatibility or shipping a release. Record every native check that was not performed in pull requests, issues and CI artifacts together with source revision, commands and results, and never claim compatibility for it.
 

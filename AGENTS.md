@@ -62,7 +62,7 @@
 - `docs/project-bundlewhy.md`: bundlewhy bundler optimization debugger project index (Rust core, web UI, protocol, adapters).
 - `docs/project-typeopt.md`: typeopt Rust property optimizer project index.
 - `docs/crates-typeopt-foundation.md`: typeopt CLI, safety, Vite integration and benchmark contract.
-- `docs/project-fixkey.md`: FixKey keyboard-layout correction desktop project index (planned `crates/fixkey-core`, `apps/fixkey`).
+- `docs/project-fixkey.md`: FixKey keyboard-layout correction desktop project index (`crates/fixkey-core`, `apps/fixkey`).
 - `docs/crates-fixkey-core-foundation.md`: FixKey correction engine contract.
 - `docs/apps-fixkey-desktop-contract.md`: FixKey desktop application contract.
 

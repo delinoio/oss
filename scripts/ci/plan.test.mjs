@@ -37,6 +37,21 @@ const selected = (event, paths, mode = Mode.Affected) =>
     .filter(([, run]) => run)
     .map(([id]) => id);
 
+test("FixKey desktop resources select affected Rust checks on eligible events", () => {
+  for (const event of [Event.PullRequest, Event.Push, Event.Manual]) {
+    for (const path of [
+      "apps/fixkey/src-tauri/settings-fixture.json",
+      "apps/fixkey/src-tauri/src/settings.rs",
+      "crates/fixkey-core/assets/ko/entries.bin",
+    ]) {
+      const jobs = selected(event, [path]);
+      assert.ok(jobs.includes("rust-test"), `${event}: ${path}`);
+      assert.ok(jobs.includes("rust-clippy"), `${event}: ${path}`);
+      assert.ok(!jobs.includes("devhud-desktop"), `${event}: ${path}`);
+    }
+  }
+});
+
 test("rustfmt configuration selects only formatting on PRs and main pushes", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
     for (const directory of [
