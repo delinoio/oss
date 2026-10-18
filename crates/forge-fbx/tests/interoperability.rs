@@ -86,7 +86,7 @@ fn independent_fbx_topology_matches_shared_scene_analysis() {
         ("geometry:unused".into(), unused),
     ]);
     let prepared = forge_scene::prepare(&scene, &assets).unwrap();
-    let analysis = forge_scene::analyze(&prepared).unwrap();
+    let analysis = forge_scene::analyze(&prepared, false).unwrap();
     assert_eq!(
         (
             analysis.mesh_count,
