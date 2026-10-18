@@ -1,7 +1,7 @@
 //! Language validators and the automatic replacement decision.
 
 use crate::{
-    layout::{Reconstruction, detect_language, keys_from_text, reconstruct},
+    layout::{Reconstruction, detect_language, keys_from_text, reconstruct, reconstruct_from_keys},
     types::{CandidateValidation, CorrectionOutcome, Language, LanguageSet},
 };
 
@@ -95,15 +95,28 @@ fn validate_all(
         .collect()
 }
 
-/// Decides whether `word` is replaced automatically.
+/// Decides whether rendered `word` is replaced using its recorded physical
+/// keys.
+///
+/// `recorded_keys` must come from direct key events for this word and context.
+/// Missing, unsupported or mismatched keys skip correction. Text inferred from
+/// the rendered word is never treated as physical-key provenance.
 ///
 /// Replaces only when exactly one enabled language accepts its candidate and
 /// that candidate differs from `word`. If any required enabled-language
 /// validator is unavailable the word is preserved, because an unavailable
 /// validator is not an invalid result.
 #[must_use]
-pub fn decide(word: &str, enabled: LanguageSet, validators: &Validators<'_>) -> Decision {
-    let candidates = validate_all(reconstruct(word, enabled), validators);
+pub fn decide(
+    word: &str,
+    recorded_keys: &[char],
+    enabled: LanguageSet,
+    validators: &Validators<'_>,
+) -> Decision {
+    let Some(reconstructions) = reconstruct_from_keys(word, recorded_keys, enabled) else {
+        return Decision::preserved(CorrectionOutcome::PreservedSkipped);
+    };
+    let candidates = validate_all(reconstructions, validators);
     if candidates.is_empty() {
         return Decision::preserved(CorrectionOutcome::PreservedNoMatch);
     }
@@ -186,7 +199,19 @@ pub fn manual_candidates(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::korean::{AnalyzerError, KoreanAnalyzer, KoreanValidator, Morpheme, Pos};
+    use crate::{
+        english::{EnglishValidator, EntryClass, Lexicon},
+        korean::{AnalyzerError, KoreanAnalyzer, KoreanValidator, Morpheme, Pos},
+        layout::text_from_keys,
+    };
+
+    struct Abbreviations;
+
+    impl Lexicon for Abbreviations {
+        fn lookup(&self, word: &str) -> Option<EntryClass> {
+            (word == "nasa").then_some(EntryClass::Abbreviation)
+        }
+    }
 
     struct Fixed(&'static [&'static str]);
 
@@ -232,6 +257,7 @@ mod tests {
         let english = Fixed(&[]);
         let decision = decide(
             "ajrrl",
+            &keys("ajrrl"),
             all(),
             &Validators {
                 korean: &korean,
@@ -243,6 +269,97 @@ mod tests {
         assert_eq!(decision.language, Some(Language::KoDubeolsik));
     }
 
+    fn keys(typed: &str) -> Vec<char> {
+        typed.chars().collect()
+    }
+
+    #[test]
+    fn english_abbreviation_replacement_preserves_recorded_key_case() {
+        let english = EnglishValidator::new(Abbreviations);
+        let korean = Fixed(&[]);
+        let validators = Validators {
+            korean: &korean,
+            english: &english,
+        };
+        assert_eq!(english.validate("NASA"), Validation::Accepted);
+        assert_eq!(
+            text_from_keys(&keys("NASA"), Language::EnUsQwerty),
+            Some("NASA".into())
+        );
+        for typed in ["NASA", "nasa", "NaSa"] {
+            let rendered = text_from_keys(&keys(typed), Language::KoDubeolsik).unwrap();
+            assert_eq!(rendered, "ㅜㅁㄴㅁ");
+            let decision = decide(&rendered, &keys(typed), all(), &validators);
+            assert_eq!(decision.outcome, CorrectionOutcome::Replaced);
+            assert_eq!(decision.replacement.as_deref(), Some(typed));
+            assert_eq!(decision.language, Some(Language::EnUsQwerty));
+        }
+        let unchanged = decide("NASA", &keys("NASA"), all(), &validators);
+        assert_eq!(unchanged.outcome, CorrectionOutcome::PreservedUnchanged);
+    }
+
+    #[test]
+    fn korean_syllable_does_not_erase_recorded_shift() {
+        let english = Fixed(&["rK", "rk"]);
+        for typed in ["rK", "rk"] {
+            let decision = decide(
+                "가",
+                &keys(typed),
+                all(),
+                &Validators {
+                    korean: &Fixed(&[]),
+                    english: &english,
+                },
+            );
+            assert_eq!(decision.outcome, CorrectionOutcome::Replaced);
+            assert_eq!(decision.replacement.as_deref(), Some(typed));
+        }
+    }
+
+    #[test]
+    fn provenance_and_existing_decision_safety_remain_required() {
+        let korean = Fixed(&["ㅜㅁㄴㅁ"]);
+        let english = EnglishValidator::new(Abbreviations);
+        let validators = Validators {
+            korean: &korean,
+            english: &english,
+        };
+        let word = "ㅜㅁㄴㅁ";
+        assert_eq!(
+            decide(word, &keys("NASA"), all(), &validators).outcome,
+            CorrectionOutcome::PreservedAmbiguous
+        );
+        assert_eq!(
+            decide(word, &[], all(), &validators).outcome,
+            CorrectionOutcome::PreservedSkipped
+        );
+        assert_eq!(
+            decide(word, &keys("other"), all(), &validators).outcome,
+            CorrectionOutcome::PreservedSkipped
+        );
+        let unavailable = Validators {
+            korean: &MissingValidator,
+            english: &english,
+        };
+        assert_eq!(
+            decide(word, &keys("NASA"), all(), &unavailable).outcome,
+            CorrectionOutcome::PreservedValidatorUnavailable
+        );
+        let korean_only = all().with(Language::EnUsQwerty, false);
+        let rejected = Validators {
+            korean: &Fixed(&[]),
+            english: &english,
+        };
+        assert_eq!(
+            decide(word, &keys("NASA"), korean_only, &rejected).outcome,
+            CorrectionOutcome::PreservedNoMatch
+        );
+        assert_eq!(
+            decide(word, &keys("NASA"), all(), &rejected).outcome,
+            CorrectionOutcome::Replaced
+        );
+    }
+
     #[test]
     fn exactly_one_accepting_language_replaces() {
         let ko = Fixed(&["계속해", "키보드가"]);
@@ -252,13 +369,14 @@ mod tests {
             english: &en,
         };
         for (word, expected) in [("rPthrgo", "계속해"), ("zlqhemrk", "키보드가")] {
-            let decision = decide(word, all(), &validators);
+            let decision = decide(word, &keys(word), all(), &validators);
             assert_eq!(decision.outcome, CorrectionOutcome::Replaced);
             assert_eq!(decision.replacement.as_deref(), Some(expected));
             assert_eq!(decision.language, Some(Language::KoDubeolsik));
         }
         let reverse = decide(
             "키보드가",
+            &keys("zlqhemrk"),
             all(),
             &Validators {
                 korean: &Fixed(&[]),
@@ -274,6 +392,7 @@ mod tests {
         let none = Fixed(&[]);
         let decision = decide(
             "rPthrgo",
+            &keys("rPthrgo"),
             all(),
             &Validators {
                 korean: &none,
@@ -290,6 +409,7 @@ mod tests {
         let en = Fixed(&["rPthrgo"]);
         let decision = decide(
             "rPthrgo",
+            &keys("rPthrgo"),
             all(),
             &Validators {
                 korean: &ko,
@@ -305,6 +425,7 @@ mod tests {
         let en = Fixed(&["hello"]);
         let decision = decide(
             "hello",
+            &keys("hello"),
             all(),
             &Validators {
                 korean: &ko,
@@ -324,7 +445,7 @@ mod tests {
         };
         let english_only = all().with(Language::KoDubeolsik, false);
         assert_eq!(
-            decide("rPthrgo", english_only, &validators).outcome,
+            decide("rPthrgo", &keys("rPthrgo"), english_only, &validators).outcome,
             CorrectionOutcome::PreservedNoMatch
         );
     }
@@ -334,6 +455,7 @@ mod tests {
         let en = Fixed(&[]);
         let decision = decide(
             "rPthrgo",
+            &keys("rPthrgo"),
             all(),
             &Validators {
                 korean: &MissingValidator,
@@ -349,6 +471,7 @@ mod tests {
         assert_eq!(
             decide(
                 "rPthrgo",
+                &keys("rPthrgo"),
                 ko_off,
                 &Validators {
                     korean: &MissingValidator,
@@ -361,17 +484,18 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_words_have_no_match() {
+    fn unsupported_words_are_skipped() {
         let none = Fixed(&[]);
         let decision = decide(
             "a가",
+            &keys("a가"),
             all(),
             &Validators {
                 korean: &none,
                 english: &none,
             },
         );
-        assert_eq!(decision.outcome, CorrectionOutcome::PreservedNoMatch);
+        assert_eq!(decision.outcome, CorrectionOutcome::PreservedSkipped);
     }
 
     #[test]

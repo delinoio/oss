@@ -341,16 +341,28 @@ impl CorrectionSession {
     }
 
     /// Evaluates a completed word and replaces it when safe.
+    ///
+    /// `recorded_keys` must be the directly observed physical keys for `word`
+    /// in `captured`'s input context. If their provenance is unavailable, pass
+    /// an empty slice so correction fails closed.
     pub fn on_word_complete(
         &mut self,
         word: &str,
+        recorded_keys: &[char],
         boundary: &str,
         captured: CapturedContext,
         accessibility: &mut dyn Accessibility,
         validators: &Validators<'_>,
     ) -> Evaluation {
         let started = std::time::Instant::now();
-        let evaluation = self.evaluate(word, boundary, captured, accessibility, validators);
+        let evaluation = self.evaluate(
+            word,
+            recorded_keys,
+            boundary,
+            captured,
+            accessibility,
+            validators,
+        );
         tracing::info!(
             outcome = evaluation.outcome.as_str(),
             skip_reason = evaluation.skip_reason.map(SkipReason::as_str),
@@ -363,6 +375,7 @@ impl CorrectionSession {
     fn evaluate(
         &mut self,
         word: &str,
+        recorded_keys: &[char],
         boundary: &str,
         captured: CapturedContext,
         accessibility: &mut dyn Accessibility,
@@ -407,7 +420,10 @@ impl CorrectionSession {
         {
             return Evaluation::outcome(CorrectionOutcome::PreservedStaleContext);
         }
-        let decision = decide(word, self.config.languages, validators);
+        let decision = decide(word, recorded_keys, self.config.languages, validators);
+        if decision.outcome == CorrectionOutcome::PreservedSkipped {
+            return Evaluation::skipped(SkipReason::Programmatic);
+        }
         let Some(replacement) = decision.replacement else {
             return Evaluation::outcome(decision.outcome);
         };
@@ -784,11 +800,70 @@ mod tests {
             english: &en,
         };
         let captured = field.captured();
-        session.on_word_complete(word, boundary, captured, field, &validators)
+        session.on_word_complete(
+            word,
+            &word.chars().collect::<Vec<_>>(),
+            boundary,
+            captured,
+            field,
+            &validators,
+        )
     }
 
     fn new_session() -> CorrectionSession {
         CorrectionSession::new(SessionConfig::default())
+    }
+
+    #[test]
+    fn recorded_keys_replace_korean_with_exact_case_and_undo_restores_rendered_word() {
+        let mut field = MockField::new("ㅜㅁㄴㅁ ");
+        let mut session = new_session();
+        let korean = Accepts(&[]);
+        let english = Accepts(&["NASA"]);
+        let captured = field.captured();
+        let result = session.on_word_complete(
+            "ㅜㅁㄴㅁ",
+            &"NASA".chars().collect::<Vec<_>>(),
+            " ",
+            captured,
+            &mut field,
+            &Validators {
+                korean: &korean,
+                english: &english,
+            },
+        );
+        assert_eq!(result.outcome, CorrectionOutcome::Replaced);
+        assert_eq!(field.text(), "NASA ");
+        field.backspace();
+        assert_eq!(session.on_backspace(&mut field), BackspaceAction::Restored);
+        assert_eq!(field.text(), "ㅜㅁㄴㅁ ");
+    }
+
+    #[test]
+    fn missing_or_mismatched_keys_never_write_or_create_undo() {
+        let korean = Accepts(&[]);
+        let english = Accepts(&["NASA"]);
+        let validators = Validators {
+            korean: &korean,
+            english: &english,
+        };
+        for recorded in ["", "other", "nasa-"] {
+            let mut field = MockField::new("ㅜㅁㄴㅁ ");
+            let captured = field.captured();
+            let mut session = new_session();
+            let result = session.on_word_complete(
+                "ㅜㅁㄴㅁ",
+                &recorded.chars().collect::<Vec<_>>(),
+                " ",
+                captured,
+                &mut field,
+                &validators,
+            );
+            assert_eq!(result.outcome, CorrectionOutcome::PreservedSkipped);
+            assert_eq!(result.skip_reason, Some(SkipReason::Programmatic));
+            assert_eq!(field.writes, 0);
+            assert!(!session.has_undo());
+        }
     }
 
     #[test]
@@ -1193,6 +1268,7 @@ mod tests {
             let mut session = new_session();
             let result = session.on_word_complete(
                 "rPthrgo",
+                &"rPthrgo".chars().collect::<Vec<_>>(),
                 " ",
                 captured,
                 &mut field,
@@ -1249,6 +1325,7 @@ mod tests {
         let mut session = new_session();
         session.on_word_complete(
             "rPthrgo",
+            &"rPthrgo".chars().collect::<Vec<_>>(),
             " ",
             captured,
             &mut interfering,
