@@ -20,7 +20,7 @@ application target never selects the host executable.
 `scripts/tauri-cli.mjs -- <arguments...>` prepares the CLI and forwards structured
 arguments, environment, cwd, exit status and termination signals through the
 repository process supervisor. It prepends the verified executable directory to the child PATH so generated Xcode/Gradle Cargo invocations use the same CLI. The direct Intel iOS simulator path applies that verified environment to Xcode and its options server. DevHud desktop/mobile generation/build paths and
-DeliDev desktop development and native builds use this adapter. Consumer manifests and `Cargo.lock` contain no Tauri CLI wrapper.
+Consumer manifests and `Cargo.lock` contain no Tauri CLI wrapper.
 
 ## Installation and storage
 
@@ -57,7 +57,7 @@ Installer fixtures cover first download, reuse, corruption, digest mismatch,
 network failure, Windows executable names, unsupported hosts, explicit local
 source builds and CI source-build refusal. CI contract tests guard cache keys,
 main-only saves and native/mobile routing. `pnpm ci:contracts` and package-owned
-DevHud/DeliDev tests include these boundaries.
+DevHud tests include these boundaries.
 
 CEF AppImage build helpers are prepared by `scripts/appimage-tools.mjs` for DevHud using the existing canonical pins in `apps/devhud/cef-pins.json`. The helper verifies the sharun executable, anylinux C source, and original MIT license before exposing them to the bundler. Native compilation receives the caller-owned environment. These helper inputs are distinct from the published Tauri CLI release.
 

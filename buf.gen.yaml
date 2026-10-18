@@ -78,7 +78,6 @@ plugins:
 inputs:
   - directory: protos
     paths:
-      - protos/delcore/v1
       - protos/devhud/v1
       - protos/async_commit_hook/v1
       - protos/bundlewhy/v1

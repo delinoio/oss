@@ -2221,18 +2221,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "delidev-desktop"
-version = "0.1.0"
-dependencies = [
- "cef",
- "tauri",
- "tauri-build",
- "tauri-runtime-cef",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "delino-forge"
 version = "0.0.0"
 dependencies = [
@@ -2254,19 +2242,6 @@ dependencies = [
  "uuid",
  "windows-sys 0.61.2",
  "zip 8.6.0",
-]
-
-[[package]]
-name = "delitools-shell"
-version = "0.1.0"
-dependencies = [
- "cef",
- "tauri",
- "tauri-build",
- "tauri-runtime-cef",
- "tauri-runtime-wry",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -10251,7 +10226,6 @@ version = "2.6.3"
 source = "git+https://github.com/tauri-apps/tauri?rev=c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975#c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975"
 dependencies = [
  "base64 0.22.1",
- "brotli",
  "ico",
  "json-patch",
  "plist",
@@ -10427,7 +10401,6 @@ version = "2.9.3"
 source = "git+https://github.com/tauri-apps/tauri?rev=c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975#c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975"
 dependencies = [
  "anyhow",
- "brotli",
  "cargo_metadata 0.19.2",
  "ctor",
  "dom_query",

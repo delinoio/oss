@@ -27,7 +27,6 @@ export function validateResults(needs) {
     ["go_test_matrix", matrices.goTestMatrix],
     ["desktop_matrix", matrices.desktopMatrix],
     ["react_forge_matrix", matrices.reactForgeMatrix],
-    ["delidev_frontend_matrix", matrices.delidevFrontendMatrix],
   ]) {
     const actual = JSON.parse(needs.changes.outputs[output]);
     if (JSON.stringify(actual) !== JSON.stringify(matrix))

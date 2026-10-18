@@ -24,8 +24,6 @@ This catalog summarizes the projects in this repository. Status does not establi
 | `bundlewhy`         | Local diagnostic build and web UI that explain missed bundler and minifier optimizations without changing project source.                                                       | `active`       | [Documentation](https://oss.delino.io/bundlewhy)         |
 | `cargo-mono`        | Cargo subcommand for Rust monorepo lifecycle management, including version bump and publish orchestration.                                                                      | `active`       | [Documentation](https://oss.delino.io/cargo-mono)        |
 | `clibox`            | Rust CLI pinned through npm for portable execution, configuration, system utilities, transformations, and readiness checks.                                                     | `active`       | [Documentation](https://oss.delino.io/clibox)            |
-| `delcore`           | Shared tenants, authorization, metering, and tenant-wide billing for independently hosted Delino services.                                                                      | `active`       | —                                                        |
-| `delidev`           | Empty desktop application shell.                                                                                                                                                | `shell`        | —                                                        |
 | `devhud`            | Desktop and mobile developer utility for RealQA capture, GitHub issue submission, Deck PR monitoring, and native widgets; some domains remain planned.                          | `active`       | [Documentation](https://oss.delino.io/devhud)            |
 | `forge`             | Local Rust CLI and stdio MCP server for typed document authoring and preservation-aware PPTX editing.                                                                           | `active`       | —                                                        |
 | `nodeup`            | Rust-based Node.js version manager with deterministic channel resolution, shell completions, and shim execution.                                                                | `active`       | [Documentation](https://oss.delino.io/nodeup)            |
@@ -45,3 +43,5 @@ This catalog summarizes the projects in this repository. Status does not establi
 - Every project is defined by `docs/project-<id>.md` plus one or more domain contract documents.
 - When ownership, interfaces, or runtime behavior changes, update the relevant `docs/` contracts in the same change.
 - Start from [docs/README.md](docs/README.md) for the canonical documentation catalog.
+
+Delcore, DeliDev, and DeliTools are maintained in [delino-apps](https://github.com/delinoio/delino-apps).

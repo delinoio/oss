@@ -81,10 +81,7 @@ const devhudJobs = [
   "devhud-supply-chain",
   "devhud-release-contracts",
 ];
-const delcoreJobs = ["delcore-api"];
 const achJobs = ["async-commit-hook"];
-const delidevJobs = ["delidev-frontend"];
-const delitoolsJobs = ["delitools-frontend"];
 
 function step(job, id) {
   return job.steps.find((candidate) => candidate.id === id);
@@ -449,10 +446,7 @@ test("CI keeps every legacy check and aggregates every required job", () => {
     "ci-contracts",
     ...legacyJobs,
     ...devhudJobs,
-    ...delcoreJobs,
     ...achJobs,
-    ...delidevJobs,
-    ...delitoolsJobs,
     "ci-result",
   ])
     assert.ok(jobs.includes(id), id);
@@ -474,23 +468,9 @@ test("one change plan gates every domain job before runner allocation", () => {
   );
   assert.deepEqual(
     Object.keys(jobPaths).sort(),
-    [
-      ...legacyJobs,
-      ...devhudJobs,
-      ...delcoreJobs,
-      ...achJobs,
-      ...delidevJobs,
-      ...delitoolsJobs,
-    ].sort(),
+    [...legacyJobs, ...devhudJobs, ...achJobs].sort(),
   );
-  for (const id of [
-    ...legacyJobs,
-    ...devhudJobs,
-    ...delcoreJobs,
-    ...achJobs,
-    ...delidevJobs,
-    ...delitoolsJobs,
-  ]) {
+  for (const id of [...legacyJobs, ...devhudJobs, ...achJobs]) {
     const job = workflow.jobs[id];
     assert.deepEqual(job.needs, "changes", id);
     assert.equal(
@@ -625,8 +605,6 @@ test("DevHud client test-only changes require semantic type checking and runtime
       "packages/devhud-api-client/tests/validation.test.ts",
     ]);
     assert.equal(plan.jobs["devhud-frontend"], true, event);
-    for (const id of delidevJobs)
-      assert.equal(plan.jobs[id], false, `${event}: ${id}`);
     const unrelated = planJobs(event, ["packages/react-forge/src/session.ts"]);
     assert.equal(unrelated.jobs["devhud-frontend"], false, event);
   }
@@ -1720,7 +1698,7 @@ test("Rust CI consumes one verified prebuilt selection and gates native preparat
       const go = namedStep(job, "Setup Go for Rust test prerequisites");
       for (const owner of ["pnport"]) assert.ok(go.if.includes(owner));
     }
-    for (const owner of ["devhud", "delidev-desktop", "delitools-shell"]) {
+    for (const owner of ["devhud"]) {
       assert.ok(
         namedStep(job, "Install DevHUD Linux prerequisites").if.includes(
           `contains(fromJSON(needs.changes.outputs.rust_packages), '${owner}')`,
@@ -1880,7 +1858,6 @@ test("CI exposes no full manual input and allocates no macOS runner on any event
         desktop_matrix: matrices.desktopMatrix,
         react_forge_matrix: matrices.reactForgeMatrix,
         pnport_matrix: matrices.pnportMatrix,
-        delidev_frontend_matrix: matrices.delidevFrontendMatrix,
       }).map(([name, value]) => [name, JSON.stringify(value)]),
     );
     const selected = planJobs(event, [".github/workflows/CI.yml"]).jobs;

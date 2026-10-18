@@ -16,15 +16,7 @@ Translate the prose without treating the translation as implementation or featur
 acceptance. Changes to issue content are made on GitHub; the repository PR records
 the language policy and the translation scope.
 
-## DeliDev desktop shell
-
-DeliDev retains only a blank desktop window. Its `delidev-frontend` job checks frontend types and production output in one checks phase. Dedicated backend, protocol, mobile, release and catalog automation are retired. See [the desktop contract](apps-delidev-desktop-contract.md).
-
 Repository workflows are reviewed as source-backed contracts. Workflow IDs, job IDs, artifact names, permissions, triggers, protected environments, and publication boundaries must match the checked-in YAML and the static workflow tests.
-
-## DeliTools mobile shell
-
-The `delitools-frontend` job joins affected repository CI and checks mobile release helpers, frontend types and production output on Ubuntu. The main-only `release-delitools-mobile.yml` dispatch uses the protected `delitools-mobile` environment for signed Android AAB and iOS IPA builds. Its `publish` input defaults to false; enabling it uploads to Google Play internal testing and TestFlight. Android uses Ubuntu and iOS uses macOS only in this separate release workflow. Neither platform adds macOS to PR, main-push or affected manual CI. See the [application contract](apps-delitools-foundation.md) for configuration and acceptance boundaries.
 
 ## Renovate scheduling
 
@@ -57,7 +49,7 @@ run; record that distinction in change summaries.
 
 ### Git LFS assets
 
-Thirteen tracked assets use exact-path entries in the root `.gitattributes`: the two identical Noto Sans KR fonts used by Forge and DevHud, the three React Forge ROAM example PNGs, the DevHud API removal PNG, and the seven AURA source PNGs. Nine files meet the 512 KiB threshold; the four smaller AURA textures remain in LFS with the rest of that texture set. The fonts share one LFS object. Imported assets retain their source and license records beside the files; the supplied DeliDev icon is repository-owned Apache-2.0 material. Future repository assets at or above this threshold require an explicit LFS entry and a hydrated checkout in every build, test, or packaging job that consumes them. Attribute changes force the CI job planner to select every event-eligible job; pull requests still defer native packaging.
+Thirteen tracked assets use exact-path entries in the root `.gitattributes`: the two identical Noto Sans KR fonts used by Forge and DevHud, the three React Forge ROAM example PNGs, the DevHud API removal PNG, and the seven AURA source PNGs. Nine files meet the 512 KiB threshold; the four smaller AURA textures remain in LFS with the rest of that texture set. The fonts share one LFS object. Imported assets retain their source and license records beside the files. Future repository assets at or above this threshold require an explicit LFS entry and a hydrated checkout in every build, test, or packaging job that consumes them. Attribute changes force the CI job planner to select every event-eligible job; pull requests still defer native packaging.
 
 CI and release jobs that consume these assets enable `actions/checkout` LFS downloading before building. In particular, the API image build must receive the actual removal PNG before Docker copies its context, and desktop builds must receive the font before compilation or packaging. Validate migrated files against their original SHA-256 values, inspect committed pointer blobs, and run `git lfs fsck` before publishing a branch. The originating change migrated the six font/ROAM/removal assets with a new commit without rewriting historical commits or tags; their older Git blobs remain in history. The originating change migrated its AURA textures throughout its own PR history before merging that policy, as recorded in the React Forge validation evidence. `async-commit-hook` intentionally rejects LFS repositories, so this repository is no longer a supported execution source for that tool; its existing product contract is unchanged.
 
@@ -195,15 +187,15 @@ credentials or raw native content.
 
 `scripts/ci/run-rust.mjs` maps that validated selection to an explicit uncached
 `@delinoio/ci` Turbo task variant. Each variant declares only the selected
-DevHud, DeliDev and test-only pnport prerequisites through `dependsOn`; the leaf
+DevHud and test-only pnport prerequisites through `dependsOn`; the leaf
 calls the existing Rust adapter with the original package list and locked Cargo
 flags. This preserves package selection without preparing unrelated desktop
 inputs. The published CLI selection fixture also runs as an uncached Turbo task
 in `changes`, after the pinned binary is prepared and before final planning.
 
-The Ubuntu workspace Rust Clippy and test jobs install WebKitGTK 4.1 development files when DevHud or the DeliDev desktop host is selected, before compiling those hosts. Its package supplies the JavaScriptCoreGTK 4.1 pkg-config metadata required by the resolved all-features graph. The originating change's Clippy job failed at this native prerequisite before linting source; the CI prerequisite repair does not claim a Rust source change.
+The Ubuntu workspace Rust Clippy and test jobs install WebKitGTK 4.1 development files when DevHud is selected, before compiling those hosts. Its package supplies the JavaScriptCoreGTK 4.1 pkg-config metadata required by the resolved all-features graph. The originating change's Clippy job failed at this native prerequisite before linting source; the CI prerequisite repair does not claim a Rust source change.
 
-Those same jobs build each selected desktop frontend. The generic test job builds pnport and its injection companion only when `pnport` is selected. Go setup remains required for pnport static-child fixtures and uses the pinned `go.mod` version. DeliDev has no typed client or Go sidecar prerequisite.
+Those same jobs build each selected desktop frontend. The generic test job builds pnport and its injection companion only when `pnport` is selected. Go setup remains required for pnport static-child fixtures and uses the pinned `go.mod` version.
 
 CI never builds a signed private candidate and never publishes.
 
@@ -236,7 +228,7 @@ cold success, unchanged cache hits, configuration-only hash changes and fresh
 formatting failures, plus override addition and removal. Fixture results do not
 establish hosted remote-cache performance.
 
-The central planner publishes `go_test_matrix` from the committed native matrix inventory before runner allocation. PRs allocate one Ubuntu core runner. Main uses the Linux all-package runner and Windows core runner. Affected manual runs retain PR eligibility. The retired DeliDev shard runners are not allocated.
+The central planner publishes `go_test_matrix` from the committed native matrix inventory before runner allocation. PRs allocate one Ubuntu core runner. Main uses the Linux all-package runner and Windows core runner. Affected manual runs retain PR eligibility.
 
 | Event/input                               | Ubuntu                                       | Windows                    | macOS                |
 | ----------------------------------------- | -------------------------------------------- | -------------------------- | -------------------- |
@@ -271,7 +263,7 @@ The initial four-shard [run 36686158655](https://github.com/delinoio/oss/actions
 
 The `async-commit-hook` CI job follows the central change plan and validates the Go runner with race detection and `-count=1`, its local UI, documentation app/client and generated protocol, release fixtures, and all six CGO-free target archives. Its app-owned, uncached `ci:embedded` task waits for app `ci:check` before invoking the unchanged `build:embedded` command. The native task waits for `ci:embedded`, and archive packaging waits for the native task, so neither rebuild can clear the frontend output while app checks read it. Direct `build:embedded` and the release builder retain their existing fresh-build behavior. Its path rule includes the owned source, installers, release workflow and packaging, documentation contracts, and shared Go/Node/protocol inputs; unrelated changes skip it. It uses the shared cache policy and participates in the exact `ci-result` inventory. Its temporary archives remain unsigned and unpublished. The separate manually dispatched `release-async-commit-hook.yml` owns signing, GitHub Release and Homebrew publication; consolidated documentation publication belongs to `public-docs`, and its default dry run cannot enter publication jobs. See [the release contract](cmds-async-commit-hook-release-contract.md).
 
-The `async-commit-hook` job also owns shared protocol freshness for DevHud schemas and Go bindings under `protos/**` and TypeScript output under `packages/devhud-api-client/src/gen/**`. A change confined to that generated TypeScript tree selects the job on PRs and main pushes. Its `ci:proto:check` dependency runs the uncached `ci:proto:fresh` leaf, which regenerates and rejects tracked or untracked drift even with a warm cache. DevHud consumer jobs retain their existing selection, DevHud-only inputs do not select DeliDev jobs, and handwritten DevHud client changes do not select this shared protocol owner.
+The `async-commit-hook` job also owns shared protocol freshness for DevHud schemas and Go bindings under `protos/**` and TypeScript output under `packages/devhud-api-client/src/gen/**`. A change confined to that generated TypeScript tree selects the job on PRs and main pushes. Its `ci:proto:check` dependency runs the uncached `ci:proto:fresh` leaf, which regenerates and rejects tracked or untracked drift even with a warm cache. DevHud consumer jobs retain their existing selection, handwritten DevHud client changes do not select this shared protocol owner.
 
 The always-running `changes` job computes the execution plan with `scripts/ci/plan.mjs` and `scripts/ci/job-paths.json`. Domain jobs depend on this plan and use job-level conditions, so unrelated jobs do not allocate runners. `ci-contracts` always validates the workflow and planner. Rules cover Go, Rust, every Node workspace, environment tooling, all implemented DevHud domains, packaging, public documentation, and private-package, public-release, and CEF-review workflows. Runmoor-only release scripts do not select DevHud native packaging.
 
@@ -304,7 +296,7 @@ PR validation runs through `turbo run` using the committed common runner. Apps a
 
 Root `turbo.json`, `package.json`, `pnpm-lock.yaml` and `pnpm-workspace.yaml` changes select `rust-fmt`, `forge-test` and `forge-render` on PRs and main pushes through their job-specific path rules. These checks use the shared Node/Turbo runner and retain their complete native commands with `FORCE_RUN: 'true'`. The root inputs do not add global forcing or change event-specific packaging eligibility. `CI Result` requires each selected check to succeed.
 
-DeliDev checks frontend types and production output. DevHud native conformance installs the pinned Rust toolchain before Turbo and serializes capture, shortcuts, IPC and updater suites against their shared Cargo target directory. Go setup exports its resolved `GOCACHE` and `GOPATH` through task-local pass-through entries so Windows cache discovery does not require general user-profile environment access. DevHud retains every unit/component and script assertion, its four fresh desktop/mobile frontend builds and mobile isolation checks. Administrator embeds are regenerated and validated before Go compilation. Duplicate component/accessibility commands that run the identical suite are represented by one CI leaf; their assertions and package-local commands remain available.
+DevHud native conformance installs the pinned Rust toolchain before Turbo and serializes capture, shortcuts, IPC and updater suites against their shared Cargo target directory. Go setup exports its resolved `GOCACHE` and `GOPATH` through task-local pass-through entries so Windows cache discovery does not require general user-profile environment access. DevHud retains every unit/component and script assertion, its four fresh desktop/mobile frontend builds and mobile isolation checks. Administrator embeds are regenerated and validated before Go compilation. Duplicate component/accessibility commands that run the identical suite are represented by one CI leaf; their assertions and package-local commands remain available.
 
 Chrome extension CI orders `test:package → build:test → ci:zip`. The uncached package regression completes both clean builds across time zones before the final build executes or restores cached `dist`, `build` and `artifacts` outputs. ZIP parity validation follows that final build. These tasks must not write their shared output directories concurrently. Controlled cold/warm fixtures pause packaging after artifact removal and verify that neither the final build, cached output restoration nor ZIP validation can proceed; builder and reproducibility failures must fail the aggregate before ZIP validation. Type checks, pure tests and policy checks retain independent execution. The fixture checks explicit scheduler dependencies and its recorded operation sequence; summary wall-clock timestamps do not establish causal ordering, including for cache restoration.
 
@@ -322,7 +314,7 @@ Every pnpm install uses `--frozen-lockfile --ignore-scripts` and runs only once 
 
 The PR frontend job runs the complete DevHud test coverage through `ci:check` and `verify:pins`, retaining the script fixtures, deterministic clean desktop/mobile frontend builds, font/dependency isolation, static widget contracts, and immutable CEF checks previously available inside native packaging. The aggregate DevHud `test` task is non-cacheable because these checks exercise clean builds and external contract inputs.
 
-Generated protocol output and package-local frontend output are deterministic cacheable Turbo products. DeliDev has one `delidev-frontend` job. It has no backend, schema or generated-client prerequisite. Existing affected comparison and forced shared-input rules remain in force.
+Generated protocol output and package-local frontend output are deterministic cacheable Turbo products. Existing affected comparison and forced shared-input rules remain in force.
 
 The desktop matrix contains exactly `checks` and `tests-1` through `tests-4`, with fail-fast disabled. Checks retain type validation, packaging/launch/widget script fixtures, QA, production build and release-output isolation. The desktop-owned Vitest sequencer splits each complete unit/integration inventory into four disjoint shards using committed file-duration weights, longest-first assignment to the lightest shard, and deterministic path/index tie-breaking. New or renamed files receive a one-second weight. Shard tasks hash the sequencer and weight table, and shard logs retain inventory/file counts and estimated duration. Unsharded local sorting and the two-worker ceiling remain unchanged. Package tasks declare their client build dependencies through Turbo; integration tasks remain uncached. The planner publishes the exact phase matrix, and CI Result rejects an altered matrix or any failed, canceled, missing or unexpectedly skipped planned job.
 
@@ -431,11 +423,9 @@ Native Tauri consumers restore/verify the immutable execution-host CLI through `
 
 - The five legacy CLI release workflows use `scripts/release/legacy-cli-release.mjs` before Homebrew credentials or writes. Follow the repository workflow contract: reuse only a complete public inventory with exact retained bytes and source-bound signatures; never sign, delete, replace, upload or edit on that path. Reject conflicting/incomplete public inventories. Fresh and owned partial drafts upload only missing assets and require complete signed readback before publication. Keep unsigned dry runs, exact tag/source checks and downstream job ordering.
 
-- DeliDev uses only `delidev-frontend`, with one checks phase for the blank shell.
-
 - Every workflow step reaching the shared protocol breaking check must pass `DEVHUD_PROTO_BASELINE`: push events use `github.event.before`, manual main runs use `HEAD^`, and PR/manual non-main runs use `origin/main`; the manually dispatched async-commit-hook release workflow uses `HEAD^`. Preserve full-history checkout and the Turbo leaf's environment pass-through, including indirect async-commit-hook and Go-binding paths. Keep schema-only LFS handling and no-prior-schema behavior unchanged.
 
-- The `async-commit-hook` job owns shared protocol freshness for DevHud schemas, Go bindings and `packages/devhud-api-client/src/gen/**` on PRs and main pushes. Preserve DevHud consumer selection, exclude DevHud-only inputs from DeliDev jobs, and run the uncached `ci:proto:fresh` leaf through `ci:proto:check` even with a warm cache. Handwritten DevHud client changes do not select this shared protocol owner.
+- The `async-commit-hook` job owns shared protocol freshness for DevHud schemas, Go bindings and `packages/devhud-api-client/src/gen/**` on PRs and main pushes. Preserve DevHud consumer selection, and run the uncached `ci:proto:fresh` leaf through `ci:proto:check` even with a warm cache. Handwritten DevHud client changes do not select this shared protocol owner.
 
 - Generic Rust CI uses the single verified prebuilt cargo-mono selection and exact comparison/fallback policy in `repository-workflow-contract.md`. Validate the published executable with offline live fixtures before planning; no source fallback or binary cache. Preserve final package/job agreement, pnport runtime ownership, scene exclusions, conditional native preparation, shared-input full checks and independent project validation.
 
@@ -465,7 +455,7 @@ Native Tauri consumers restore/verify the immutable execution-host CLI through `
 
 - clibox Homebrew follows its exact-tag GitHub Release independently of npm enablement. Both native macOS installation/audit gates and signed public-source verification must precede tap-only app-token creation. Publish only the identical tested Formula, then verify public-tap installation on both architectures. Dry runs never enter Homebrew publication; keep the release summary and workflow contracts synchronized.
 
-- Shared Tauri CLI preparation uses `setup-prebuilt` and execution-host lock selection; restore/verify on native and mobile paths, save only after a successful main job, and retain existing application Cargo caches. Native DeliDev dry runs remain read-only and credential-free.
+- Shared Tauri CLI preparation uses `setup-prebuilt` and execution-host lock selection; restore/verify on native and mobile paths, save only after a successful main job, and retain existing application Cargo caches.
 
 - DevHud Linux Xvfb smokes must provide an explicit session-local StatusNotifierWatcher fixture for the pinned ksni tray backend, retain Chromium sandbox requirements, and keep fixture-only tray registration distinct from real desktop-panel acceptance. Only AppImage smokes may set APPDIR and APPIMAGE.
 
@@ -475,15 +465,13 @@ Native Tauri consumers restore/verify the immutable execution-host CLI through `
 
 - Load repository-local actions only after checkout. Cache authentication requires the `delinoio/oss` repository, GitHub workflow name `CI` and exact `CI.yml` workflow-ref prefix. Prepare the pinned Rust toolchain before native tasks and retain serial DevHud conformance; export prepared Go cache locations explicitly for Turbo strict environments.
 
-- DeliDev frontend validation runs type checking and a production build without Go prerequisites.
-
 - The separate Runmoor PR Docker workflow also uses uncached `scripts/ci` Turbo tasks, preserving the explicit Docker opt-in, race coverage, read-only contents authority and successful-main-only dependency-cache saves. Both Go test commands use `-count=1` so successful result-cache entries cannot skip validation of the current subprocess-built command. The Runmoor release build gate uses the same flag for its plain Go tests. Compiled-object and module caches remain reusable. It requires no remote-cache token.
 
 ## Project requirements
 
 - Agent Worker ordered source routes follow the catalog, desktop, protocol and sessions contracts. Main reservation the originating change owns System capability 36 and SaveAgentWorkerRequest.route_models field 5; preserve capability 35. Keep schema-3 routes exclusive with legacy fields, all models/accounts referenced and saved atomically, per-source routing state updated only with a successful first claim, confirmed-exhaustion-only fallback and observed-recovery preference for later new sessions. Preserve immutable executions, old-client write protection and portable v1/v2/v3 compatibility; add no SQLite migration.
 
-- Go CI package watchdogs remain independent of product deadlines. Retired DeliDev shards and investigation workflows have no watchdog requirement.
+- Go CI package watchdogs remain independent of product deadlines.
 
 - After completing each task, update the relevant `AGENTS.md` and `docs/` files in the same change when policies, structure, or contracts changed.
 
@@ -529,8 +517,6 @@ Coverage expectations:
 - `async-commit-hook`: follows the central change plan, runs Go race tests, local UI/docs/client tests, protocol freshness and release fixtures, and builds all six unsigned target archives. Shared setup actions restore caches; only successful main validation saves them.
 
 - `devhud-frontend`, `devhud-extension`, and `devhud-admin`: run package-local type, lint, unit, component, accessibility, and deterministic frontend/package builds.
-
-- DeliDev CI validates the blank desktop shell through one frontend checks phase.
 
 - `devhud-api`: runs package-local Go format, vet, unit, PostgreSQL migration, integration, API, and sweeper conformance.
 
@@ -670,7 +656,7 @@ Release automation baseline:
 
 - Root `turbo.json`, `package.json`, `pnpm-lock.yaml` and `pnpm-workspace.yaml` changes select `rust-fmt`, `forge-test` and `forge-render` through their job-specific path rules. Preserve the existing native `FORCE_RUN` commands and event eligibility; these root inputs do not globally force unrelated jobs.
 
-- Preserve the central validated Rust package selection. `run-rust.mjs` selects an explicit uncached Turbo graph with only the selected owners' build prerequisites; it must not expand the Cargo package list or bypass empty-selection rejection. A selected `delitools-shell` package requires `delitools#build:frontend` before Rust tests or clippy, including restoration of its generated `dist` output from cache. DeliTools also selects the existing Linux desktop development libraries. Rust selections without DeliTools do not build its frontend.
+- Preserve the central validated Rust package selection. `run-rust.mjs` selects an explicit uncached Turbo graph with only the selected owners' build prerequisites; it must not expand the Cargo package list or bypass empty-selection rejection.
 
 - Cache deterministic leaves only. Go/Rust execution, DB/OS/render/benchmark, repeated clean builds, embedded generation and protocol freshness run every time. Declare actual outputs and external inputs, plus task-local platform/tool/option hashes.
 
@@ -715,10 +701,6 @@ For an explicit local repository-wide pass, use `pnpm format -- --all`; this opt
 Root `pnpm format:check` checks and `pnpm format` fixes the same candidates. Local execution defaults to the merge base of `origin/main` and HEAD and includes tracked working changes and untracked non-ignored files. Explicit `--base <sha> --head <sha>` arguments after the Turbo `--` separator select a committed range, as do `TURBO_SCM_BASE` and `TURBO_SCM_HEAD` in CI. CI requires an explicit comparison. Formatter configuration changes do not expand validation to unchanged files; configuration regressions belong to the central contract fixtures.
 
 The formatting job reuses the shared Node setup, frozen script-disabled install, successful-main-only pnpm cache saves, and Turbo summary artifacts. It needs no Rust or Go installation and never allocates a macOS runner.
-
-## Delcore validation
-
-The affected `delcore-api` Ubuntu job runs Go formatting, vet, build, unit tests and real PostgreSQL integration tests through the package-owned uncached tasks. Missing `DELCORE_TEST_DATABASE_URL` fails integration tests. Retain the default affected manual mode and existing release gates. OCI tests use the delcore Dockerfile to verify non-root startup, schema rejection, graceful shutdown and disposable backup restore without publishing an image. The job preserves source revision, commands, outcomes and unperformed account checks as a validation artifact. See [the server contract](servers-delcore-api-contract.md).
 
 ## Release publication policy
 

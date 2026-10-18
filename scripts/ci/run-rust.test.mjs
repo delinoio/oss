@@ -12,7 +12,7 @@ const config = JSON.parse(
 );
 
 test("selected Rust owners have exactly their required Turbo prerequisite graph", () => {
-  const owners = ["devhud", "delidev-desktop", "delitools-shell", "pnport"];
+  const owners = ["devhud", "pnport"];
   for (const command of ["test", "clippy"]) {
     for (let mask = 0; mask < 1 << owners.length; mask++) {
       const packages = [
@@ -30,12 +30,6 @@ test("selected Rust owners have exactly their required Turbo prerequisite graph"
       assert.ok(task.passThroughEnv.includes("GITHUB_STEP_SUMMARY"));
       const expected = [
         ...(packages.includes("devhud") ? ["devhud#ci:build:frontend"] : []),
-        ...(packages.includes("delidev-desktop")
-          ? ["delidev-desktop#build:frontend"]
-          : []),
-        ...(packages.includes("delitools-shell")
-          ? ["delitools#build:frontend"]
-          : []),
         ...(command === "test" && packages.includes("pnport")
           ? ["ci:pnport:companion"]
           : []),
