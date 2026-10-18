@@ -187,7 +187,7 @@ credentials or raw native content.
 
 `scripts/ci/run-rust.mjs` maps that validated selection to an explicit uncached
 `@delinoio/ci` Turbo task variant. Each variant declares only the selected
-DevHud and test-only pnport prerequisites through `dependsOn`; the leaf
+DevHud, FixKey frontend and test-only pnport prerequisites through `dependsOn`; the leaf
 calls the existing Rust adapter with the original package list and locked Cargo
 flags. This preserves package selection without preparing unrelated desktop
 inputs. The published CLI selection fixture also runs as an uncached Turbo task
