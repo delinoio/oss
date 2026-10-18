@@ -137,12 +137,20 @@ impl Evaluation {
 /// Result of a Backspace press after an automatic correction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackspaceAction {
-    /// No undo applies; Backspace behaves normally.
+    /// Backspace passes through. A pre-event observation can leave undo
+    /// pending until the host's deletion is observed.
     PassThrough,
     /// The original word was restored with its boundary preserved.
     Restored,
-    /// Restoration was attempted and failed; no further writes were made.
+    /// Restoration failed. A partial write may have caused one guarded
+    /// recovery attempt; no later automatic retry is made.
     Failed,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum UndoSnapshot {
+    Unchanged,
+    BoundaryDeleted,
 }
 
 #[derive(Debug, Clone)]
@@ -156,6 +164,7 @@ struct UndoState {
     /// Field text after the replacement.
     text: String,
     caret: usize,
+    backspace_pending: bool,
 }
 
 impl UndoState {
@@ -167,32 +176,56 @@ impl UndoState {
         self.start + self.replacement.chars().count()
     }
 
-    /// Returns the restore text when `snapshot` is the expected
-    /// post-replacement state, or that state after Backspace removed exactly
-    /// the boundary's last character.
-    fn restore_text(&self, snapshot: &FieldSnapshot) -> Option<String> {
+    /// Recognizes the unchanged correction or the host's exact one-character
+    /// Backspace transition. The input observer cannot suppress that key.
+    fn snapshot_phase(&self, snapshot: &FieldSnapshot) -> Option<UndoSnapshot> {
         if snapshot.target != self.target
             || snapshot.selection_len != 0
             || !matches!(snapshot.sensitivity, FieldSensitivity::Normal)
+            || !snapshot.supports_write
         {
             return None;
         }
         if snapshot.text == self.text && snapshot.caret == self.caret {
-            return Some(self.original.clone());
+            return Some(UndoSnapshot::Unchanged);
         }
         let boundary_len = self.boundary_len();
-        if boundary_len > 0 && snapshot.caret + 1 == self.caret {
+        if boundary_len > 0 && snapshot.caret.checked_add(1) == Some(self.caret) {
             let mut expected: Vec<char> = self.text.chars().collect();
             let removed = expected.remove(self.caret - 1);
             if removed == self.boundary.chars().last()?
                 && snapshot.text == expected.into_iter().collect::<String>()
             {
-                // Backspace removed the boundary; put the original and the
-                // boundary back.
-                return Some(format!("{}{}", self.original, self.boundary));
+                return Some(UndoSnapshot::BoundaryDeleted);
             }
         }
         None
+    }
+
+    fn restore_write(&self) -> (usize, String) {
+        (
+            self.replacement_end() + self.boundary_len() - 1,
+            format!("{}{}", self.original, self.boundary),
+        )
+    }
+}
+
+#[derive(Debug, Clone)]
+struct RestoredState {
+    word: String,
+    target: TargetId,
+    text: String,
+    caret: usize,
+}
+
+impl RestoredState {
+    fn matches(&self, snapshot: &FieldSnapshot) -> bool {
+        snapshot.target == self.target
+            && snapshot.text == self.text
+            && snapshot.caret == self.caret
+            && snapshot.selection_len == 0
+            && snapshot.supports_write
+            && matches!(snapshot.sensitivity, FieldSensitivity::Normal)
     }
 }
 
@@ -217,7 +250,7 @@ fn char_slice(text: &str, start: usize, end: usize) -> String {
 pub struct CorrectionSession {
     config: SessionConfig,
     undo: Option<UndoState>,
-    restored_word: Option<String>,
+    restored: Option<RestoredState>,
 }
 
 impl CorrectionSession {
@@ -227,7 +260,7 @@ impl CorrectionSession {
         Self {
             config,
             undo: None,
-            restored_word: None,
+            restored: None,
         }
     }
 
@@ -240,7 +273,7 @@ impl CorrectionSession {
     /// Clears all transient state.
     pub fn clear_transient(&mut self) {
         self.undo = None;
-        self.restored_word = None;
+        self.restored = None;
     }
 
     /// Pauses or resumes correction. Pausing clears transient state.
@@ -271,16 +304,39 @@ impl CorrectionSession {
     }
 
     /// Observes a focus, caret, selection or edit change. Transient state is
-    /// kept only when the snapshot is the state the engine's own replacement
-    /// (or an expected Backspace on it) produced.
+    /// kept only for the engine's expected correction or restoration, or the
+    /// host's expected Backspace deletion. This read-only observation does
+    /// not complete a pending undo; use [`Self::observe_after_backspace`].
     pub fn observe(&mut self, snapshot: &FieldSnapshot) {
         if let Some(undo) = &self.undo
-            && undo.restore_text(snapshot).is_none()
+            && undo.snapshot_phase(snapshot).is_none()
         {
             self.undo = None;
         }
-        if self.undo.is_none() {
-            self.restored_word = None;
+        if self
+            .restored
+            .as_ref()
+            .is_some_and(|state| !state.matches(snapshot))
+        {
+            self.restored = None;
+        }
+    }
+
+    /// Handles the accessibility observation after a previously observed
+    /// Backspace key has reached the host. A matching host deletion completes
+    /// the pending undo; an unchanged snapshot leaves it pending.
+    pub fn observe_after_backspace(
+        &mut self,
+        accessibility: &mut dyn Accessibility,
+    ) -> BackspaceAction {
+        if self
+            .undo
+            .as_ref()
+            .is_some_and(|undo| undo.backspace_pending)
+        {
+            self.on_backspace(accessibility)
+        } else {
+            BackspaceAction::PassThrough
         }
     }
 
@@ -318,10 +374,15 @@ impl CorrectionSession {
         if !self.config.permission_granted {
             return Evaluation::skipped(SkipReason::PermissionMissing);
         }
-        if self.restored_word.as_deref() == Some(word) {
+        if self
+            .restored
+            .as_ref()
+            .is_some_and(|state| state.word == word)
+        {
             return Evaluation::skipped(SkipReason::RestoredWord);
         }
         // A new evaluation starts a new word.
+        self.restored = None;
         self.undo = None;
         let snapshot = match accessibility.snapshot() {
             Ok(snapshot) => snapshot,
@@ -365,6 +426,7 @@ impl CorrectionSession {
                     start,
                     text: chars.into_iter().collect(),
                     caret,
+                    backspace_pending: false,
                 });
                 Evaluation::outcome(CorrectionOutcome::Replaced)
             }
@@ -402,9 +464,12 @@ impl CorrectionSession {
         let written_end = start + written.chars().count();
         let mut expected: Vec<char> = before.text.chars().collect();
         expected.splice(start..write.end, written.chars());
+        let expected_caret = expected.len() - (before.text.chars().count() - before.caret);
         let matches_intermediate = now.target == before.target
             && now.selection_len == 0
             && matches!(now.sensitivity, FieldSensitivity::Normal)
+            && now.supports_write
+            && now.caret == expected_caret
             && now.text == expected.into_iter().collect::<String>()
             && char_slice(
                 &now.text,
@@ -426,29 +491,82 @@ impl CorrectionSession {
         }
     }
 
-    /// Handles a Backspace press. The first press right after an automatic
-    /// correction restores the original word and keeps the boundary; later
-    /// presses pass through.
+    /// Observes a Backspace press. Before the host deletes the boundary, this
+    /// only marks undo pending. Call [`Self::observe_after_backspace`] after
+    /// the host handles that key. If the host already deleted the boundary,
+    /// this call restores immediately. Later presses pass through.
     pub fn on_backspace(&mut self, accessibility: &mut dyn Accessibility) -> BackspaceAction {
-        let Some(undo) = self.undo.take() else {
+        let Some(undo) = self.undo.as_ref() else {
             return BackspaceAction::PassThrough;
         };
         let Ok(snapshot) = accessibility.snapshot() else {
+            self.undo = None;
             return BackspaceAction::PassThrough;
         };
-        let Some(restore) = undo.restore_text(&snapshot) else {
+        if !self.config.permission_granted || self.config.paused {
+            self.clear_transient();
+            return BackspaceAction::PassThrough;
+        }
+        let Some(phase) = undo.snapshot_phase(&snapshot) else {
+            self.undo = None;
             return BackspaceAction::PassThrough;
         };
-        // `restore` ends with the boundary only when Backspace already removed
-        // it, so the write covers the replacement plus that missing boundary.
-        let end = undo.replacement_end();
+        if phase == UndoSnapshot::Unchanged {
+            if let Some(undo) = self.undo.as_mut() {
+                undo.backspace_pending = true;
+            }
+            return BackspaceAction::PassThrough;
+        }
+        let Some(undo) = self.undo.take() else {
+            return BackspaceAction::PassThrough;
+        };
+        let (end, restore) = undo.restore_write();
         let result = accessibility.replace(undo.target, undo.start, end, &restore);
-        let outcome = if result.is_ok() {
-            self.restored_word = Some(undo.original);
-            BackspaceAction::Restored
-        } else {
-            BackspaceAction::Failed
+        let outcome = match result {
+            Ok(()) => BackspaceAction::Restored,
+            Err(WriteError::Partial { written }) => {
+                let mut expected: Vec<char> = snapshot.text.chars().collect();
+                expected.splice(undo.start..end, written.chars());
+                let expected: String = expected.into_iter().collect();
+                let expected_caret = undo.start + written.chars().count();
+                match accessibility.snapshot() {
+                    Ok(now)
+                        if now.target == undo.target
+                            && now.selection_len == 0
+                            && matches!(now.sensitivity, FieldSensitivity::Normal)
+                            && now.supports_write
+                            && now.text == expected
+                            && now.caret == expected_caret =>
+                    {
+                        if accessibility
+                            .replace(undo.target, undo.start, expected_caret, &restore)
+                            .is_ok()
+                        {
+                            tracing::info!("partial undo write recovered");
+                            BackspaceAction::Restored
+                        } else {
+                            tracing::warn!("partial undo recovery failed");
+                            BackspaceAction::Failed
+                        }
+                    }
+                    _ => {
+                        tracing::warn!("partial undo left an unsafe intermediate state");
+                        BackspaceAction::Failed
+                    }
+                }
+            }
+            Err(WriteError::Failed) => BackspaceAction::Failed,
         };
+        if matches!(outcome, BackspaceAction::Restored) {
+            let mut expected: Vec<char> = snapshot.text.chars().collect();
+            expected.splice(undo.start..end, restore.chars());
+            self.restored = Some(RestoredState {
+                word: undo.original,
+                target: undo.target,
+                text: expected.into_iter().collect(),
+                caret: undo.start + restore.chars().count(),
+            });
+        }
         tracing::info!(
             restored = matches!(outcome, BackspaceAction::Restored),
             "fixkey immediate undo handled"
@@ -482,6 +600,9 @@ mod tests {
         PartialWrite(&'static str),
         /// Every write fails after a partial one, including the restore.
         PartialThenFailRestore(&'static str),
+        UndoPartial(&'static str),
+        UndoPartialThenFailRecovery(&'static str),
+        UndoFail,
     }
 
     struct MockField {
@@ -577,6 +698,18 @@ mod tests {
                     }
                     return Err(WriteError::Failed);
                 }
+                Fault::UndoPartial(written) | Fault::UndoPartialThenFailRecovery(written)
+                    if self.writes == 2 =>
+                {
+                    self.apply(start, end, written);
+                    return Err(WriteError::Partial {
+                        written: written.to_owned(),
+                    });
+                }
+                Fault::UndoPartialThenFailRecovery(_) if self.writes == 3 => {
+                    return Err(WriteError::Failed);
+                }
+                Fault::UndoFail if self.writes == 2 => return Err(WriteError::Failed),
                 _ => {}
             }
             self.apply(start, end, text);
@@ -606,18 +739,52 @@ mod tests {
         }
     }
 
+    struct UndoIntermediate(MockField, Option<fn(&mut FieldSnapshot)>);
+
+    impl Accessibility for UndoIntermediate {
+        fn snapshot(&mut self) -> Result<FieldSnapshot, SkipReason> {
+            if self.0.writes >= 2 && self.1.is_none() {
+                return Err(SkipReason::PermissionMissing);
+            }
+            let mut snapshot = self.0.snapshot()?;
+            if self.0.writes >= 2 {
+                self.1.expect("snapshot mutation is present")(&mut snapshot);
+            }
+            Ok(snapshot)
+        }
+
+        fn replace(
+            &mut self,
+            target: TargetId,
+            start: usize,
+            end: usize,
+            text: &str,
+        ) -> Result<(), WriteError> {
+            self.0.replace(target, start, end, text)
+        }
+    }
+
     fn validators(korean: &'static [&'static str]) -> (Accepts, Accepts) {
         (Accepts(korean), Accepts(&[]))
     }
 
     fn run(field: &mut MockField, session: &mut CorrectionSession, word: &str) -> Evaluation {
+        run_with_boundary(field, session, word, " ")
+    }
+
+    fn run_with_boundary(
+        field: &mut MockField,
+        session: &mut CorrectionSession,
+        word: &str,
+        boundary: &str,
+    ) -> Evaluation {
         let (ko, en) = validators(&["계속해", "키보드가"]);
         let validators = Validators {
             korean: &ko,
             english: &en,
         };
         let captured = field.captured();
-        session.on_word_complete(word, " ", captured, field, &validators)
+        session.on_word_complete(word, boundary, captured, field, &validators)
     }
 
     fn new_session() -> CorrectionSession {
@@ -643,6 +810,258 @@ mod tests {
         assert_eq!(session.on_backspace(&mut field), BackspaceAction::Restored);
         assert_eq!(field.text(), "rPthrgo ");
         assert!(!session.has_undo());
+    }
+
+    #[test]
+    fn pre_event_backspace_waits_for_host_deletion() {
+        for boundary in [" ", ". "] {
+            let mut field = MockField::new(&format!("rPthrgo{boundary}"));
+            let mut session = new_session();
+            run_with_boundary(&mut field, &mut session, "rPthrgo", boundary);
+            let corrected = field.text();
+            assert_eq!(
+                session.on_backspace(&mut field),
+                BackspaceAction::PassThrough
+            );
+            session.observe(&field.snapshot().unwrap());
+            assert_eq!(field.text(), corrected);
+            assert_eq!(field.writes, 1);
+            assert!(session.has_undo());
+            assert_eq!(
+                session.observe_after_backspace(&mut field),
+                BackspaceAction::PassThrough
+            );
+            assert!(session.has_undo());
+            field.backspace();
+            assert_eq!(
+                session.observe_after_backspace(&mut field),
+                BackspaceAction::Restored
+            );
+            assert_eq!(field.text(), format!("rPthrgo{boundary}"));
+            assert_eq!(field.writes, 2);
+            assert!(!session.has_undo());
+            assert_eq!(
+                session.observe_after_backspace(&mut field),
+                BackspaceAction::PassThrough
+            );
+            session.observe(&field.snapshot().unwrap());
+            assert_eq!(
+                run_with_boundary(&mut field, &mut session, "rPthrgo", boundary).skip_reason,
+                Some(SkipReason::RestoredWord)
+            );
+        }
+    }
+
+    #[test]
+    fn post_event_undo_replaces_the_surviving_boundary_prefix() {
+        for boundary in [" ", ". ", "... "] {
+            let mut field = MockField::new(&format!("hi rPthrgo{boundary}tail"));
+            field.caret = "hi rPthrgo".chars().count() + boundary.chars().count();
+            let mut session = new_session();
+            run_with_boundary(&mut field, &mut session, "rPthrgo", boundary);
+            field.backspace();
+            assert_eq!(session.on_backspace(&mut field), BackspaceAction::Restored);
+            assert_eq!(field.text(), format!("hi rPthrgo{boundary}tail"));
+            assert_eq!(field.writes, 2);
+            session.observe(&field.snapshot().unwrap());
+            assert_eq!(
+                run_with_boundary(&mut field, &mut session, "rPthrgo", boundary).skip_reason,
+                Some(SkipReason::RestoredWord)
+            );
+        }
+    }
+
+    #[test]
+    fn undo_refuses_lost_write_capability_in_both_event_orders() {
+        for deleted in [false, true] {
+            for observed in [false, true] {
+                let mut field = MockField::new("rPthrgo ");
+                let mut session = new_session();
+                run(&mut field, &mut session, "rPthrgo");
+                if deleted {
+                    field.backspace();
+                }
+                field.supports_write = false;
+                if observed {
+                    session.observe(&field.snapshot().unwrap());
+                    assert!(!session.has_undo());
+                }
+                assert_eq!(
+                    session.on_backspace(&mut field),
+                    BackspaceAction::PassThrough
+                );
+                assert_eq!(field.writes, 1);
+                assert!(!session.has_undo());
+            }
+        }
+    }
+
+    #[test]
+    fn stale_or_unsafe_post_event_state_never_restores() {
+        type Mutation = fn(&mut MockField);
+        let mutations: [Mutation; 6] = [
+            |f| f.target = TargetId(2),
+            |f| f.caret -= 1,
+            |f| f.selection_len = 1,
+            |f| f.text[0] = 'x',
+            |f| f.sensitivity = FieldSensitivity::Protected,
+            |f| f.supports_write = false,
+        ];
+        for mutate in mutations {
+            let mut field = MockField::new("rPthrgo ");
+            let mut session = new_session();
+            run(&mut field, &mut session, "rPthrgo");
+            assert_eq!(
+                session.on_backspace(&mut field),
+                BackspaceAction::PassThrough
+            );
+            field.backspace();
+            mutate(&mut field);
+            assert_eq!(
+                session.observe_after_backspace(&mut field),
+                BackspaceAction::PassThrough
+            );
+            assert_eq!(field.writes, 1);
+            assert!(!session.has_undo());
+        }
+    }
+
+    #[test]
+    fn matching_partial_undo_is_recovered_once() {
+        for pre_event in [false, true] {
+            for boundary in [" ", ". "] {
+                let mut field = MockField::new(&format!("hi rPthrgo{boundary}tail"));
+                field.caret = "hi rPthrgo".chars().count() + boundary.chars().count();
+                let mut session = new_session();
+                run_with_boundary(&mut field, &mut session, "rPthrgo", boundary);
+                field.fault = Fault::UndoPartial("r");
+                if pre_event {
+                    assert_eq!(
+                        session.on_backspace(&mut field),
+                        BackspaceAction::PassThrough
+                    );
+                }
+                field.backspace();
+                let action = if pre_event {
+                    session.observe_after_backspace(&mut field)
+                } else {
+                    session.on_backspace(&mut field)
+                };
+                assert_eq!(action, BackspaceAction::Restored);
+                assert_eq!(field.text(), format!("hi rPthrgo{boundary}tail"));
+                assert_eq!(field.writes, 3);
+                assert!(!session.has_undo());
+                session.observe(&field.snapshot().unwrap());
+                assert_eq!(
+                    run_with_boundary(&mut field, &mut session, "rPthrgo", boundary).skip_reason,
+                    Some(SkipReason::RestoredWord)
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn failed_undo_and_failed_recovery_do_not_retry() {
+        for (fault, expected_writes) in [
+            (Fault::UndoFail, 2),
+            (Fault::UndoPartialThenFailRecovery("r"), 3),
+        ] {
+            let mut field = MockField::new("rPthrgo ");
+            let mut session = new_session();
+            run(&mut field, &mut session, "rPthrgo");
+            field.fault = fault;
+            field.backspace();
+            assert_eq!(session.on_backspace(&mut field), BackspaceAction::Failed);
+            assert_eq!(field.writes, expected_writes);
+            assert!(!session.has_undo());
+            assert_eq!(
+                session.on_backspace(&mut field),
+                BackspaceAction::PassThrough
+            );
+            assert_eq!(field.writes, expected_writes);
+        }
+    }
+
+    #[test]
+    fn unsafe_partial_undo_intermediate_causes_no_recovery_write() {
+        type Mutation = Option<fn(&mut FieldSnapshot)>;
+        let mutations: [Mutation; 7] = [
+            None,
+            Some(|s| s.target = TargetId(3)),
+            Some(|s| s.text.push('x')),
+            Some(|s| s.caret += 1),
+            Some(|s| s.selection_len = 1),
+            Some(|s| s.sensitivity = FieldSensitivity::Unknown),
+            Some(|s| s.supports_write = false),
+        ];
+        for mutation in mutations {
+            let mut field = UndoIntermediate(MockField::new("rPthrgo "), mutation);
+            let mut session = new_session();
+            run(&mut field.0, &mut session, "rPthrgo");
+            field.0.fault = Fault::UndoPartial("r");
+            field.0.backspace();
+            assert_eq!(session.on_backspace(&mut field), BackspaceAction::Failed);
+            assert_eq!(field.0.writes, 2);
+            assert!(!session.has_undo());
+        }
+    }
+
+    #[test]
+    fn expected_restoration_observation_preserves_only_matching_suppression() {
+        let mut field = MockField::new("rPthrgo ");
+        let mut session = new_session();
+        run(&mut field, &mut session, "rPthrgo");
+        field.backspace();
+        assert_eq!(session.on_backspace(&mut field), BackspaceAction::Restored);
+        session.observe(&field.snapshot().unwrap());
+        assert_eq!(
+            run(&mut field, &mut session, "rPthrgo").skip_reason,
+            Some(SkipReason::RestoredWord)
+        );
+        field.caret -= 1;
+        session.observe(&field.snapshot().unwrap());
+        field.caret += 1;
+        assert_eq!(
+            run(&mut field, &mut session, "rPthrgo").outcome,
+            CorrectionOutcome::Replaced
+        );
+        session.set_paused(true);
+        session.set_paused(false);
+        assert!(!session.has_undo());
+    }
+
+    #[test]
+    fn external_observations_and_reset_boundaries_clear_suppression() {
+        type Mutation = fn(&mut MockField);
+        let mutations: [Mutation; 4] = [
+            |f| f.target = TargetId(8),
+            |f| f.text[0] = 'x',
+            |f| f.caret -= 1,
+            |f| f.selection_len = 1,
+        ];
+        for mutate in mutations {
+            let mut field = MockField::new("rPthrgo ");
+            let mut session = new_session();
+            run(&mut field, &mut session, "rPthrgo");
+            field.backspace();
+            assert_eq!(session.on_backspace(&mut field), BackspaceAction::Restored);
+            mutate(&mut field);
+            session.observe(&field.snapshot().unwrap());
+            assert!(session.restored.is_none());
+        }
+        for reset in [
+            CorrectionSession::next_word_started as fn(&mut CorrectionSession),
+            |session| session.set_paused(true),
+            |session| session.set_permission_granted(false),
+        ] {
+            let mut field = MockField::new("rPthrgo ");
+            let mut session = new_session();
+            run(&mut field, &mut session, "rPthrgo");
+            field.backspace();
+            assert_eq!(session.on_backspace(&mut field), BackspaceAction::Restored);
+            reset(&mut session);
+            assert!(session.restored.is_none());
+        }
     }
 
     #[test]
