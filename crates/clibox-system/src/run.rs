@@ -5957,8 +5957,107 @@ mod lifecycle_tests {
     /// running.
     #[cfg(unix)]
     struct FixtureProcesses {
-        group: libc::pid_t,
+        leader: Option<libc::pid_t>,
+        group: Option<libc::pid_t>,
         descendant: Option<libc::pid_t>,
+    }
+
+    #[cfg(unix)]
+    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+    enum FixtureProcessState {
+        Running,
+        Zombie,
+        Absent,
+        Unknown,
+    }
+
+    #[cfg(target_os = "linux")]
+    fn fixture_process_state(pid: libc::pid_t, group: libc::pid_t) -> FixtureProcessState {
+        let stat = match fs::read(format!("/proc/{pid}/stat")) {
+            Ok(stat) => stat,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => {
+                return FixtureProcessState::Absent;
+            }
+            Err(_) => return FixtureProcessState::Unknown,
+        };
+        let Some(closing) = stat.iter().rposition(|byte| *byte == b')') else {
+            return FixtureProcessState::Unknown;
+        };
+        let mut fields = stat[closing + 1..].split_ascii_whitespace();
+        let (Some(state), Some(_parent), Some(observed_group)) =
+            (fields.next(), fields.next(), fields.next())
+        else {
+            return FixtureProcessState::Unknown;
+        };
+        let Some(observed_group) = std::str::from_utf8(observed_group)
+            .ok()
+            .and_then(|value| value.parse::<libc::pid_t>().ok())
+        else {
+            return FixtureProcessState::Unknown;
+        };
+        let state = match state {
+            b"Z" | b"X" | b"x" => FixtureProcessState::Zombie,
+            b"R" | b"S" | b"D" | b"T" | b"t" | b"I" | b"W" | b"P" | b"K" => {
+                FixtureProcessState::Running
+            }
+            _ => FixtureProcessState::Unknown,
+        };
+        fixture_state_from_status(state, observed_group == group)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn fixture_process_state(pid: libc::pid_t, group: libc::pid_t) -> FixtureProcessState {
+        let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::zeroed();
+        let bytes = libc::c_int::try_from(std::mem::size_of::<libc::proc_bsdinfo>()).unwrap();
+        let observed = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                info.as_mut_ptr().cast(),
+                bytes,
+            )
+        };
+        if observed == 0 {
+            return if io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH) {
+                FixtureProcessState::Absent
+            } else {
+                FixtureProcessState::Unknown
+            };
+        }
+        if observed != bytes {
+            return FixtureProcessState::Unknown;
+        }
+        let info = unsafe { info.assume_init() };
+        let state = match info.pbi_status {
+            libc::SZOMB => FixtureProcessState::Zombie,
+            libc::SIDL | libc::SRUN | libc::SSLEEP | libc::SSTOP => FixtureProcessState::Running,
+            _ => FixtureProcessState::Unknown,
+        };
+        fixture_state_from_status(state, info.pbi_pgid == group as u32)
+    }
+
+    #[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+    fn fixture_process_state(pid: libc::pid_t, _group: libc::pid_t) -> FixtureProcessState {
+        if unsafe { libc::kill(pid, 0) } == -1
+            && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+        {
+            FixtureProcessState::Absent
+        } else {
+            FixtureProcessState::Unknown
+        }
+    }
+
+    #[cfg(unix)]
+    fn fixture_state_from_status(
+        state: FixtureProcessState,
+        in_group: bool,
+    ) -> FixtureProcessState {
+        match state {
+            FixtureProcessState::Zombie | FixtureProcessState::Absent => state,
+            FixtureProcessState::Running if in_group => FixtureProcessState::Running,
+            _ => FixtureProcessState::Unknown,
+        }
     }
 
     #[cfg(unix)]
@@ -5970,10 +6069,19 @@ mod lifecycle_tests {
         const REAP_WATCHDOG: Duration = Duration::from_secs(30);
 
         fn new(group: u32) -> Self {
+            let group = libc::pid_t::try_from(group).expect("fixture pid should fit pid_t");
+            assert!(group > 0, "fixture pid must be positive");
             Self {
-                group: group as libc::pid_t,
+                leader: Some(group),
+                group: Some(group),
                 descendant: None,
             }
+        }
+
+        fn transfer_to_supervisor(&mut self) {
+            // Supervision may reap the direct child. Its numeric PID must not
+            // be used as a positive signal target after this handoff.
+            self.leader = None;
         }
 
         fn wait_for_descendant(&mut self, marker: &Path) -> libc::pid_t {
@@ -6000,14 +6108,27 @@ mod lifecycle_tests {
             }
         }
 
-        fn confirm_descendant_absent(&mut self, pid: libc::pid_t) {
-            let watchdog = Instant::now() + Self::REAP_WATCHDOG;
+        fn confirm_descendant_exited(&mut self, pid: libc::pid_t) {
+            self.confirm_descendant_exited_with(pid, Self::REAP_WATCHDOG, fixture_process_state);
+        }
+
+        fn confirm_descendant_exited_with(
+            &mut self,
+            pid: libc::pid_t,
+            timeout: Duration,
+            mut observe: impl FnMut(libc::pid_t, libc::pid_t) -> FixtureProcessState,
+        ) {
+            let watchdog = Instant::now() + timeout;
             loop {
-                if unsafe { libc::kill(pid, 0) } == -1
-                    && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
-                {
-                    // The pid is gone and may be reused; never signal it again.
+                if matches!(
+                    observe(pid, self.group.expect("fixture group is still owned")),
+                    FixtureProcessState::Zombie | FixtureProcessState::Absent
+                ) {
+                    // An exited descendant can remain waitable as a zombie.
+                    // The supervisor already owns cleanup of this tree.
                     self.descendant = None;
+                    self.group = None;
+                    self.leader = None;
                     return;
                 }
                 assert!(
@@ -6017,18 +6138,169 @@ mod lifecycle_tests {
                 thread::sleep(Duration::from_millis(5));
             }
         }
+
+        fn cleanup_with(
+            &mut self,
+            mut observe: impl FnMut(libc::pid_t, libc::pid_t) -> FixtureProcessState,
+            mut signal: impl FnMut(libc::pid_t),
+        ) {
+            let (Some(group), leader) = (self.group.take(), self.leader.take()) else {
+                self.descendant = None;
+                return;
+            };
+            let should_signal = leader.is_some()
+                || self
+                    .descendant
+                    .is_some_and(|pid| observe(pid, group) == FixtureProcessState::Running);
+            self.descendant = None;
+            if should_signal {
+                signal(-group);
+                // Before the supervisor handoff, the leader remains an owned,
+                // unreaped child. After handoff, never signal its reused PID.
+                if let Some(leader) = leader {
+                    signal(leader);
+                }
+            }
+        }
     }
 
     #[cfg(unix)]
     impl Drop for FixtureProcesses {
         fn drop(&mut self) {
-            unsafe {
-                libc::kill(-self.group, libc::SIGKILL);
-                libc::kill(self.group, libc::SIGKILL);
-                if let Some(pid) = self.descendant {
-                    libc::kill(pid, libc::SIGKILL);
-                }
-            }
+            self.cleanup_with(fixture_process_state, |pid| {
+                let _ = unsafe { libc::kill(pid, libc::SIGKILL) };
+            });
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fixture_exit_state_distinguishes_zombies_and_unknown_ownership() {
+        assert_eq!(
+            fixture_state_from_status(FixtureProcessState::Zombie, true),
+            FixtureProcessState::Zombie
+        );
+        assert_eq!(
+            fixture_state_from_status(FixtureProcessState::Zombie, false),
+            FixtureProcessState::Zombie
+        );
+        assert_eq!(
+            fixture_state_from_status(FixtureProcessState::Running, true),
+            FixtureProcessState::Running
+        );
+        assert_eq!(
+            fixture_state_from_status(FixtureProcessState::Running, false),
+            FixtureProcessState::Unknown
+        );
+        assert_eq!(
+            fixture_state_from_status(FixtureProcessState::Unknown, true),
+            FixtureProcessState::Unknown
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fixture_exit_disarms_all_signal_targets() {
+        for state in [FixtureProcessState::Zombie, FixtureProcessState::Absent] {
+            let mut fixture = FixtureProcesses::new(101);
+            fixture.descendant = Some(102);
+            fixture.transfer_to_supervisor();
+            fixture.confirm_descendant_exited_with(102, Duration::ZERO, |_, _| state);
+            let mut signals = Vec::new();
+            fixture.cleanup_with(
+                |_, _| panic!("disarmed fixture was probed"),
+                |pid| {
+                    signals.push(pid);
+                },
+            );
+            assert!(signals.is_empty());
+        }
+    }
+
+    #[cfg(any(target_os = "linux", target_os = "macos"))]
+    #[test]
+    fn fixture_confirms_a_retained_zombie_before_reaping() {
+        let mut command = ProcessCommand::new("sh");
+        command.args(["-c", "exit 0"]);
+        configure_process_group(&mut command, UnixOwnership::ProcessGroup);
+        let mut child = command.spawn().unwrap();
+        let pid = child.id();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !child_exit_observed_without_reaping(pid).unwrap() {
+            assert!(Instant::now() < deadline, "fixture child did not exit");
+            thread::sleep(Duration::from_millis(5));
+        }
+
+        let mut fixture = FixtureProcesses::new(pid);
+        fixture.descendant = Some(pid as libc::pid_t);
+        fixture.transfer_to_supervisor();
+        let start = Instant::now();
+        let confirmation = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            fixture.confirm_descendant_exited(pid as libc::pid_t);
+        }));
+        fixture.cleanup_with(
+            |_, _| FixtureProcessState::Unknown,
+            |_| panic!("exited child must not receive a fixture signal"),
+        );
+        child.wait().unwrap();
+        assert!(confirmation.is_ok(), "retained zombie was not confirmed");
+        assert!(start.elapsed() < Duration::from_secs(5));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fixture_failure_cleanup_signals_only_verified_owned_targets() {
+        let mut preparation = FixtureProcesses::new(101);
+        preparation.descendant = Some(102);
+        let mut signals = Vec::new();
+        preparation.cleanup_with(
+            |_, _| panic!("leader still owns group"),
+            |pid| signals.push(pid),
+        );
+        assert_eq!(signals, [-101, 101]);
+
+        for (state, expected) in [
+            (FixtureProcessState::Running, vec![-101]),
+            (FixtureProcessState::Zombie, vec![]),
+            (FixtureProcessState::Absent, vec![]),
+            (FixtureProcessState::Unknown, vec![]),
+        ] {
+            let mut fixture = FixtureProcesses::new(101);
+            fixture.descendant = Some(102);
+            fixture.transfer_to_supervisor();
+            let mut signals = Vec::new();
+            fixture.cleanup_with(
+                |pid, group| {
+                    assert_eq!((pid, group), (102, 101));
+                    state
+                },
+                |pid| signals.push(pid),
+            );
+            assert_eq!(signals, expected);
+            assert!(!signals.contains(&0));
+            assert!(!signals.contains(&101));
+            assert!(!signals.contains(&102));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn fixture_live_or_unknown_descendant_reaches_bounded_deadline() {
+        for state in [FixtureProcessState::Running, FixtureProcessState::Unknown] {
+            let mut fixture = FixtureProcesses::new(101);
+            fixture.descendant = Some(102);
+            fixture.transfer_to_supervisor();
+            let start = Instant::now();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                fixture
+                    .confirm_descendant_exited_with(102, Duration::from_millis(20), |_, _| state);
+            }));
+            assert!(result.is_err());
+            assert!(start.elapsed() < Duration::from_secs(1));
+            fixture.cleanup_with(
+                |_, _| FixtureProcessState::Unknown,
+                |_| panic!("unknown fixture identity must not be signaled"),
+            );
         }
     }
 
@@ -6054,6 +6326,7 @@ mod lifecycle_tests {
             .checked_sub(Duration::from_millis(1))
             .unwrap();
 
+        fixture.transfer_to_supervisor();
         let outcome = supervise_spawned(
             child,
             &Limits {
@@ -6066,7 +6339,7 @@ mod lifecycle_tests {
         .unwrap();
 
         assert!(matches!(outcome, Outcome::Code(124)));
-        fixture.confirm_descendant_absent(descendant);
+        fixture.confirm_descendant_exited(descendant);
     }
 
     #[test]
