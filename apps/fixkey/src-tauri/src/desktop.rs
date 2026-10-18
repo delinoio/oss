@@ -706,6 +706,10 @@ fn create_tray(app: &tauri::App) -> tauri::Result<()> {
 /// # Panics
 /// Panics if native shell initialization fails before the event loop starts.
 pub fn run() {
+    let autostart = tauri_plugin_autostart::Builder::new();
+    #[cfg(target_os = "macos")]
+    let autostart = autostart.macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent);
+
     tauri::Builder::default()
         .runtime(tauri_runtime_wry::Wry::default())
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {
@@ -714,11 +718,7 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
-        .plugin(
-            tauri_plugin_autostart::Builder::new()
-                .macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent)
-                .build(),
-        )
+        .plugin(autostart.build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
