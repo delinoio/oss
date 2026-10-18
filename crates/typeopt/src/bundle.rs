@@ -700,6 +700,18 @@ pub(crate) fn map_comment_start(text: &str) -> Option<usize> {
     map_reference(text).map(|comment| comment.start)
 }
 
+/// The chunk text without its trailing source map comment.
+pub(crate) fn chunk_code(text: &str) -> std::borrow::Cow<'_, str> {
+    match map_reference(text) {
+        Some(comment) => std::borrow::Cow::Owned(format!(
+            "{}{}",
+            &text[..comment.start],
+            &text[comment.end..]
+        )),
+        None => std::borrow::Cow::Borrowed(text),
+    }
+}
+
 pub(crate) fn chunk_code_len(text: &str) -> usize {
     map_reference(text).map_or(text.len(), |comment| {
         text.len() - (comment.end - comment.start)
