@@ -11,6 +11,10 @@ test("generated Android signing uses environment values and rejects template dri
   );
   assert.match(result, /signingConfig = signingConfigs.getByName\("release"\)/);
   assert.match(result, /System.getenv\("TAURI_ANDROID_KEY_PASSWORD"\)/);
+  assert.match(
+    result,
+    /getByName\("release"\) \{\s+if \(System.getenv\("TAURI_ANDROID_KEYSTORE_PATH"\) != null\) \{\s+signingConfig = signingConfigs.getByName\("release"\)/,
+  );
   assert.equal(configureAndroid(result), result);
   assert.throws(() => configureAndroid(""), /Unsupported/);
 });

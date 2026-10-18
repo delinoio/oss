@@ -31,7 +31,7 @@ ${anchor}`,
     )
     .replace(
       'getByName("release") {',
-      'getByName("release") {\n            signingConfig = signingConfigs.getByName("release")',
+      'getByName("release") {\n            if (System.getenv("TAURI_ANDROID_KEYSTORE_PATH") != null) {\n                signingConfig = signingConfigs.getByName("release")\n            }',
     );
 }
 

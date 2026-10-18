@@ -16,7 +16,7 @@ Developers launch the shell. Maintainers run the protected mobile distribution w
 
 The title is `DeliTools`; the application identifier is `io.delino.delitools`. Desktop opens one decorated, resizable 1280 by 820 window and exits when the last window closes. Mobile opens one blank webview. There are no product controls, menus, commands, permissions, plugins, servers or API clients.
 
-`pnpm dev` serves the frontend on fixed loopback port 46312 and fails on conflicts. `pnpm dev:desktop` starts the desktop host. `pnpm mobile:android:init` and `pnpm mobile:ios:init` generate native projects; `pnpm dev:android` and `pnpm dev:ios` launch mobile development. Mobile build commands are `pnpm build:android` and `pnpm build:ios`.
+`pnpm dev` serves the frontend on fixed loopback port 46312 and fails on conflicts. `pnpm dev:desktop` starts the desktop host. `pnpm mobile:android:init` and `pnpm mobile:ios:init` generate native projects; `pnpm dev:android` and `pnpm dev:ios` launch mobile development. Mobile build commands are `pnpm build:android` and `pnpm build:ios`. Local Android release builds remain unsigned when no upload keystore is supplied; the release workflow still requires and validates signing credentials.
 
 ## Storage
 
