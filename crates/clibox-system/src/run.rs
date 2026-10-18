@@ -5983,7 +5983,9 @@ mod lifecycle_tests {
         let Some(closing) = stat.iter().rposition(|byte| *byte == b')') else {
             return FixtureProcessState::Unknown;
         };
-        let mut fields = stat[closing + 1..].split(u8::is_ascii_whitespace);
+        let mut fields = stat[closing + 1..]
+            .split(u8::is_ascii_whitespace)
+            .filter(|field| !field.is_empty());
         let (Some(state), Some(_parent), Some(observed_group)) =
             (fields.next(), fields.next(), fields.next())
         else {
@@ -6195,6 +6197,18 @@ mod lifecycle_tests {
         assert_eq!(
             fixture_state_from_status(FixtureProcessState::Unknown, true),
             FixtureProcessState::Unknown
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn fixture_process_state_ignores_stat_separator_whitespace() {
+        let pid = unsafe { libc::getpid() };
+        let group = unsafe { libc::getpgrp() };
+
+        assert_eq!(
+            fixture_process_state(pid, group),
+            FixtureProcessState::Running
         );
     }
 
