@@ -55,6 +55,7 @@ members = [
     "crates/rustia",
     "crates/rustia-llm",
     "crates/rustia-macros",
+    "crates/fixkey-core",
 ]
 
 # Official Tauri plugins publish against crates.io Tauri. Redirect only their
