@@ -72,7 +72,7 @@ Replacement decision:
 
 Validators:
 
-- Korean uses the pinned `hephaex/mecab-ko` project. Acceptance requires complete dictionary-backed analysis with no unknown morphemes, plus an explicit part-of-speech connection rule table covering particle and ending attachment (for example `키보드` + `가`). The rule table has positive and negative fixtures. Tokenizer output alone is never validity. When the selected API does not expose dictionary provenance, obtain it through the analysis and dictionary interfaces; never infer membership from a plausible part-of-speech tag.
+- Korean uses the pinned `hephaex/mecab-ko` project. Acceptance requires complete dictionary-backed analysis with no unknown morphemes, plus an explicit part-of-speech connection rule table covering particle and ending attachment (for example `키보드` + `가`). A complete nominalization may end in ETN; a bare predicate stem or connective ending is incomplete. The rule table has positive and negative fixtures. Tokenizer output alone is never validity. When the selected API does not expose dictionary provenance, obtain it through the analysis and dictionary interfaces; never infer membership from a plausible part-of-speech tag.
 - US English uses SCOWL/ESDB-based data with dictionary inflection rules. Compare case-insensitively. Accept proper nouns and abbreviations only when the selected dictionary lists them.
 - Dictionaries are bundled so correction works offline from first launch. They update only with application releases. There are no separate dictionary downloads and no user dictionary editing.
 

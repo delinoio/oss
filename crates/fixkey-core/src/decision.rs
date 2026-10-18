@@ -173,6 +173,7 @@ pub fn manual_candidates(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::korean::{AnalyzerError, KoreanAnalyzer, KoreanValidator, Morpheme, Pos};
 
     struct Fixed(&'static [&'static str]);
 
@@ -188,6 +189,45 @@ mod tests {
 
     fn all() -> LanguageSet {
         LanguageSet::default()
+    }
+
+    struct NominalizationAnalyzer;
+
+    impl KoreanAnalyzer for NominalizationAnalyzer {
+        fn analyze(&self, word: &str) -> Result<Vec<Morpheme>, AnalyzerError> {
+            if word != "먹기" {
+                return Ok(vec![]);
+            }
+            Ok(vec![
+                Morpheme {
+                    surface: "먹".into(),
+                    pos: vec![Pos::Vv],
+                    in_dictionary: true,
+                },
+                Morpheme {
+                    surface: "기".into(),
+                    pos: vec![Pos::Etn],
+                    in_dictionary: true,
+                },
+            ])
+        }
+    }
+
+    #[test]
+    fn unique_korean_nominalization_replaces_wrong_layout() {
+        let korean = KoreanValidator::new(NominalizationAnalyzer);
+        let english = Fixed(&[]);
+        let decision = decide(
+            "ajrrl",
+            all(),
+            &Validators {
+                korean: &korean,
+                english: &english,
+            },
+        );
+        assert_eq!(decision.outcome, CorrectionOutcome::Replaced);
+        assert_eq!(decision.replacement.as_deref(), Some("먹기"));
+        assert_eq!(decision.language, Some(Language::KoDubeolsik));
     }
 
     #[test]
