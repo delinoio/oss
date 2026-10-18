@@ -23,6 +23,8 @@ pub mod korean;
 pub mod layout;
 pub mod manual;
 pub mod mecab;
+#[cfg(feature = "native")]
+pub mod platform;
 pub mod session;
 pub mod tokenizer;
 pub mod types;

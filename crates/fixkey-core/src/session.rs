@@ -48,6 +48,9 @@ pub struct FieldSnapshot {
 pub enum WriteError {
     /// Nothing was changed.
     Failed,
+    /// The native API failed without a verifiable resulting range. Do not
+    /// attempt recovery or further writes against that unknown state.
+    Uncertain,
     /// The range was only partly replaced. `written` is the text now in place
     /// of the requested range.
     Partial {
@@ -592,7 +595,7 @@ impl CorrectionSession {
                     }
                 }
             }
-            Err(WriteError::Failed) => BackspaceAction::Failed,
+            Err(WriteError::Failed | WriteError::Uncertain) => BackspaceAction::Failed,
         };
         if matches!(outcome, BackspaceAction::Restored) {
             let mut expected: Vec<char> = snapshot.text.chars().collect();

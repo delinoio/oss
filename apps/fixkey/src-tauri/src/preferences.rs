@@ -28,6 +28,9 @@ pub enum IntegrationError {
     /// The login startup setting could not be changed.
     #[error("login-startup-failed")]
     LoginStartupFailed,
+    /// A native operation could not establish the final registration state.
+    #[error("native-preferences-uncertain")]
+    Uncertain,
 }
 
 /// The desktop's native preference operations.
@@ -109,6 +112,25 @@ impl<H: SystemPreferences> Preferences<H> {
         self.reconciliation_required
     }
 
+    /// Returns the storage error without reading or exposing file contents.
+    #[must_use]
+    pub const fn storage_error(&self) -> Option<SettingsError> {
+        self.store.error()
+    }
+
+    /// Restores the user-requested backup and reconciles OS registrations.
+    ///
+    /// # Errors
+    ///
+    /// Returns a recovery or native registration failure.
+    pub fn restore_backup(&mut self) -> Result<(), PreferenceError> {
+        self.session.set_paused(true);
+        self.store
+            .restore_backup()
+            .map_err(PreferenceError::Settings)?;
+        self.reconcile()
+    }
+
     /// Reapplies the saved OS preferences without modifying the settings
     /// file. Startup and explicit recheck use this path.
     ///
@@ -149,10 +171,13 @@ impl<H: SystemPreferences> Preferences<H> {
         let previous = self.store.current().clone();
         let shortcut_changed = next.shortcut != previous.shortcut;
         let startup_changed = next.login_startup != previous.login_startup;
-        if shortcut_changed {
-            self.host
-                .set_shortcut(next.shortcut.as_deref())
-                .map_err(PreferenceError::Integration)?;
+        if shortcut_changed && let Err(error) = self.host.set_shortcut(next.shortcut.as_deref()) {
+            if error == IntegrationError::Uncertain {
+                self.session.set_paused(true);
+                self.session.set_permission_granted(false);
+                self.reconciliation_required = true;
+            }
+            return Err(PreferenceError::Integration(error));
         }
         if startup_changed && let Err(error) = self.host.set_login_startup(next.login_startup) {
             self.rollback(&previous, shortcut_changed, false)?;

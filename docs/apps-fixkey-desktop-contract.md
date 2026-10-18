@@ -77,6 +77,16 @@ Use `tracing` structured events without input content: errors, processing durati
 - Required automated tests: settings persistence failures, empty exclusion lists, localization, keyboard focus, accessible states, light and dark presentation; shortcut registration failure, candidate navigation, invalid-candidate labeling, Esc and target invalidation; log redaction, rotation, retention and deletion, and absence of input persistence or telemetry; mocked update checks, scheduling, offline behavior, consent, download failure, invalid signatures, installation failure and settings preservation.
 - Mocks, fixtures and builds do not establish actual OS or application behavior (accessibility reads and writes, global shortcuts, signing, package installation). Automated tests and package inspection are not substitutes for native acceptance. Native acceptance on each target platform is a separate activity required before claiming verified compatibility or shipping a release. Record every native check that was not performed in pull requests, issues and CI artifacts together with source revision, commands and results, and never claim compatibility for it.
 
+## Desktop integration
+
+- `src/App.tsx` owns the localized settings, permission dialog and transient candidate view. `src/api.ts` restricts IPC to the local Rust command surface. The frontend uses React Query for settings and updater state; native input processing does not depend on WebView polling.
+- `src-tauri/src/desktop.rs` owns Tauri windows, tray, commands, startup and shortcut reconciliation. The candidate window remains non-activating; temporary global arrow, Enter and Esc registrations preserve the editor target. Stale candidate generations are rejected.
+- `src-tauri/src/native.rs` owns one bounded, transient input worker. It proves that the observed keys explain the complete accessibility edit before evaluation; missing events, unrelated edits and unknown targets discard the context. `fixkey-core/native` enables the platform adapters without adding native dependencies to ordinary engine tests.
+- Development frontend: `127.0.0.1:46321`, strict port binding. Run `pnpm --filter fixkey-desktop dev` for Tauri or `dev:frontend` for UI development. `build:frontend` generates the ignored frontend `dist`; `build` creates native packages with the `desktop` feature. Generate frontend output before native compilation with the custom protocol.
+- The updater uses a build-time public `FIXKEY_UPDATER_PUBLIC_KEY`, the official GitHub Releases API and immutable `fixkey-v<semver>` release assets. `fixkey-latest.json` selects signed platform payloads. Missing keys or unverifiable metadata leave updates unavailable. Development builds do not contain signing credentials.
+
+Minimum dependency baselines are macOS 11 on ARM64, Windows 10 x64 with WebView2, and Linux x64 with X11, GTK 3, WebKitGTK 4.1 and an AT-SPI accessibility bus. These are build/runtime prerequisites, not verified application compatibility. Wayland remains unsupported. See [Tauri prerequisites](https://v2.tauri.app/start/prerequisites/) and [supported platforms](https://v2.tauri.app/reference/platform-versions/).
+
 ## Dependencies and Integrations
 
 - `crates/fixkey-core` for all correction behavior.

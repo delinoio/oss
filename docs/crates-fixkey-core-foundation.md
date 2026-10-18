@@ -165,3 +165,11 @@ Update [project-fixkey.md](project-fixkey.md) and [the desktop contract](apps-fi
 - [Desktop application contract](apps-fixkey-desktop-contract.md)
 - [Repository defaults](repository-defaults.md)
 - [Repository license](repository-license-contract.md)
+
+## Native adapter boundaries
+
+The optional `native` feature exposes `platform::Adapter`. macOS uses a listen-only Core Graphics event tap and AX text ranges. Windows uses a listen-only low-level keyboard hook and UI Automation Edit controls with writable ValuePattern plus verifiable TextPattern selections. Linux accepts X11 sessions only, correlates the active window process and WM_CLASS with the AT-SPI bus, and requires focused non-password Text/Entry objects with EditableText. Linux hardware input requires a current slave keyboard with a device node; XTEST and untrusted events invalidate input provenance.
+
+Classification and safe-write capability checks precede text reads. Each adapter captures native target identity, verifies the complete snapshot again before writing, preserves the untouched prefix/suffix and boundary, restores the insertion caret and verifies the result. Uncertain native write failures permit no recovery write. Only a proven partial result can enter the shared guarded recovery path. UTF-16 conversions reject offsets inside surrogate pairs. No adapter changes the system layout, clipboard or injects input.
+
+Native dependencies are target-scoped and pinned in Cargo manifests and the workspace lockfile. Windows UI Automation uses `uiautomation` with `uiautomation_derive` constrained to the workspace-compatible release; its upstream unconditional MouseButton import requires compiling its input module, but FixKey calls no input-generation APIs. Linux uses `zbus` for local accessibility IPC and `x11rb` for X11 metadata and event observation. Native application behavior requires separate platform acceptance; fixtures and cross-compilation cannot establish it.
