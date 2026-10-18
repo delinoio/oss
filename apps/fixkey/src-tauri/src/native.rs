@@ -306,6 +306,9 @@ fn run_worker(
         }
         if revision != runtime.revision {
             revision = runtime.revision;
+            // Rechecking permissions must rebuild transports that were absent
+            // or disconnected when the long-lived worker first started.
+            adapter = Adapter::new();
             context = None;
             baseline = None;
             while receiver.try_recv().is_ok() {}
