@@ -427,15 +427,36 @@ impl CorrectionSession {
         let Some(replacement) = decision.replacement else {
             return Evaluation::outcome(decision.outcome);
         };
-        let start = snapshot.caret - typed_len;
+        // Validators can run after the user edits or changes the focused
+        // control. Use a fresh snapshot for the write and its undo state.
+        let current = match accessibility.snapshot() {
+            Ok(snapshot) => snapshot,
+            Err(reason) => return Evaluation::skipped(reason),
+        };
+        match current.sensitivity {
+            FieldSensitivity::Protected => return Evaluation::skipped(SkipReason::ProtectedField),
+            FieldSensitivity::Unknown => return Evaluation::skipped(SkipReason::UnknownField),
+            FieldSensitivity::Normal => {}
+        }
+        if !current.supports_write {
+            return Evaluation::skipped(SkipReason::UnsupportedWrite);
+        }
+        if current.target != snapshot.target
+            || current.caret != snapshot.caret
+            || current.selection_len != snapshot.selection_len
+            || current.text != snapshot.text
+        {
+            return Evaluation::outcome(CorrectionOutcome::PreservedStaleContext);
+        }
+        let start = current.caret - typed_len;
         let end = start + word_len;
-        match accessibility.replace(snapshot.target, start, end, &replacement) {
+        match accessibility.replace(current.target, start, end, &replacement) {
             Ok(()) => {
-                let mut chars: Vec<char> = snapshot.text.chars().collect();
+                let mut chars: Vec<char> = current.text.chars().collect();
                 chars.splice(start..end, replacement.chars());
                 let caret = start + replacement.chars().count() + boundary.chars().count();
                 self.undo = Some(UndoState {
-                    target: snapshot.target,
+                    target: current.target,
                     original: word.to_owned(),
                     replacement,
                     boundary: boundary.to_owned(),
@@ -450,7 +471,7 @@ impl CorrectionSession {
                 Self::recover_partial_write(
                     &error,
                     &PendingWrite {
-                        before: &snapshot,
+                        before: &current,
                         start,
                         end,
                         original: word,
@@ -593,6 +614,8 @@ impl CorrectionSession {
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
     use super::*;
     use crate::decision::{LanguageValidator, Validation};
 
@@ -630,6 +653,7 @@ mod tests {
         selection_len: usize,
         fault: Fault,
         writes: usize,
+        reads: usize,
         snapshot_error: Option<SkipReason>,
     }
 
@@ -645,6 +669,7 @@ mod tests {
                 selection_len: 0,
                 fault: Fault::None,
                 writes: 0,
+                reads: 0,
                 snapshot_error: None,
             }
         }
@@ -676,6 +701,7 @@ mod tests {
 
     impl Accessibility for MockField {
         fn snapshot(&mut self) -> Result<FieldSnapshot, SkipReason> {
+            self.reads += 1;
             if let Some(reason) = self.snapshot_error {
                 return Err(reason);
             }
@@ -730,6 +756,37 @@ mod tests {
             }
             self.apply(start, end, text);
             Ok(())
+        }
+    }
+
+    struct SharedField(Rc<RefCell<MockField>>);
+
+    impl Accessibility for SharedField {
+        fn snapshot(&mut self) -> Result<FieldSnapshot, SkipReason> {
+            self.0.borrow_mut().snapshot()
+        }
+
+        fn replace(
+            &mut self,
+            target: TargetId,
+            start: usize,
+            end: usize,
+            text: &str,
+        ) -> Result<(), WriteError> {
+            self.0.borrow_mut().replace(target, start, end, text)
+        }
+    }
+
+    struct MutatingValidator {
+        field: Rc<RefCell<MockField>>,
+        mutate: fn(&mut MockField),
+        result: Validation,
+    }
+
+    impl LanguageValidator for MutatingValidator {
+        fn validate(&self, _candidate: &str) -> Validation {
+            (self.mutate)(&mut self.field.borrow_mut());
+            self.result
         }
     }
 
@@ -812,6 +869,159 @@ mod tests {
 
     fn new_session() -> CorrectionSession {
         CorrectionSession::new(SessionConfig::default())
+    }
+
+    fn run_with_validator_callback(
+        mutate: fn(&mut MockField),
+        validation: Validation,
+    ) -> (Evaluation, Rc<RefCell<MockField>>, CorrectionSession) {
+        let field = Rc::new(RefCell::new(MockField::new("rPthrgo ")));
+        let captured = field.borrow().captured();
+        let korean = MutatingValidator {
+            field: Rc::clone(&field),
+            mutate,
+            result: validation,
+        };
+        let english = Accepts(&[]);
+        let mut shared = SharedField(Rc::clone(&field));
+        let mut session = new_session();
+        let result = session.on_word_complete(
+            "rPthrgo",
+            &"rPthrgo".chars().collect::<Vec<_>>(),
+            " ",
+            captured,
+            &mut shared,
+            &Validators {
+                korean: &korean,
+                english: &english,
+            },
+        );
+        (result, field, session)
+    }
+
+    #[test]
+    fn edits_and_context_changes_during_validation_prevent_the_write() {
+        let (edited, edited_field, edited_session) = run_with_validator_callback(
+            |field| field.text = "changed ".chars().collect(),
+            Validation::Accepted,
+        );
+        assert_eq!(edited.outcome, CorrectionOutcome::PreservedStaleContext);
+        assert_eq!(edited_field.borrow().text(), "changed ");
+        assert_eq!(edited_field.borrow().writes, 0);
+        assert!(!edited_session.has_undo());
+
+        let mutations: [fn(&mut MockField); 5] = [
+            |field| field.text[0] = 'x',
+            |field| {
+                let _ = field.text.pop();
+            },
+            |field| field.target = TargetId(2),
+            |field| field.caret -= 1,
+            |field| field.selection_len = 1,
+        ];
+        for mutate in mutations {
+            let (result, field, session) =
+                run_with_validator_callback(mutate, Validation::Accepted);
+            let field = field.borrow();
+            assert_eq!(result.outcome, CorrectionOutcome::PreservedStaleContext);
+            assert_eq!(field.writes, 0);
+            assert_eq!(field.reads, 2);
+            assert!(!session.has_undo());
+            assert_ne!(field.text(), "계속해 ");
+        }
+    }
+
+    #[test]
+    fn post_validation_read_and_field_safety_failures_preserve_skip_reasons() {
+        type Mutation = fn(&mut MockField);
+        let cases: [(Mutation, SkipReason); 4] = [
+            (
+                |field| field.snapshot_error = Some(SkipReason::PermissionMissing),
+                SkipReason::PermissionMissing,
+            ),
+            (
+                |field| field.sensitivity = FieldSensitivity::Protected,
+                SkipReason::ProtectedField,
+            ),
+            (
+                |field| field.sensitivity = FieldSensitivity::Unknown,
+                SkipReason::UnknownField,
+            ),
+            (
+                |field| field.supports_write = false,
+                SkipReason::UnsupportedWrite,
+            ),
+        ];
+        for (mutate, reason) in cases {
+            let (result, field, session) =
+                run_with_validator_callback(mutate, Validation::Accepted);
+            let field = field.borrow();
+            assert_eq!(result.outcome, CorrectionOutcome::PreservedSkipped);
+            assert_eq!(result.skip_reason, Some(reason));
+            assert_eq!(field.writes, 0);
+            assert_eq!(field.reads, 2);
+            assert!(!session.has_undo());
+        }
+    }
+
+    #[test]
+    fn unchanged_post_validation_context_still_corrects_and_undoes_once() {
+        let (result, field, mut session) =
+            run_with_validator_callback(|_| {}, Validation::Accepted);
+        assert_eq!(result.outcome, CorrectionOutcome::Replaced);
+        assert_eq!(field.borrow().text(), "계속해 ");
+        assert_eq!(field.borrow().writes, 1);
+        assert_eq!(field.borrow().reads, 2);
+        assert!(session.has_undo());
+        field.borrow_mut().backspace();
+        assert_eq!(
+            session.on_backspace(&mut SharedField(Rc::clone(&field))),
+            BackspaceAction::Restored
+        );
+        assert_eq!(field.borrow().text(), "rPthrgo ");
+    }
+
+    #[test]
+    fn unavailable_validator_does_not_create_a_stale_write() {
+        let (result, field, session) = run_with_validator_callback(
+            |field| field.text = "changed ".chars().collect(),
+            Validation::Unavailable,
+        );
+        assert_eq!(
+            result.outcome,
+            CorrectionOutcome::PreservedValidatorUnavailable
+        );
+        assert_eq!(field.borrow().writes, 0);
+        assert_eq!(field.borrow().text(), "changed ");
+        assert!(!session.has_undo());
+    }
+
+    #[test]
+    fn no_match_and_ambiguous_results_still_preserve_without_a_second_read() {
+        let (no_match, field, session) = run_with_validator_callback(|_| {}, Validation::Rejected);
+        assert_eq!(no_match.outcome, CorrectionOutcome::PreservedNoMatch);
+        assert_eq!(field.borrow().reads, 1);
+        assert_eq!(field.borrow().writes, 0);
+        assert!(!session.has_undo());
+
+        let mut field = MockField::new("rPthrgo ");
+        let captured = field.captured();
+        let mut session = new_session();
+        let ambiguous = session.on_word_complete(
+            "rPthrgo",
+            &"rPthrgo".chars().collect::<Vec<_>>(),
+            " ",
+            captured,
+            &mut field,
+            &Validators {
+                korean: &Accepts(&["계속해"]),
+                english: &Accepts(&["rPthrgo"]),
+            },
+        );
+        assert_eq!(ambiguous.outcome, CorrectionOutcome::PreservedAmbiguous);
+        assert_eq!(field.reads, 1);
+        assert_eq!(field.writes, 0);
+        assert!(!session.has_undo());
     }
 
     #[test]
