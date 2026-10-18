@@ -87,16 +87,16 @@ jobs:
           keytool -printcert -jarfile "mobile-artifacts/delitools-android.aab" > /dev/null
           cp LICENSE NOTICE mobile-artifacts/
           printf 'revision=%s\nbuild_number=%s\nplatform=android\n' "$GITHUB_SHA" "$DELITOOLS_BUILD_NUMBER" > "mobile-artifacts/build.txt"
-      - name: Upload to Google Play internal testing
-        if: ${{ inputs.publish }}
-        env:
-          DELITOOLS_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DELITOOLS_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
-        run: node apps/delitools/scripts/publish-android.mjs mobile-artifacts/delitools-android.aab
       - uses: actions/upload-artifact@v7
         with:
           name: delitools-android-${{ inputs.build_number }}-${{ github.sha }}
           path: mobile-artifacts/
           if-no-files-found: error
+      - name: Upload to Google Play internal testing
+        if: ${{ inputs.publish }}
+        env:
+          DELITOOLS_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.DELITOOLS_GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+        run: node apps/delitools/scripts/publish-android.mjs mobile-artifacts/delitools-android.aab
       - name: Remove signing material
         if: ${{ always() }}
         run: rm -f "$RUNNER_TEMP/delitools-upload.jks"
@@ -137,6 +137,11 @@ jobs:
           codesign --verify --deep --strict "$RUNNER_TEMP/delitools-ipa/Payload/"*.app
           cp LICENSE NOTICE mobile-artifacts/
           printf 'revision=%s\nbuild_number=%s\nplatform=ios\n' "$GITHUB_SHA" "$DELITOOLS_BUILD_NUMBER" > "mobile-artifacts/build.txt"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: delitools-ios-${{ inputs.build_number }}-${{ github.sha }}
+          path: mobile-artifacts/
+          if-no-files-found: error
       - name: Upload to TestFlight
         if: ${{ inputs.publish }}
         run: |
@@ -144,11 +149,6 @@ jobs:
           mkdir -p "$RUNNER_TEMP/delitools-keys"
           cp "$APPLE_API_KEY_PATH" "$RUNNER_TEMP/delitools-keys/AuthKey_$APPLE_API_KEY.p8"
           API_PRIVATE_KEYS_DIR="$RUNNER_TEMP/delitools-keys" xcrun altool --upload-app --type ios --file "mobile-artifacts/delitools-ios.ipa" --apiKey "$APPLE_API_KEY" --apiIssuer "$APPLE_API_ISSUER"
-      - uses: actions/upload-artifact@v7
-        with:
-          name: delitools-ios-${{ inputs.build_number }}-${{ github.sha }}
-          path: mobile-artifacts/
-          if-no-files-found: error
       - name: Remove signing material
         if: ${{ always() }}
         run: |

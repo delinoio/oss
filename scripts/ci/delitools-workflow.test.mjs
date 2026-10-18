@@ -38,6 +38,7 @@ test("DeliTools release is main-only, serialized and uses protected test-channel
     const upload = job.steps.find((step) =>
       step.uses?.startsWith("actions/upload-artifact@"),
     );
+    assert.ok(job.steps.indexOf(upload) < job.steps.indexOf(publish));
     assert.equal(upload.with.path, "mobile-artifacts/");
     assert.equal(upload.with["if-no-files-found"], "error");
   }
