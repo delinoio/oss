@@ -5,6 +5,7 @@
 //! `docs/crates-fixkey-core-foundation.md`.
 
 pub mod layout;
+pub mod tokenizer;
 pub mod types;
 
 pub use types::{CandidateValidation, CorrectionOutcome, Language, LanguageSet, SkipReason};
