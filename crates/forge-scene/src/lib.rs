@@ -1065,7 +1065,7 @@ mod tests {
             ("geometry:invalid".to_owned(), b"not-geometry".to_vec()),
         ]);
         let prepared = prepare(&scene, &assets).unwrap();
-        let report = analyze(&prepared).unwrap();
+        let report = analyze(&prepared, false).unwrap();
         assert_eq!(report.registered_geometry_bytes, bytes.len() * 2);
         assert_eq!(report.referenced_geometry_bytes, bytes.len());
         assert_eq!(report.unused_geometry_count, 1);
