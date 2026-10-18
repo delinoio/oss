@@ -670,7 +670,7 @@ Release automation baseline:
 
 - Root `turbo.json`, `package.json`, `pnpm-lock.yaml` and `pnpm-workspace.yaml` changes select `rust-fmt`, `forge-test` and `forge-render` through their job-specific path rules. Preserve the existing native `FORCE_RUN` commands and event eligibility; these root inputs do not globally force unrelated jobs.
 
-- Preserve the central validated Rust package selection. `run-rust.mjs` selects an explicit uncached Turbo graph with only the selected owners' build prerequisites; it must not expand the Cargo package list or bypass empty-selection rejection.
+- Preserve the central validated Rust package selection. `run-rust.mjs` selects an explicit uncached Turbo graph with only the selected owners' build prerequisites; it must not expand the Cargo package list or bypass empty-selection rejection. A selected `delitools-shell` package requires `delitools#build:frontend` before Rust tests or clippy, including restoration of its generated `dist` output from cache. DeliTools also selects the existing Linux desktop development libraries. Rust selections without DeliTools do not build its frontend.
 
 - Cache deterministic leaves only. Go/Rust execution, DB/OS/render/benchmark, repeated clean builds, embedded generation and protocol freshness run every time. Declare actual outputs and external inputs, plus task-local platform/tool/option hashes.
 

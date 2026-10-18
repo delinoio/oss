@@ -519,7 +519,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Install DevHUD Linux prerequisites
-        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'devhud') || contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') }}
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'devhud') || contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') || contains(fromJSON(needs.changes.outputs.rust_packages), 'delitools-shell') }}
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build
@@ -591,7 +591,7 @@ jobs:
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Install DevHUD Linux prerequisites
-        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'devhud') || contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') }}
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'devhud') || contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') || contains(fromJSON(needs.changes.outputs.rust_packages), 'delitools-shell') }}
         run: |
           sudo apt-get update
           sudo apt-get install -y clang cmake libayatana-appindicator3-dev libgbm-dev libgtk-3-dev libgtk-4-dev xdg-desktop-portal xdg-desktop-portal-gtk zenity libwebkit2gtk-4.1-dev libx11-dev libxtst-dev ninja-build

@@ -1720,11 +1720,13 @@ test("Rust CI consumes one verified prebuilt selection and gates native preparat
       const go = namedStep(job, "Setup Go for Rust test prerequisites");
       for (const owner of ["pnport"]) assert.ok(go.if.includes(owner));
     }
-    assert.ok(
-      namedStep(job, "Install DevHUD Linux prerequisites").if.includes(
-        "rust_packages",
-      ),
-    );
+    for (const owner of ["devhud", "delidev-desktop", "delitools-shell"]) {
+      assert.ok(
+        namedStep(job, "Install DevHUD Linux prerequisites").if.includes(
+          `contains(fromJSON(needs.changes.outputs.rust_packages), '${owner}')`,
+        ),
+      );
+    }
     if (id === "rust-test") {
       assert.ok(
         namedStep(
