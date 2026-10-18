@@ -6,6 +6,12 @@
 - Do not add issue-specific feature paragraphs to instruction files. Read the owning project index and domain contracts before implementation.
 - Record new implementation status, validation results and unresolved limits in pull requests, issues and CI logs/artifacts. Include the source revision, commands, results and unperformed checks; distinguish fixtures, builds and packaging from actual native/account/platform acceptance. Exclude secrets, user state and raw native content. Preserve existing validation records.
 
+## Task navigation
+
+- List `docs/` files, then use [the documentation catalog](docs/README.md) to find the owning project index and domain contracts. Read contracts for the affected paths and cross-domain consumers; the catalog is not a requirement to read every contract.
+- Read scoped `AGENTS.md` files from the repository root through each affected directory before editing.
+- Keep the complete project/domain document inventory in `docs/README.md`. Group project-specific entries under their project heading and shared contracts under repository sections. The directory map below provides entry points, not a second complete catalog.
+
 ## Instructions
 
 - Do not add issue or pull-request links or identifying numbers to repository instruction files or documentation. Describe requirements directly and link to the owning repository-local contracts. Domain, service and technical-documentation links remain allowed; record issue/PR traceability in pull requests, issues or CI records instead.
@@ -15,7 +21,7 @@
 - All repository-wide rules must be defined in the appropriate AGENTS.md.
 - Every repository-owned directory named `dist` is ignored generated output and must never be tracked. Generate required `dist` content explicitly before compilation, testing, or packaging, and remove generated `dist` directories from the final worktree.
 - Track repository asset files of at least 512 KiB through exact-path Git LFS attributes. Checkouts that compile, test, or package those assets must hydrate LFS objects first; preserve source licenses and notices. Schema-only Buf baseline clones must skip LFS smudging within the breaking-check command so pointer-only checkouts need no unrelated asset downloads. Follow `docs/repository-workflow-contract.md`.
-- List files in `docs/` before starting each task, and keep `docs/` up-to-date.
+- Keep `docs/` up-to-date.
 - For documentation authoring and editing tasks, do not arbitrarily omit, delete, or simplify requested or source-backed content; if content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret; update or create the relevant `AGENTS.md` in the same change only when development procedures, directory ownership or repository/domain development rules change.
 - Public documentation surfaces must not document repository-internal implementation details. Keep internal source-of-truth contracts, architecture notes, repo-local paths, and operational internals in `docs/`; curate public docs under `apps/*-docs` and `apps/public-docs` around user-facing behavior, supported workflows, stable public interfaces, and maintainer-facing paths only when those paths are explicitly part of the public contract.
 - Write all code and comments in English.
@@ -34,15 +40,11 @@
 - When no explicit scope is specified and you are currently working within a pull request scope, interpret instructions within the current pull request scope.
 - Do not guess; rather search for the web.
 - Follow `docs/repository-dependency-security-contract.md` for dependency security updates, validation evidence, and unresolved upstream constraints. Keep unresolved advisories visible; a fixed runtime pin or an unavailable patch is not a vulnerability fix.
-- Debug by logging. You should write enough logging code.
-- Write sufficient logs for debugging and operational troubleshooting.
-- Prefer structured logging libraries for business and system logs (Go: `log/slog`, Rust: `tracing`).
 - Prioritize Connect RPC-based communication for business flows over Tauri-specific bindings.
 - Prefer React Query for frontend server-state management when it is available.
 - When using React Query with Connect RPC, use `@connectrpc/connect-query` from `https://github.com/connectrpc/connect-query-es`.
 - When accessing `github.com`, use the GitHub CLI (`gh`) instead of browser-based workflows when possible.
 - Run GitHub CLI (`gh`) commands outside sandbox restrictions by default; use the required approval flow when escalation is needed.
-- When writing shell commands or scripts, treat backticks and command substitution carefully, prefer `$(...)` over legacy backticks, and apply strict escaping for all dynamic values.
 - If an operation is blocked by sandbox restrictions, retry it without sandbox restrictions using the required approval flow.
 
 ## Monorepo Structure Map
@@ -56,11 +58,14 @@
 - `packages/`: Shared generated and runtime packages, including the implemented DevHud API client.
 - `packaging/`: Package-manager template assets for release automation.
 - `.agents/skills/`: Workspace-local Codex skills and reusable agent workflows.
+- `scripts/`: Shared development, CI, installation and release tooling.
+- `.github/`: GitHub workflows and shared actions.
 
 ## Canonical Directory Map
 
 - `docs/project-bundlewhy.md`: bundlewhy bundler optimization debugger project index (Rust core, web UI, protocol, adapters).
 - `docs/project-typeopt.md`: typeopt Rust property optimizer project index.
+- `docs/project-typenative.md`: TypeNative native application framework project index.
 - `docs/crates-typeopt-foundation.md`: typeopt CLI, safety, Vite integration and benchmark contract.
 - `docs/project-fixkey.md`: FixKey keyboard-layout correction desktop project index (planned `crates/fixkey-core`, `apps/fixkey`).
 - `docs/crates-fixkey-core-foundation.md`: FixKey correction engine contract.
@@ -113,6 +118,9 @@
 - Every structural change to project paths must update the corresponding project index and relevant domain contract docs in the same change.
 - Development-procedure, directory-ownership and repository/domain development-rule updates must be written in the appropriate `AGENTS.md` in the same change.
 - Domain-level `AGENTS.md` files must route to their owning contracts and follow the instruction-update policy.
+- Documentation-only project onboarding may use `planned` paths, but runtime implementation must not begin before canonical paths are created and documented.
+- When user-facing documentation content changes, update relevant pages in `apps/public-docs` in the same change set as needed.
+- If a project splits into multiple deployables, the project index must include path ownership and integration boundaries, and component-level domain docs must exist.
 
 ## New Project Onboarding Checklist
 
@@ -183,23 +191,11 @@
 
 ## Logging Rules
 
-- Write sufficient logs to support debugging, incident analysis, and operational troubleshooting.
+- Debug by logging. Write sufficient logs to support debugging, incident analysis, and operational troubleshooting.
 - Prefer structured logging over ad-hoc plain text logs for business and system events.
 - Go code should use `log/slog` (or a compatible structured logger built on it).
 - Rust code should use `tracing` (or a compatible structured logging facade).
 - CLI and operator-facing logs should enable ANSI color by default; allow opt-out with documented flags or environment variables.
-
-## Documentation Lifecycle Rules
-
-- Every structural repository change must update relevant project index docs and domain contract docs in the same change set.
-- New project creation is blocked until its project index doc and at least one domain contract doc exist.
-- Documentation-only project onboarding may use `planned` paths, but runtime implementation must not begin before canonical paths are created and documented.
-- Repository-wide and domain rules must be maintained in the appropriate `AGENTS.md`.
-- Documentation policy updates and documentation changes that introduce or modify repository/domain development rules must update the relevant `AGENTS.md` files in the same change, and documentation edits must not silently omit or reinterpret ambiguous requested or source-backed content without user confirmation.
-- When user-facing documentation content changes, update relevant pages in `apps/public-docs` in the same change set as needed.
-- Run `git commit` only after `git add`; once files are staged, create the commit without unnecessary delay.
-- After addressing pull request review comments and pushing updates, resolve the corresponding review threads.
-- If a project splits into multiple deployables, the project index must include path ownership and integration boundaries, and component-level domain docs must exist.
 
 ## Contract navigation
 
@@ -207,5 +203,3 @@
 - [Repository workflow](docs/repository-workflow-contract.md) owns CI, release, allocation-validation records and validation procedures.
 - [Environment ownership](docs/repository-environment-contract.md) owns development selectors, service configuration, child environments and shutdown.
 - Read scoped instructions in every affected domain, including cross-domain consumers.
-
-- `docs/project-typenative.md`: TypeNative native application framework project index.
