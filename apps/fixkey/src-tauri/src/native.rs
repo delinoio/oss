@@ -724,6 +724,7 @@ pub fn shortcut(app: &AppHandle, key: Shortcut) {
             runtime.status = reason.into();
         }
         hide_candidates(app);
+        crate::desktop::record_error(app, reason);
     }
 }
 pub fn candidate_action(

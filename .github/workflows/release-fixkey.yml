@@ -118,7 +118,9 @@ jobs:
           try {
             [IO.File]::WriteAllBytes($file, [Convert]::FromBase64String($env:FIXKEY_WINDOWS_CERTIFICATE))
             $password = ConvertTo-SecureString $env:FIXKEY_WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
-            $certificate = Import-PfxCertificate -FilePath $file -CertStoreLocation Cert:\CurrentUser\My -Password $password
+            $certificates = @(Import-PfxCertificate -FilePath $file -CertStoreLocation Cert:\CurrentUser\My -Password $password | Where-Object HasPrivateKey)
+            if ($certificates.Count -ne 1) { throw 'fixkey-windows-signing-identity-ambiguous' }
+            $certificate = $certificates[0]
             if (!$certificate.HasPrivateKey -or $certificate.NotAfter -lt (Get-Date)) { throw 'fixkey-windows-certificate-invalid' }
             "FIXKEY_WINDOWS_THUMBPRINT=$($certificate.Thumbprint)" >> $env:GITHUB_ENV
           } finally { Remove-Item -Force -ErrorAction SilentlyContinue $file }
@@ -126,12 +128,12 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.FIXKEY_UPDATER_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.FIXKEY_UPDATER_PRIVATE_KEY_PASSWORD }}
-          APPLE_CERTIFICATE: ${{ secrets.FIXKEY_APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.FIXKEY_APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.FIXKEY_APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.FIXKEY_APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.FIXKEY_APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.FIXKEY_APPLE_TEAM_ID }}
+          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.FIXKEY_APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.FIXKEY_APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.FIXKEY_APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.FIXKEY_APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ runner.os == 'macOS' && secrets.FIXKEY_APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.FIXKEY_APPLE_TEAM_ID || '' }}
         shell: bash
         run: |
           set -euo pipefail
