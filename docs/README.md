@@ -66,6 +66,12 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Connect protocol v1](protos-bundlewhy-v1-contract.md)
 - [Engine adapters and distribution](packages-bundlewhy-distribution-contract.md)
 
+### fixkey
+
+- [Project index](project-fixkey.md)
+- [Rust correction engine](crates-fixkey-core-foundation.md)
+- [Desktop application](apps-fixkey-desktop-contract.md)
+
 ### typeopt
 
 - [Project index](project-typeopt.md)

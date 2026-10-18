@@ -32,6 +32,7 @@
 
 - [bundlewhy Rust foundation](../docs/crates-bundlewhy-foundation.md)
 - [typeopt Rust CLI foundation](../docs/crates-typeopt-foundation.md)
+- [FixKey correction engine (planned crate)](../docs/crates-fixkey-core-foundation.md)
 
 - [clibox public documentation foundation](../docs/apps-clibox-docs-foundation.md)
 - [DeliDev source ownership and compatibility](../docs/cmds-delidev-structure-contract.md)
