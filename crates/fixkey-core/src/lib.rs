@@ -4,6 +4,7 @@
 //! The contract for this crate lives in
 //! `docs/crates-fixkey-core-foundation.md`.
 
+pub mod layout;
 pub mod types;
 
 pub use types::{CandidateValidation, CorrectionOutcome, Language, LanguageSet, SkipReason};
