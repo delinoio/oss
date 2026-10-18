@@ -82,6 +82,7 @@ const devhudJobs = [
   "devhud-release-contracts",
 ];
 const achJobs = ["async-commit-hook"];
+const fixkeyJobs = ["fixkey-frontend", "fixkey-desktop"];
 
 function step(job, id) {
   return job.steps.find((candidate) => candidate.id === id);
@@ -468,9 +469,9 @@ test("one change plan gates every domain job before runner allocation", () => {
   );
   assert.deepEqual(
     Object.keys(jobPaths).sort(),
-    [...legacyJobs, ...devhudJobs, ...achJobs].sort(),
+    [...legacyJobs, ...devhudJobs, ...achJobs, ...fixkeyJobs].sort(),
   );
-  for (const id of [...legacyJobs, ...devhudJobs, ...achJobs]) {
+  for (const id of [...legacyJobs, ...devhudJobs, ...achJobs, ...fixkeyJobs]) {
     const job = workflow.jobs[id];
     assert.deepEqual(job.needs, "changes", id);
     assert.equal(
