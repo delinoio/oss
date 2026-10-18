@@ -31,10 +31,7 @@ test("selected Rust owners have exactly their required Turbo prerequisite graph"
       const expected = [
         ...(packages.includes("devhud") ? ["devhud#ci:build:frontend"] : []),
         ...(packages.includes("delidev-desktop")
-          ? [
-              "delidev-desktop#build:frontend",
-              "delidev-desktop#prepare:sidecar",
-            ]
+          ? ["delidev-desktop#build:frontend"]
           : []),
         ...(command === "test" && packages.includes("pnport")
           ? ["ci:pnport:companion"]

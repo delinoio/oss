@@ -505,11 +505,6 @@ jobs:
           toolchain: nightly-2026-09-28
           components: clippy
 
-      - name: Setup Go for DeliDev sidecar
-        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') }}
-        id: ci-go
-        uses: ./.github/actions/setup-ci-go
-
       - name: Setup Node.js
         id: ci-node
         uses: ./.github/actions/setup-ci-node
@@ -548,13 +543,6 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
-      - name: Save Go cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outcome == 'success' && steps.ci-go.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ steps.ci-go.outputs.cache-path }}
-          key: ${{ steps.ci-go.outputs.cache-key }}
-
       - name: Preserve Turbo run summaries
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
@@ -585,7 +573,7 @@ jobs:
           toolchain: nightly-2026-09-28
 
       - name: Setup Go for Rust test prerequisites
-        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'delidev-desktop') || contains(fromJSON(needs.changes.outputs.rust_packages), 'pnport') }}
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'pnport') }}
         id: ci-go
         uses: ./.github/actions/setup-ci-go
 
@@ -1704,139 +1692,6 @@ jobs:
           path: ${{ steps.prebuilt.outputs.cache-path }}
           key: ${{ steps.prebuilt.outputs.cache-key }}
 
-  delidev-protocol:
-    needs: changes
-    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['delidev-protocol'] }}
-    name: DeliDev Schemas and Generated Bindings
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-      id-token: write
-    steps:
-      - name: Checkout
-        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          fetch-depth: 0
-          lfs: true
-
-      - name: Setup Node.js
-        id: ci-node
-        uses: ./.github/actions/setup-ci-node
-
-      - name: Setup Turbo remote cache
-        uses: ./.github/actions/setup-turbo-cache
-        with:
-          team: ${{ vars.TURBO_TEAM }}
-          policy: ${{ vars.TURBO_OIDC_POLICY }}
-
-      - name: Setup Go
-        id: ci-go
-        uses: ./.github/actions/setup-ci-go
-        with:
-          cache-scope: delidev-protocol
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-
-      - name: Check schemas and generated freshness
-        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:proto:check
-        env:
-          DEVHUD_PROTO_BASELINE: ${{ github.event_name == 'push' && github.event.before || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && 'HEAD^') || 'origin/main' }}
-          FORCE_RUN: "true"
-
-      - name: Test Go bindings
-        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:delidev:bindings
-        env:
-          DEVHUD_PROTO_BASELINE: ${{ github.event_name == 'push' && github.event.before || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && 'HEAD^') || 'origin/main' }}
-          FORCE_RUN: "true"
-
-      - name: Save pnpm cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ steps.ci-node.outputs.cache-path }}
-          key: ${{ steps.ci-node.outputs.cache-key }}
-
-      - name: Save Go cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ steps.ci-go.outputs.cache-path }}
-          key: ${{ steps.ci-go.outputs.cache-key }}
-
-      - name: Preserve Turbo run summaries
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: turbo-delidev-protocol-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: .turbo/runs/*.json
-          if-no-files-found: ignore
-
-  delidev-client:
-    needs: changes
-    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['delidev-client'] }}
-    name: DeliDev TypeScript Client
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
-        with:
-          fetch-depth: 0
-          lfs: true
-          persist-credentials: false
-      - name: Setup Node.js
-        id: ci-node
-        uses: ./.github/actions/setup-ci-node
-      - name: Setup Go
-        id: ci-go
-        uses: ./.github/actions/setup-ci-go
-        with:
-          cache-scope: delidev-client
-      - name: Setup Turbo remote cache
-        uses: ./.github/actions/setup-turbo-cache
-        with:
-          team: ${{ vars.TURBO_TEAM }}
-          policy: ${{ vars.TURBO_OIDC_POLICY }}
-
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Build runner-owned Go fixture executable
-        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:delidev:fixture
-        env:
-          FORCE_RUN: "true"
-      - name: Run affected client checks
-        env:
-          TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
-          TURBO_SCM_HEAD: ${{ needs.changes.outputs.head }}
-          FORCE_RUN: ${{ fromJSON(needs.changes.outputs.forced)['delidev-client'] }}
-        run: node scripts/ci/run-affected.mjs @delinoio/delidev-api-client ci:check
-
-      - name: Save pnpm cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ steps.ci-node.outputs.cache-path }}
-          key: ${{ steps.ci-node.outputs.cache-key }}
-
-      - name: Save Go cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ steps.ci-go.outputs.cache-path }}
-          key: ${{ steps.ci-go.outputs.cache-key }}
-
-      - name: Preserve Turbo run summaries
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: turbo-delidev-client-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: .turbo/runs/*.json
-          if-no-files-found: ignore
-
   delidev-frontend:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['delidev-frontend'] }}
@@ -1858,11 +1713,6 @@ jobs:
       - name: Setup Node.js
         id: ci-node
         uses: ./.github/actions/setup-ci-node
-      - name: Setup Go
-        id: ci-go
-        uses: ./.github/actions/setup-ci-go
-        with:
-          cache-scope: ${{ format('delidev-frontend-{0}', matrix.phase) }}
       - name: Setup Turbo remote cache
         uses: ./.github/actions/setup-turbo-cache
         with:
@@ -1871,11 +1721,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Build runner-owned Go fixture executable
-        if: ${{ matrix.phase != 'checks' }}
-        run: node scripts/ci/run-affected.mjs @delinoio/ci ci:delidev:fixture
-        env:
-          FORCE_RUN: "true"
       - name: Run affected desktop checks
         env:
           TURBO_SCM_BASE: ${{ needs.changes.outputs.base }}
@@ -1889,13 +1734,6 @@ jobs:
         with:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
-
-      - name: Save Go cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-go.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5
-        with:
-          path: ${{ steps.ci-go.outputs.cache-path }}
-          key: ${{ steps.ci-go.outputs.cache-key }}
 
       - name: Preserve Turbo run summaries
         if: ${{ always() }}
@@ -2753,8 +2591,6 @@ jobs:
       - devhud-desktop
       - devhud-mobile-contracts
       - devhud-android-emulator
-      - delidev-protocol
-      - delidev-client
       - delidev-frontend
       - devhud-admin
       - delcore-api

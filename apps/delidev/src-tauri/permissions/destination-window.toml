@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "destination-window"
-description = "A registered local or saved-server product document can ask the native host to open one more product window on its own connection at a typed destination: closed route enums and opaque IDs only, no URLs, drafts or session creation."
-commands.allow = ["open_destination_window"]

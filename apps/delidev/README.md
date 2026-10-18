@@ -1,9 +1,11 @@
-# DeliDev desktop
+# DeliDev
 
-## Desktop platform limitation
+An empty desktop application built with React, Rsbuild and Tauri/CEF.
 
-Windows desktop runs Chromium without its process sandbox because the current upstream CEF runtime does not support an executable-host sandbox broker. This is an explicit platform exception; native IPC restrictions and private browser-profile storage still apply. macOS and Linux require the Chromium process sandbox. Linux file selection requires an XDG desktop portal and portal backend; confirmation dialogs require `zenity`.
+```sh
+pnpm dev:desktop
+```
 
-Maintainer builds download and verify the pinned Tauri CLI automatically. Use `node scripts/tauri-cli.mjs --source --print-path` from the repository root only when explicitly choosing a local source build; CI always requires the published binary.
+Run this command from this directory after installing workspace dependencies. It opens a blank native window. `pnpm test` checks types and builds the frontend. `pnpm build:native` builds the native executable.
 
-Linux AppImage users need an XDG desktop portal service and implementation plus `zenity` for file and confirmation dialogs. On Ubuntu 24.04, install them with `sudo apt install xdg-desktop-portal xdg-desktop-portal-gtk zenity`. Debian packages declare these dialog dependencies.
+See the [desktop contract](../../docs/apps-delidev-desktop-contract.md) for ownership and validation requirements.

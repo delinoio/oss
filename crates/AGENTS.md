@@ -35,7 +35,6 @@
 - [FixKey correction engine (planned crate)](../docs/crates-fixkey-core-foundation.md)
 
 - [clibox public documentation foundation](../docs/apps-clibox-docs-foundation.md)
-- [DeliDev source ownership and compatibility](../docs/cmds-delidev-structure-contract.md)
 - [crates-binpm-foundation](../docs/crates-binpm-foundation.md)
 - [crates-cargo-mono-foundation](../docs/crates-cargo-mono-foundation.md)
 - [clibox Rust foundation](../docs/crates-clibox-foundation.md)

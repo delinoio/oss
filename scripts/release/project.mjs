@@ -14,7 +14,6 @@ export const Project = Object.freeze({
   Pnport: "pnport",
   AsyncCommitHook: "async-commit-hook",
   ReactForge: "react-forge",
-  DeliDev: "delidev",
 });
 export const Bump = Object.freeze({
   Patch: "patch",
@@ -30,7 +29,6 @@ export function releaseTag(project, version) {
   return `${project}@v${version}`;
 }
 const versions = Object.freeze({
-  delidev: { kind: Kind.Rust, file: "apps/delidev/src-tauri/Cargo.toml" },
   clibox: { kind: Kind.Rust, file: "crates/clibox/Cargo.toml" },
   pnport: { kind: Kind.Rust, file: "crates/pnport/Cargo.toml" },
   binpm: { kind: Kind.Rust, file: "crates/binpm/Cargo.toml" },
@@ -67,16 +65,15 @@ function descriptor(project) {
 }
 
 // Rust source versioning is independent from registry distribution: clibox
-// and pnport ship through npm and native packages; DeliDev ships native downloads.
+// and pnport ship through npm and native packages.
 export function requiresCargoPublish(project) {
   return (
     descriptor(project).kind === Kind.Rust &&
-    ![Project.Clibox, Project.Pnport, Project.DeliDev].includes(project)
+    ![Project.Clibox, Project.Pnport].includes(project)
   );
 }
 
 function replaceLockVersion(lock, project, previous, next) {
-  if (project === Project.DeliDev) project = "delidev-desktop";
   const sections = [
     ...lock.matchAll(/^\[\[package\]\]\n[\s\S]*?(?=^\[\[|$(?![\s\S]))/gmu),
   ].filter(([section]) => section.split("\n").includes(`name = "${project}"`));
@@ -136,7 +133,6 @@ export function bumpVersion(version, bump) {
 // complete TOML sections, never a dependency's version or an external lock entry.
 // Reject ambiguous/new layouts until their release contract is explicitly added.
 function replaceVersion(source, project, kind, next) {
-  if (project === Project.DeliDev) project = "delidev-desktop";
   if (kind === Kind.Node) {
     const manifest = JSON.parse(source);
     requireValue(
@@ -245,34 +241,6 @@ function asyncCommitHookVersionChanges(read, current, next = current) {
   );
 }
 
-function delidevVersionChanges(read, current, next = current) {
-  return Object.fromEntries(
-    ["apps/delidev/package.json", "apps/delidev/src-tauri/tauri.conf.json"].map(
-      (file) => {
-        const source = read(file);
-        const value = JSON.parse(source);
-        requireValue(
-          file.endsWith("package.json")
-            ? value.name === "delidev-desktop" && value.private === true
-            : value.identifier === "io.delino.delidev",
-          "DeliDev release identity mismatch",
-        );
-        requireValue(
-          value.version === current &&
-            [...source.matchAll(/"version"\s*:/gu)].length === 1,
-          "DeliDev source versions disagree",
-        );
-        const pattern = /^  "version": "([^"\r\n]+)",$/gmu;
-        requireValue(
-          [...source.matchAll(pattern)].length === 1,
-          "Missing or ambiguous DeliDev version",
-        );
-        return [file, source.replace(pattern, `  "version": "${next}",`)];
-      },
-    ),
-  );
-}
-
 export function readVersion(
   project,
   read = (file) => readFileSync(path.join(root, file), "utf8"),
@@ -301,7 +269,6 @@ export function readVersion(
   }
   if (project === Project.AsyncCommitHook)
     asyncCommitHookVersionChanges(read, current);
-  if (project === Project.DeliDev) delidevVersionChanges(read, current);
   return current;
 }
 
@@ -395,16 +362,6 @@ export function versionChanges(project, bump, read) {
       changes,
       asyncCommitHookVersionChanges(read, previous_version, version),
     );
-  if (project === Project.DeliDev) {
-    requireValue(
-      version.split(".").every((part) => BigInt(part) <= 0xffffffffn),
-      "DeliDev version component overflow",
-    );
-    Object.assign(
-      changes,
-      delidevVersionChanges(read, previous_version, version),
-    );
-  }
   return {
     project,
     bump,

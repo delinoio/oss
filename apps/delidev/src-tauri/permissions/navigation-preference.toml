@@ -1,4 +1,0 @@
-[[permission]]
-identifier = "device-navigation"
-description = "Read or select the computer-local navigation pin state; no server configuration or arbitrary paths."
-commands.allow = ["read_navigation_preference", "update_navigation_preference"]

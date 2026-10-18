@@ -25,7 +25,6 @@ const generatedPaths = [
   "protos/gen",
   "packages/devhud-api-client/src/gen",
   "packages/async-commit-hook-api-client/src/gen",
-  "packages/delidev-api-client/src/gen",
 ];
 
 const fixtureBin = "runtime/Buf entry & shell; .cjs";
@@ -167,7 +166,6 @@ test("lint, format and freshness dispatch the installed Buf entry through the cu
           "generate",
         ],
       },
-      { command: process.execPath, args: ["scripts/delidev/proto-compat.mjs"] },
       {
         command: "git",
         args: ["diff", "--exit-code", "--", ...generatedPaths],
@@ -184,7 +182,7 @@ test("lint, format and freshness dispatch the installed Buf entry through the cu
       },
     ],
   );
-  for (const call of syncCalls.slice(0, 3)) {
+  for (const call of syncCalls.slice(0, 2)) {
     assert.equal(resolve(call.options.cwd), f.cwd);
     assert.equal(call.options.shell, false);
   }
@@ -340,7 +338,7 @@ test("installed Buf lint and format return their actual results with no standalo
   assert.equal(f.leaf("format").status, format.status);
 });
 
-test("installed Buf generation retains compatibility, failure status and tracked/untracked freshness", (t) => {
+test("installed Buf generation retains failure status and tracked/untracked freshness", (t) => {
   const f = installedFixture(t);
   const git = (...args) =>
     execFileSync("git", args, {
@@ -382,21 +380,11 @@ test("installed Buf generation retains compatibility, failure status and tracked
       ],
     }),
   );
-  f.write(
-    "scripts/delidev/proto-compat.mjs",
-    `
-    import { readFileSync, writeFileSync } from "node:fs";
-    // Read generated output to prove compatibility runs after generation.
-    writeFileSync("protos/gen/compat.txt", readFileSync("protos/gen/fixture.txt"));
-  `,
-  );
+
   let result = f.leaf("fresh");
   assert.notEqual(result.status, 0, "New generated files must be rejected");
   assert.match(result.stderr, /Generated protocol files are untracked/u);
-  assert.equal(
-    readFileSync(join(f.cwd, "protos/gen/compat.txt"), "utf8"),
-    "fixture output\n",
-  );
+
   git("add", "--all");
   git("commit", "-m", "clean protocol fixture");
   result = f.leaf("fresh");

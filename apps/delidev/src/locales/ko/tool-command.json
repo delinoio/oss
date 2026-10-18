@@ -1,9 +1,0 @@
-{
-  "tool-command.details": "자세히",
-  "tool-command.outputAbsent": "관찰된 네이티브 텍스트 출력이 없습니다.",
-  "tool-command.streamOutput": "네이티브 스트림 출력",
-  "tool-command.originalObservations": "원래 명령 관찰",
-  "tool-command.exit": "네이티브 종료 코드: {{exit}}",
-  "tool-command.originalStart": "원래 명령 시작",
-  "tool-command.originalCompletion": "원래 명령 완료"
-}

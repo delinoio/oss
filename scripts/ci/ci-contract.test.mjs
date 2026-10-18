@@ -83,7 +83,7 @@ const devhudJobs = [
 ];
 const delcoreJobs = ["delcore-api"];
 const achJobs = ["async-commit-hook"];
-const delidevJobs = ["delidev-protocol", "delidev-client", "delidev-frontend"];
+const delidevJobs = ["delidev-frontend"];
 
 function step(job, id) {
   return job.steps.find((candidate) => candidate.id === id);
@@ -335,7 +335,6 @@ test("every step reaching shared protocol breaking checks carries the event base
   for (const event of [Event.PullRequest, Event.Push]) {
     const plan = planJobs(event, ["protos/devhud/v1/common.proto"]);
     assert.equal(plan.jobs["async-commit-hook"], true);
-    assert.equal(plan.jobs["delidev-protocol"], false);
     assert.ok(
       jobTaskGraph(workflow.jobs["async-commit-hook"]).has(
         "@delinoio/ci#ci:proto:breaking",
@@ -409,8 +408,8 @@ test("every step reaching shared protocol breaking checks carries the event base
     "Inventory must include the async-commit-hook release protocol step",
   );
   assert.ok(
-    consumers.length >= 4,
-    "Inventory must include protocol, bindings and async-commit-hook steps",
+    consumers.length >= 2,
+    "Inventory must include CI and release async-commit-hook protocol steps",
   );
   const config = JSON.parse(
     readFileSync(`${root}/scripts/ci/turbo.json`, "utf8"),
@@ -524,7 +523,6 @@ test("one change plan gates every domain job before runner allocation", () => {
     "devhud-security",
     "devhud-admin",
     "devhud-api",
-    "delidev-protocol",
     "repository-environment",
   ]) {
     for (const path of [
@@ -841,27 +839,6 @@ test("desktop and mobile matrices match the committed architecture contracts", (
   }
 });
 
-test("DeliDev schema validation preserves shared freshness without client or desktop tests", () => {
-  assert.equal(workflow.jobs["devhud-protocol"], undefined);
-  const job = workflow.jobs["delidev-protocol"];
-  assert.equal(job.name, "DeliDev Schemas and Generated Bindings");
-  assert.equal(job["runs-on"], "ubuntu-latest");
-  const commands = jobCommands(job);
-  for (const command of [
-    "@delinoio/ci#ci:proto:check",
-    "go test ./protos/gen/go/delidev/...",
-  ])
-    assert.ok(commands.includes(command), command);
-  assert.doesNotMatch(
-    commands,
-    /api-client|delidev-desktop|go test \.\/protos\/\.\.\./u,
-  );
-  assert.equal(
-    job.steps.filter(({ run }) => run?.includes("pnpm install")).length,
-    1,
-  );
-});
-
 test("DevHud signature fixtures run on Windows without release authority", () => {
   const job = workflow.jobs["devhud-supply-chain"];
   assert.equal(job["runs-on"], "${{ matrix.os }}");
@@ -898,7 +875,6 @@ test("DevHud signature fixtures run on Windows without release authority", () =>
 
 test("implemented DevHud conformance commands are wired to their owning jobs", () => {
   const commands = new Map([
-    ["delidev-protocol", ["proto:check", "go test ./protos/"]],
     [
       "devhud-api",
       [
@@ -1300,15 +1276,12 @@ test("package-local CI commands and deterministic cache boundaries are explicit"
   for (const output of [
     "protos/gen/**",
     "packages/devhud-api-client/src/gen/**",
-    "packages/delidev-api-client/src/gen/**",
   ])
     assert.ok(
       turbo.tasks["//#proto:generate"].outputs.includes(output),
       output,
     );
-  assert.ok(
-    turbo.tasks["//#proto:generate"].inputs.includes("protos/delidev/v1/**"),
-  );
+
   assert.equal(
     packages["package.json"].scripts["proto:generate:cached"],
     "turbo run //#proto:generate",
@@ -1443,7 +1416,7 @@ test("local CI commands are documented by repository contracts", () => {
     assert.ok(project.includes(command), command);
 });
 
-test("Go validation consumes the planned event matrix and retains five native Windows shards on main", () => {
+test("Go validation consumes the planned event matrix and retains the native Windows core shard on main", () => {
   const job = workflow.jobs["go-test"];
   assert.equal(job.strategy["fail-fast"], false);
   assert.equal(
@@ -1457,7 +1430,7 @@ test("Go validation consumes the planned event matrix and retains five native Wi
   assert.deepEqual(matricesForEvent(Event.Push).goTestMatrix, {
     include: [
       { os: "ubuntu-latest", shard: "all", label: "ubuntu-latest" },
-      ...["core", "server", "harness", "worker", "workspace"].map((shard) => ({
+      ...["core"].map((shard) => ({
         os: "windows-latest",
         shard,
         label: `windows-latest, ${shard}`,
@@ -1739,27 +1712,28 @@ test("Rust CI consumes one verified prebuilt selection and gates native preparat
       "${{ needs.changes.outputs.rust_packages }}",
     );
 
-    if (id === "rust-clippy")
-      assert.equal(
-        namedStep(job, "Setup Go for DeliDev sidecar").if,
-        selected("delidev-desktop"),
-      );
-    else {
+    if (id === "rust-test") {
       const go = namedStep(job, "Setup Go for Rust test prerequisites");
-      for (const owner of ["delidev-desktop", "pnport"])
-        assert.ok(go.if.includes(owner));
+      for (const owner of ["pnport"]) assert.ok(go.if.includes(owner));
     }
     assert.ok(
       namedStep(job, "Install DevHUD Linux prerequisites").if.includes(
         "rust_packages",
       ),
     );
-    assert.ok(
-      namedStep(
-        job,
-        "Save Go cache after successful main validation",
-      ).if.includes("steps.ci-go.outcome == 'success'"),
-    );
+    if (id === "rust-test") {
+      assert.ok(
+        namedStep(
+          job,
+          "Save Go cache after successful main validation",
+        ).if.includes("steps.ci-go.outcome == 'success'"),
+      );
+    } else {
+      assert.equal(
+        namedStep(job, "Save Go cache after successful main validation"),
+        undefined,
+      );
+    }
   }
 
   assert.ok(
@@ -1786,8 +1760,6 @@ test("Go selection preserves exact comparisons and keeps quality validation unch
     "go-quality",
     "async-commit-hook",
     "devhud-api",
-    "delidev-protocol",
-    "delidev-client",
   ])
     assert.equal(step(workflow.jobs[id], "ci-go").with["cache-scope"], id);
   assert.equal(
@@ -1861,155 +1833,6 @@ test("the separate Runmoor PR workflow retains full native validation through Tu
       assert.ok(
         candidate.if.includes("success() && github.ref == 'refs/heads/main'"),
       );
-  }
-});
-
-test("DeliDev desktop phases partition all tests and preserve uncached executable reuse", () => {
-  const job = workflow.jobs["delidev-frontend"];
-  assert.equal(job.strategy["fail-fast"], false);
-  assert.equal(
-    job.strategy.matrix,
-    "${{ fromJSON(needs.changes.outputs.delidev_frontend_matrix) }}",
-  );
-  assert.equal(
-    namedStep(job, "Build runner-owned Go fixture executable").if,
-    "${{ matrix.phase != 'checks' }}",
-  );
-  const manifest = JSON.parse(
-    readFileSync(`${root}/apps/delidev/package.json`, "utf8"),
-  );
-  for (const shard of [1, 2, 3, 4])
-    assert.equal(
-      manifest.scripts[`test:ci:tests-${shard}`],
-      `vitest run --shard=${shard}/4`,
-    );
-  for (const command of [
-    "pnpm typecheck",
-    "test:bundle-dry-run",
-    "test:desktop-launch",
-    "test:widget",
-    "test:qa",
-    "pnpm build",
-    "qa/check-release.mjs",
-  ])
-    assert.ok(manifest.scripts["test:ci:checks"].includes(command));
-  const desktop = JSON.parse(
-    readFileSync(`${root}/apps/delidev/turbo.json`, "utf8"),
-  );
-  for (const shard of [1, 2, 3, 4]) {
-    assert.equal(desktop.tasks[`test:unit:${shard}`].cache, true);
-    assert.equal(desktop.tasks[`test:integration:${shard}`].cache, false);
-    for (const name of [`test:unit:${shard}`, `test:integration:${shard}`])
-      for (const input of [
-        "scripts/ci-test-sequencer.mjs",
-        "scripts/ci-test-weights.json",
-      ])
-        assert.ok(
-          desktop.tasks[name].inputs.includes(input),
-          `${name}: ${input}`,
-        );
-    assert.ok(
-      desktop.tasks[`test:integration:${shard}`].dependsOn.includes(
-        `test:unit:${shard}`,
-      ),
-    );
-    assert.ok(
-      desktop.tasks[`test:integration:${shard}`].passThroughEnv.includes(
-        "DELIDEV_TEST_BINARY",
-      ),
-    );
-    assert.equal(
-      manifest.scripts[`test:unit:${shard}`],
-      `vitest run --exclude "**/*.integration.test.*" --shard=${shard}/4`,
-    );
-    assert.equal(
-      manifest.scripts[`test:integration:${shard}`],
-      `vitest run .integration.test. --shard=${shard}/4`,
-    );
-  }
-  assert.ok(
-    manifest.scripts["test:desktop-launch"].includes(
-      "scripts/ci-test-sequencer.test.mjs",
-    ),
-  );
-  // asset-prefix.test.mjs builds the real frontend, which imports the built
-  // API client, so the launch fixtures must wait for the workspace builds.
-  assert.ok(desktop.tasks["test:desktop-launch"].dependsOn.includes("^build"));
-  const client = JSON.parse(
-    readFileSync(`${root}/packages/delidev-api-client/turbo.json`, "utf8"),
-  );
-  assert.equal(client.tasks["test:unit"].cache, true);
-  assert.equal(client.tasks["test:integration"].cache, false);
-  assert.ok(
-    client.tasks["test:integration"].passThroughEnv.includes(
-      "DELIDEV_TEST_BINARY",
-    ),
-  );
-  const phases = jobTaskGraph(job);
-  for (const name of [
-    "test:unit:1",
-    "test:unit:2",
-    "test:unit:3",
-    "test:unit:4",
-    "test:integration:1",
-    "test:integration:2",
-    "test:integration:3",
-    "test:integration:4",
-    "typecheck",
-    "test:widget",
-    "ci:qa",
-    "build:frontend",
-  ])
-    assert.ok(phases.has(`delidev-desktop#${name}`), name);
-  for (const id of ["delidev-client", "delidev-frontend"])
-    assert.ok(jobCommands(workflow.jobs[id]).includes("ci:delidev:fixture"));
-});
-
-test("DeliDev QA rebuilds wait for all same-checkout output readers", () => {
-  for (const [entry, readers] of [
-    ["ci:checks", ["typecheck", "build:frontend", "ci:release"]],
-    [
-      "ci:check",
-      [
-        "typecheck",
-        "build:frontend",
-        "ci:release",
-        "test:unit",
-        "test:integration",
-      ],
-    ],
-  ]) {
-    const graph = jobTaskGraph({
-      steps: [
-        { run: `node scripts/ci/run-affected.mjs delidev-desktop ${entry}` },
-      ],
-    });
-    const qa = `delidev-desktop#${entry === "ci:checks" ? "ci:qa" : "test:qa"}`;
-    assert.ok(graph.has(qa), "the selected QA owner is retained");
-    const reaches = (id, target, seen = new Set()) => {
-      if (id === target) return true;
-      if (seen.has(id)) return false;
-      seen.add(id);
-      const workspace = id.split("#")[0];
-      return (graph.get(id)?.task.dependsOn ?? []).some((dependency) => {
-        if (dependency.startsWith("^")) return false;
-        return reaches(
-          dependency.includes("#") ? dependency : `${workspace}#${dependency}`,
-          target,
-          seen,
-        );
-      });
-    };
-    for (const reader of readers)
-      assert.ok(
-        reaches(qa, `delidev-desktop#${reader}`),
-        `${qa} must follow ${reader} before its nested client rebuild`,
-      );
-    assert.equal(
-      graph.get(qa).task.cache,
-      false,
-      "actual QA and its joined child lifetimes stay uncached",
-    );
   }
 });
 
@@ -2088,19 +1911,4 @@ test("Rstack formatting uses the exact comparison and never caches results", () 
   assert.ok(leaf.task.passThroughEnv.includes("TURBO_SCM_BASE"));
   assert.ok(leaf.task.passThroughEnv.includes("TURBO_SCM_HEAD"));
   assert.equal(packages["package.json"].devDependencies.rstack, "0.8.3");
-});
-
-test("DeliDev mobile Turbo tasks hash the shared desktop identity module", () => {
-  const mobileTurbo = JSON.parse(
-    readFileSync(`${root}/apps/delidev-mobile/turbo.json`, "utf8"),
-  );
-  const sharedInput = "$TURBO_ROOT$/apps/delidev/src/product-identity.ts";
-  for (const name of ["build", "build:frontend", "typecheck"]) {
-    const inputs = mobileTurbo.tasks[name].inputs;
-    // Turbo replaces (not merges) inherited arrays, so root inputs must be repeated.
-    for (const input of turbo.tasks[name].inputs)
-      assert.ok(inputs.includes(input), `${name}: ${input}`);
-    assert.ok(inputs.includes(sharedInput), `${name}: ${sharedInput}`);
-  }
-  assert.equal(mobileTurbo.tasks.test.cache, false);
 });

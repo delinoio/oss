@@ -489,8 +489,6 @@ test("CI validates release fixtures without publication authority", () => {
     "devhud-desktop",
     "devhud-mobile-contracts",
     "devhud-android-emulator",
-    "delidev-protocol",
-    "delidev-client",
     "delidev-frontend",
     "devhud-admin",
     "devhud-api",

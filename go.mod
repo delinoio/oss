@@ -4,7 +4,6 @@ go 1.26.8
 
 require (
 	connectrpc.com/connect v1.20.0
-	filippo.io/age v1.3.2
 	github.com/actions/scaleset v0.4.0
 	github.com/aws/aws-sdk-go-v2 v1.41.9
 	github.com/aws/aws-sdk-go-v2/config v1.32.20
@@ -13,11 +12,7 @@ require (
 	github.com/aws/smithy-go v1.26.0
 	github.com/containerd/errdefs v1.0.0
 	github.com/coreos/go-oidc/v3 v3.20.0
-	github.com/creack/pty v1.1.24
-	github.com/danieljoos/wincred v1.2.0
-	github.com/ebitengine/purego v0.11.1
 	github.com/go-jose/go-jose/v4 v4.1.4
-	github.com/godbus/dbus/v5 v5.2.2
 	github.com/golang-jwt/jwt/v4 v4.5.2
 	github.com/google/uuid v1.6.0
 	github.com/gowebpki/jcs v1.0.1
@@ -29,7 +24,6 @@ require (
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/prometheus/client_golang v1.24.1
-	github.com/robfig/cron/v3 v3.0.1
 	github.com/sigstore/sigstore-go v1.3.0
 	github.com/tailscale/hujson v0.0.0-20241010212012-29efb4a0184b
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.70.0
@@ -40,7 +34,6 @@ require (
 	go.opentelemetry.io/otel/sdk v1.45.0
 	go.opentelemetry.io/otel/sdk/metric v1.45.0
 	go.opentelemetry.io/otel/trace v1.45.0
-	golang.org/x/image v0.45.0
 	golang.org/x/mod v0.40.0
 	golang.org/x/net v0.58.0
 	golang.org/x/sys v0.47.0
@@ -52,7 +45,6 @@ require (
 )
 
 require (
-	filippo.io/hpke v0.4.0 // indirect
 	github.com/Microsoft/go-winio v0.6.2 // indirect
 	github.com/asaskevich/govalidator v0.0.0-20230301143203-a9d515a09cc2 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.11 // indirect
@@ -111,6 +103,7 @@ require (
 	github.com/go-openapi/swag/yamlutils v0.27.3 // indirect
 	github.com/go-openapi/validate v0.26.1 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
+	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/google/certificate-transparency-go v1.3.3 // indirect
 	github.com/google/go-containerregistry v0.21.7 // indirect
 	github.com/google/jsonschema-go v0.4.3 // indirect
@@ -138,6 +131,8 @@ require (
 	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rhysd/actionlint v1.7.12 // indirect
+	github.com/robfig/cron/v3 v3.0.1 // indirect
+	github.com/rogpeppe/go-internal v1.16.0 // indirect
 	github.com/secure-systems-lab/go-securesystemslib v0.11.0 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect

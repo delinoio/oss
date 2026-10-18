@@ -12,7 +12,6 @@
 
 - [bundlewhy adapters and distribution](../docs/packages-bundlewhy-distribution-contract.md)
 - [React Forge public documentation](../docs/apps-react-forge-docs-foundation.md)
-- [DeliDev source ownership and compatibility](../docs/cmds-delidev-structure-contract.md)
 - [async-commit-hook API client contract](../docs/packages-async-commit-hook-api-client-contract.md)
 - [clibox npm and native distribution](../docs/packages-clibox-distribution-contract.md)
 - [packages-devhud-api-client-contract](../docs/packages-devhud-api-client-contract.md)

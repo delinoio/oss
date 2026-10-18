@@ -1,9 +1,0 @@
-{
-  "tool-command.details": "Details",
-  "tool-command.outputAbsent": "No native text output has been observed.",
-  "tool-command.streamOutput": "Native streamed output",
-  "tool-command.originalObservations": "Original command observations",
-  "tool-command.exit": "Native exit code: {{exit}}",
-  "tool-command.originalStart": "Original command start",
-  "tool-command.originalCompletion": "Original command completion"
-}

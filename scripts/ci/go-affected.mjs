@@ -26,13 +26,6 @@ const shared = new Set([
 // Keep this inventory synchronized with command-building integration fixtures.
 export const commandConsumers = Object.freeze([
   {
-    command: "cmds/delidev-cli",
-    consumers: [
-      "cmds/delidev-cli/internal/cli",
-      "cmds/delidev-cli/internal/server",
-    ],
-  },
-  {
     command: "cmds/async-commit-hook",
     consumers: ["cmds/async-commit-hook/integration"],
   },

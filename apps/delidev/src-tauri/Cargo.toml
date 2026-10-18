@@ -1,7 +1,7 @@
 [package]
 name = "delidev-desktop"
 version = "0.1.0"
-description = "DeliDev native desktop infrastructure"
+description = "DeliDev desktop shell"
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/delinoio/oss"
@@ -10,50 +10,18 @@ default-run = "delidev-desktop"
 
 [features]
 default = []
-desktop-host = ["dep:tauri-runtime-cef", "dep:cef", "dep:tauri", "dep:tauri-build", "dep:tracing-subscriber", "native-notifications", "dep:rfd", "dep:raw-window-handle", "dep:objc2", "dep:objc2-app-kit", "dep:objc2-foundation"]
-native-notifications = ["dep:tokio", "dep:mac-usernotifications", "dep:windows", "dep:zbus", "dep:futures-lite"]
+desktop-host = ["dep:tauri-runtime-cef", "dep:cef", "dep:tauri", "dep:tauri-build", "dep:tracing", "dep:tracing-subscriber"]
 custom-protocol = ["tauri?/custom-protocol"]
 
 [dependencies]
 tauri-runtime-cef = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975", optional = true }
-sha2.workspace = true
-libc.workspace = true
 cef = { version = "=151.8.1", optional = true }
-rfd = { version = "=0.16.0", default-features = false, features = ["xdg-portal", "tokio"], optional = true }
-base64 = "0.22.1"
-dirs = "6"
-sys-locale = "=0.3.2"
-raw-window-handle = { version = "=0.6.2", optional = true }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-tracing = "0.1"
-uuid = { version = "=1.23.0", features = ["serde", "v7"] }
-zeroize = "=1.8.2"
-url = "=2.5.8"
-plist = "=1.10.0"
-tauri = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975", default-features = false, features = ["compression", "tray-icon", "unstable"], optional = true }
-tracing-subscriber = { version = "0.3", features = ["fmt", "json"], optional = true }
-tokio = { version = "=1.49.0", features = ["sync", "time", "rt", "macros"], optional = true }
-
-[target.'cfg(target_os = "macos")'.dependencies]
-objc2 = { version = "=0.6.4", optional = true }
-objc2-app-kit = { version = "=0.3.2", default-features = false, features = ["std", "NSView", "NSResponder", "NSApplication", "NSDockTile"], optional = true }
-objc2-foundation = { version = "=0.3.2", default-features = false, features = ["std", "NSGeometry", "NSString"], optional = true }
-mac-usernotifications = { version = "=0.3.1", default-features = false, optional = true }
-
-[target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61.2", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_JobObjects", "Win32_Security", "Win32_System_Threading", "Win32_UI_Controls", "Win32_UI_WindowsAndMessaging"] }
-windows = { version = "=0.62.2", features = ["Data_Xml_Dom", "UI_Notifications", "Foundation", "Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_UI_Shell", "Win32_System_Com"], optional = true }
-
-[target.'cfg(target_os = "linux")'.dependencies]
-zbus = { version = "=5.19.0", default-features = false, features = ["tokio"], optional = true }
-futures-lite = { version = "=2.6.1", optional = true }
+tauri = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975", default-features = false, features = ["compression"], optional = true }
+tracing = { version = "0.1", optional = true }
+tracing-subscriber = { version = "0.3", features = ["fmt"], optional = true }
 
 [build-dependencies]
-tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975", optional = true }
-
-[dev-dependencies]
-tempfile = "=3.25.0"
+tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975", optional = true, features = [] }
 
 [[bin]]
 name = "delidev-desktop"

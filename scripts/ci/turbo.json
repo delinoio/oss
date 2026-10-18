@@ -670,34 +670,6 @@
         "ci:proto:fresh"
       ]
     },
-    "ci:delidev:bindings": {
-      "cache": false,
-      "dependsOn": ["ci:proto:check"],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "$TURBO_ROOT$/.nvmrc",
-        "$TURBO_ROOT$/package.json",
-        "$TURBO_ROOT$/pnpm-lock.yaml",
-        "$TURBO_ROOT$/rust-toolchain",
-        "$TURBO_ROOT$/go.mod",
-        "$TURBO_ROOT$/go.sum",
-        "$TURBO_ROOT$/scripts/**",
-        "$TURBO_ROOT$/.github/**",
-        "$TURBO_ROOT$/docs/repository-*-contract.md"
-      ],
-      "outputs": [],
-      "passThroughEnv": [
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "GOCACHE",
-        "GOPATH",
-        "GOFLAGS",
-        "CARGO_NET_OFFLINE",
-        "npm_execpath",
-        "RUNNER_TEMP",
-        "GITHUB_SHA"
-      ]
-    },
     "ci:clibox:native": {
       "cache": false,
       "dependsOn": [],
@@ -847,10 +819,7 @@
     },
     "ci:rust:test:delidev": {
       "cache": false,
-      "dependsOn": [
-        "delidev-desktop#build:frontend",
-        "delidev-desktop#prepare:sidecar"
-      ],
+      "dependsOn": ["delidev-desktop#build:frontend"],
       "outputs": [],
       "passThroughEnv": [
         "CARGO_HOME",
@@ -888,8 +857,7 @@
       "cache": false,
       "dependsOn": [
         "devhud#ci:build:frontend",
-        "delidev-desktop#build:frontend",
-        "delidev-desktop#prepare:sidecar"
+        "delidev-desktop#build:frontend"
       ],
       "outputs": [],
       "passThroughEnv": [
@@ -926,11 +894,7 @@
     },
     "ci:rust:test:delidev-pnport": {
       "cache": false,
-      "dependsOn": [
-        "delidev-desktop#build:frontend",
-        "delidev-desktop#prepare:sidecar",
-        "ci:pnport:companion"
-      ],
+      "dependsOn": ["delidev-desktop#build:frontend", "ci:pnport:companion"],
       "outputs": [],
       "passThroughEnv": [
         "CARGO_HOME",
@@ -951,7 +915,6 @@
       "dependsOn": [
         "devhud#ci:build:frontend",
         "delidev-desktop#build:frontend",
-        "delidev-desktop#prepare:sidecar",
         "ci:pnport:companion"
       ],
       "outputs": [],
@@ -989,10 +952,7 @@
     },
     "ci:rust:clippy:delidev": {
       "cache": false,
-      "dependsOn": [
-        "delidev-desktop#build:frontend",
-        "delidev-desktop#prepare:sidecar"
-      ],
+      "dependsOn": ["delidev-desktop#build:frontend"],
       "outputs": [],
       "passThroughEnv": [
         "CARGO_HOME",
@@ -1012,8 +972,7 @@
       "cache": false,
       "dependsOn": [
         "devhud#ci:build:frontend",
-        "delidev-desktop#build:frontend",
-        "delidev-desktop#prepare:sidecar"
+        "delidev-desktop#build:frontend"
       ],
       "outputs": [],
       "passThroughEnv": [
@@ -1101,36 +1060,6 @@
         "RUNNER_TEMP",
         "GITHUB_SHA",
         "CI_GO_TEST_SHARD"
-      ]
-    },
-    "ci:delidev:fixture": {
-      "cache": false,
-      "dependsOn": [],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "$TURBO_ROOT$/.nvmrc",
-        "$TURBO_ROOT$/package.json",
-        "$TURBO_ROOT$/pnpm-lock.yaml",
-        "$TURBO_ROOT$/rust-toolchain",
-        "$TURBO_ROOT$/go.mod",
-        "$TURBO_ROOT$/go.sum",
-        "$TURBO_ROOT$/scripts/**",
-        "$TURBO_ROOT$/.github/**",
-        "$TURBO_ROOT$/docs/repository-*-contract.md"
-      ],
-      "outputs": [],
-      "passThroughEnv": [
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "GOCACHE",
-        "GOPATH",
-        "GOFLAGS",
-        "CARGO_NET_OFFLINE",
-        "npm_execpath",
-        "RUNNER_TEMP",
-        "GITHUB_SHA",
-        "CI_GO_TEST_SHARD",
-        "GITHUB_ENV"
       ]
     },
     "ci:runmoor:unit": {

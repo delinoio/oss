@@ -1,8 +1,0 @@
-{
-  "external-link.notInstalled": "선택한 브라우저가 설치되어 있지 않습니다. 설정 > 브라우저에서 다른 브라우저를 선택하세요.",
-  "external-link.launchFailed": "선택한 브라우저에서 링크를 열지 못했습니다. 브라우저가 정상인지 확인한 뒤 설정 > 브라우저에서 브라우저를 선택하세요.",
-  "external-link.settingsUnreadable": "브라우저 설정을 읽지 못해 링크를 열지 않았습니다. 설정 > 브라우저에서 확인하세요.",
-  "external-link.invalid": "이 링크는 열 수 없습니다. http 및 https 주소만 지원합니다.",
-  "external-link.failed": "링크를 열지 못했습니다. 설정 > 브라우저에서 브라우저를 확인하세요.",
-  "external-link.dismiss": "링크 오류 닫기"
-}

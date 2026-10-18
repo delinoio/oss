@@ -1,1 +1,0 @@
--keep class io.delino.delidev.mobile.bridge.** { *; }

@@ -19,7 +19,6 @@ on:
             pnport,
             async-commit-hook,
             react-forge,
-            delidev,
           ]
       bump:
         description: SemVer increment (next is pnport only)

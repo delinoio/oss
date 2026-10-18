@@ -21,7 +21,6 @@
 - [binpm public documentation foundation](../docs/apps-binpm-docs-foundation.md)
 - [clibox public documentation foundation](../docs/apps-clibox-docs-foundation.md)
 - [DeliDev desktop client](../docs/apps-delidev-desktop-contract.md)
-- [DeliDev mobile client contract](../docs/apps-delidev-mobile-contract.md)
 - [apps-devhud-foundation](../docs/apps-devhud-foundation.md)
 - [DevHud Desktop Updater Contract](../docs/apps-devhud-updater-contract.md)
 - [FixKey desktop application (planned app)](../docs/apps-fixkey-desktop-contract.md)

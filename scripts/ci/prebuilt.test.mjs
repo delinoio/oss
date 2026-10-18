@@ -84,13 +84,13 @@ test("consumer manifests never compile a CLI wrapper and retain platform runtime
     const native = read(`apps/${app}/src-tauri/src/main.rs`);
     assert.match(native, /SandboxPolicy::Auto/u);
     assert.match(native, /SandboxPolicy::Required/u);
-    assert.match(native, /SecretStorage::System/u);
+    if (app === "devhud") assert.match(native, /SecretStorage::System/u);
     assert.match(native, /#\[tauri_runtime_cef::cef_entry_point\]/u);
   }
   const cargo = read("apps/devhud/src-tauri/Cargo.toml");
   assert.match(cargo, /tauri-runtime-wry =/u);
   assert.match(cargo, /gtk = \{ package = "gtk4"/u);
-  for (const app of ["devhud", "delidev"])
+  for (const app of ["devhud"])
     assert.match(
       read(`apps/${app}/src-tauri/Cargo.toml`),
       /"xdg-portal", "tokio"/u,
@@ -110,8 +110,6 @@ test("GTK4 desktop metadata and CI agree on the Ubuntu 24.04 native baseline", a
   ).jobs.desktop.strategy.matrix.include.filter((target) =>
     target.id.startsWith("ubuntu-"),
   );
-  const { targets } =
-    await import("../../apps/delidev/scripts/native-package.mjs");
   for (const platform of platforms) {
     assert.equal(platform.minimumVersion, "24.04");
     const runner =
@@ -122,12 +120,6 @@ test("GTK4 desktop metadata and CI agree on the Ubuntu 24.04 native baseline", a
       entry.id.startsWith(id),
     ))
       assert.equal(entry.runner, runner);
-    assert.equal(
-      targets.find(
-        (entry) => entry.platform === "linux" && entry.arch === platform.arch,
-      ).runner,
-      runner,
-    );
   }
   assert.equal(
     workflow("workflows/CI.yml").jobs["devhud-rust-conformance"]["runs-on"],
@@ -182,10 +174,7 @@ test("Linux GUI smokes use an explicit tray fixture and reserve AppImage environ
 });
 
 test("Linux Debian packages install the portal and confirmation dialog backends", () => {
-  for (const config of [
-    "apps/devhud/src-tauri/tauri.desktop.conf.json",
-    "apps/delidev/src-tauri/tauri.conf.json",
-  ]) {
+  for (const config of ["apps/devhud/src-tauri/tauri.desktop.conf.json"]) {
     const dependencies = JSON.parse(read(config)).bundle.linux.deb.depends;
     assert.ok(dependencies.includes("xdg-desktop-portal"));
     assert.ok(dependencies.includes("zenity"));

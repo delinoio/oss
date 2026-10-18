@@ -21,7 +21,7 @@
     "test": "turbo run test",
     "lint": "turbo run lint",
     "format": "turbo run format --filter=@delinoio/ci",
-    "proto:generate": "buf generate && node scripts/delidev/proto-compat.mjs",
+    "proto:generate": "buf generate",
     "proto:generate:cached": "turbo run //#proto:generate",
     "proto:lint": "turbo run ci:proto:lint ci:proto:format --filter=@delinoio/ci",
     "proto:breaking": "turbo run ci:proto:breaking --filter=@delinoio/ci",
@@ -57,10 +57,6 @@
       "ws@>=6.0.0 <6.2.4": "6.2.6",
       "ws@>=7.0.0 <7.5.11": "7.5.13",
       "ws@>=8.0.0 <8.21.0": "8.21.3"
-    },
-    "patchedDependencies": {
-      "@wterm/dom@0.5.4": "patches/@wterm__dom@0.5.4.patch",
-      "@wterm/ghostty@0.5.4": "patches/@wterm__ghostty@0.5.4.patch"
     }
   },
   "devDependencies": {
