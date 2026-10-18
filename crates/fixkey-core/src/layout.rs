@@ -329,6 +329,27 @@ const fn is_english_word_char(c: char) -> bool {
     c.is_ascii_alphabetic() || c == '\'' || c == '-'
 }
 
+const fn is_layout_separator(c: char) -> bool {
+    c == '\'' || c == '-'
+}
+
+fn is_word_with_internal_separators(
+    chars: impl IntoIterator<Item = char>,
+    is_letter: impl Fn(char) -> bool,
+) -> bool {
+    let mut previous_was_letter = false;
+    for c in chars {
+        if is_letter(c) {
+            previous_was_letter = true;
+        } else if is_layout_separator(c) && previous_was_letter {
+            previous_was_letter = false;
+        } else {
+            return false;
+        }
+    }
+    previous_was_letter
+}
+
 fn is_hangul(c: char) -> bool {
     let code = u32::from(c);
     (SYLLABLE_BASE..=SYLLABLE_LAST).contains(&code) || (0x3131..=0x3163).contains(&code)
@@ -340,7 +361,7 @@ fn is_hangul(c: char) -> bool {
 pub fn detect_language(word: &str) -> Option<Language> {
     let mut chars = word.chars().peekable();
     chars.peek()?;
-    if word.chars().all(is_hangul) {
+    if is_word_with_internal_separators(word.chars(), is_hangul) {
         Some(Language::KoDubeolsik)
     } else if word.chars().all(is_english_word_char)
         && word.chars().any(|c| c.is_ascii_alphabetic())
@@ -353,7 +374,8 @@ pub fn detect_language(word: &str) -> Option<Language> {
 
 /// Converts `text` written in `language` into the key sequence that types it.
 ///
-/// Returns `None` when `text` contains characters the layout cannot type.
+/// Returns `None` when `text` contains characters the layout cannot type, or
+/// standalone compound compatibility jamo that cannot round-trip unchanged.
 #[must_use]
 pub fn keys_from_text(text: &str, language: Language) -> Option<Vec<char>> {
     if text.is_empty() {
@@ -365,13 +387,21 @@ pub fn keys_from_text(text: &str, language: Language) -> Option<Vec<char>> {
             .all(is_english_word_char)
             .then(|| text.chars().collect()),
         Language::KoDubeolsik => {
+            if !is_word_with_internal_separators(text.chars(), is_hangul) {
+                return None;
+            }
             let mut keys = Vec::new();
             for c in text.chars() {
                 if let Some(parts) = decompose_syllable(c) {
                     for jamo in parts.into_iter().flatten() {
                         keys.extend(keys_for_jamo(jamo)?);
                     }
+                } else if is_layout_separator(c) {
+                    keys.push(c);
                 } else if is_hangul(c) {
+                    if COMPOUND_KEYS.iter().any(|(compound, _)| *compound == c) {
+                        return None;
+                    }
                     keys.extend(keys_for_jamo(c)?);
                 } else {
                     return None;
@@ -384,8 +414,8 @@ pub fn keys_from_text(text: &str, language: Language) -> Option<Vec<char>> {
 
 /// Interprets a key sequence under `language`'s layout.
 ///
-/// Returns `None` when a key has no meaning in that layout (for example an
-/// apostrophe under Dubeolsik).
+/// Returns `None` when a key has no meaning in that layout. Apostrophes and
+/// hyphens are preserved when they occur between letter keys.
 #[must_use]
 pub fn text_from_keys(keys: &[char], language: Language) -> Option<String> {
     if keys.is_empty() {
@@ -397,9 +427,18 @@ pub fn text_from_keys(keys: &[char], language: Language) -> Option<String> {
             .all(|key| is_english_word_char(*key))
             .then(|| keys.iter().collect()),
         Language::KoDubeolsik => {
+            if !is_word_with_internal_separators(keys.iter().copied(), |c| c.is_ascii_alphabetic())
+            {
+                return None;
+            }
             let mut composer = Composer::default();
             for key in keys {
-                composer.push(jamo_for_key(*key)?);
+                if is_layout_separator(*key) {
+                    composer.flush();
+                    composer.out.push(*key);
+                } else {
+                    composer.push(jamo_for_key(*key)?);
+                }
             }
             Some(composer.finish())
         }
@@ -480,6 +519,7 @@ mod tests {
         assert_eq!(ko("dkfr"), "앍");
         assert_eq!(keys("앍", Language::KoDubeolsik), "dkfr");
         assert_eq!(ko("rkqt"), "값");
+        assert_eq!(keys("값", Language::KoDubeolsik), "rkqt");
     }
 
     #[test]
@@ -495,6 +535,25 @@ mod tests {
         assert_eq!(ko("r"), "ㄱ");
         assert_eq!(ko("rr"), "ㄱㄱ");
         assert_eq!(ko("kk"), "ㅏㅏ");
+        for (text, expected_keys) in [("ㅗㅏ", "hk"), ("ㄱㅅ", "rt"), ("ㄱ", "r"), ("ㅏ", "k")]
+        {
+            assert_eq!(keys(text, Language::KoDubeolsik), expected_keys);
+            assert_eq!(ko(expected_keys), text);
+        }
+    }
+
+    #[test]
+    fn standalone_compound_jamo_cannot_change_the_original_candidate() {
+        for compound in "ㅘㅙㅚㅝㅞㅟㅢㄳㄵㄶㄺㄻㄼㄽㄾㄿㅀㅄ".chars() {
+            for text in [compound.to_string(), format!("가{compound}나")] {
+                assert_eq!(detect_language(&text), Some(Language::KoDubeolsik));
+                assert_eq!(keys_from_text(&text, Language::KoDubeolsik), None, "{text}");
+                assert!(
+                    reconstruct(&text, LanguageSet::default()).is_empty(),
+                    "{text}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -511,6 +570,7 @@ mod tests {
         assert_eq!(keys_from_text("hi!", Language::EnUsQwerty), None);
         assert_eq!(keys_from_text("", Language::EnUsQwerty), None);
         assert_eq!(text_from_keys(&['\''], Language::KoDubeolsik), None);
+        assert_eq!(text_from_keys(&['-'], Language::KoDubeolsik), None);
         assert_eq!(text_from_keys(&[], Language::EnUsQwerty), None);
     }
 
@@ -556,9 +616,68 @@ mod tests {
     }
 
     #[test]
-    fn apostrophes_prevent_korean_reconstruction() {
-        let result = reconstruct("don't", LanguageSet::default());
-        assert_eq!(result.len(), 1);
-        assert_eq!(result[0].language, Language::EnUsQwerty);
+    fn internal_apostrophes_and_hyphens_round_trip_in_both_layouts() {
+        let both = LanguageSet::default();
+        for (english, korean) in [
+            ("well-being", "ㅈ디ㅣ-ㅠ댜ㅜㅎ"),
+            ("don't", "애ㅜ'ㅅ"),
+            ("Rk-Rk", "까-까"),
+            ("a-b-c", "ㅁ-ㅠ-ㅊ"),
+        ] {
+            assert_eq!(detect_language(english), Some(Language::EnUsQwerty));
+            assert_eq!(ko(english), korean);
+            assert_eq!(detect_language(korean), Some(Language::KoDubeolsik));
+            assert_eq!(keys(korean, Language::KoDubeolsik), english);
+            assert_eq!(
+                reconstruct(english, both),
+                vec![
+                    Reconstruction {
+                        language: Language::KoDubeolsik,
+                        text: korean.into()
+                    },
+                    Reconstruction {
+                        language: Language::EnUsQwerty,
+                        text: english.into()
+                    },
+                ]
+            );
+            assert_eq!(
+                reconstruct(korean, both),
+                vec![
+                    Reconstruction {
+                        language: Language::KoDubeolsik,
+                        text: korean.into()
+                    },
+                    Reconstruction {
+                        language: Language::EnUsQwerty,
+                        text: english.into()
+                    },
+                ]
+            );
+        }
+
+        assert_eq!(ko("wellbeing"), "ㅈ디ㅣㅠ댜ㅜㅎ");
+        assert_eq!(ko("dont"), "애ㅜㅅ");
+    }
+
+    #[test]
+    fn separators_stay_internal_and_enabled_languages_are_filtered() {
+        let both = LanguageSet::default();
+        for text in [
+            "가-", "-가", "가--나", "가'나-", "가-a", "가@나", "가1나", "'-",
+        ] {
+            assert_eq!(detect_language(text), None, "{text}");
+            assert!(reconstruct(text, both).is_empty(), "{text}");
+        }
+        assert_eq!(keys_from_text("가-", Language::KoDubeolsik), None);
+        assert_eq!(
+            text_from_keys(&['r', 'k', '-'], Language::KoDubeolsik),
+            None
+        );
+
+        let korean_only = both.with(Language::EnUsQwerty, false);
+        let english_only = both.with(Language::KoDubeolsik, false);
+        assert_eq!(reconstruct("애ㅜ'ㅅ", korean_only)[0].text, "애ㅜ'ㅅ");
+        assert_eq!(reconstruct("애ㅜ'ㅅ", english_only)[0].text, "don't");
     }
 }
