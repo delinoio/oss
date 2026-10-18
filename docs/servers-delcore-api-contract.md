@@ -14,6 +14,8 @@ Authenticated users, registered M2M consumer services, tenant administrators and
 
 ## Interfaces and Contracts
 
+The official API server base URL is `https://delcore.api.delino.io`.
+
 **Project and runtime**
 
 - Use the root Go toolchain and module. Run the API and background settlement, retry, notification, and retention jobs in one server process.

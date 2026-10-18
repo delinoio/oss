@@ -8,6 +8,10 @@ Provide shared tenants, authorization, metering and tenant-wide billing for inde
 
 `delcore`
 
+## Official API Server
+
+The official API server base URL is `https://delcore.api.delino.io`.
+
 ## Domain Ownership Map
 
 - `servers/delcore-api`: one Go API and background worker process, migrations, sample client and OCI packaging.
