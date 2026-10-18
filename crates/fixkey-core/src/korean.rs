@@ -287,6 +287,7 @@ const WORD_END: &[Pos] = &[
     Jx,
     Jc,
     Ef,
+    Etn,
     Xsn,
 ];
 
@@ -383,6 +384,50 @@ mod tests {
     fn noun_plus_inflected_verb_suffix_is_accepted() {
         let analysis = vec![m("계속", "NNG", true), m("해", "XSV+EF", true)];
         assert_eq!(validate("계속해", Ok(analysis)), Validation::Accepted);
+    }
+
+    #[test]
+    fn complete_nominalization_is_accepted() {
+        let nominalization = vec![m("먹", "VV", true), m("기", "ETN", true)];
+        assert!(accepts_analysis("먹기", &nominalization));
+        assert_eq!(validate("먹기", Ok(nominalization)), Validation::Accepted);
+
+        let with_particle = vec![
+            m("먹", "VV", true),
+            m("기", "ETN", true),
+            m("가", "JKS", true),
+        ];
+        assert!(accepts_analysis("먹기가", &with_particle));
+        assert_eq!(validate("먹기가", Ok(with_particle)), Validation::Accepted);
+
+        let sentence_final = vec![m("먹", "VV", true), m("다", "EF", true)];
+        assert!(accepts_analysis("먹다", &sentence_final));
+        assert_eq!(validate("먹다", Ok(sentence_final)), Validation::Accepted);
+    }
+
+    #[test]
+    fn incomplete_or_unknown_nominalizations_are_rejected() {
+        let unknown_stem = vec![m("먹", "VV", false), m("기", "ETN", true)];
+        let unknown_ending = vec![m("먹", "VV", true), m("기", "ETN", false)];
+        let partial = vec![m("먹", "VV", true), m("기", "ETN", true)];
+        let invalid_connection = vec![m("먹", "NNG", true), m("기", "ETN", true)];
+
+        for (word, analysis) in [
+            ("먹기", unknown_stem),
+            ("먹기", unknown_ending),
+            ("먹기가", partial),
+            ("먹기", invalid_connection),
+        ] {
+            assert!(!accepts_analysis(word, &analysis));
+            assert_eq!(validate(word, Ok(analysis)), Validation::Rejected);
+        }
+
+        let bare_stem = vec![m("먹", "VV", true)];
+        let connective = vec![m("먹", "VV", true), m("고", "EC", true)];
+        assert!(!accepts_analysis("먹", &bare_stem));
+        assert!(!accepts_analysis("먹고", &connective));
+        assert_eq!(validate("먹", Ok(bare_stem)), Validation::Rejected);
+        assert_eq!(validate("먹고", Ok(connective)), Validation::Rejected);
     }
 
     #[test]
