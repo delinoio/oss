@@ -717,6 +717,7 @@ extern "C" fn callback(_: Ref, kind: u32, event: Ref, info: *mut c_void) -> Ref 
         if kind != 10 || !context.active.load(Ordering::Acquire) {
             return;
         }
+        let observed_at = std::time::Instant::now();
         let mut adapter = Adapter::new();
         let Ok((target, application)) = adapter.metadata() else {
             return;
@@ -757,7 +758,11 @@ extern "C" fn callback(_: Ref, kind: u32, event: Ref, info: *mut c_void) -> Ref 
         } else {
             map_key(code, flags & (1 << 17) != 0, flags & (1 << 16) != 0)
         };
-        (context.handler)(KeyEvent { key, target });
+        (context.handler)(KeyEvent {
+            key,
+            target,
+            observed_at,
+        });
     }));
     event
 }

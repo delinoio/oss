@@ -413,6 +413,7 @@ impl Adapter {
             if !active.load(Ordering::Acquire) {
                 continue;
             }
+            let observed_at = std::time::Instant::now();
             let (target, application) = adapter.metadata()?;
             if !gate(&application) {
                 continue;
@@ -461,7 +462,11 @@ impl Adapter {
                 super::pc_key(scan, shift, caps)
             };
             if !matches!(key, Key::Modifier) {
-                handler(KeyEvent { key, target });
+                handler(KeyEvent {
+                    key,
+                    target,
+                    observed_at,
+                });
             }
         })();
         ready.store(false, Ordering::Release);

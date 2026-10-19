@@ -10,7 +10,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use fixkey_core::{
@@ -363,6 +363,41 @@ struct Context {
     before: FieldSnapshot,
     tokenizer: Tokenizer,
     keys: Vec<char>,
+    pending_keys: Option<PendingKeys>,
+}
+#[derive(Clone, Copy)]
+struct PendingKeys {
+    snapshot_at: Instant,
+    deadline: Instant,
+}
+impl PendingKeys {
+    fn new(snapshot_at: Instant) -> Self {
+        Self {
+            snapshot_at,
+            deadline: snapshot_at + Duration::from_millis(100),
+        }
+    }
+
+    fn accepts(self, observed_at: Instant, now: Instant) -> bool {
+        observed_at <= self.snapshot_at && now <= self.deadline
+    }
+}
+fn insertion_ahead(before: &FieldSnapshot, current: &FieldSnapshot, keys: &[char]) -> bool {
+    current.target == before.target
+        && current.sensitivity == before.sensitivity
+        && current.supports_write
+        && current.selection_len == 0
+        && current.caret > before.caret + keys.len()
+        && before
+            .text
+            .chars()
+            .take(before.caret)
+            .eq(current.text.chars().take(before.caret))
+        && before
+            .text
+            .chars()
+            .skip(before.caret)
+            .eq(current.text.chars().skip(current.caret))
 }
 #[derive(Default)]
 struct InputState {
@@ -540,7 +575,12 @@ fn run_worker(
         };
         let needs_snapshot = snapshot_required(
             event.is_some(),
-            input.awaiting_ime || runtime.preferences.session().backspace_pending(),
+            input.awaiting_ime
+                || input
+                    .context
+                    .as_ref()
+                    .is_some_and(|pending| pending.pending_keys.is_some())
+                || runtime.preferences.session().backspace_pending(),
             input.cursor,
             current_cursor,
         );
@@ -548,22 +588,16 @@ fn run_worker(
             let (snapshot, composing) = capture(&mut runtime, &mut adapter, &mut hide);
             input.awaiting_ime = composing;
             if let Some(event) = event {
-                if metadata
-                    .as_ref()
-                    .map_or(true, |(target, _)| *target != event.target)
-                    || (snapshot.is_none() && !composing)
-                {
-                    input.context = None;
-                } else if runtime.manual.selected().is_none() {
-                    process_key(
-                        &mut runtime,
-                        &mut adapter,
-                        &mut input.context,
-                        input.baseline.as_ref(),
-                        event,
-                        snapshot.as_ref(),
-                    );
-                }
+                process_captured_key(
+                    &mut runtime,
+                    &mut adapter,
+                    &mut input,
+                    event,
+                    snapshot.as_ref(),
+                    metadata
+                        .as_ref()
+                        .is_ok_and(|(target, _)| *target == event.target),
+                );
             } else if input.context.is_none() {
                 runtime
                     .preferences
@@ -589,6 +623,42 @@ fn run_worker(
         }
         publish_status(app, status, changed, diagnostic.as_deref());
     }
+}
+
+fn process_captured_key(
+    runtime: &mut crate::desktop::Runtime,
+    adapter: &mut Adapter,
+    input: &mut InputState,
+    event: KeyEvent,
+    snapshot: Option<&FieldSnapshot>,
+    target_matches: bool,
+) {
+    if !target_matches || (snapshot.is_none() && !input.awaiting_ime) {
+        input.context = None;
+        return;
+    }
+    if runtime.manual.selected().is_some() {
+        return;
+    }
+    if input.context.as_ref().is_some_and(|pending| {
+        pending
+            .pending_keys
+            .is_some_and(|waiting| !waiting.accepts(event.observed_at, Instant::now()))
+    }) {
+        input.context = None;
+        tracing::info!(
+            reason = "pending-key-delivery-invalidated",
+            "fixkey input context discarded"
+        );
+    }
+    process_key(
+        runtime,
+        adapter,
+        &mut input.context,
+        input.baseline.as_ref(),
+        event,
+        snapshot,
+    );
 }
 
 fn set_active(runtime: &mut crate::desktop::Runtime, active: &AtomicBool, enabled: bool) {
@@ -658,67 +728,57 @@ fn update_baseline(
     context: &mut Option<Context>,
 ) {
     let next = adapter.snapshot().ok();
-    if let Some(pending) = context.as_ref()
-        && next.as_ref().is_none_or(|snapshot| {
-            baseline.as_ref().is_some_and(|previous| {
-                previous.target == snapshot.target && snapshot.caret < previous.caret
-            }) || !pending_matches(&pending.before, snapshot, &pending.keys)
-        })
-    {
+    let now = Instant::now();
+    if context.as_ref().is_some_and(|pending| {
+        pending
+            .pending_keys
+            .is_some_and(|waiting| now > waiting.deadline)
+    }) {
         tracing::info!(
-            reason = "pending-context-mismatch",
-            snapshot_available = next.is_some(),
-            target_matches = next.as_ref().is_some_and(|snapshot| context
-                .as_ref()
-                .is_some_and(|pending| pending.before.target == snapshot.target)),
-            selection_empty = next
-                .as_ref()
-                .is_some_and(|snapshot| snapshot.selection_len == 0),
-            caret_retreated = next.as_ref().is_some_and(|snapshot| baseline
-                .as_ref()
-                .is_some_and(|previous| snapshot.caret < previous.caret)),
-            insertion_only = next
-                .as_ref()
-                .is_some_and(|snapshot| context.as_ref().is_some_and(|pending| {
-                    snapshot.caret >= pending.before.caret
-                        && pending
-                            .before
-                            .text
-                            .chars()
-                            .take(pending.before.caret)
-                            .eq(snapshot.text.chars().take(pending.before.caret))
-                        && pending
-                            .before
-                            .text
-                            .chars()
-                            .skip(pending.before.caret)
-                            .eq(snapshot.text.chars().skip(snapshot.caret))
-                })),
-            ahead_of_keys = next.as_ref().is_some_and(|snapshot| context
-                .as_ref()
-                .is_some_and(|pending| snapshot.caret > pending.before.caret + pending.keys.len())),
-            before_caret_at_end = pending.before.caret == pending.before.text.chars().count(),
-            current_caret_at_end = next
-                .as_ref()
-                .is_some_and(|snapshot| snapshot.caret == snapshot.text.chars().count()),
-            before_trailing_line_break = pending.before.text.ends_with('\n'),
-            current_trailing_line_break = next
-                .as_ref()
-                .is_some_and(|snapshot| snapshot.text.ends_with('\n')),
-            matches_without_trailing_line_breaks = next.as_ref().is_some_and(|snapshot| {
-                let before = FieldSnapshot {
-                    text: pending.before.text.trim_end_matches('\n').into(),
-                    ..pending.before.clone()
-                };
-                let current = FieldSnapshot {
-                    text: snapshot.text.trim_end_matches('\n').into(),
-                    ..snapshot.clone()
-                };
-                pending_matches(&before, &current, &pending.keys)
-            }),
+            reason = "pending-key-delivery-expired",
             "fixkey input context discarded"
         );
         *context = None;
+    }
+    if let Some(pending) = context.as_mut() {
+        let forward = next.as_ref().is_some_and(|snapshot| {
+            baseline.as_ref().is_none_or(|previous| {
+                previous.target != snapshot.target || snapshot.caret >= previous.caret
+            })
+        });
+        if forward
+            && next
+                .as_ref()
+                .is_some_and(|snapshot| pending_matches(&pending.before, snapshot, &pending.keys))
+        {
+            pending.pending_keys = None;
+        } else if forward
+            && next
+                .as_ref()
+                .is_some_and(|snapshot| insertion_ahead(&pending.before, snapshot, &pending.keys))
+        {
+            // The host can publish text while its already-observed event is
+            // still resolving native metadata. Retain only this insertion
+            // shape and only events observed before this snapshot. Never
+            // advance the baseline to text unexplained by delivered keys.
+            let waiting = pending
+                .pending_keys
+                .get_or_insert_with(|| PendingKeys::new(now));
+            if now <= waiting.deadline {
+                return;
+            }
+            tracing::info!(
+                reason = "pending-key-delivery-expired",
+                "fixkey input context discarded"
+            );
+            *context = None;
+        } else {
+            tracing::info!(
+                reason = "pending-context-mismatch",
+                "fixkey input context discarded"
+            );
+            *context = None;
+        }
     }
     *baseline = next;
 }
@@ -801,6 +861,7 @@ fn process_key(
                     before: before.clone(),
                     tokenizer: Tokenizer::new(),
                     keys: Vec::new(),
+                    pending_keys: None,
                 });
                 tracing::info!(
                     reason = "word-context-started",
@@ -1109,7 +1170,65 @@ mod tests {
 
     use fixkey_core::session::TargetId;
 
-    use super::{ApplicationInventory, snapshot_required};
+    use super::{ApplicationInventory, PendingKeys, insertion_ahead, snapshot_required};
+
+    #[test]
+    fn only_already_observed_keys_can_explain_a_published_insertion() {
+        use fixkey_core::{
+            observation::pending_matches,
+            session::{FieldSensitivity, FieldSnapshot},
+        };
+        let before = FieldSnapshot {
+            target: TargetId(1),
+            text: "prefix  suffix".into(),
+            caret: 7,
+            selection_len: 0,
+            sensitivity: FieldSensitivity::Normal,
+            supports_write: true,
+        };
+        let published = FieldSnapshot {
+            text: "prefix zl suffix".into(),
+            caret: 9,
+            ..before
+        };
+        assert!(insertion_ahead(&before, &published, &['z']));
+        let now = Instant::now();
+        let waiting = PendingKeys::new(now);
+        assert!(waiting.accepts(
+            now - Duration::from_millis(1),
+            now + Duration::from_millis(1)
+        ));
+        assert!(!waiting.accepts(
+            now + Duration::from_millis(1),
+            now + Duration::from_millis(2)
+        ));
+        assert!(!waiting.accepts(now, now + Duration::from_millis(101)));
+        assert!(pending_matches(&before, &published, &['z', 'l']));
+        for unsafe_snapshot in [
+            FieldSnapshot {
+                target: TargetId(2),
+                ..published.clone()
+            },
+            FieldSnapshot {
+                selection_len: 1,
+                ..published.clone()
+            },
+            FieldSnapshot {
+                sensitivity: FieldSensitivity::Protected,
+                ..published.clone()
+            },
+            FieldSnapshot {
+                supports_write: false,
+                ..published.clone()
+            },
+            FieldSnapshot {
+                text: "prefix zl changed".into(),
+                ..published
+            },
+        ] {
+            assert!(!insertion_ahead(&before, &unsafe_snapshot, &['z']));
+        }
+    }
 
     #[test]
     fn settings_polls_reuse_inventory_until_expiry_or_explicit_refresh() {

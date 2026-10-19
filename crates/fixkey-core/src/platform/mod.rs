@@ -48,6 +48,8 @@ pub enum Key {
 pub struct KeyEvent {
     pub key: Key,
     pub target: TargetId,
+    /// Monotonic observation time, captured before native metadata lookups.
+    pub observed_at: std::time::Instant,
 }
 /// Callback invoked before any key is retained. It must establish permission,
 /// field safety and exclusion policy without reading text from unsafe fields.
