@@ -4,6 +4,9 @@ use std::sync::Arc;
 
 use crate::session::TargetId;
 
+#[cfg(any(target_os = "macos", test))]
+mod write_ack;
+
 /// Stable application identity, independent from its display label.
 #[derive(Clone, PartialEq, Eq)]
 pub enum Identity {
