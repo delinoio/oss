@@ -65,7 +65,7 @@ export const messages = {
       "Correction will stay off until access is allowed. After enabling access, choose Recheck.",
     permissionSteps: [
       "Choose Allow accessibility access and follow the macOS prompt.",
-      "Enable FixKey in Accessibility. If it is missing, use + to add FixKey from Applications.",
+      "Enable FixKey in Accessibility. If it is already enabled but this dialog remains, turn FixKey off and on again to authorize the current app. If it is missing, use + to add FixKey from Applications.",
       "Choose Allow accessibility access again for Input Monitoring, then enable FixKey and recheck. Restart FixKey if macOS asks.",
     ],
     macPermission:
@@ -201,7 +201,7 @@ export const messages = {
       "권한을 허용하기 전까지 자동 교정은 꺼져 있어요. 허용한 뒤 ‘다시 확인’을 눌러 주세요.",
     permissionSteps: [
       "‘접근성 허용하기’를 누르고 macOS 안내를 따라 주세요.",
-      "손쉬운 사용에서 FixKey를 켜 주세요. 목록에 없다면 + 버튼으로 응용 프로그램의 FixKey를 추가해 주세요.",
+      "손쉬운 사용에서 FixKey를 켜 주세요. 이미 켜져 있는데 이 안내가 계속 나오면 FixKey를 껐다 켜서 현재 앱을 다시 허용해 주세요. 목록에 없다면 + 버튼으로 응용 프로그램의 FixKey를 추가해 주세요.",
       "‘접근성 허용하기’를 다시 눌러 입력 모니터링도 허용한 뒤 다시 확인해 주세요. macOS가 요청하면 FixKey를 다시 시작해 주세요.",
     ],
     macPermission:
