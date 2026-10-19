@@ -697,6 +697,25 @@ fn update_baseline(
             ahead_of_keys = next.as_ref().is_some_and(|snapshot| context
                 .as_ref()
                 .is_some_and(|pending| snapshot.caret > pending.before.caret + pending.keys.len())),
+            before_caret_at_end = pending.before.caret == pending.before.text.chars().count(),
+            current_caret_at_end = next
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.caret == snapshot.text.chars().count()),
+            before_trailing_line_break = pending.before.text.ends_with('\n'),
+            current_trailing_line_break = next
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.text.ends_with('\n')),
+            matches_without_trailing_line_breaks = next.as_ref().is_some_and(|snapshot| {
+                let before = FieldSnapshot {
+                    text: pending.before.text.trim_end_matches('\n').into(),
+                    ..pending.before.clone()
+                };
+                let current = FieldSnapshot {
+                    text: snapshot.text.trim_end_matches('\n').into(),
+                    ..snapshot.clone()
+                };
+                pending_matches(&before, &current, &pending.keys)
+            }),
             "fixkey input context discarded"
         );
         *context = None;
