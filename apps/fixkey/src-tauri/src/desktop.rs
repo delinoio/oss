@@ -623,6 +623,7 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
     app.manage(updater.clone());
     create_tray(app)?;
     refresh_tray(app.handle());
+    crate::native::register_input_monitoring();
     crate::native::start(app.handle().clone(), shared);
     crate::updates::desktop::start(app.handle().clone(), updater);
     std::thread::spawn(move || {

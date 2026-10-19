@@ -219,6 +219,20 @@ mod input_monitoring {
     }
 }
 
+/// Registers the app with Input Monitoring even when accessibility already
+/// provides effective listen access and no permission dialog is needed.
+pub fn register_input_monitoring() {
+    #[cfg(target_os = "macos")]
+    {
+        let granted = input_monitoring::request();
+        tracing::info!(
+            reason = "input-permission-registration-requested",
+            input_monitoring_granted = granted,
+            "fixkey input monitoring registration requested"
+        );
+    }
+}
+
 #[cfg(any(target_os = "macos", test))]
 fn macos_permission_reason(accessibility: bool, input_monitoring: bool) -> Option<&'static str> {
     match (accessibility, input_monitoring) {
@@ -282,18 +296,13 @@ pub fn request_permission() -> Result<(), &'static str> {
             // Request explicit Input Monitoring registration through IOHID.
             // CGRequestListenEventAccess alone can leave the app unlisted.
             // Keep this independent of the asynchronous accessibility result.
-            let input_monitoring_granted = if input_monitoring::granted() {
-                true
-            } else {
-                let input_monitoring_granted = input_monitoring::request();
-                tracing::info!(
-                    reason = "input-permission-requested",
-                    accessibility_granted = trusted,
-                    input_monitoring_granted,
-                    "fixkey input monitoring permission requested"
-                );
-                input_monitoring_granted
-            };
+            let input_monitoring_granted = input_monitoring::request();
+            tracing::info!(
+                reason = "input-permission-requested",
+                accessibility_granted = trusted,
+                input_monitoring_granted,
+                "fixkey input monitoring permission requested"
+            );
             !trusted || !input_monitoring_granted
         };
         tracing::info!(
