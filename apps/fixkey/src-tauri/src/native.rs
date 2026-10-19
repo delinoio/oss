@@ -15,7 +15,7 @@ use std::{
 
 use fixkey_core::{
     decision::{MissingValidator, Validators},
-    observation::{can_start, completed_word, pending_matches},
+    observation::{await_completed_word, can_start, completed_word, pending_matches},
     platform::{Adapter, Application, Cursor, Identity, Key, KeyEvent},
     session::{Accessibility, CapturedContext, FieldSnapshot},
     tokenizer::{TokenOutcome, Tokenizer},
@@ -833,7 +833,13 @@ fn process_key(
                 && let Some(outcome) = pending.tokenizer.feed_char(ch)
             {
                 if let TokenOutcome::Evaluate { word, boundary } = outcome
-                    && let Ok(current) = adapter.snapshot()
+                    && let Some(current) = await_completed_word(
+                        &pending.before,
+                        &word.chars().collect::<Vec<_>>(),
+                        &boundary,
+                        Duration::from_millis(100),
+                        || adapter.snapshot(),
+                    )
                 {
                     evaluate(
                         runtime,
