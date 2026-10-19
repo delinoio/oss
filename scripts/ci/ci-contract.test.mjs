@@ -82,6 +82,7 @@ const devhudJobs = [
   "devhud-release-contracts",
 ];
 const achJobs = ["async-commit-hook"];
+const fixkeyJobs = ["fixkey-frontend", "fixkey-desktop"];
 
 function step(job, id) {
   return job.steps.find((candidate) => candidate.id === id);
@@ -468,9 +469,9 @@ test("one change plan gates every domain job before runner allocation", () => {
   );
   assert.deepEqual(
     Object.keys(jobPaths).sort(),
-    [...legacyJobs, ...devhudJobs, ...achJobs].sort(),
+    [...legacyJobs, ...devhudJobs, ...achJobs, ...fixkeyJobs].sort(),
   );
-  for (const id of [...legacyJobs, ...devhudJobs, ...achJobs]) {
+  for (const id of [...legacyJobs, ...devhudJobs, ...achJobs, ...fixkeyJobs]) {
     const job = workflow.jobs[id];
     assert.deepEqual(job.needs, "changes", id);
     assert.equal(
@@ -1700,7 +1701,12 @@ test("Rust CI consumes one verified prebuilt selection and gates native preparat
     }
     for (const owner of ["devhud"]) {
       assert.ok(
-        namedStep(job, "Install DevHUD Linux prerequisites").if.includes(
+        namedStep(
+          job,
+          id === "rust-clippy"
+            ? "Install Linux desktop prerequisites"
+            : "Install DevHUD Linux prerequisites",
+        ).if.includes(
           `contains(fromJSON(needs.changes.outputs.rust_packages), '${owner}')`,
         ),
       );
@@ -1894,4 +1900,33 @@ test("Rstack formatting uses the exact comparison and never caches results", () 
   assert.ok(leaf.task.passThroughEnv.includes("TURBO_SCM_BASE"));
   assert.ok(leaf.task.passThroughEnv.includes("TURBO_SCM_HEAD"));
   assert.equal(packages["package.json"].devDependencies.rstack, "0.8.3");
+});
+
+test("FixKey-only Clippy installs native prerequisites before Cargo", () => {
+  const job = workflow.jobs["rust-clippy"];
+  const preparation = namedStep(job, "Install Linux desktop prerequisites");
+  const evaluate = (packages) =>
+    runInNewContext(preparation.if.slice(3, -2), {
+      needs: {
+        changes: { outputs: { rust_packages: JSON.stringify(packages) } },
+      },
+      fromJSON: JSON.parse,
+      contains: (list, value) => list.includes(value),
+    });
+  assert.equal(evaluate(["fixkey"]), true);
+  assert.equal(evaluate(["devhud"]), true);
+  assert.equal(evaluate(["fixkey", "devhud"]), true);
+  assert.equal(evaluate(["fixkey-core"]), false);
+  assert.equal(evaluate(["cargo-mono"]), false);
+  for (const dependency of [
+    "libgtk-3-dev",
+    "libwebkit2gtk-4.1-dev",
+    "libayatana-appindicator3-dev",
+  ]) {
+    assert.ok(preparation.run.includes(dependency), dependency);
+  }
+  assert.ok(
+    job.steps.indexOf(preparation) <
+      job.steps.indexOf(namedStep(job, "Run clippy")),
+  );
 });

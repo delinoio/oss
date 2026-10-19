@@ -48,6 +48,9 @@ pub struct FieldSnapshot {
 pub enum WriteError {
     /// Nothing was changed.
     Failed,
+    /// The native API failed without a verifiable resulting range. Do not
+    /// attempt recovery or further writes against that unknown state.
+    Uncertain,
     /// The range was only partly replaced. `written` is the text now in place
     /// of the requested range.
     Partial {
@@ -230,12 +233,12 @@ impl RestoredState {
 }
 
 /// A replacement that is being written, kept for partial-write recovery.
-struct PendingWrite<'a> {
-    before: &'a FieldSnapshot,
-    start: usize,
-    end: usize,
-    original: &'a str,
-    boundary: &'a str,
+pub(crate) struct PendingWrite<'a> {
+    pub(crate) before: &'a FieldSnapshot,
+    pub(crate) start: usize,
+    pub(crate) end: usize,
+    pub(crate) original: &'a str,
+    pub(crate) boundary: &'a str,
 }
 
 fn char_slice(text: &str, start: usize, end: usize) -> String {
@@ -320,6 +323,14 @@ impl CorrectionSession {
         {
             self.restored = None;
         }
+    }
+
+    /// Whether an observed Backspace still awaits the host's deletion.
+    #[must_use]
+    pub fn backspace_pending(&self) -> bool {
+        self.undo
+            .as_ref()
+            .is_some_and(|undo| undo.backspace_pending)
     }
 
     /// Handles the accessibility observation after a previously observed
@@ -486,7 +497,7 @@ impl CorrectionSession {
 
     /// Restores the original only when the target still matches the expected
     /// intermediate state; otherwise stops without further writes.
-    fn recover_partial_write(
+    pub(crate) fn recover_partial_write(
         error: &WriteError,
         write: &PendingWrite<'_>,
         accessibility: &mut dyn Accessibility,
@@ -592,7 +603,7 @@ impl CorrectionSession {
                     }
                 }
             }
-            Err(WriteError::Failed) => BackspaceAction::Failed,
+            Err(WriteError::Failed | WriteError::Uncertain) => BackspaceAction::Failed,
         };
         if matches!(outcome, BackspaceAction::Restored) {
             let mut expected: Vec<char> = snapshot.text.chars().collect();
@@ -635,6 +646,7 @@ mod tests {
     enum Fault {
         None,
         FailWrite,
+        UncertainWrite,
         /// The first write leaves this text in place of the range.
         PartialWrite(&'static str),
         /// Every write fails after a partial one, including the restore.
@@ -725,6 +737,10 @@ mod tests {
             self.writes += 1;
             match self.fault {
                 Fault::FailWrite => return Err(WriteError::Failed),
+                Fault::UncertainWrite => {
+                    self.apply(start, end, "unknown");
+                    return Err(WriteError::Uncertain);
+                }
                 Fault::PartialWrite(written) if self.writes == 1 => {
                     self.apply(start, end, written);
                     return Err(WriteError::Partial {
@@ -897,6 +913,39 @@ mod tests {
             },
         );
         (result, field, session)
+    }
+
+    #[test]
+    fn proven_deletion_before_failed_range_insertion_restores_original_once() {
+        let mut field = MockField::new("rPthrgo ");
+        field.fault = Fault::PartialWrite("");
+        let mut session = new_session();
+        assert_eq!(
+            run(&mut field, &mut session, "rPthrgo").skip_reason,
+            Some(SkipReason::UnsupportedWrite)
+        );
+        assert_eq!(field.text(), "rPthrgo ");
+        assert_eq!(field.writes, 2);
+        assert!(!session.has_undo());
+    }
+
+    #[test]
+    fn uncertain_native_writes_never_trigger_recovery_or_retry() {
+        let mut field = MockField::new("rPthrgo ");
+        field.fault = Fault::UncertainWrite;
+        let mut session = new_session();
+        assert_eq!(
+            run(&mut field, &mut session, "rPthrgo").skip_reason,
+            Some(SkipReason::UnsupportedWrite)
+        );
+        assert_eq!(field.writes, 1);
+        assert_eq!(field.text(), "unknown ");
+        assert!(!session.has_undo());
+        assert_eq!(
+            session.on_backspace(&mut field),
+            BackspaceAction::PassThrough
+        );
+        assert_eq!(field.writes, 1);
     }
 
     #[test]

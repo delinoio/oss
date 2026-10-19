@@ -255,7 +255,7 @@ pub const CONNECTION_RULES: &[(Pos, Pos)] = &[
 ];
 
 /// Part-of-speech tags that may begin a word.
-const WORD_START: &[Pos] = &[
+pub(crate) const WORD_START: &[Pos] = &[
     Nng,
     Nnp,
     Nnb,
@@ -274,7 +274,7 @@ const WORD_START: &[Pos] = &[
 ];
 
 /// Part-of-speech tags that may end a complete word.
-const WORD_END: &[Pos] = &[
+pub(crate) const WORD_END: &[Pos] = &[
     Nng,
     Nnp,
     Nnb,

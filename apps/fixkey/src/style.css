@@ -1,0 +1,334 @@
+:root {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #202632;
+  background: #f7f8fa;
+  --surface: #fff;
+  --muted: #586474;
+  --line: #dce1e8;
+  --blue: #185cce;
+  --soft: #eaf2ff;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color: #edf0f6;
+  background: #171b23;
+  --surface: #242a35;
+  --muted: #bec7d6;
+  --line: #444e5f;
+  --blue: #8cb8ff;
+  --soft: #253b60;
+  color-scheme: dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not([data-theme="dark"]) {
+    color: #edf0f6;
+    background: #171b23;
+    --surface: #242a35;
+    --muted: #bec7d6;
+    --line: #444e5f;
+    --blue: #8cb8ff;
+    --soft: #253b60;
+    color-scheme: dark;
+  }
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  min-width: 320px;
+}
+button,
+input,
+select {
+  font: inherit;
+}
+button,
+select {
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 9px 13px;
+  background: var(--surface);
+  color: inherit;
+}
+button {
+  cursor: pointer;
+}
+button:hover:not(:disabled) {
+  border-color: var(--blue);
+}
+button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+:focus-visible {
+  outline: 3px solid var(--blue);
+  outline-offset: 3px;
+}
+input[type="checkbox"] {
+  width: 21px;
+  height: 21px;
+  accent-color: var(--blue);
+  flex-shrink: 0;
+}
+input:not([type="checkbox"]) {
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  max-width: 100%;
+}
+h1,
+h2,
+h3,
+p {
+  margin-top: 0;
+}
+h1 {
+  font-size: 27px;
+  letter-spacing: -0.8px;
+}
+h2 {
+  font-size: 24px;
+  margin-bottom: 16px;
+}
+h3 {
+  font-size: 16px;
+}
+p {
+  color: var(--muted);
+  line-height: 1.6;
+}
+code {
+  overflow-wrap: anywhere;
+  font-size: 0.9em;
+}
+.shell {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  min-height: 100svh;
+}
+aside {
+  padding: 32px 18px;
+  background: var(--surface);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+aside h1 {
+  margin: 0 12px;
+}
+.tagline {
+  font-size: 12px;
+  margin: 0 12px 28px;
+}
+nav {
+  display: grid;
+  gap: 8px;
+}
+nav button {
+  text-align: left;
+  border-color: transparent;
+  padding: 13px 12px;
+}
+nav button[aria-current] {
+  color: var(--blue);
+  background: var(--soft);
+  font-weight: 700;
+}
+.version {
+  margin: auto 12px 0;
+  padding-top: 24px;
+  font-size: 12px;
+}
+main {
+  padding: 24px;
+  min-width: 0;
+}
+.controls {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  margin-bottom: 14px;
+  padding: 16px;
+}
+.card h3 {
+  margin-bottom: 8px;
+}
+.card p {
+  font-size: 14px;
+  line-height: 1.5;
+}
+.card p:last-child {
+  margin-bottom: 0;
+}
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 44px;
+  flex-wrap: wrap;
+}
+.row h3 {
+  margin: 0;
+}
+.row select {
+  max-width: 100%;
+}
+.status {
+  border-left: 4px solid var(--muted);
+  background: var(--surface);
+  border-radius: 9px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  display: grid;
+  gap: 6px;
+}
+.status.active {
+  border-color: var(--blue);
+}
+.status span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.primary {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: var(--surface);
+  font-weight: 650;
+}
+.actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}
+.empty {
+  padding: 40px 8px;
+  text-align: center;
+}
+.apps {
+  list-style: none;
+  padding: 0;
+}
+.apps li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--line);
+}
+.apps p {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+.error {
+  border: 1px solid #c65050;
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 14px;
+}
+.error p {
+  margin: 8px 0;
+}
+details {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--line);
+}
+summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+details p {
+  padding-top: 10px;
+}
+dialog {
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 28px;
+  width: min(540px, calc(100vw - 32px));
+  max-height: 90svh;
+  overflow: auto;
+}
+dialog::backdrop {
+  background: #10172677;
+}
+dialog input,
+dialog select {
+  display: block;
+  width: 100%;
+  margin: 16px 0;
+}
+.connection {
+  max-width: 600px;
+  margin: 60px auto;
+}
+kbd {
+  background: var(--soft);
+  padding: 8px 12px;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+progress {
+  width: 85%;
+  margin-right: 10px;
+}
+.picker {
+  padding: 16px;
+}
+.picker h1 {
+  font-size: 17px;
+  margin-bottom: 6px;
+}
+.picker p {
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+.picker [role="listbox"] {
+  display: grid;
+  gap: 8px;
+}
+.picker button {
+  text-align: left;
+  display: grid;
+  gap: 5px;
+  overflow-wrap: anywhere;
+}
+.picker button[aria-selected="true"] {
+  border: 2px solid var(--blue);
+  background: var(--soft);
+}
+.picker small {
+  color: var(--muted);
+}
+@media (max-width: 620px) {
+  .shell {
+    grid-template-columns: 145px minmax(0, 1fr);
+  }
+  aside {
+    padding: 24px 8px;
+  }
+  main {
+    padding: 24px 16px;
+  }
+  nav button {
+    font-size: 13px;
+  }
+  .tagline {
+    display: none;
+  }
+  .card {
+    padding: 16px;
+  }
+}

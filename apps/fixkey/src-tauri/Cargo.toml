@@ -1,0 +1,48 @@
+[package]
+name = "fixkey"
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.90"
+license = "Apache-2.0"
+publish = false
+description = "Local keyboard-layout correction desktop application"
+
+[dependencies]
+fixkey-core = { path = "../../../crates/fixkey-core" }
+serde = { workspace = true, features = ["derive"] }
+serde_json = "=1.0.149"
+tempfile.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber = { version = "=0.3.22", features = ["env-filter", "json"] }
+dirs = { version = "=6.0.0", optional = true }
+base64.workspace = true
+minisign-verify = "=0.2.5"
+tauri = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975", optional = true, default-features = false, features = ["tray-icon", "image-png"] }
+tauri-runtime-wry = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975", optional = true }
+tauri-plugin-autostart = { version = "=2.5.1", optional = true }
+tauri-plugin-global-shortcut = { version = "=2.3.2", optional = true }
+notify-rust = { version = "=4.18.2", optional = true }
+tauri-plugin-single-instance = { version = "=2.4.3", optional = true }
+tauri-plugin-updater = { version = "=2.12.0", optional = true }
+reqwest = { version = "=0.12.28", default-features = false, features = ["json", "rustls-tls"], optional = true }
+semver = { version = "=1.0.27", optional = true }
+tokio = { version = "=1.49.0", features = ["time", "sync"], optional = true }
+plist = { version = "=1.10.0", optional = true }
+sys-locale = { version = "=0.3.2", optional = true }
+
+[build-dependencies]
+tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975", optional = true , features = [] }
+
+[features]
+default = []
+desktop = ["fixkey-core/native", "dep:dirs", "dep:tauri", "dep:tauri-runtime-wry", "dep:tauri-build", "dep:tauri-plugin-autostart", "dep:tauri-plugin-global-shortcut", "dep:notify-rust", "dep:tauri-plugin-single-instance", "dep:tauri-plugin-updater", "dep:reqwest", "dep:semver", "dep:tokio", "dep:plist", "dep:sys-locale"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[[bin]]
+name = "fixkey"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[lints]
+workspace = true

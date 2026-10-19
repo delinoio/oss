@@ -1,0 +1,70 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "FixKey",
+  "version": "0.0.1",
+  "identifier": "io.delino.fixkey",
+  "build": {
+    "beforeDevCommand": "pnpm dev:frontend",
+    "beforeBuildCommand": "node ../../scripts/release/fixkey-licenses.mjs && pnpm build:frontend",
+    "devUrl": "http://127.0.0.1:46321",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "settings",
+        "title": "FixKey",
+        "width": 840,
+        "height": 680,
+        "minWidth": 400,
+        "minHeight": 320
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'",
+      "capabilities": [
+        {
+          "identifier": "desktop",
+          "windows": ["settings", "candidates"],
+          "permissions": [
+            "core:event:allow-listen",
+            "core:event:allow-unlisten"
+          ]
+        }
+      ]
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["dmg", "nsis", "appimage"],
+    "createUpdaterArtifacts": true,
+    "icon": ["icons/icon.png", "icons/icon.ico"],
+    "resources": {
+      "../../../crates/fixkey-core/assets/": "dictionaries/",
+      "../../../LICENSE": "licenses/Apache-2.0.txt",
+      "../../../NOTICE": "licenses/NOTICE.txt",
+      "gen/licenses/": "licenses/dependencies/"
+    },
+    "macOS": {
+      "minimumSystemVersion": "11.0",
+      "hardenedRuntime": true
+    },
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser"
+      }
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "",
+      "requireSignedVersion": true,
+      "allowDowngrades": false
+    }
+  }
+}

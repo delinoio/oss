@@ -1,0 +1,251 @@
+name: Release FixKey
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact stable version already committed in the FixKey manifests
+        required: true
+        type: string
+
+permissions: {}
+concurrency:
+  group: release-fixkey
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    if: ${{ github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    environment: fixkey-signing
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.source.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Require reviewed native acceptance for this exact source
+        id: source
+        env:
+          RELEASE_VERSION: ${{ inputs.version }}
+          FIXKEY_NATIVE_ACCEPTANCE_REVISION: ${{ vars.FIXKEY_NATIVE_ACCEPTANCE_REVISION }}
+          FIXKEY_UPDATER_PUBLIC_KEY: ${{ vars.FIXKEY_UPDATER_PUBLIC_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$FIXKEY_NATIVE_ACCEPTANCE_REVISION" = "$GITHUB_SHA"
+          test -n "$FIXKEY_UPDATER_PUBLIC_KEY"
+          node scripts/release/fixkey.mjs source "$RELEASE_VERSION"
+          printf 'version=%s\n' "$RELEASE_VERSION" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    environment: fixkey-signing
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-arm64
+            os: macos-14
+            target: aarch64-apple-darwin
+            bundles: dmg
+          - platform: windows-x64
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            bundles: nsis
+          - platform: linux-x11-x64
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage
+    runs-on: ${{ matrix.os }}
+    env:
+      FIXKEY_UPDATER_PUBLIC_KEY: ${{ vars.FIXKEY_UPDATER_PUBLIC_KEY }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          lfs: true
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ci-node
+      - name: Install locked workspace
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Install pinned Rust toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup show active-toolchain
+          rustup target add '${{ matrix.target }}'
+      - name: Install Linux desktop build prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+      - name: Verify source and hydrated dictionaries
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release/fixkey.mjs source "$RELEASE_VERSION"
+          cargo test --locked -p fixkey-core --test dictionaries
+      - name: Validate UI and native contracts without application interaction
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm --filter fixkey-desktop test
+          cargo test --locked -p fixkey --features desktop --lib
+          cargo clippy --locked -p fixkey-core --features native --all-targets -- -D warnings
+          cargo clippy --locked -p fixkey --features desktop --all-targets -- -D warnings
+      - name: Import Windows signing certificate
+        if: runner.os == 'Windows'
+        env:
+          FIXKEY_WINDOWS_CERTIFICATE: ${{ secrets.FIXKEY_WINDOWS_CERTIFICATE }}
+          FIXKEY_WINDOWS_CERTIFICATE_PASSWORD: ${{ secrets.FIXKEY_WINDOWS_CERTIFICATE_PASSWORD }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (!$env:FIXKEY_WINDOWS_CERTIFICATE -or !$env:FIXKEY_WINDOWS_CERTIFICATE_PASSWORD) { throw 'fixkey-windows-signing-missing' }
+          $file = Join-Path $env:RUNNER_TEMP 'fixkey-signing.pfx'
+          try {
+            [IO.File]::WriteAllBytes($file, [Convert]::FromBase64String($env:FIXKEY_WINDOWS_CERTIFICATE))
+            $password = ConvertTo-SecureString $env:FIXKEY_WINDOWS_CERTIFICATE_PASSWORD -AsPlainText -Force
+            $certificates = @(Import-PfxCertificate -FilePath $file -CertStoreLocation Cert:\CurrentUser\My -Password $password | Where-Object HasPrivateKey)
+            if ($certificates.Count -ne 1) { throw 'fixkey-windows-signing-identity-ambiguous' }
+            $certificate = $certificates[0]
+            if (!$certificate.HasPrivateKey -or $certificate.NotAfter -lt (Get-Date)) { throw 'fixkey-windows-certificate-invalid' }
+            "FIXKEY_WINDOWS_THUMBPRINT=$($certificate.Thumbprint)" >> $env:GITHUB_ENV
+          } finally { Remove-Item -Force -ErrorAction SilentlyContinue $file }
+      - name: Build signed installers and updater payloads
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.FIXKEY_UPDATER_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.FIXKEY_UPDATER_PRIVATE_KEY_PASSWORD }}
+          APPLE_CERTIFICATE: ${{ runner.os == 'macOS' && secrets.FIXKEY_APPLE_CERTIFICATE || '' }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ runner.os == 'macOS' && secrets.FIXKEY_APPLE_CERTIFICATE_PASSWORD || '' }}
+          APPLE_SIGNING_IDENTITY: ${{ runner.os == 'macOS' && secrets.FIXKEY_APPLE_SIGNING_IDENTITY || '' }}
+          APPLE_ID: ${{ runner.os == 'macOS' && secrets.FIXKEY_APPLE_ID || '' }}
+          APPLE_PASSWORD: ${{ runner.os == 'macOS' && secrets.FIXKEY_APPLE_PASSWORD || '' }}
+          APPLE_TEAM_ID: ${{ runner.os == 'macOS' && secrets.FIXKEY_APPLE_TEAM_ID || '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$TAURI_SIGNING_PRIVATE_KEY"
+          if [ "$RUNNER_OS" = macOS ]; then
+            test -n "$APPLE_CERTIFICATE"
+            test -n "$APPLE_CERTIFICATE_PASSWORD"
+            test -n "$APPLE_SIGNING_IDENTITY"
+            test -n "$APPLE_ID"
+            test -n "$APPLE_PASSWORD"
+            test -n "$APPLE_TEAM_ID"
+          fi
+          node scripts/release/fixkey.mjs configure "$RUNNER_TEMP/fixkey-build.json" '${{ matrix.platform }}'
+          pnpm --filter fixkey-desktop exec tauri build --features desktop --target '${{ matrix.target }}' --bundles '${{ matrix.bundles }}' --config "$RUNNER_TEMP/fixkey-build.json"
+      - name: Verify macOS signature and notarization receipt
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          codesign --verify --deep --strict 'target/aarch64-apple-darwin/release/bundle/macos/FixKey.app'
+          xcrun stapler validate 'target/aarch64-apple-darwin/release/bundle/macos/FixKey.app'
+      - name: Verify Windows executable signatures
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $files = @((Join-Path $PWD 'target/x86_64-pc-windows-msvc/release/fixkey.exe')) + @(Get-ChildItem 'target/x86_64-pc-windows-msvc/release/bundle/nsis/*.exe' | ForEach-Object FullName)
+          if ($files.Count -ne 2) { throw 'fixkey-windows-signed-inventory-invalid' }
+          foreach ($file in $files) {
+            $signature = Get-AuthenticodeSignature -FilePath $file
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Thumbprint -ne $env:FIXKEY_WINDOWS_THUMBPRINT) { throw 'fixkey-windows-signature-invalid' }
+          }
+      - name: Stage exact platform inventory
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+          FIXKEY_PLATFORM: ${{ matrix.platform }}
+          FIXKEY_TARGET: ${{ matrix.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/release/fixkey.mjs stage "target/$FIXKEY_TARGET/release/bundle" "$RUNNER_TEMP/fixkey-assets" "$FIXKEY_PLATFORM" "$RELEASE_VERSION" "$GITHUB_SHA"
+      - name: Verify every updater signature with the embedded release key
+        env:
+          FIXKEY_PLATFORM: ${{ matrix.platform }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for signature in "$RUNNER_TEMP/fixkey-assets/"*.sig; do
+            cargo run --locked -p fixkey --example verify_update -- "${signature%.sig}" "$signature"
+          done
+      - name: Remove Windows signing identity
+        if: ${{ always() && runner.os == 'Windows' }}
+        shell: pwsh
+        run: |
+          if ($env:FIXKEY_WINDOWS_THUMBPRINT) { Remove-Item -Force -ErrorAction SilentlyContinue "Cert:\CurrentUser\My\$env:FIXKEY_WINDOWS_THUMBPRINT" }
+      - name: Preserve source-bound signed candidate
+        uses: actions/upload-artifact@v7
+        with:
+          name: fixkey-${{ matrix.platform }}
+          path: ${{ runner.temp }}/fixkey-assets/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [prepare, build]
+    environment: fixkey-publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      FIXKEY_UPDATER_PUBLIC_KEY: ${{ vars.FIXKEY_UPDATER_PUBLIC_KEY }}
+      FIXKEY_NATIVE_ACCEPTANCE_REVISION: ${{ vars.FIXKEY_NATIVE_ACCEPTANCE_REVISION }}
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-ci-node
+      - name: Install locked signature verifier dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: fixkey-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/fixkey-assets
+      - name: Revalidate source, signatures and aggregate immutable metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$FIXKEY_NATIVE_ACCEPTANCE_REVISION" = "$GITHUB_SHA"
+          node scripts/release/fixkey.mjs source "$RELEASE_VERSION"
+          rustup show active-toolchain
+          for signature in "$RUNNER_TEMP/fixkey-assets/"*.sig; do
+            cargo run --locked -p fixkey --example verify_update -- "${signature%.sig}" "$signature"
+          done
+          node scripts/release/fixkey.mjs metadata "$RUNNER_TEMP/fixkey-assets" "$RELEASE_VERSION" "$GITHUB_SHA"
+      - name: Publish only an exact immutable tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          tag="fixkey-v$RELEASE_VERSION"
+          git fetch --no-tags origin "refs/tags/$tag:refs/tags/$tag"
+          test "$(git rev-parse "$tag^{commit}")" = "$GITHUB_SHA"
+          # Existing releases, including interrupted drafts, require explicit
+          # operator recovery. Never replace or overwrite published assets.
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo 'fixkey-release-already-exists' >&2
+            exit 1
+          fi
+          notes="$RUNNER_TEMP/fixkey-release-notes.md"
+          printf 'Signed FixKey desktop packages.\n\nSource revision: %s\n\nNative acceptance was reviewed for this exact revision through the protected release environments.\n\nReinstall a previous signed package manually for recovery; local settings are preserved.\n' "$GITHUB_SHA" > "$notes"
+          gh release create "$tag" "$RUNNER_TEMP/fixkey-assets/"* --repo "$GITHUB_REPOSITORY" --verify-tag --target "$GITHUB_SHA" --title "FixKey $RELEASE_VERSION" --notes-file "$notes" --draft
+          gh release edit "$tag" --repo "$GITHUB_REPOSITORY" --draft=false
