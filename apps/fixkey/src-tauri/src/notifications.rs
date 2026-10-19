@@ -2,7 +2,8 @@
 
 use std::sync::mpsc::{self, SyncSender};
 
-pub(super) struct Notifications {
+/// One bounded sender to the independent OS notification worker.
+pub struct Notifications {
     sender: SyncSender<String>,
 }
 
