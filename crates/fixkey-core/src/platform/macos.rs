@@ -505,6 +505,32 @@ fn select_range(element: &Owned, selection: Range) -> Result<(), ()> {
     Ok(())
 }
 
+fn write_text(element: &Owned, expected: &str, replacement: &str) -> Result<(), WriteError> {
+    // Some Chromium versions advertise AXSelectedText as writable but
+    // acknowledge it without replacing text. Prefer the native value
+    // setter when available, preserving the exact prefix and suffix,
+    // as with UIA ValuePattern. Choose before the write: an uncertain
+    // result must never trigger a second setter. Revisit this choice
+    // when selected-text writes are reliable across supported hosts.
+    let (attribute, payload) = if settable(element.0, "AXValue") {
+        ("AXValue", expected)
+    } else {
+        ("AXSelectedText", replacement)
+    };
+    let text_name = string(attribute).map_err(|_| WriteError::Failed)?;
+    let text_value = string(payload).map_err(|_| WriteError::Failed)?;
+    tracing::info!(
+        write_attribute = attribute,
+        "fixkey native text write requested"
+    );
+    // SAFETY: All handles are retained and their types match the named
+    // AX attribute.
+    if unsafe { AXUIElementSetAttributeValue(element.0, text_name.0, text_value.0) } != 0 {
+        return Err(WriteError::Uncertain);
+    }
+    Ok(())
+}
+
 #[derive(Clone, Copy)]
 enum WriteStage {
     Target,
@@ -629,17 +655,11 @@ impl Accessibility for RawAdapter {
             )
             .map_err(|()| WriteError::Failed)?;
             stage.set(WriteStage::Text);
-            let text_name = string("AXSelectedText").map_err(|_| WriteError::Failed)?;
-            let text_value = string(replacement).map_err(|_| WriteError::Failed)?;
-            // SAFETY: All handles are retained and their types match the named
-            // AX attribute.
-            if unsafe { AXUIElementSetAttributeValue(element.0, text_name.0, text_value.0) } != 0 {
-                return Err(WriteError::Uncertain);
-            }
-            stage.set(WriteStage::TextAck);
             let mut expected: Vec<char> = before.text.chars().collect();
             expected.splice(start..end, replacement.chars());
             let expected: String = expected.into_iter().collect();
+            write_text(&element, &expected, replacement)?;
+            stage.set(WriteStage::TextAck);
             let caret = before.caret.saturating_sub(end - start) + replacement.chars().count();
             let offset = utf16_offset(&expected, caret).ok_or_else(|| WriteError::Partial {
                 written: replacement.into(),
