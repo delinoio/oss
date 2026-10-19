@@ -16,7 +16,7 @@ use std::{
 use fixkey_core::{
     decision::{MissingValidator, Validators},
     observation::{can_start, completed_word, pending_matches},
-    platform::{Adapter, Application, Identity, Key, KeyEvent},
+    platform::{Adapter, Application, Cursor, Identity, Key, KeyEvent},
     session::{Accessibility, CapturedContext, FieldSnapshot},
     tokenizer::{TokenOutcome, Tokenizer},
 };
@@ -215,6 +215,18 @@ struct Context {
     tokenizer: Tokenizer,
     keys: Vec<char>,
 }
+#[derive(Default)]
+struct InputState {
+    baseline: Option<FieldSnapshot>,
+    cursor: Option<Cursor>,
+    context: Option<Context>,
+    awaiting_ime: bool,
+}
+impl InputState {
+    fn clear(&mut self) {
+        *self = Self::default();
+    }
+}
 pub fn start(app: AppHandle, shared: Shared) {
     let active = Arc::new(AtomicBool::new(false));
     let lost = Arc::new(AtomicBool::new(false));
@@ -325,10 +337,8 @@ fn run_worker(
     receiver: &mpsc::Receiver<KeyEvent>,
 ) {
     let mut adapter = Adapter::new();
-    let mut baseline: Option<FieldSnapshot> = None;
-    let mut context: Option<Context> = None;
+    let mut input = InputState::default();
     let mut revision = 0;
-    let mut awaiting_ime = false;
     loop {
         let event = receiver.recv_timeout(Duration::from_millis(250)).ok();
         // Wait for the host to commit this physical event before acquiring
@@ -349,9 +359,7 @@ fn run_worker(
             // Rechecking permissions must rebuild transports that were absent
             // or disconnected when the long-lived worker first started.
             adapter = Adapter::new();
-            context = None;
-            baseline = None;
-            awaiting_ime = false;
+            input.clear();
             while receiver.try_recv().is_ok() {}
             runtime.preferences.session().clear_transient();
         }
@@ -365,9 +373,7 @@ fn run_worker(
         let mut hide = false;
         if !enabled || lost.swap(false, Ordering::AcqRel) {
             adapter.clear();
-            context = None;
-            baseline = None;
-            awaiting_ime = false;
+            input.clear();
             runtime.preferences.session().clear_transient();
             if runtime.manual.selected().is_some() {
                 runtime.manual.close();
@@ -375,44 +381,54 @@ fn run_worker(
                 hide = true;
             }
         }
-        let needs_snapshot = snapshot_required(
-            event.is_some(),
-            awaiting_ime || runtime.preferences.session().backspace_pending(),
-            baseline.as_ref().map(|snapshot| snapshot.target),
-            metadata.as_ref().ok().map(|(target, _)| *target),
-        );
-        if enabled && needs_snapshot {
+        let current_cursor = if enabled {
             if let Ok((_, application)) = &metadata {
                 adapter.set_application(&application.identity);
             }
+            adapter.cursor().ok()
+        } else {
+            None
+        };
+        let needs_snapshot = snapshot_required(
+            event.is_some(),
+            input.awaiting_ime || runtime.preferences.session().backspace_pending(),
+            input.cursor,
+            current_cursor,
+        );
+        if enabled && current_cursor.is_some() && needs_snapshot {
             let (snapshot, composing) = capture(&mut runtime, &mut adapter, &mut hide);
-            awaiting_ime = composing;
+            input.awaiting_ime = composing;
             if let Some(event) = event {
                 if metadata
                     .as_ref()
                     .map_or(true, |(target, _)| *target != event.target)
                     || (snapshot.is_none() && !composing)
                 {
-                    context = None;
+                    input.context = None;
                 } else if runtime.manual.selected().is_none() {
                     process_key(
                         &mut runtime,
                         &mut adapter,
-                        &mut context,
-                        baseline.as_ref(),
+                        &mut input.context,
+                        input.baseline.as_ref(),
                         event,
                         snapshot.as_ref(),
                     );
                 }
-            } else if context.is_none() {
+            } else if input.context.is_none() {
                 runtime
                     .preferences
                     .session()
                     .observe_after_backspace(&mut adapter);
             }
             if !composing {
-                update_baseline(&mut adapter, &mut baseline, &mut context);
+                update_baseline(&mut adapter, &mut input.baseline, &mut input.context);
+                input.cursor = adapter.cursor().ok();
             }
+        }
+        if enabled && current_cursor.is_none() {
+            input.clear();
+            runtime.preferences.session().clear_transient();
         }
         let diagnostic = runtime
             .last_error
@@ -438,13 +454,13 @@ fn set_active(runtime: &mut crate::desktop::Runtime, active: &AtomicBool, enable
         .set_permission_granted(enabled);
 }
 
-// Idle status checks read metadata only. Text snapshots follow keys, focus
-// transitions or an IME/undo operation whose host commit is still pending.
+// Idle checks compare content-free native caret/selection markers. Text is
+// refreshed on a cursor transition so the next word starts from that position.
 fn snapshot_required(
     has_event: bool,
     awaiting_commit: bool,
-    baseline: Option<fixkey_core::session::TargetId>,
-    focused: Option<fixkey_core::session::TargetId>,
+    baseline: Option<Cursor>,
+    focused: Option<Cursor>,
 ) -> bool {
     has_event || awaiting_commit || baseline != focused
 }
@@ -897,8 +913,25 @@ mod tests {
 
     #[test]
     fn idle_targets_do_not_request_text_but_events_and_pending_commits_do() {
-        let first = Some(TargetId(1));
-        let second = Some(TargetId(2));
+        let first = Some(super::Cursor {
+            target: TargetId(1),
+            marker: [0, 0, 0],
+        });
+        let second = Some(super::Cursor {
+            target: TargetId(2),
+            marker: [0, 0, 0],
+        });
+        let moved = Some(super::Cursor {
+            target: TargetId(1),
+            marker: [5, 5, 5],
+        });
+        let selected = Some(super::Cursor {
+            target: TargetId(1),
+            marker: [0, 0, 5],
+        });
+        assert!(snapshot_required(false, false, first, moved));
+        assert!(snapshot_required(false, false, first, selected));
+        assert!(!snapshot_required(false, false, moved, moved));
         for _ in 0..1000 {
             assert!(!snapshot_required(false, false, first, first));
         }

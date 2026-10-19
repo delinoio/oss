@@ -28,7 +28,7 @@ use zbus::{
     zvariant::OwnedObjectPath,
 };
 
-use super::{Application, Gate, Handler, Identity, Key, KeyEvent};
+use super::{Application, Cursor, Gate, Handler, Identity, Key, KeyEvent};
 use crate::{
     SkipReason,
     session::{Accessibility, FieldSensitivity, FieldSnapshot, TargetId, WriteError},
@@ -312,6 +312,42 @@ impl Adapter {
     pub fn metadata(&mut self) -> Result<(TargetId, Application), SkipReason> {
         let (object, application) = self.focus()?;
         Ok((target(&object), application))
+    }
+
+    /// Reads caret and selection offsets without retrieving document text.
+    /// # Errors
+    /// Refuses unsafe controls, unapproved applications or invalid ranges.
+    pub fn cursor(&mut self) -> Result<Cursor, SkipReason> {
+        let (object, application) = self.focus()?;
+        if self.allowed.as_ref() != Some(&application.identity) {
+            return Err(SkipReason::ExcludedApp);
+        }
+        let bus = self.bus.as_ref().ok_or(SkipReason::PermissionMissing)?;
+        let text = proxy(bus, &object, TEXT)?;
+        let caret: i32 = text
+            .get_property("CaretOffset")
+            .map_err(|_| SkipReason::UnknownField)?;
+        let count: i32 = text
+            .call("GetNSelections", &())
+            .map_err(|_| SkipReason::UnknownField)?;
+        let (start, end): (i32, i32) = match count {
+            0 => (caret, caret),
+            1 => text
+                .call("GetSelection", &(0i32,))
+                .map_err(|_| SkipReason::UnknownField)?,
+            _ => return Err(SkipReason::UnknownField),
+        };
+        if end < start {
+            return Err(SkipReason::UnknownField);
+        }
+        Ok(Cursor {
+            target: target(&object),
+            marker: [
+                u64::try_from(caret).map_err(|_| SkipReason::UnknownField)?,
+                u64::try_from(start).map_err(|_| SkipReason::UnknownField)?,
+                u64::try_from(end).map_err(|_| SkipReason::UnknownField)?,
+            ],
+        })
     }
 
     /// Gets the AT-SPI insertion geometry.

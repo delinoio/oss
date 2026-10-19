@@ -12,7 +12,9 @@ use std::{
     },
 };
 
-use super::{Application, Gate, Handler, Identity, Key, KeyEvent, character_offset, utf16_offset};
+use super::{
+    Application, Cursor, Gate, Handler, Identity, Key, KeyEvent, character_offset, utf16_offset,
+};
 use crate::{
     SkipReason,
     session::{Accessibility, FieldSensitivity, FieldSnapshot, TargetId, WriteError},
@@ -337,6 +339,25 @@ impl RawAdapter {
     pub fn metadata() -> Result<(TargetId, Application), SkipReason> {
         let element = focus()?;
         Ok((target(&element), application(element.0)?))
+    }
+
+    /// Reads caret and selection metadata without reading the control value.
+    /// # Errors
+    /// Refuses unsafe controls, unapproved applications or invalid ranges.
+    pub fn cursor(&self) -> Result<Cursor, SkipReason> {
+        let element = focus()?;
+        if self.allowed.as_ref() != Some(&application(element.0)?.identity) {
+            return Err(SkipReason::ExcludedApp);
+        }
+        let selected = range(element.0)?;
+        Ok(Cursor {
+            target: target(&element),
+            marker: [
+                u64::try_from(selected.location).map_err(|_| SkipReason::UnknownField)?,
+                u64::try_from(selected.length).map_err(|_| SkipReason::UnknownField)?,
+                0,
+            ],
+        })
     }
 
     /// Returns the accessible insertion location in screen points.
@@ -848,6 +869,13 @@ impl Adapter {
     /// Refuses unknown, protected or unsupported controls and permissions.
     pub fn metadata(&mut self) -> Result<(TargetId, Application), SkipReason> {
         on_main(RawAdapter::metadata)
+    }
+
+    /// Reads caret and selection metadata without reading the control value.
+    /// # Errors
+    /// Refuses unsafe controls, unapproved applications or invalid ranges.
+    pub fn cursor(&mut self) -> Result<Cursor, SkipReason> {
+        on_main(|| CURRENT.with(|current| current.borrow().cursor()))
     }
 
     /// Gets the accessible insertion geometry.

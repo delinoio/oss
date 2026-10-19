@@ -13,7 +13,7 @@ use std::{
 
 use uiautomation::{
     UIAutomation, UIElement,
-    patterns::{UITextPattern, UIValuePattern},
+    patterns::{UITextPattern, UITextRange, UIValuePattern},
     types::{ControlType, TextPatternRangeEndpoint},
 };
 use windows::{
@@ -40,7 +40,7 @@ use windows_sys::Win32::{
     },
 };
 
-use super::{Application, Gate, Handler, Identity, Key, KeyEvent};
+use super::{Application, Cursor, Gate, Handler, Identity, Key, KeyEvent};
 use crate::{
     SkipReason,
     session::{Accessibility, FieldSensitivity, FieldSnapshot, TargetId, WriteError},
@@ -50,6 +50,8 @@ pub struct Adapter {
     automation: Option<UIAutomation>,
     allowed: Option<Identity>,
     last: Option<(Vec<i32>, FieldSnapshot)>,
+    cursor: Option<(TargetId, UITextRange, u64)>,
+    cursor_version: u64,
     initialized: bool,
     thread: std::marker::PhantomData<std::rc::Rc<()>>,
 }
@@ -61,6 +63,7 @@ impl Default for Adapter {
 impl Drop for Adapter {
     fn drop(&mut self) {
         self.last = None;
+        self.cursor = None;
         self.automation = None;
         if self.initialized {
             // SAFETY: All COM references are released first; the non-Send
@@ -96,6 +99,8 @@ impl Adapter {
             automation,
             allowed: None,
             last: None,
+            cursor: None,
+            cursor_version: 0,
             initialized,
             thread: std::marker::PhantomData,
         }
@@ -103,6 +108,7 @@ impl Adapter {
 
     pub fn clear(&mut self) {
         self.last = None;
+        self.cursor = None;
         self.allowed = None;
     }
 
@@ -170,6 +176,54 @@ impl Adapter {
                     .map_err(|_| SkipReason::UnknownField)?,
             )?,
         ))
+    }
+
+    /// Compares native selection endpoints without retrieving document text.
+    /// # Errors
+    /// Refuses unsafe controls, unapproved applications or unavailable ranges.
+    pub fn cursor(&mut self) -> Result<Cursor, SkipReason> {
+        let element = self.focus()?;
+        let application = application(
+            element
+                .get_process_id()
+                .map_err(|_| SkipReason::UnknownField)?,
+        )?;
+        if self.allowed.as_ref() != Some(&application.identity) {
+            return Err(SkipReason::ExcludedApp);
+        }
+        let target = target(&element)?;
+        let selections = element
+            .get_pattern::<UITextPattern>()
+            .map_err(|_| SkipReason::UnsupportedWrite)?
+            .get_selection()
+            .map_err(|_| SkipReason::UnknownField)?;
+        if selections.len() != 1 {
+            return Err(SkipReason::UnknownField);
+        }
+        let selected = selections
+            .into_iter()
+            .next()
+            .ok_or(SkipReason::UnknownField)?;
+        if let Some((previous, range, version)) = &self.cursor
+            && *previous == target
+            && range
+                .compare(&selected)
+                .map_err(|_| SkipReason::UnknownField)?
+        {
+            return Ok(Cursor {
+                target,
+                marker: [*version, 0, 0],
+            });
+        }
+        self.cursor_version = self
+            .cursor_version
+            .checked_add(1)
+            .ok_or(SkipReason::UnknownField)?;
+        self.cursor = Some((target, selected, self.cursor_version));
+        Ok(Cursor {
+            target,
+            marker: [self.cursor_version, 0, 0],
+        })
     }
 
     /// Gets accessible input geometry.

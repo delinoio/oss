@@ -21,6 +21,13 @@ pub struct Application {
     pub identity: Identity,
     pub name: String,
 }
+/// Content-free caret/selection identity. Native markers are opaque and must
+/// only be compared within one adapter lifetime, never used as text offsets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Cursor {
+    pub target: TargetId,
+    pub marker: [u64; 3],
+}
 /// A directly observed key or a provenance/context invalidation signal.
 #[derive(Clone, Copy)]
 pub enum Key {
