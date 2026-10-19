@@ -58,7 +58,7 @@ export const messages = {
     accessibilityGranted: "Accessibility access is already allowed.",
     inputPermissionSteps: [
       "Choose Allow Input Monitoring to register FixKey and open its macOS permission settings.",
-      "In System Settings → Privacy & Security → Input Monitoring, enable FixKey. Return here and choose Recheck. Restart FixKey if macOS asks.",
+      "In System Settings → Privacy & Security → Input Monitoring, enable FixKey. If it is missing, choose + and add the current FixKey.app from Applications. Return here and choose Recheck. Restart FixKey if macOS asks.",
     ],
     permissionRequest: "Allow accessibility access",
     permissionWaiting:
@@ -194,7 +194,7 @@ export const messages = {
     accessibilityGranted: "접근성 권한은 이미 허용되어 있어요.",
     inputPermissionSteps: [
       "‘입력 모니터링 허용하기’를 누르면 FixKey를 권한 목록에 등록하고 macOS 권한 설정을 열어요.",
-      "시스템 설정 → 개인정보 보호 및 보안 → 입력 모니터링에서 FixKey를 켜 주세요. 돌아와서 ‘다시 확인’을 눌러 주세요. macOS가 요청하면 FixKey를 다시 시작해 주세요.",
+      "시스템 설정 → 개인정보 보호 및 보안 → 입력 모니터링에서 FixKey를 켜 주세요. 목록에 없다면 + 버튼으로 응용 프로그램의 현재 FixKey.app을 추가해 주세요. 돌아와서 ‘다시 확인’을 눌러 주세요. macOS가 요청하면 FixKey를 다시 시작해 주세요.",
     ],
     permissionRequest: "접근성 허용하기",
     permissionWaiting:
