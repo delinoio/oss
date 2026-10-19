@@ -546,6 +546,7 @@ unsafe extern "system" fn callback(code: i32, wparam: usize, lparam: isize) -> i
             {
                 return;
             }
+            let observed_at = std::time::Instant::now();
             let mut adapter = Adapter::new();
             let Ok((target, application)) = adapter.metadata() else {
                 return;
@@ -584,7 +585,11 @@ unsafe extern "system" fn callback(code: i32, wparam: usize, lparam: isize) -> i
                 super::pc_key(event.scanCode, shift, caps)
             };
             if !matches!(key, Key::Modifier) {
-                (context.handler)(KeyEvent { key, target });
+                (context.handler)(KeyEvent {
+                    key,
+                    target,
+                    observed_at,
+                });
             }
         });
     });

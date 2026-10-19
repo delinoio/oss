@@ -23,6 +23,9 @@ export const messages = {
     retry: "Try again",
     active: "Correction is active",
     inactive: "Correction is inactive",
+    waitingField: "Waiting for an editable text field",
+    waitingFieldHelp:
+      "Click an editable text field in another app. FixKey waits while Settings is open or the focused field cannot be safely identified. Details are available in Diagnostics and Help.",
     local: "Your input stays on this device. Password fields are excluded.",
     empty: "No excluded apps",
     emptyDetail:
@@ -51,6 +54,26 @@ export const messages = {
     permission: "Allow accessibility access",
     permissionHelp:
       "FixKey needs accessibility and input observation access to identify an editable control and replace only the completed word.",
+    inputPermission: "Allow Input Monitoring",
+    inputPermissionRequest: "Allow Input Monitoring",
+    inputPermissionSetup: "Set up Input Monitoring",
+    inputPermissionListHelp:
+      "Accessibility can already allow key listening even when FixKey is absent from Input Monitoring. macOS does not confirm a separate list entry here. Check the list in System Settings and add the current FixKey.app with + if it is missing.",
+    inputPermissionHelp:
+      "FixKey needs Input Monitoring to detect the keys used for keyboard-layout correction.",
+    accessibilityGranted: "Accessibility access is already allowed.",
+    inputPermissionSteps: [
+      "Choose Allow Input Monitoring to register FixKey and open its macOS permission settings.",
+      "In System Settings → Privacy & Security → Input Monitoring, enable FixKey. If it is missing, choose + and add the current FixKey.app from Applications. Return here and choose Recheck. Restart FixKey if macOS asks.",
+    ],
+    permissionRequest: "Allow accessibility access",
+    permissionWaiting:
+      "Correction will stay off until access is allowed. After enabling access, choose Recheck.",
+    permissionSteps: [
+      "Choose Allow accessibility access and follow the macOS prompt.",
+      "Enable FixKey in Accessibility. If it is already enabled but this dialog remains after restarting FixKey, remove the old FixKey entry with − and use + to add the current FixKey.app again. A rebuilt app may no longer match the old permission entry. If it is missing, use + to add FixKey from Applications.",
+      "Also enable FixKey in Input Monitoring, then recheck. If no input monitoring prompt appears, choose Allow accessibility access again. Restart FixKey if macOS asks.",
+    ],
     macPermission:
       "In System Settings, allow FixKey under Accessibility and Input Monitoring, then recheck.",
     windowsPermission:
@@ -83,7 +106,7 @@ export const messages = {
       ],
       [
         "Permissions",
-        "Grant the accessibility and input permissions requested by your OS, then choose Recheck. Correction remains inactive until permissions and dictionaries are ready.",
+        "Grant the accessibility and input permissions requested by your OS, then choose Recheck. Correction remains inactive until permissions and dictionaries are ready. On macOS, Accessibility can provide effective key-listening access without a separate Input Monitoring entry. Use Set up Input Monitoring in General to check the list; if FixKey is absent, use + to add the current FixKey.app from Applications.",
       ],
       [
         "Layouts and correction",
@@ -143,6 +166,9 @@ export const messages = {
     retry: "다시 시도",
     active: "교정이 켜져 있어요",
     inactive: "교정이 꺼져 있어요",
+    waitingField: "교정할 입력란을 기다리고 있어요",
+    waitingFieldHelp:
+      "다른 앱의 편집 가능한 입력란을 클릭해 주세요. 설정 화면을 보고 있거나 입력란을 안전하게 확인할 수 없을 때는 대기해요. 자세한 상태는 진단 및 도움말에서 확인할 수 있어요.",
     local: "입력 내용은 이 기기에만 머물러요. 비밀번호 입력란은 제외해요.",
     empty: "제외한 앱이 없어요",
     emptyDetail:
@@ -170,6 +196,26 @@ export const messages = {
     permission: "접근성 권한을 허용해 주세요",
     permissionHelp:
       "FixKey는 입력란을 확인하고 입력한 단어만 바꾸기 위해 접근성 및 입력 관찰 권한이 필요해요.",
+    inputPermission: "입력 모니터링을 허용해 주세요",
+    inputPermissionRequest: "입력 모니터링 허용하기",
+    inputPermissionSetup: "입력 모니터링 설정",
+    inputPermissionListHelp:
+      "입력 모니터링 목록에 FixKey가 없어도 접근성 권한으로 키 감지가 허용될 수 있어요. 앱에서는 별도 목록 등록 여부를 확인할 수 없어요. 시스템 설정에서 목록을 확인하고, 없다면 + 버튼으로 현재 FixKey.app을 추가해 주세요.",
+    inputPermissionHelp:
+      "잘못된 자판으로 입력한 단어를 교정하려면 누른 키를 확인할 수 있는 입력 모니터링 권한이 필요해요.",
+    accessibilityGranted: "접근성 권한은 이미 허용되어 있어요.",
+    inputPermissionSteps: [
+      "‘입력 모니터링 허용하기’를 누르면 FixKey를 권한 목록에 등록하고 macOS 권한 설정을 열어요.",
+      "시스템 설정 → 개인정보 보호 및 보안 → 입력 모니터링에서 FixKey를 켜 주세요. 목록에 없다면 + 버튼으로 응용 프로그램의 현재 FixKey.app을 추가해 주세요. 돌아와서 ‘다시 확인’을 눌러 주세요. macOS가 요청하면 FixKey를 다시 시작해 주세요.",
+    ],
+    permissionRequest: "접근성 허용하기",
+    permissionWaiting:
+      "권한을 허용하기 전까지 자동 교정은 꺼져 있어요. 허용한 뒤 ‘다시 확인’을 눌러 주세요.",
+    permissionSteps: [
+      "‘접근성 허용하기’를 누르고 macOS 안내를 따라 주세요.",
+      "손쉬운 사용에서 FixKey를 켜 주세요. FixKey를 다시 시작해도 이 안내가 계속 나오면 − 버튼으로 기존 FixKey 항목을 삭제하고 + 버튼으로 현재 FixKey.app을 다시 추가해 주세요. 앱을 새로 빌드하면 이전 권한 등록과 서명이 달라질 수 있어요. 목록에 없다면 + 버튼으로 응용 프로그램의 FixKey를 추가해 주세요.",
+      "입력 모니터링에서도 FixKey를 켠 뒤 다시 확인해 주세요. 요청 창이 나타나지 않으면 ‘접근성 허용하기’를 다시 눌러 주세요. macOS가 요청하면 FixKey를 다시 시작해 주세요.",
+    ],
     macPermission:
       "시스템 설정의 손쉬운 사용과 입력 모니터링에서 FixKey를 허용한 뒤 다시 확인해 주세요.",
     windowsPermission:
@@ -202,7 +248,7 @@ export const messages = {
       ],
       [
         "권한",
-        "운영체제에서 요청하는 접근성 및 입력 권한을 허용한 뒤 다시 확인해 주세요. 권한과 사전이 준비될 때까지 교정은 꺼져 있어요.",
+        "운영체제에서 요청하는 접근성 및 입력 권한을 허용한 뒤 다시 확인해 주세요. 권한과 사전이 준비될 때까지 교정은 꺼져 있어요. macOS에서는 별도 입력 모니터링 목록 등록 없이도 접근성 권한으로 키 감지가 허용될 수 있어요. 일반의 입력 모니터링 설정에서 목록을 확인하고, 없다면 + 버튼으로 응용 프로그램의 현재 FixKey.app을 추가해 주세요.",
       ],
       [
         "자판과 교정",

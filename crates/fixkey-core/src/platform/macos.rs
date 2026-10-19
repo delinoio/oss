@@ -13,12 +13,14 @@ use std::{
 };
 
 use super::{
-    Application, Cursor, Gate, Handler, Identity, Key, KeyEvent, character_offset, utf16_offset,
+    Application, Cursor, Gate, Handler, Identity, Key, KeyEvent, character_offset,
+    empty_paragraph_text, utf16_offset, write_ack::wait_for_transition,
 };
 use crate::{
     SkipReason,
     session::{Accessibility, FieldSensitivity, FieldSnapshot, TargetId, WriteError},
 };
+const WRITE_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(100);
 type Ref = *const c_void;
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -213,7 +215,23 @@ fn focus() -> Result<Owned, SkipReason> {
     if subrole.as_deref() == Some("AXSecureTextField") || protected(element.0)? {
         return Err(SkipReason::ProtectedField);
     }
-    if !settable(element.0, "AXSelectedText") || !settable(element.0, "AXSelectedTextRange") {
+    let selected_text_writable = settable(element.0, "AXSelectedText");
+    let selection_writable = settable(element.0, "AXSelectedTextRange");
+    let value_writable = settable(element.0, "AXValue");
+    let capabilities = (selected_text_writable, selection_writable, value_writable);
+    LAST_WRITE_CAPABILITIES.with(|last| {
+        if last.get() != Some(capabilities) {
+            last.set(Some(capabilities));
+            tracing::info!(
+                reason = "native-write-capabilities",
+                selected_text_writable,
+                selection_writable,
+                value_writable,
+                "fixkey accessibility write capabilities changed"
+            );
+        }
+    });
+    if !selected_text_writable || !selection_writable {
         return Err(SkipReason::UnsupportedWrite);
     }
     Ok(element)
@@ -466,6 +484,119 @@ impl RawAdapter {
         Ok(())
     }
 }
+fn select_range(element: &Owned, selection: Range) -> Result<(), ()> {
+    // SAFETY: The stack CFRange matches AXValue type 4 and remains live
+    // during copying.
+    let value = Owned(unsafe { AXValueCreate(4, (&raw const selection).cast()) });
+    if value.0.is_null() {
+        return Err(());
+    }
+    let name = string("AXSelectedTextRange").map_err(|_| ())?;
+    // SAFETY: All handles are retained and match the named AX attribute.
+    let ax_error = unsafe { AXUIElementSetAttributeValue(element.0, name.0, value.0) };
+    if ax_error != 0 {
+        tracing::warn!(
+            reason = "ax-selection-set-failed",
+            ax_error,
+            "fixkey selection write refused"
+        );
+        return Err(());
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TextWrite {
+    Value,
+    Selected,
+}
+fn write_text(element: &Owned, expected: &str, replacement: &str) -> Result<TextWrite, WriteError> {
+    // Some Chromium versions advertise AXSelectedText as writable but
+    // acknowledge it without replacing text. Prefer the native value
+    // setter when available, preserving the exact prefix and suffix,
+    // as with UIA ValuePattern. Choose before the write: an uncertain
+    // result must never trigger a second setter. Revisit this choice
+    // when selected-text writes are reliable across supported hosts.
+    let (method, attribute, payload) = if settable(element.0, "AXValue") {
+        (TextWrite::Value, "AXValue", expected)
+    } else {
+        (TextWrite::Selected, "AXSelectedText", replacement)
+    };
+    let text_name = string(attribute).map_err(|_| WriteError::Failed)?;
+    let text_value = string(payload).map_err(|_| WriteError::Failed)?;
+    tracing::info!(
+        write_attribute = attribute,
+        "fixkey native text write requested"
+    );
+    // SAFETY: All handles are retained and their types match the named
+    // AX attribute.
+    if unsafe { AXUIElementSetAttributeValue(element.0, text_name.0, text_value.0) } != 0 {
+        return Err(WriteError::Uncertain);
+    }
+    Ok(method)
+}
+
+fn text_ack(
+    adapter: &mut RawAdapter,
+    selected_snapshot: &FieldSnapshot,
+    expected_states: &[FieldSnapshot],
+    final_snapshot: &FieldSnapshot,
+) -> Result<FieldSnapshot, WriteError> {
+    wait_for_transition(
+        selected_snapshot,
+        expected_states,
+        WRITE_ACK_TIMEOUT,
+        || {
+            let observed = adapter.snapshot();
+            if let Ok(current) = &observed {
+                if current != selected_snapshot && !expected_states.contains(current) {
+                    tracing::warn!(
+                        reason = "native-text-readback-mismatch",
+                        text_matches = current.text == final_snapshot.text,
+                        caret_at_start = current.caret == 0,
+                        selection_empty = current.selection_len == 0,
+                        target_matches = current.target == final_snapshot.target,
+                        "fixkey native text readback differed"
+                    );
+                }
+            } else if let Err(reason) = &observed {
+                tracing::warn!(
+                    reason = reason.as_str(),
+                    "fixkey native text readback unavailable"
+                );
+            }
+            observed
+        },
+    )
+    .map_err(|()| WriteError::Uncertain)
+}
+
+#[derive(Clone, Copy)]
+enum WriteStage {
+    Target,
+    Snapshot,
+    Selection,
+    SelectionAck,
+    Text,
+    TextAck,
+    Caret,
+    FinalSnapshot,
+}
+impl WriteStage {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::Target => "target",
+            Self::Snapshot => "snapshot",
+            Self::Selection => "selection",
+            Self::SelectionAck => "selection-ack",
+            Self::Text => "text",
+            Self::TextAck => "text-ack",
+            Self::Caret => "caret",
+            Self::FinalSnapshot => "final-snapshot",
+        }
+    }
+}
+
 impl Accessibility for RawAdapter {
     fn snapshot(&mut self) -> Result<FieldSnapshot, SkipReason> {
         let element = focus()?;
@@ -506,7 +637,7 @@ impl Accessibility for RawAdapter {
             target: target(&element),
             sensitivity: FieldSensitivity::Normal,
             supports_write: true,
-            text: content,
+            text: empty_paragraph_text(content, caret, end - caret),
             caret,
             selection_len: end - caret,
         };
@@ -521,116 +652,110 @@ impl Accessibility for RawAdapter {
         end: usize,
         replacement: &str,
     ) -> Result<(), WriteError> {
-        let Some((element, before)) = self.last.take() else {
-            return Err(WriteError::Failed);
-        };
-        let current = focus().map_err(|_| WriteError::Failed)?;
-        // SAFETY: Both arguments are retained, live AX elements.
-        if !unsafe { CFEqual(current.0, element.0) }
-            || target != before.target
-            || start > end
-            || end > before.text.chars().count()
-        {
-            return Err(WriteError::Failed);
-        }
-        if self.snapshot().map_err(|_| WriteError::Failed)? != before {
-            return Err(WriteError::Failed);
-        }
-        let first = utf16_offset(&before.text, start).ok_or(WriteError::Failed)?;
-        let last = utf16_offset(&before.text, end).ok_or(WriteError::Failed)?;
-        let selection = Range {
-            location: isize::try_from(first).map_err(|_| WriteError::Failed)?,
-            length: isize::try_from(last - first).map_err(|_| WriteError::Failed)?,
-        };
-        // SAFETY: The stack CFRange matches AXValue type 4 and remains live
-        // during copying.
-        let value = Owned(unsafe { AXValueCreate(4, (&raw const selection).cast()) });
-        if value.0.is_null() {
-            return Err(WriteError::Failed);
-        }
-        let range_name = string("AXSelectedTextRange").map_err(|_| WriteError::Failed)?;
-        // SAFETY: All handles are retained and their types match the named AX
-        // attribute.
-        if unsafe { AXUIElementSetAttributeValue(element.0, range_name.0, value.0) } != 0 {
-            return Err(WriteError::Failed);
-        }
-        let focused = focus().map_err(|_| WriteError::Failed)?;
-        // SAFETY: Both arguments are retained, live AX elements.
-        if !unsafe { CFEqual(focused.0, element.0) }
-            || text(
-                attribute(element.0, "AXValue")
-                    .map_err(|_| WriteError::Failed)?
-                    .0,
+        let stage = std::cell::Cell::new(WriteStage::Target);
+        let result = (|| {
+            let Some((element, before)) = self.last.take() else {
+                return Err(WriteError::Failed);
+            };
+            let current = focus().map_err(|_| WriteError::Failed)?;
+            // SAFETY: Both arguments are retained, live AX elements.
+            if !unsafe { CFEqual(current.0, element.0) }
+                || target != before.target
+                || start > end
+                || end > before.text.chars().count()
+            {
+                return Err(WriteError::Failed);
+            }
+            stage.set(WriteStage::Snapshot);
+            if self.snapshot().map_err(|_| WriteError::Failed)? != before {
+                return Err(WriteError::Failed);
+            }
+            stage.set(WriteStage::Selection);
+            let first = utf16_offset(&before.text, start).ok_or(WriteError::Failed)?;
+            let last = utf16_offset(&before.text, end).ok_or(WriteError::Failed)?;
+            let selection = Range {
+                location: isize::try_from(first).map_err(|_| WriteError::Failed)?,
+                length: isize::try_from(last - first).map_err(|_| WriteError::Failed)?,
+            };
+            select_range(&element, selection).map_err(|()| WriteError::Failed)?;
+            stage.set(WriteStage::SelectionAck);
+            let selected_snapshot = FieldSnapshot {
+                caret: start,
+                selection_len: end - start,
+                ..before.clone()
+            };
+            // Browser-backed controls can acknowledge an AX write before the
+            // renderer publishes the updated selection. Poll only exact safe
+            // states; never repeat the write or accept an unrelated edit.
+            wait_for_transition(
+                &before,
+                std::slice::from_ref(&selected_snapshot),
+                WRITE_ACK_TIMEOUT,
+                || self.snapshot(),
             )
-            .map_err(|_| WriteError::Failed)?
-                != before.text
-        {
-            return Err(WriteError::Failed);
-        }
-        let selected = range(element.0).map_err(|_| WriteError::Failed)?;
-        if selected.location != selection.location || selected.length != selection.length {
-            return Err(WriteError::Failed);
-        }
-        let text_name = string("AXSelectedText").map_err(|_| WriteError::Failed)?;
-        let text_value = string(replacement).map_err(|_| WriteError::Failed)?;
-        // SAFETY: All handles are retained and their types match the named AX
-        // attribute.
-        if unsafe { AXUIElementSetAttributeValue(element.0, text_name.0, text_value.0) } != 0 {
-            return Err(WriteError::Uncertain);
-        }
-        let mut expected: Vec<char> = before.text.chars().collect();
-        expected.splice(start..end, replacement.chars());
-        let expected: String = expected.into_iter().collect();
-        let caret = before.caret.saturating_sub(end - start) + replacement.chars().count();
-        let offset = utf16_offset(&expected, caret).ok_or_else(|| WriteError::Partial {
-            written: replacement.into(),
-        })?;
-        let focused = focus().map_err(|_| WriteError::Uncertain)?;
-        // SAFETY: Both arguments are retained, live AX elements.
-        if !unsafe { CFEqual(focused.0, element.0) } {
-            return Err(WriteError::Uncertain);
-        }
-        if text(
-            attribute(element.0, "AXValue")
-                .map_err(|_| WriteError::Partial {
-                    written: replacement.into(),
-                })?
-                .0,
-        )
-        .map_err(|_| WriteError::Partial {
-            written: replacement.into(),
-        })? != expected
-        {
-            return Err(WriteError::Uncertain);
-        }
-        let collapsed = Range {
-            location: isize::try_from(offset).map_err(|_| WriteError::Failed)?,
-            length: 0,
-        };
-        // SAFETY: The stack CFRange matches AXValue type 4 and remains live
-        // during copying.
-        let value = Owned(unsafe { AXValueCreate(4, (&raw const collapsed).cast()) });
-        if value.0.is_null() {
-            return Err(WriteError::Partial {
+            .map_err(|()| WriteError::Failed)?;
+            stage.set(WriteStage::Text);
+            let mut expected: Vec<char> = before.text.chars().collect();
+            expected.splice(start..end, replacement.chars());
+            let expected: String = expected.into_iter().collect();
+            let method = write_text(&element, &expected, replacement)?;
+            stage.set(WriteStage::TextAck);
+            let caret = before.caret.saturating_sub(end - start) + replacement.chars().count();
+            let offset = utf16_offset(&expected, caret).ok_or_else(|| WriteError::Partial {
                 written: replacement.into(),
-            });
-        }
-        // SAFETY: All handles are retained and their types match the named AX
-        // attribute.
-        if unsafe { AXUIElementSetAttributeValue(element.0, range_name.0, value.0) } != 0 {
-            return Err(WriteError::Partial {
+            })?;
+            let inserted = FieldSnapshot {
+                text: expected,
+                caret: start + replacement.chars().count(),
+                selection_len: 0,
+                ..before
+            };
+            let selected_insert = FieldSnapshot {
+                caret: start,
+                selection_len: replacement.chars().count(),
+                ..inserted.clone()
+            };
+            let final_snapshot = FieldSnapshot {
+                caret,
+                ..inserted.clone()
+            };
+            let mut expected_states = vec![inserted, selected_insert, final_snapshot.clone()];
+            if method == TextWrite::Value {
+                // Replacing a contenteditable value can collapse the DOM
+                // selection to the start when its text nodes are rebuilt.
+                // Accept only that exact text/target state, then restore the
+                // proven insertion caret through the native range API.
+                expected_states.push(FieldSnapshot {
+                    caret: 0,
+                    ..final_snapshot.clone()
+                });
+            }
+            let written = text_ack(self, &selected_snapshot, &expected_states, &final_snapshot)?;
+            stage.set(WriteStage::Caret);
+            let collapsed = Range {
+                location: isize::try_from(offset).map_err(|_| WriteError::Failed)?,
+                length: 0,
+            };
+            select_range(&element, collapsed).map_err(|()| WriteError::Partial {
                 written: replacement.into(),
-            });
+            })?;
+            stage.set(WriteStage::FinalSnapshot);
+            wait_for_transition(&written, &[final_snapshot], WRITE_ACK_TIMEOUT, || {
+                self.snapshot()
+            })
+            .map_err(|()| WriteError::Partial {
+                written: replacement.into(),
+            })?;
+            Ok(())
+        })();
+        if result.is_err() {
+            tracing::warn!(
+                reason = "native-write-failed",
+                stage = stage.get().as_str(),
+                "fixkey accessibility write failed"
+            );
         }
-        let after = self.snapshot().map_err(|_| WriteError::Uncertain)?;
-        if after.target != target
-            || after.text != expected
-            || after.caret != caret
-            || after.selection_len != 0
-        {
-            return Err(WriteError::Uncertain);
-        }
-        Ok(())
+        result
     }
 }
 struct Tap {
@@ -657,6 +782,7 @@ extern "C" fn callback(_: Ref, kind: u32, event: Ref, info: *mut c_void) -> Ref 
         if kind != 10 || !context.active.load(Ordering::Acquire) {
             return;
         }
+        let observed_at = std::time::Instant::now();
         let mut adapter = Adapter::new();
         let Ok((target, application)) = adapter.metadata() else {
             return;
@@ -672,10 +798,23 @@ extern "C" fn callback(_: Ref, kind: u32, event: Ref, info: *mut c_void) -> Ref 
         let code = unsafe { CGEventGetIntegerValueField(event, 9) };
         // SAFETY: The event is borrowed from the active callback and remains
         // live until return.
-        let key = if unsafe { CGEventGetIntegerValueField(event, 41) } != 0
-            // SAFETY: The event is borrowed from the active callback and remains live until return.
-            || unsafe { CGEventGetIntegerValueField(event, 45) } != 1
-        {
+        let external_source = unsafe { CGEventGetIntegerValueField(event, 41) } != 0;
+        // SAFETY: The event is borrowed from the active callback and remains
+        // live until return.
+        let hardware_state = unsafe { CGEventGetIntegerValueField(event, 45) } == 1;
+        LAST_INPUT_PROVENANCE.with(|last| {
+            let provenance = (external_source, hardware_state);
+            if last.get() != Some(provenance) {
+                last.set(Some(provenance));
+                tracing::info!(
+                    reason = "native-input-provenance",
+                    external_source,
+                    hardware_state,
+                    "fixkey input provenance changed"
+                );
+            }
+        });
+        let key = if external_source || !hardware_state {
             Key::Untrusted
         } else if flags & ((1 << 18) | (1 << 20)) != 0 {
             if code == 9 { Key::Paste } else { Key::Reset }
@@ -684,7 +823,11 @@ extern "C" fn callback(_: Ref, kind: u32, event: Ref, info: *mut c_void) -> Ref 
         } else {
             map_key(code, flags & (1 << 17) != 0, flags & (1 << 16) != 0)
         };
-        (context.handler)(KeyEvent { key, target });
+        (context.handler)(KeyEvent {
+            key,
+            target,
+            observed_at,
+        });
     }));
     event
 }
@@ -809,6 +952,8 @@ fn on_main<T: Send, F: FnOnce() -> T + Send>(operation: F) -> T {
     }
 }
 thread_local! {
+    static LAST_INPUT_PROVENANCE: std::cell::Cell<Option<(bool, bool)>> = const { std::cell::Cell::new(None) };
+    static LAST_WRITE_CAPABILITIES: std::cell::Cell<Option<(bool, bool, bool)>> = const { std::cell::Cell::new(None) };
     static CURRENT: std::cell::RefCell<RawAdapter> = const { std::cell::RefCell::new(RawAdapter::new()) };
     static TARGET: std::cell::RefCell<Option<(Owned,TargetId)>> = const { std::cell::RefCell::new(None) };
 }

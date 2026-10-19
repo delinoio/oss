@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { App, CandidatePicker } from "./App";
@@ -173,11 +179,176 @@ describe("settings desktop contract", () => {
     );
     expect(screen.getByText(/Your settings are preserved/)).toBeTruthy();
   });
+  it("requests permission once on first launch and closes after a successful recheck", async () => {
+    const { api, state } = fixture({
+      status: "permission-missing",
+      active: false,
+    });
+    mount(api);
+    await screen.findByRole("dialog");
+    await waitFor(() => expect(api.action).toHaveBeenCalledTimes(1));
+    expect(api.action).toHaveBeenCalledWith("request-permission");
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Allow accessibility access" }),
+    );
+    vi.mocked(api.state).mockResolvedValue({
+      ...state,
+      status: "active",
+      active: true,
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Recheck" }).at(-1)!);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+  it("shows request failures in the dialog and allows retry", async () => {
+    const { api } = fixture({
+      status: "permission-missing",
+      active: false,
+      osLanguage: "ko",
+    });
+    vi.mocked(api.action).mockRejectedValueOnce(
+      "permission-request-unavailable",
+    );
+    mount(api);
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(dialog.textContent).toContain("permission-request-unavailable"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "접근성 허용하기" }));
+    await waitFor(() => expect(api.action).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+  it.each([
+    [
+      "en",
+      "Allow Input Monitoring",
+      "Accessibility access is already allowed.",
+    ],
+    ["ko", "입력 모니터링 허용하기", "접근성 권한은 이미 허용되어 있어요."],
+  ] as const)(
+    "identifies missing Input Monitoring without asking for accessibility again (%s)",
+    async (osLanguage, requestLabel, granted) => {
+      const { api } = fixture({
+        status: "input-permission-missing",
+        active: false,
+        osLanguage,
+      });
+      mount(api);
+      const dialog = await screen.findByRole("dialog");
+      await waitFor(() => expect(api.action).toHaveBeenCalledTimes(1));
+      expect(screen.getByText(granted)).toBeTruthy();
+      expect(screen.getByRole("button", { name: requestLabel })).toBeTruthy();
+      expect(dialog.textContent).not.toContain(
+        osLanguage === "ko"
+          ? "손쉬운 사용에서 FixKey를 켜"
+          : "Enable FixKey in Accessibility",
+      );
+    },
+  );
+  it("updates the open dialog when accessibility is granted and closes after both permissions are granted", async () => {
+    const { api, state } = fixture({
+      status: "permission-missing",
+      active: false,
+    });
+    mount(api);
+    await screen.findByRole("dialog");
+    await waitFor(() => expect(api.action).toHaveBeenCalledTimes(1));
+    vi.mocked(api.state).mockResolvedValue({
+      ...state,
+      status: "input-permission-missing",
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Recheck" }).at(-1)!);
+    await screen.findByRole("dialog", { name: "Allow Input Monitoring" });
+    expect(
+      screen.queryByRole("button", { name: "Allow accessibility access" }),
+    ).toBeNull();
+    expect(api.action).toHaveBeenCalledTimes(2);
+    vi.mocked(api.state).mockResolvedValue({
+      ...state,
+      status: "active",
+      active: true,
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Recheck" }).at(-1)!);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+  it.each([
+    ["en", "Set up Input Monitoring", "Open system settings", "Recheck"],
+    ["ko", "입력 모니터링 설정", "시스템 설정 열기", "다시 확인"],
+  ] as const)(
+    "keeps manual list setup available with effective access (%s)",
+    async (osLanguage, setup, open, recheck) => {
+      const { api } = fixture({ osLanguage });
+      mount(api);
+      fireEvent.click(await screen.findByRole("button", { name: setup }));
+      const dialog = await screen.findByRole("dialog", { name: setup });
+      expect(dialog.textContent).toContain("+");
+      expect(dialog.textContent).toContain("FixKey.app");
+      expect(api.action).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: open }));
+      await waitFor(() =>
+        expect(api.action).toHaveBeenCalledWith("permission-settings"),
+      );
+      await waitFor(() =>
+        expect(
+          (
+            within(dialog).getByRole("button", {
+              name: recheck,
+            }) as HTMLButtonElement
+          ).disabled,
+        ).toBe(false),
+      );
+      fireEvent.click(within(dialog).getByRole("button", { name: recheck }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(api.action).toHaveBeenCalledWith("recheck");
+      expect(screen.getByRole("button", { name: recheck })).toBeTruthy();
+      expect(api.save).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: setup }));
+      const reopened = await screen.findByRole("dialog", { name: setup });
+      fireEvent(
+        reopened,
+        new Event("cancel", { bubbles: true, cancelable: true }),
+      );
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    },
+  );
+  it("does not ask for permission on an authorized launch", async () => {
+    const { api } = fixture();
+    mount(api);
+    await screen.findByText("Correction is active");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(api.action).not.toHaveBeenCalled();
+  });
+  it.each([
+    ["en", "Waiting for an editable text field", "Diagnostics and Help"],
+    ["ko", "교정할 입력란을 기다리고 있어요", "진단 및 도움말"],
+  ] as const)(
+    "explains an unidentified field as waiting and keeps its diagnostic code (%s)",
+    async (osLanguage, title, diagnostics) => {
+      const { api } = fixture({
+        status: "unknown-field",
+        active: false,
+        osLanguage,
+      });
+      mount(api);
+      await screen.findByText(title);
+      expect(screen.queryByText("unknown-field")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: diagnostics }));
+      expect(screen.getByText("unknown-field")).toBeTruthy();
+    },
+  );
+  it("does not present a pause as waiting for a field", async () => {
+    const { api } = fixture({ status: "paused", active: false });
+    mount(api);
+    await screen.findByText("Correction is inactive");
+    expect(screen.queryByText("Waiting for an editable text field")).toBeNull();
+  });
   it("shows platform permission instructions and dismisses the dialog with Esc", async () => {
     const { api } = fixture({ status: "permission-missing", active: false });
     mount(api);
     const dialog = await screen.findByRole("dialog");
-    expect(screen.getByText(/Input Monitoring/)).toBeTruthy();
+    expect(
+      screen.getByText(/Also enable FixKey in Input Monitoring/),
+    ).toBeTruthy();
     fireEvent(dialog, new Event("cancel", { bubbles: true, cancelable: true }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByText("Correction is inactive")).toBeTruthy();

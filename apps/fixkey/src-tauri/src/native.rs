@@ -10,12 +10,12 @@ use std::{
         atomic::{AtomicBool, Ordering},
         mpsc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use fixkey_core::{
     decision::{MissingValidator, Validators},
-    observation::{can_start, completed_word, pending_matches},
+    observation::{await_completed_word, can_start, completed_word, pending_matches},
     platform::{Adapter, Application, Cursor, Identity, Key, KeyEvent},
     session::{Accessibility, CapturedContext, FieldSnapshot},
     tokenizer::{TokenOutcome, Tokenizer},
@@ -192,11 +192,162 @@ pub fn unresolved_apps(excluded: &[ExcludedApp]) -> Vec<usize> {
         })
         .collect()
 }
+#[cfg(target_os = "macos")]
+mod input_monitoring {
+    #[repr(u32)]
+    enum RequestType {
+        ListenEvent = 1,
+    }
+    const ACCESS_GRANTED: u32 = 0;
+
+    #[link(name = "IOKit", kind = "framework")]
+    unsafe extern "C" {
+        fn IOHIDCheckAccess(request_type: RequestType) -> u32;
+        fn IOHIDRequestAccess(request_type: RequestType) -> bool;
+    }
+
+    pub fn granted() -> bool {
+        // SAFETY: The SDK-defined listen-event request only queries permission.
+        unsafe { IOHIDCheckAccess(RequestType::ListenEvent) == ACCESS_GRANTED }
+    }
+
+    pub fn request() -> bool {
+        // SAFETY: This requests user consent without opening a device or
+        // reading events. Unlike the CG request, it registers the app in the
+        // Input Monitoring list even when accessibility is already granted.
+        unsafe { IOHIDRequestAccess(RequestType::ListenEvent) }
+    }
+}
+
+/// Requests Input Monitoring registration even when accessibility already
+/// provides effective listen access. The result does not prove a list entry.
+#[cfg(target_os = "macos")]
+pub fn register_input_monitoring() {
+    let granted = input_monitoring::request();
+    tracing::info!(
+        reason = "input-permission-registration-requested",
+        input_monitoring_granted = granted,
+        "fixkey input monitoring registration requested"
+    );
+}
+
+/// Other platforms do not use the macOS permission registration API.
+#[cfg(not(target_os = "macos"))]
+pub const fn register_input_monitoring() {}
+
+#[cfg(any(target_os = "macos", test))]
+const fn macos_permission_reason(
+    accessibility: bool,
+    input_monitoring: bool,
+) -> Option<&'static str> {
+    match (accessibility, input_monitoring) {
+        (false, _) => Some("permission-missing"),
+        (true, false) => Some("input-permission-missing"),
+        (true, true) => None,
+    }
+}
+
+fn permission_reason() -> Option<&'static str> {
+    #[cfg(target_os = "macos")]
+    {
+        #[link(name = "ApplicationServices", kind = "framework")]
+        unsafe extern "C" {
+            fn AXIsProcessTrusted() -> bool;
+        }
+        // SAFETY: These parameterless queries do not prompt or read input.
+        unsafe { macos_permission_reason(AXIsProcessTrusted(), input_monitoring::granted()) }
+    }
+    #[cfg(not(target_os = "macos"))]
+    (!Adapter::permission()).then_some("permission-missing")
+}
+
+/// Requests access from `FixKey` while its permission dialog is visible.
+pub fn request_permission() -> Result<(), &'static str> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::{ffi::c_void, ptr};
+        type Ref = *const c_void;
+        #[link(name = "ApplicationServices", kind = "framework")]
+        unsafe extern "C" {
+            static kAXTrustedCheckOptionPrompt: Ref;
+            fn AXIsProcessTrustedWithOptions(options: Ref) -> bool;
+        }
+        #[link(name = "CoreFoundation", kind = "framework")]
+        unsafe extern "C" {
+            static kCFBooleanTrue: Ref;
+            fn CFDictionaryCreate(
+                allocator: Ref,
+                keys: *const Ref,
+                values: *const Ref,
+                count: isize,
+                key_callbacks: Ref,
+                value_callbacks: Ref,
+            ) -> Ref;
+            fn CFRelease(value: Ref);
+        }
+        // SAFETY: Both entries are immortal framework constants. Null callbacks
+        // leave their ownership unchanged; the dictionary is released after
+        // use.
+        let needs_settings = unsafe {
+            let key = kAXTrustedCheckOptionPrompt;
+            let value = kCFBooleanTrue;
+            let options = CFDictionaryCreate(
+                ptr::null(),
+                &raw const key,
+                &raw const value,
+                1,
+                ptr::null(),
+                ptr::null(),
+            );
+            if options.is_null() {
+                return Err("permission-request-unavailable");
+            }
+            let trusted = AXIsProcessTrustedWithOptions(options);
+            CFRelease(options);
+            // Request explicit Input Monitoring registration through IOHID.
+            // CGRequestListenEventAccess alone can leave the app unlisted.
+            // Keep this independent of the asynchronous accessibility result.
+            let input_monitoring_granted = input_monitoring::request();
+            tracing::info!(
+                reason = "input-permission-requested",
+                accessibility_granted = trusted,
+                input_monitoring_granted,
+                "fixkey input monitoring permission requested"
+            );
+            !trusted || !input_monitoring_granted
+        };
+        tracing::info!(
+            reason = "permission-requested",
+            "fixkey permission requested"
+        );
+        // macOS may suppress an already-decided consent prompt. Always give
+        // the user a visible recovery path while permission remains missing.
+        if needs_settings {
+            open_permission_settings()
+        } else {
+            Ok(())
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    open_permission_settings()
+}
+
 pub fn open_permission_settings() -> Result<(), &'static str> {
     #[cfg(target_os = "macos")]
-    let command = std::process::Command::new("open")
-        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-        .spawn();
+    let command = {
+        #[link(name = "ApplicationServices", kind = "framework")]
+        unsafe extern "C" {
+            fn AXIsProcessTrusted() -> bool;
+        }
+        // SAFETY: This parameterless query neither prompts nor reads user
+        // input.
+        let pane = if unsafe { AXIsProcessTrusted() } {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
+        } else {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        };
+        std::process::Command::new("open").arg(pane).spawn()
+    };
     #[cfg(target_os = "windows")]
     let command = std::process::Command::new("explorer.exe")
         .arg("ms-settings:easeofaccess")
@@ -214,6 +365,41 @@ struct Context {
     before: FieldSnapshot,
     tokenizer: Tokenizer,
     keys: Vec<char>,
+    pending_keys: Option<PendingKeys>,
+}
+#[derive(Clone, Copy)]
+struct PendingKeys {
+    snapshot_at: Instant,
+    deadline: Instant,
+}
+impl PendingKeys {
+    fn new(snapshot_at: Instant) -> Self {
+        Self {
+            snapshot_at,
+            deadline: snapshot_at + Duration::from_millis(100),
+        }
+    }
+
+    fn accepts(self, observed_at: Instant, now: Instant) -> bool {
+        observed_at <= self.snapshot_at && now <= self.deadline
+    }
+}
+fn insertion_ahead(before: &FieldSnapshot, current: &FieldSnapshot, keys: &[char]) -> bool {
+    current.target == before.target
+        && current.sensitivity == before.sensitivity
+        && current.supports_write
+        && current.selection_len == 0
+        && current.caret > before.caret + keys.len()
+        && before
+            .text
+            .chars()
+            .take(before.caret)
+            .eq(current.text.chars().take(before.caret))
+        && before
+            .text
+            .chars()
+            .skip(before.caret)
+            .eq(current.text.chars().skip(current.caret))
 }
 #[derive(Default)]
 struct InputState {
@@ -391,7 +577,12 @@ fn run_worker(
         };
         let needs_snapshot = snapshot_required(
             event.is_some(),
-            input.awaiting_ime || runtime.preferences.session().backspace_pending(),
+            input.awaiting_ime
+                || input
+                    .context
+                    .as_ref()
+                    .is_some_and(|pending| pending.pending_keys.is_some())
+                || runtime.preferences.session().backspace_pending(),
             input.cursor,
             current_cursor,
         );
@@ -399,22 +590,16 @@ fn run_worker(
             let (snapshot, composing) = capture(&mut runtime, &mut adapter, &mut hide);
             input.awaiting_ime = composing;
             if let Some(event) = event {
-                if metadata
-                    .as_ref()
-                    .map_or(true, |(target, _)| *target != event.target)
-                    || (snapshot.is_none() && !composing)
-                {
-                    input.context = None;
-                } else if runtime.manual.selected().is_none() {
-                    process_key(
-                        &mut runtime,
-                        &mut adapter,
-                        &mut input.context,
-                        input.baseline.as_ref(),
-                        event,
-                        snapshot.as_ref(),
-                    );
-                }
+                process_captured_key(
+                    &mut runtime,
+                    &mut adapter,
+                    &mut input,
+                    event,
+                    snapshot.as_ref(),
+                    metadata
+                        .as_ref()
+                        .is_ok_and(|(target, _)| *target == event.target),
+                );
             } else if input.context.is_none() {
                 runtime
                     .preferences
@@ -440,6 +625,42 @@ fn run_worker(
         }
         publish_status(app, status, changed, diagnostic.as_deref());
     }
+}
+
+fn process_captured_key(
+    runtime: &mut crate::desktop::Runtime,
+    adapter: &mut Adapter,
+    input: &mut InputState,
+    event: KeyEvent,
+    snapshot: Option<&FieldSnapshot>,
+    target_matches: bool,
+) {
+    if !target_matches || (snapshot.is_none() && !input.awaiting_ime) {
+        input.context = None;
+        return;
+    }
+    if runtime.manual.selected().is_some() {
+        return;
+    }
+    if input.context.as_ref().is_some_and(|pending| {
+        pending
+            .pending_keys
+            .is_some_and(|waiting| !waiting.accepts(event.observed_at, Instant::now()))
+    }) {
+        input.context = None;
+        tracing::info!(
+            reason = "pending-key-delivery-invalidated",
+            "fixkey input context discarded"
+        );
+    }
+    process_key(
+        runtime,
+        adapter,
+        &mut input.context,
+        input.baseline.as_ref(),
+        event,
+        snapshot,
+    );
 }
 
 fn set_active(runtime: &mut crate::desktop::Runtime, active: &AtomicBool, enabled: bool) {
@@ -496,7 +717,7 @@ fn capture(
             // the target. Only failed writes require an explicit recheck.
             if reason != fixkey_core::SkipReason::Composing {
                 runtime.preferences.session().clear_transient();
-                tracing::debug!(reason = reason.as_str(), "fixkey snapshot unavailable");
+                tracing::info!(reason = reason.as_str(), "fixkey snapshot unavailable");
             }
             (None, reason == fixkey_core::SkipReason::Composing)
         }
@@ -509,14 +730,57 @@ fn update_baseline(
     context: &mut Option<Context>,
 ) {
     let next = adapter.snapshot().ok();
-    if let Some(pending) = context.as_ref()
-        && next.as_ref().is_none_or(|snapshot| {
-            baseline.as_ref().is_some_and(|previous| {
-                previous.target == snapshot.target && snapshot.caret < previous.caret
-            }) || !pending_matches(&pending.before, snapshot, &pending.keys)
-        })
-    {
+    let now = Instant::now();
+    if context.as_ref().is_some_and(|pending| {
+        pending
+            .pending_keys
+            .is_some_and(|waiting| now > waiting.deadline)
+    }) {
+        tracing::info!(
+            reason = "pending-key-delivery-expired",
+            "fixkey input context discarded"
+        );
         *context = None;
+    }
+    if let Some(pending) = context.as_mut() {
+        let forward = next.as_ref().is_some_and(|snapshot| {
+            baseline.as_ref().is_none_or(|previous| {
+                previous.target != snapshot.target || snapshot.caret >= previous.caret
+            })
+        });
+        if forward
+            && next
+                .as_ref()
+                .is_some_and(|snapshot| pending_matches(&pending.before, snapshot, &pending.keys))
+        {
+            pending.pending_keys = None;
+        } else if forward
+            && next
+                .as_ref()
+                .is_some_and(|snapshot| insertion_ahead(&pending.before, snapshot, &pending.keys))
+        {
+            // The host can publish text while its already-observed event is
+            // still resolving native metadata. Retain only this insertion
+            // shape and only events observed before this snapshot. Never
+            // advance the baseline to text unexplained by delivered keys.
+            let waiting = pending
+                .pending_keys
+                .get_or_insert_with(|| PendingKeys::new(now));
+            if now <= waiting.deadline {
+                return;
+            }
+            tracing::info!(
+                reason = "pending-key-delivery-expired",
+                "fixkey input context discarded"
+            );
+            *context = None;
+        } else {
+            tracing::info!(
+                reason = "pending-context-mismatch",
+                "fixkey input context discarded"
+            );
+            *context = None;
+        }
     }
     *baseline = next;
 }
@@ -545,10 +809,10 @@ fn status(
         && !runtime.preferences.current().english_enabled
     {
         "languages-disabled"
+    } else if let Some(reason) = permission_reason() {
+        reason
     } else if !runtime.dictionaries_ready() {
         "dictionary-unavailable"
-    } else if !Adapter::permission() {
-        "permission-missing"
     } else if !observer_ready {
         "input-observer-unavailable"
     } else {
@@ -599,7 +863,21 @@ fn process_key(
                     before: before.clone(),
                     tokenizer: Tokenizer::new(),
                     keys: Vec::new(),
+                    pending_keys: None,
                 });
+                tracing::info!(
+                    reason = "word-context-started",
+                    "fixkey physical word started"
+                );
+            }
+            if ch == ' ' && context.is_none() {
+                tracing::info!(
+                    reason = "word-context-missing",
+                    baseline_available = baseline.is_some(),
+                    target_matches = baseline.is_some_and(|before| before.target == event.target),
+                    boundary_available = baseline.is_some_and(can_start),
+                    "fixkey word boundary has no physical input context"
+                );
             }
             if let Some(pending) = context.as_mut() {
                 pending.keys.push(ch);
@@ -618,7 +896,13 @@ fn process_key(
                 && let Some(outcome) = pending.tokenizer.feed_char(ch)
             {
                 if let TokenOutcome::Evaluate { word, boundary } = outcome
-                    && let Ok(current) = adapter.snapshot()
+                    && let Some(current) = await_completed_word(
+                        &pending.before,
+                        &word.chars().collect::<Vec<_>>(),
+                        &boundary,
+                        Duration::from_millis(100),
+                        || adapter.snapshot(),
+                    )
                 {
                     evaluate(
                         runtime,
@@ -690,7 +974,7 @@ fn evaluate(
             runtime.last_error = Some("unsupported-write".into());
         }
     } else {
-        tracing::debug!(
+        tracing::info!(
             reason = "stale-provenance",
             "fixkey input context discarded"
         );
@@ -888,7 +1172,63 @@ mod tests {
 
     use fixkey_core::session::TargetId;
 
-    use super::{ApplicationInventory, snapshot_required};
+    use super::{ApplicationInventory, PendingKeys, insertion_ahead, snapshot_required};
+
+    #[test]
+    fn only_already_observed_keys_can_explain_a_published_insertion() {
+        use fixkey_core::{
+            observation::pending_matches,
+            session::{FieldSensitivity, FieldSnapshot},
+        };
+        let before = FieldSnapshot {
+            target: TargetId(1),
+            text: "prefix  suffix".into(),
+            caret: 7,
+            selection_len: 0,
+            sensitivity: FieldSensitivity::Normal,
+            supports_write: true,
+        };
+        let published = FieldSnapshot {
+            text: "prefix zl suffix".into(),
+            caret: 9,
+            ..before
+        };
+        assert!(insertion_ahead(&before, &published, &['z']));
+        let observed_at = Instant::now();
+        let now = observed_at + Duration::from_millis(1);
+        let waiting = PendingKeys::new(now);
+        assert!(waiting.accepts(observed_at, now + Duration::from_millis(1)));
+        assert!(!waiting.accepts(
+            now + Duration::from_millis(1),
+            now + Duration::from_millis(2)
+        ));
+        assert!(!waiting.accepts(now, now + Duration::from_millis(101)));
+        assert!(pending_matches(&before, &published, &['z', 'l']));
+        for unsafe_snapshot in [
+            FieldSnapshot {
+                target: TargetId(2),
+                ..published.clone()
+            },
+            FieldSnapshot {
+                selection_len: 1,
+                ..published.clone()
+            },
+            FieldSnapshot {
+                sensitivity: FieldSensitivity::Protected,
+                ..published.clone()
+            },
+            FieldSnapshot {
+                supports_write: false,
+                ..published.clone()
+            },
+            FieldSnapshot {
+                text: "prefix zl changed".into(),
+                ..published
+            },
+        ] {
+            assert!(!insertion_ahead(&before, &unsafe_snapshot, &['z']));
+        }
+    }
 
     #[test]
     fn settings_polls_reuse_inventory_until_expiry_or_explicit_refresh() {
@@ -939,5 +1279,27 @@ mod tests {
         assert!(snapshot_required(false, true, first, first));
         assert!(snapshot_required(false, false, first, second));
         assert!(snapshot_required(false, false, None, first));
+    }
+}
+
+#[cfg(test)]
+mod permission_tests {
+    use super::macos_permission_reason;
+
+    #[test]
+    fn reports_only_the_missing_macos_permission() {
+        assert_eq!(
+            macos_permission_reason(false, false),
+            Some("permission-missing")
+        );
+        assert_eq!(
+            macos_permission_reason(false, true),
+            Some("permission-missing")
+        );
+        assert_eq!(
+            macos_permission_reason(true, false),
+            Some("input-permission-missing")
+        );
+        assert_eq!(macos_permission_reason(true, true), None);
     }
 }

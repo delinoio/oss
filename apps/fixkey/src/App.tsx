@@ -31,6 +31,7 @@ function Modal({
   useEffect(() => {
     const dialog = ref.current!;
     dialog.showModal();
+    dialog.querySelector<HTMLElement>("[data-autofocus]")?.focus();
     return () => dialog.close();
   }, []);
   return (
@@ -52,6 +53,8 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
   const [section, setSection] = useState(Section.General);
   const [error, setError] = useState<string | null>(null);
   const [permissionDismissed, setPermissionDismissed] = useState(false);
+  const [inputSetupOpen, setInputSetupOpen] = useState(false);
+  const permissionRequested = useRef(false);
   const [capture, setCapture] = useState(false);
   const [choosing, setChoosing] = useState(false);
   const [apps, setApps] = useState<ExcludedApp[]>([]);
@@ -75,12 +78,28 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
   });
   const action = useMutation({
     mutationFn: (name: Parameters<DesktopApi["action"]>[0]) => api.action(name),
-    onSuccess: () => {
+    onSuccess: (_, name) => {
+      if (name === "recheck") setInputSetupOpen(false);
       setError(null);
       void query.refetch();
     },
     onError: (reason) => setError(errorCode(reason)),
   });
+  const requestPermission = action.mutate;
+  useEffect(() => {
+    if (
+      data?.platform === "macos-arm64" &&
+      (data.status === "permission-missing" ||
+        data.status === "input-permission-missing") &&
+      !permissionDismissed &&
+      !permissionRequested.current
+    ) {
+      // Request from FixKey itself so macOS can list this app in Accessibility.
+      // Polling must never repeat a dismissed system prompt.
+      permissionRequested.current = true;
+      requestPermission("request-permission");
+    }
+  }, [data?.platform, data?.status, permissionDismissed, requestPermission]);
   useEffect(() => {
     document.documentElement.lang = language;
     document.documentElement.dataset.theme = data?.settings.theme ?? "system";
@@ -110,9 +129,25 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
       </main>
     );
   const settings = data.settings;
+  const waitingForField = !data.active && data.status === "unknown-field";
   const permissionNeeded =
     data.status === "permission-missing" ||
     data.status === "input-permission-missing";
+  const inputPermissionNeeded =
+    data.platform === "macos-arm64" &&
+    (data.status === "input-permission-missing" || inputSetupOpen);
+  const closePermission = () => {
+    setInputSetupOpen(false);
+    setPermissionDismissed(true);
+  };
+  const permissionTitle = inputSetupOpen
+    ? t.inputPermissionSetup
+    : inputPermissionNeeded
+      ? t.inputPermission
+      : t.permission;
+  const permissionRequestLabel = inputPermissionNeeded
+    ? t.inputPermissionRequest
+    : t.permissionRequest;
   const permissionInstruction =
     data.platform === "macos-arm64"
       ? t.macPermission
@@ -179,10 +214,20 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
       <main>
         <h2>{t[section]}</h2>
         <div className={`status ${data.active ? "active" : ""}`} role="status">
-          <strong>{data.active ? t.active : t.inactive}</strong>
-          <span>
-            {t.reason}: <code>{data.status}</code>
-          </span>
+          <strong>
+            {data.active
+              ? t.active
+              : waitingForField
+                ? t.waitingField
+                : t.inactive}
+          </strong>
+          {waitingForField ? (
+            <span>{t.waitingFieldHelp}</span>
+          ) : (
+            <span>
+              {t.reason}: <code>{data.status}</code>
+            </span>
+          )}
         </div>
         {(error || data.settingsError || !data.logsHealthy) && (
           <div role="alert" className="error">
@@ -228,6 +273,16 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
                 >
                   {t.recheck}
                 </button>
+                {data.platform === "macos-arm64" && (
+                  <button
+                    onClick={() => {
+                      setInputSetupOpen(true);
+                      setPermissionDismissed(false);
+                    }}
+                  >
+                    {t.inputPermissionSetup}
+                  </button>
+                )}
               </section>
               <section className="card">
                 <h3>{t.languages}</h3>
@@ -353,6 +408,7 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
           {section === Section.Diagnostics && (
             <>
               <section className="card">
+                {row(t.reason, <code>{data.status}</code>)}
                 <p>{t.logHelp}</p>
                 <div className="actions">
                   <button onClick={() => action.mutate("open-logs")}>
@@ -379,27 +435,60 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
           )}
         </fieldset>
       </main>
-      {permissionNeeded && !permissionDismissed && (
-        <Modal
-          title={t.permission}
-          onClose={() => setPermissionDismissed(true)}
-        >
-          <p>{t.permissionHelp}</p>
-          <p>{t.local}</p>
-          <p>{permissionInstruction}</p>
+      {(permissionNeeded || inputSetupOpen) && !permissionDismissed && (
+        <Modal title={permissionTitle} onClose={closePermission}>
+          <p>
+            {inputSetupOpen
+              ? t.inputPermissionListHelp
+              : inputPermissionNeeded
+                ? t.inputPermissionHelp
+                : t.permissionHelp}
+          </p>
+          {data.status === "input-permission-missing" && (
+            <p className="permission-granted">{t.accessibilityGranted}</p>
+          )}
+          <p className="permission-privacy">{t.local}</p>
+          {data.platform === "macos-arm64" ? (
+            <ol className="permission-steps">
+              {(inputPermissionNeeded
+                ? t.inputPermissionSteps
+                : t.permissionSteps
+              ).map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+          ) : (
+            <p>{permissionInstruction}</p>
+          )}
+          {!inputSetupOpen && <p role="status">{t.permissionWaiting}</p>}
+          {error && (
+            <p role="alert">
+              {t.error}: <code>{error}</code>
+            </p>
+          )}
           <div className="actions">
             <button
               className="primary"
-              onClick={() => action.mutate("permission-settings")}
+              data-autofocus
+              disabled={busy}
+              onClick={() => action.mutate("request-permission")}
             >
-              {t.openSettings}
+              {data.platform === "macos-arm64"
+                ? permissionRequestLabel
+                : t.openSettings}
             </button>
-            <button onClick={() => action.mutate("recheck")}>
+            {data.platform === "macos-arm64" && (
+              <button
+                disabled={busy}
+                onClick={() => action.mutate("permission-settings")}
+              >
+                {t.openSettings}
+              </button>
+            )}
+            <button disabled={busy} onClick={() => action.mutate("recheck")}>
               {t.recheck}
             </button>
-            <button onClick={() => setPermissionDismissed(true)}>
-              {t.later}
-            </button>
+            <button onClick={closePermission}>{t.later}</button>
           </div>
         </Modal>
       )}

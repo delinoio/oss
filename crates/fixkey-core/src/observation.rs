@@ -7,6 +7,37 @@ use crate::{
     session::{FieldSensitivity, FieldSnapshot},
 };
 
+/// Waits for the host to publish an exact completed insertion before any write.
+/// Only matching committed prefixes may progress during this bounded wait.
+pub fn await_completed_word<E>(
+    before: &FieldSnapshot,
+    keys: &[char],
+    boundary: &str,
+    timeout: std::time::Duration,
+    mut observe: impl FnMut() -> Result<FieldSnapshot, E>,
+) -> Option<FieldSnapshot> {
+    if !can_start(before) {
+        return None;
+    }
+    let deadline = std::time::Instant::now() + timeout;
+    let observed: Vec<_> = keys.iter().copied().chain(boundary.chars()).collect();
+    let mut caret = before.caret;
+    loop {
+        let current = observe().ok()?;
+        if current.caret < caret {
+            return None;
+        }
+        if completed_word(before, &current, keys, boundary).is_some() {
+            return Some(current);
+        }
+        if !pending_matches(before, &current, &observed) || std::time::Instant::now() >= deadline {
+            return None;
+        }
+        caret = current.caret;
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
 /// Establishes a new word boundary without adopting existing document text.
 #[must_use]
 pub fn can_start(before: &FieldSnapshot) -> bool {
@@ -125,6 +156,85 @@ mod tests {
             sensitivity: FieldSensitivity::Normal,
             supports_write: true,
         }
+    }
+    #[test]
+    fn waits_for_the_host_to_commit_the_observed_word_and_boundary() {
+        let before = field("", 0);
+        let keys: Vec<_> = "zlqhemrk".chars().collect();
+        let mut reads = 0;
+        let result = await_completed_word(
+            &before,
+            &keys,
+            " ",
+            std::time::Duration::from_millis(100),
+            || {
+                reads += 1;
+                Ok::<_, ()>(match reads {
+                    1 => field("zl", 2),
+                    2 => field("zlqhemrk", 8),
+                    _ => field("zlqhemrk ", 9),
+                })
+            },
+        );
+        assert_eq!(result, Some(field("zlqhemrk ", 9)));
+        assert_eq!(reads, 3);
+    }
+    #[test]
+    fn commit_wait_rejects_external_edits_and_caret_retreats() {
+        let before = field("", 0);
+        let keys: Vec<_> = "zlqhemrk".chars().collect();
+        for second in [
+            field("external", 8),
+            field("z", 1),
+            FieldSnapshot {
+                target: TargetId(2),
+                ..field("zlqhemrk ", 9)
+            },
+            FieldSnapshot {
+                selection_len: 1,
+                ..field("zlqhemrk ", 9)
+            },
+        ] {
+            let mut reads = 0;
+            assert!(
+                await_completed_word(
+                    &before,
+                    &keys,
+                    " ",
+                    std::time::Duration::from_millis(100),
+                    || {
+                        reads += 1;
+                        Ok::<_, ()>(if reads == 1 {
+                            field("zl", 2)
+                        } else {
+                            second.clone()
+                        })
+                    }
+                )
+                .is_none()
+            );
+            assert_eq!(reads, 2);
+        }
+        assert!(
+            await_completed_word(
+                &before,
+                &keys,
+                " ",
+                std::time::Duration::ZERO,
+                || Ok::<_, ()>(before.clone())
+            )
+            .is_none()
+        );
+        assert!(
+            await_completed_word(
+                &before,
+                &keys,
+                " ",
+                std::time::Duration::from_millis(100),
+                || Err::<FieldSnapshot, _>(())
+            )
+            .is_none()
+        );
     }
     #[test]
     fn pending_context_refuses_cursor_moves_edits_and_selections() {
