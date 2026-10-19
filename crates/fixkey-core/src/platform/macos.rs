@@ -505,17 +505,22 @@ fn select_range(element: &Owned, selection: Range) -> Result<(), ()> {
     Ok(())
 }
 
-fn write_text(element: &Owned, expected: &str, replacement: &str) -> Result<(), WriteError> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TextWrite {
+    Value,
+    Selected,
+}
+fn write_text(element: &Owned, expected: &str, replacement: &str) -> Result<TextWrite, WriteError> {
     // Some Chromium versions advertise AXSelectedText as writable but
     // acknowledge it without replacing text. Prefer the native value
     // setter when available, preserving the exact prefix and suffix,
     // as with UIA ValuePattern. Choose before the write: an uncertain
     // result must never trigger a second setter. Revisit this choice
     // when selected-text writes are reliable across supported hosts.
-    let (attribute, payload) = if settable(element.0, "AXValue") {
-        ("AXValue", expected)
+    let (method, attribute, payload) = if settable(element.0, "AXValue") {
+        (TextWrite::Value, "AXValue", expected)
     } else {
-        ("AXSelectedText", replacement)
+        (TextWrite::Selected, "AXSelectedText", replacement)
     };
     let text_name = string(attribute).map_err(|_| WriteError::Failed)?;
     let text_value = string(payload).map_err(|_| WriteError::Failed)?;
@@ -528,7 +533,42 @@ fn write_text(element: &Owned, expected: &str, replacement: &str) -> Result<(), 
     if unsafe { AXUIElementSetAttributeValue(element.0, text_name.0, text_value.0) } != 0 {
         return Err(WriteError::Uncertain);
     }
-    Ok(())
+    Ok(method)
+}
+
+fn text_ack(
+    adapter: &mut RawAdapter,
+    selected_snapshot: &FieldSnapshot,
+    expected_states: &[FieldSnapshot],
+    final_snapshot: &FieldSnapshot,
+) -> Result<FieldSnapshot, WriteError> {
+    wait_for_transition(
+        selected_snapshot,
+        expected_states,
+        WRITE_ACK_TIMEOUT,
+        || {
+            let observed = adapter.snapshot();
+            if let Ok(current) = &observed {
+                if current != selected_snapshot && !expected_states.contains(current) {
+                    tracing::warn!(
+                        reason = "native-text-readback-mismatch",
+                        text_matches = current.text == final_snapshot.text,
+                        caret_at_start = current.caret == 0,
+                        selection_empty = current.selection_len == 0,
+                        target_matches = current.target == final_snapshot.target,
+                        "fixkey native text readback differed"
+                    );
+                }
+            } else if let Err(reason) = &observed {
+                tracing::warn!(
+                    reason = reason.as_str(),
+                    "fixkey native text readback unavailable"
+                );
+            }
+            observed
+        },
+    )
+    .map_err(|()| WriteError::Uncertain)
 }
 
 #[derive(Clone, Copy)]
@@ -658,7 +698,7 @@ impl Accessibility for RawAdapter {
             let mut expected: Vec<char> = before.text.chars().collect();
             expected.splice(start..end, replacement.chars());
             let expected: String = expected.into_iter().collect();
-            write_text(&element, &expected, replacement)?;
+            let method = write_text(&element, &expected, replacement)?;
             stage.set(WriteStage::TextAck);
             let caret = before.caret.saturating_sub(end - start) + replacement.chars().count();
             let offset = utf16_offset(&expected, caret).ok_or_else(|| WriteError::Partial {
@@ -679,13 +719,18 @@ impl Accessibility for RawAdapter {
                 caret,
                 ..inserted.clone()
             };
-            let written = wait_for_transition(
-                &selected_snapshot,
-                &[inserted, selected_insert, final_snapshot.clone()],
-                WRITE_ACK_TIMEOUT,
-                || self.snapshot(),
-            )
-            .map_err(|()| WriteError::Uncertain)?;
+            let mut expected_states = vec![inserted, selected_insert, final_snapshot.clone()];
+            if method == TextWrite::Value {
+                // Replacing a contenteditable value can collapse the DOM
+                // selection to the start when its text nodes are rebuilt.
+                // Accept only that exact text/target state, then restore the
+                // proven insertion caret through the native range API.
+                expected_states.push(FieldSnapshot {
+                    caret: 0,
+                    ..final_snapshot.clone()
+                });
+            }
+            let written = text_ack(self, &selected_snapshot, &expected_states, &final_snapshot)?;
             stage.set(WriteStage::Caret);
             let collapsed = Range {
                 location: isize::try_from(offset).map_err(|_| WriteError::Failed)?,
