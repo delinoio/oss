@@ -668,6 +668,35 @@ fn update_baseline(
         tracing::info!(
             reason = "pending-context-mismatch",
             snapshot_available = next.is_some(),
+            target_matches = next.as_ref().is_some_and(|snapshot| context
+                .as_ref()
+                .is_some_and(|pending| pending.before.target == snapshot.target)),
+            selection_empty = next
+                .as_ref()
+                .is_some_and(|snapshot| snapshot.selection_len == 0),
+            caret_retreated = next.as_ref().is_some_and(|snapshot| baseline
+                .as_ref()
+                .is_some_and(|previous| snapshot.caret < previous.caret)),
+            insertion_only = next
+                .as_ref()
+                .is_some_and(|snapshot| context.as_ref().is_some_and(|pending| {
+                    snapshot.caret >= pending.before.caret
+                        && pending
+                            .before
+                            .text
+                            .chars()
+                            .take(pending.before.caret)
+                            .eq(snapshot.text.chars().take(pending.before.caret))
+                        && pending
+                            .before
+                            .text
+                            .chars()
+                            .skip(pending.before.caret)
+                            .eq(snapshot.text.chars().skip(snapshot.caret))
+                })),
+            ahead_of_keys = next.as_ref().is_some_and(|snapshot| context
+                .as_ref()
+                .is_some_and(|pending| snapshot.caret > pending.before.caret + pending.keys.len())),
             "fixkey input context discarded"
         );
         *context = None;
