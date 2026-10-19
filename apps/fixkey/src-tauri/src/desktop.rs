@@ -702,6 +702,28 @@ fn create_tray(app: &tauri::App) -> tauri::Result<()> {
     Ok(())
 }
 
+// The pinned Tauri tracing wrapper emits an import after its Invoke binding.
+// Limit the allowance to generated dispatch code; remove when the macro orders
+// imports first. An expectation cannot cover both tracing feature states.
+#[expect(
+    clippy::allow_attributes,
+    reason = "Tracing is unified only in some workspace builds"
+)]
+#[allow(
+    clippy::items_after_statements,
+    reason = "Pinned Tauri tracing command wrapper emits late imports"
+)]
+fn commands() -> impl Fn(tauri::ipc::Invoke) -> bool + Send + Sync + 'static {
+    tauri::generate_handler![
+        desktop_state,
+        save_settings,
+        desktop_action,
+        available_apps,
+        candidate_state,
+        candidate_action
+    ]
+}
+
 /// Starts the desktop event loop.
 ///
 /// # Panics
@@ -740,14 +762,7 @@ pub fn run() {
                 let _ = window.hide();
             }
         })
-        .invoke_handler(tauri::generate_handler![
-            desktop_state,
-            save_settings,
-            desktop_action,
-            available_apps,
-            candidate_state,
-            candidate_action
-        ])
+        .invoke_handler(commands())
         .build(tauri::generate_context!())
         .expect("fixkey desktop initialization failed")
         .run(|_, event| {
