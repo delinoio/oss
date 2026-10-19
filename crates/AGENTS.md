@@ -32,7 +32,6 @@
 
 - [bundlewhy Rust foundation](../docs/crates-bundlewhy-foundation.md)
 - [typeopt Rust CLI foundation](../docs/crates-typeopt-foundation.md)
-- [FixKey correction engine](../docs/crates-fixkey-core-foundation.md)
 
 - [clibox public documentation foundation](../docs/apps-clibox-docs-foundation.md)
 - [crates-binpm-foundation](../docs/crates-binpm-foundation.md)

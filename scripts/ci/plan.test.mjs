@@ -37,21 +37,6 @@ const selected = (event, paths, mode = Mode.Affected) =>
     .filter(([, run]) => run)
     .map(([id]) => id);
 
-test("FixKey desktop resources select affected Rust checks on eligible events", () => {
-  for (const event of [Event.PullRequest, Event.Push, Event.Manual]) {
-    for (const path of [
-      "apps/fixkey/src-tauri/settings-fixture.json",
-      "apps/fixkey/src-tauri/src/settings.rs",
-      "crates/fixkey-core/assets/ko/entries.bin",
-    ]) {
-      const jobs = selected(event, [path]);
-      assert.ok(jobs.includes("rust-test"), `${event}: ${path}`);
-      assert.ok(jobs.includes("rust-clippy"), `${event}: ${path}`);
-      assert.ok(!jobs.includes("devhud-desktop"), `${event}: ${path}`);
-    }
-  }
-});
-
 test("rustfmt configuration selects only formatting on PRs and main pushes", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
     for (const directory of [
@@ -430,7 +415,6 @@ test("PR never allocates native package jobs, including changes to CI itself", (
     "linux-packages",
     "pnport-native",
     ...devhudNative,
-    "fixkey-desktop",
   ]);
 });
 
@@ -1727,25 +1711,6 @@ test("CI Result requires every selected formatting job to succeed", () => {
       const needs = results(event, ["docs/guide.md"]);
       needs["source-format"].result = result;
       assert.throws(() => validateResults(needs), /source-format/);
-    }
-  }
-});
-
-test("FixKey frontend and desktop ownership preserve event eligibility", () => {
-  for (const source of [
-    "apps/fixkey/src/App.tsx",
-    "crates/fixkey-core/src/platform/macos.rs",
-    ".github/workflows/release-fixkey.yml",
-    "scripts/release/fixkey.mjs",
-  ]) {
-    for (const event of Object.values(Event)) {
-      const plan = planJobs(event, [source]);
-      assert.equal(plan.jobs["fixkey-frontend"], true);
-      assert.equal(plan.jobs["fixkey-desktop"], event === Event.Push);
-      assert.equal(
-        plan.forced["fixkey-frontend"],
-        !source.startsWith("apps/fixkey/"),
-      );
     }
   }
 });

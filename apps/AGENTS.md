@@ -22,7 +22,6 @@
 - [clibox public documentation foundation](../docs/apps-clibox-docs-foundation.md)
 - [apps-devhud-foundation](../docs/apps-devhud-foundation.md)
 - [DevHud Desktop Updater Contract](../docs/apps-devhud-updater-contract.md)
-- [FixKey desktop application](../docs/apps-fixkey-desktop-contract.md)
 - [Nodeup public documentation foundation](../docs/apps-nodeup-docs-foundation.md)
 - [pnport public documentation](../docs/apps-pnport-docs-foundation.md)
 - [apps-public-docs-foundation](../docs/apps-public-docs-foundation.md)

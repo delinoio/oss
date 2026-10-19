@@ -147,7 +147,6 @@
       "Cargo.lock",
       "Cargo.toml",
       "apps/devhud/src-tauri/**",
-      "apps/fixkey/src-tauri/**",
       "crates/**",
       "package.json",
       "packages/devhud-api-client/**",
@@ -175,7 +174,6 @@
       "Cargo.lock",
       "Cargo.toml",
       "apps/devhud/src-tauri/**",
-      "apps/fixkey/src-tauri/**",
       "crates/**",
       "package.json",
       "packages/devhud-api-client/**",
@@ -735,42 +733,5 @@
       "**/*.md",
       "**/*.mdx"
     ]
-  },
-  "fixkey-frontend": {
-    "paths": [
-      ".nvmrc",
-      ".npmrc",
-      "package.json",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      "turbo.json",
-      "apps/fixkey/**",
-      "crates/fixkey-core/**",
-      "scripts/release/fixkey*",
-      ".github/workflows/release-fixkey.yml"
-    ],
-    "workspace": "fixkey-desktop",
-    "workspacePaths": ["apps/fixkey/**"]
-  },
-  "fixkey-desktop": {
-    "paths": [
-      ".nvmrc",
-      ".npmrc",
-      "package.json",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      "turbo.json",
-      "apps/fixkey/**",
-      "crates/fixkey-core/**",
-      "scripts/release/fixkey*",
-      ".github/workflows/release-fixkey.yml",
-      ".cargo/**",
-      "Cargo.toml",
-      "Cargo.lock",
-      "rust-toolchain*"
-    ],
-    "workspace": "fixkey-desktop",
-    "workspacePaths": ["apps/fixkey/**"],
-    "native": true
   }
 }
