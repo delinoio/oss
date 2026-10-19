@@ -636,7 +636,7 @@ fn capture(
             // the target. Only failed writes require an explicit recheck.
             if reason != fixkey_core::SkipReason::Composing {
                 runtime.preferences.session().clear_transient();
-                tracing::debug!(reason = reason.as_str(), "fixkey snapshot unavailable");
+                tracing::info!(reason = reason.as_str(), "fixkey snapshot unavailable");
             }
             (None, reason == fixkey_core::SkipReason::Composing)
         }
@@ -656,6 +656,11 @@ fn update_baseline(
             }) || !pending_matches(&pending.before, snapshot, &pending.keys)
         })
     {
+        tracing::info!(
+            reason = "pending-context-mismatch",
+            snapshot_available = next.is_some(),
+            "fixkey input context discarded"
+        );
         *context = None;
     }
     *baseline = next;
@@ -740,6 +745,19 @@ fn process_key(
                     tokenizer: Tokenizer::new(),
                     keys: Vec::new(),
                 });
+                tracing::info!(
+                    reason = "word-context-started",
+                    "fixkey physical word started"
+                );
+            }
+            if ch == ' ' && context.is_none() {
+                tracing::info!(
+                    reason = "word-context-missing",
+                    baseline_available = baseline.is_some(),
+                    target_matches = baseline.is_some_and(|before| before.target == event.target),
+                    boundary_available = baseline.is_some_and(can_start),
+                    "fixkey word boundary has no physical input context"
+                );
             }
             if let Some(pending) = context.as_mut() {
                 pending.keys.push(ch);
@@ -830,7 +848,7 @@ fn evaluate(
             runtime.last_error = Some("unsupported-write".into());
         }
     } else {
-        tracing::debug!(
+        tracing::info!(
             reason = "stale-provenance",
             "fixkey input context discarded"
         );
