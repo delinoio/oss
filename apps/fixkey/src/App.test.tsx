@@ -271,6 +271,31 @@ describe("settings desktop contract", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(api.action).not.toHaveBeenCalled();
   });
+  it.each([
+    ["en", "Waiting for an editable text field", "Diagnostics and Help"],
+    ["ko", "교정할 입력란을 기다리고 있어요", "진단 및 도움말"],
+  ] as const)(
+    "explains an unidentified field as waiting and keeps its diagnostic code (%s)",
+    async (osLanguage, title, diagnostics) => {
+      const { api } = fixture({
+        status: "unknown-field",
+        active: false,
+        osLanguage,
+      });
+      mount(api);
+      await screen.findByText(title);
+      expect(screen.queryByText("unknown-field")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
+      fireEvent.click(screen.getByRole("button", { name: diagnostics }));
+      expect(screen.getByText("unknown-field")).toBeTruthy();
+    },
+  );
+  it("does not present a pause as waiting for a field", async () => {
+    const { api } = fixture({ status: "paused", active: false });
+    mount(api);
+    await screen.findByText("Correction is inactive");
+    expect(screen.queryByText("Waiting for an editable text field")).toBeNull();
+  });
   it("shows platform permission instructions and dismisses the dialog with Esc", async () => {
     const { api } = fixture({ status: "permission-missing", active: false });
     mount(api);

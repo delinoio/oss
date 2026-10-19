@@ -26,7 +26,7 @@ enum SettingsSection {
 }
 ```
 
-- General: correction status with pause and resume, enabled languages (both on by default), login startup (off by default), UI language and theme.
+- General: correction status with pause and resume, enabled languages (both on by default), login startup (off by default), UI language and theme. When the current field is unidentified (`unknown-field`), show a localized waiting-for-an-editable-field state and explain switching to a supported text field in another app, rather than implying that the user disabled correction. The engine remains inactive for that target; keep the raw status visible in Diagnostics and Help.
 - Excluded Apps: empty state, app selection, list and removal. Persist each exclusion by a stable application identity, never by display name or a mutable path alone: macOS bundle identifier, Windows AppUserModelID when present otherwise the executable's full path, and Linux X11 `WM_CLASS` class together with the desktop-entry ID when available. Match on the identity key; the display name is presentation only. When the identity changes or cannot be resolved, do not silently drop the entry: keep it listed as unresolved and keep correction off for a target whose identity cannot be established.
 - Shortcuts: key capture for the manual-candidate shortcut, unassigned by default, with registration and conflict errors that show the reason.
 - Updates: current version, manual check, available update, consent, progress and failures.

@@ -127,6 +127,7 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
       </main>
     );
   const settings = data.settings;
+  const waitingForField = !data.active && data.status === "unknown-field";
   const permissionNeeded =
     data.status === "permission-missing" ||
     data.status === "input-permission-missing";
@@ -205,10 +206,20 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
       <main>
         <h2>{t[section]}</h2>
         <div className={`status ${data.active ? "active" : ""}`} role="status">
-          <strong>{data.active ? t.active : t.inactive}</strong>
-          <span>
-            {t.reason}: <code>{data.status}</code>
-          </span>
+          <strong>
+            {data.active
+              ? t.active
+              : waitingForField
+                ? t.waitingField
+                : t.inactive}
+          </strong>
+          {waitingForField ? (
+            <span>{t.waitingFieldHelp}</span>
+          ) : (
+            <span>
+              {t.reason}: <code>{data.status}</code>
+            </span>
+          )}
         </div>
         {(error || data.settingsError || !data.logsHealthy) && (
           <div role="alert" className="error">
@@ -379,6 +390,7 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
           {section === Section.Diagnostics && (
             <>
               <section className="card">
+                {row(t.reason, <code>{data.status}</code>)}
                 <p>{t.logHelp}</p>
                 <div className="actions">
                   <button onClick={() => action.mutate("open-logs")}>

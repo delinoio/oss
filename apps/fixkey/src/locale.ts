@@ -23,6 +23,9 @@ export const messages = {
     retry: "Try again",
     active: "Correction is active",
     inactive: "Correction is inactive",
+    waitingField: "Waiting for an editable text field",
+    waitingFieldHelp:
+      "Click an editable text field in another app. FixKey waits while Settings is open or the focused field cannot be safely identified. Details are available in Diagnostics and Help.",
     local: "Your input stays on this device. Password fields are excluded.",
     empty: "No excluded apps",
     emptyDetail:
@@ -160,6 +163,9 @@ export const messages = {
     retry: "다시 시도",
     active: "교정이 켜져 있어요",
     inactive: "교정이 꺼져 있어요",
+    waitingField: "교정할 입력란을 기다리고 있어요",
+    waitingFieldHelp:
+      "다른 앱의 편집 가능한 입력란을 클릭해 주세요. 설정 화면을 보고 있거나 입력란을 안전하게 확인할 수 없을 때는 대기해요. 자세한 상태는 진단 및 도움말에서 확인할 수 있어요.",
     local: "입력 내용은 이 기기에만 머물러요. 비밀번호 입력란은 제외해요.",
     empty: "제외한 앱이 없어요",
     emptyDetail:
