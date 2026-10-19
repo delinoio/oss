@@ -57,7 +57,7 @@ export const messages = {
       "FixKey needs Input Monitoring to detect the keys used for keyboard-layout correction.",
     accessibilityGranted: "Accessibility access is already allowed.",
     inputPermissionSteps: [
-      "Choose Allow Input Monitoring and follow the macOS prompt.",
+      "Choose Allow Input Monitoring to register FixKey and open its macOS permission settings.",
       "In System Settings → Privacy & Security → Input Monitoring, enable FixKey. Return here and choose Recheck. Restart FixKey if macOS asks.",
     ],
     permissionRequest: "Allow accessibility access",
@@ -193,7 +193,7 @@ export const messages = {
       "잘못된 자판으로 입력한 단어를 교정하려면 누른 키를 확인할 수 있는 입력 모니터링 권한이 필요해요.",
     accessibilityGranted: "접근성 권한은 이미 허용되어 있어요.",
     inputPermissionSteps: [
-      "‘입력 모니터링 허용하기’를 누르고 macOS 안내를 따라 주세요.",
+      "‘입력 모니터링 허용하기’를 누르면 FixKey를 권한 목록에 등록하고 macOS 권한 설정을 열어요.",
       "시스템 설정 → 개인정보 보호 및 보안 → 입력 모니터링에서 FixKey를 켜 주세요. 돌아와서 ‘다시 확인’을 눌러 주세요. macOS가 요청하면 FixKey를 다시 시작해 주세요.",
     ],
     permissionRequest: "접근성 허용하기",

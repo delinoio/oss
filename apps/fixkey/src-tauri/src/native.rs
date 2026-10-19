@@ -192,6 +192,33 @@ pub fn unresolved_apps(excluded: &[ExcludedApp]) -> Vec<usize> {
         })
         .collect()
 }
+#[cfg(target_os = "macos")]
+mod input_monitoring {
+    #[repr(u32)]
+    enum RequestType {
+        ListenEvent = 1,
+    }
+    const ACCESS_GRANTED: u32 = 0;
+
+    #[link(name = "IOKit", kind = "framework")]
+    unsafe extern "C" {
+        fn IOHIDCheckAccess(request_type: RequestType) -> u32;
+        fn IOHIDRequestAccess(request_type: RequestType) -> bool;
+    }
+
+    pub fn granted() -> bool {
+        // SAFETY: The SDK-defined listen-event request only queries permission.
+        unsafe { IOHIDCheckAccess(RequestType::ListenEvent) == ACCESS_GRANTED }
+    }
+
+    pub fn request() -> bool {
+        // SAFETY: This requests user consent without opening a device or
+        // reading events. Unlike the CG request, it registers the app in the
+        // Input Monitoring list even when accessibility is already granted.
+        unsafe { IOHIDRequestAccess(RequestType::ListenEvent) }
+    }
+}
+
 #[cfg(any(target_os = "macos", test))]
 fn macos_permission_reason(accessibility: bool, input_monitoring: bool) -> Option<&'static str> {
     match (accessibility, input_monitoring) {
@@ -207,10 +234,9 @@ fn permission_reason() -> Option<&'static str> {
         #[link(name = "ApplicationServices", kind = "framework")]
         unsafe extern "C" {
             fn AXIsProcessTrusted() -> bool;
-            fn CGPreflightListenEventAccess() -> bool;
         }
         // SAFETY: These parameterless queries do not prompt or read input.
-        unsafe { macos_permission_reason(AXIsProcessTrusted(), CGPreflightListenEventAccess()) }
+        unsafe { macos_permission_reason(AXIsProcessTrusted(), input_monitoring::granted()) }
     }
     #[cfg(not(target_os = "macos"))]
     (!Adapter::permission()).then_some("permission-missing")
@@ -226,8 +252,6 @@ pub fn request_permission() -> Result<(), &'static str> {
         unsafe extern "C" {
             static kAXTrustedCheckOptionPrompt: Ref;
             fn AXIsProcessTrustedWithOptions(options: Ref) -> bool;
-            fn CGPreflightListenEventAccess() -> bool;
-            fn CGRequestListenEventAccess() -> bool;
         }
         #[link(name = "CoreFoundation", kind = "framework")]
         unsafe extern "C" {
@@ -245,7 +269,7 @@ pub fn request_permission() -> Result<(), &'static str> {
         // SAFETY: Both entries are immortal framework constants. Null callbacks
         // leave their ownership unchanged; the dictionary is released after
         // use.
-        unsafe {
+        let needs_settings = unsafe {
             let key = kAXTrustedCheckOptionPrompt;
             let value = kCFBooleanTrue;
             let options =
@@ -255,24 +279,34 @@ pub fn request_permission() -> Result<(), &'static str> {
             }
             let trusted = AXIsProcessTrustedWithOptions(options);
             CFRelease(options);
-            // These are independent TCC services. Do not gate the input
-            // monitoring request on the asynchronous accessibility result:
-            // doing so leaves FixKey absent from the Input Monitoring list.
-            if !CGPreflightListenEventAccess() {
-                let input_monitoring_granted = CGRequestListenEventAccess();
+            // Request explicit Input Monitoring registration through IOHID.
+            // CGRequestListenEventAccess alone can leave the app unlisted.
+            // Keep this independent of the asynchronous accessibility result.
+            let input_monitoring_granted = if input_monitoring::granted() {
+                true
+            } else {
+                let input_monitoring_granted = input_monitoring::request();
                 tracing::info!(
                     reason = "input-permission-requested",
                     accessibility_granted = trusted,
                     input_monitoring_granted,
                     "fixkey input monitoring permission requested"
                 );
-            }
-        }
+                input_monitoring_granted
+            };
+            !trusted || !input_monitoring_granted
+        };
         tracing::info!(
             reason = "permission-requested",
             "fixkey permission requested"
         );
-        Ok(())
+        // macOS may suppress an already-decided consent prompt. Always give
+        // the user a visible recovery path while permission remains missing.
+        if needs_settings {
+            open_permission_settings()
+        } else {
+            Ok(())
+        }
     }
     #[cfg(not(target_os = "macos"))]
     open_permission_settings()
