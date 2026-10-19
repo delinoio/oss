@@ -321,6 +321,7 @@ async fn desktop_action(
             runtime.refused_target = None;
             runtime.last_error = None;
             drop(runtime);
+            hide_candidates(&app);
             refresh_tray(&app);
             result.map_err(|error| error.to_string())
         }
