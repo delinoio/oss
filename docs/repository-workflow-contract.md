@@ -193,7 +193,7 @@ flags. This preserves package selection without preparing unrelated desktop
 inputs. The published CLI selection fixture also runs as an uncached Turbo task
 in `changes`, after the pinned binary is prepared and before final planning.
 
-The Ubuntu workspace Rust Clippy and test jobs install WebKitGTK 4.1 development files when DevHud is selected, before compiling those hosts. Its package supplies the JavaScriptCoreGTK 4.1 pkg-config metadata required by the resolved all-features graph. The originating change's Clippy job failed at this native prerequisite before linting source; the CI prerequisite repair does not claim a Rust source change.
+The Ubuntu workspace Rust Clippy and test jobs install WebKitGTK 4.1 development files when DevHud is selected, before compiling those hosts. Clippy also installs these desktop prerequisites when FixKey is selected because its all-features check enables the Tauri/Wry desktop graph. Its package supplies the JavaScriptCoreGTK 4.1 pkg-config metadata required by the resolved all-features graph. The originating change's Clippy job failed at this native prerequisite before linting source; the CI prerequisite repair does not claim a Rust source change.
 
 Those same jobs build each selected desktop frontend. The generic test job builds pnport and its injection companion only when `pnport` is selected. Go setup remains required for pnport static-child fixtures and uses the pinned `go.mod` version.
 
