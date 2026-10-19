@@ -346,3 +346,7 @@ progress {
 .permission-steps li + li {
   margin-top: 12px;
 }
+
+.permission-granted {
+  font-weight: 600;
+}

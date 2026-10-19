@@ -192,6 +192,30 @@ pub fn unresolved_apps(excluded: &[ExcludedApp]) -> Vec<usize> {
         })
         .collect()
 }
+#[cfg(any(target_os = "macos", test))]
+fn macos_permission_reason(accessibility: bool, input_monitoring: bool) -> Option<&'static str> {
+    match (accessibility, input_monitoring) {
+        (false, _) => Some("permission-missing"),
+        (true, false) => Some("input-permission-missing"),
+        (true, true) => None,
+    }
+}
+
+fn permission_reason() -> Option<&'static str> {
+    #[cfg(target_os = "macos")]
+    {
+        #[link(name = "ApplicationServices", kind = "framework")]
+        unsafe extern "C" {
+            fn AXIsProcessTrusted() -> bool;
+            fn CGPreflightListenEventAccess() -> bool;
+        }
+        // SAFETY: These parameterless queries do not prompt or read input.
+        unsafe { macos_permission_reason(AXIsProcessTrusted(), CGPreflightListenEventAccess()) }
+    }
+    #[cfg(not(target_os = "macos"))]
+    (!Adapter::permission()).then_some("permission-missing")
+}
+
 /// Requests access from FixKey while its permission dialog is visible.
 pub fn request_permission() -> Result<(), &'static str> {
     #[cfg(target_os = "macos")]
@@ -611,8 +635,8 @@ fn status(
         && !runtime.preferences.current().english_enabled
     {
         "languages-disabled"
-    } else if !Adapter::permission() {
-        "permission-missing"
+    } else if let Some(reason) = permission_reason() {
+        reason
     } else if !runtime.dictionaries_ready() {
         "dictionary-unavailable"
     } else if !observer_ready {
@@ -1005,5 +1029,27 @@ mod tests {
         assert!(snapshot_required(false, true, first, first));
         assert!(snapshot_required(false, false, first, second));
         assert!(snapshot_required(false, false, None, first));
+    }
+}
+
+#[cfg(test)]
+mod permission_tests {
+    use super::macos_permission_reason;
+
+    #[test]
+    fn reports_only_the_missing_macos_permission() {
+        assert_eq!(
+            macos_permission_reason(false, false),
+            Some("permission-missing")
+        );
+        assert_eq!(
+            macos_permission_reason(false, true),
+            Some("permission-missing")
+        );
+        assert_eq!(
+            macos_permission_reason(true, false),
+            Some("input-permission-missing")
+        );
+        assert_eq!(macos_permission_reason(true, true), None);
     }
 }

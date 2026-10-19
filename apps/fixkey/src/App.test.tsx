@@ -211,6 +211,59 @@ describe("settings desktop contract", () => {
     await waitFor(() => expect(api.action).toHaveBeenCalledTimes(2));
     expect(screen.getByRole("dialog")).toBeTruthy();
   });
+  it.each([
+    [
+      "en",
+      "Allow Input Monitoring",
+      "Accessibility access is already allowed.",
+    ],
+    ["ko", "입력 모니터링 허용하기", "접근성 권한은 이미 허용되어 있어요."],
+  ] as const)(
+    "identifies missing Input Monitoring without asking for accessibility again (%s)",
+    async (osLanguage, requestLabel, granted) => {
+      const { api } = fixture({
+        status: "input-permission-missing",
+        active: false,
+        osLanguage,
+      });
+      mount(api);
+      const dialog = await screen.findByRole("dialog");
+      await waitFor(() => expect(api.action).toHaveBeenCalledTimes(1));
+      expect(screen.getByText(granted)).toBeTruthy();
+      expect(screen.getByRole("button", { name: requestLabel })).toBeTruthy();
+      expect(dialog.textContent).not.toContain(
+        osLanguage === "ko"
+          ? "손쉬운 사용에서 FixKey를 켜"
+          : "Enable FixKey in Accessibility",
+      );
+    },
+  );
+  it("updates the open dialog when accessibility is granted and closes after both permissions are granted", async () => {
+    const { api, state } = fixture({
+      status: "permission-missing",
+      active: false,
+    });
+    mount(api);
+    await screen.findByRole("dialog");
+    await waitFor(() => expect(api.action).toHaveBeenCalledTimes(1));
+    vi.mocked(api.state).mockResolvedValue({
+      ...state,
+      status: "input-permission-missing",
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Recheck" }).at(-1)!);
+    await screen.findByRole("dialog", { name: "Allow Input Monitoring" });
+    expect(
+      screen.queryByRole("button", { name: "Allow accessibility access" }),
+    ).toBeNull();
+    expect(api.action).toHaveBeenCalledTimes(2);
+    vi.mocked(api.state).mockResolvedValue({
+      ...state,
+      status: "active",
+      active: true,
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Recheck" }).at(-1)!);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
   it("does not ask for permission on an authorized launch", async () => {
     const { api } = fixture();
     mount(api);

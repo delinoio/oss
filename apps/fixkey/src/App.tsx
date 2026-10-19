@@ -130,6 +130,15 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
   const permissionNeeded =
     data.status === "permission-missing" ||
     data.status === "input-permission-missing";
+  const inputPermissionNeeded =
+    data.platform === "macos-arm64" &&
+    data.status === "input-permission-missing";
+  const permissionTitle = inputPermissionNeeded
+    ? t.inputPermission
+    : t.permission;
+  const permissionRequestLabel = inputPermissionNeeded
+    ? t.inputPermissionRequest
+    : t.permissionRequest;
   const permissionInstruction =
     data.platform === "macos-arm64"
       ? t.macPermission
@@ -398,14 +407,22 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
       </main>
       {permissionNeeded && !permissionDismissed && (
         <Modal
-          title={t.permission}
+          title={permissionTitle}
           onClose={() => setPermissionDismissed(true)}
         >
-          <p>{t.permissionHelp}</p>
+          <p>
+            {inputPermissionNeeded ? t.inputPermissionHelp : t.permissionHelp}
+          </p>
+          {inputPermissionNeeded && (
+            <p className="permission-granted">{t.accessibilityGranted}</p>
+          )}
           <p className="permission-privacy">{t.local}</p>
           {data.platform === "macos-arm64" ? (
             <ol className="permission-steps">
-              {t.permissionSteps.map((step) => (
+              {(inputPermissionNeeded
+                ? t.inputPermissionSteps
+                : t.permissionSteps
+              ).map((step) => (
                 <li key={step}>{step}</li>
               ))}
             </ol>
@@ -426,7 +443,7 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
               onClick={() => action.mutate("request-permission")}
             >
               {data.platform === "macos-arm64"
-                ? t.permissionRequest
+                ? permissionRequestLabel
                 : t.openSettings}
             </button>
             {data.platform === "macos-arm64" && (

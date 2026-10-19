@@ -51,6 +51,15 @@ export const messages = {
     permission: "Allow accessibility access",
     permissionHelp:
       "FixKey needs accessibility and input observation access to identify an editable control and replace only the completed word.",
+    inputPermission: "Allow Input Monitoring",
+    inputPermissionRequest: "Allow Input Monitoring",
+    inputPermissionHelp:
+      "FixKey needs Input Monitoring to detect the keys used for keyboard-layout correction.",
+    accessibilityGranted: "Accessibility access is already allowed.",
+    inputPermissionSteps: [
+      "Choose Allow Input Monitoring and follow the macOS prompt.",
+      "In System Settings → Privacy & Security → Input Monitoring, enable FixKey. Return here and choose Recheck. Restart FixKey if macOS asks.",
+    ],
     permissionRequest: "Allow accessibility access",
     permissionWaiting:
       "Correction will stay off until access is allowed. After enabling access, choose Recheck.",
@@ -178,6 +187,15 @@ export const messages = {
     permission: "접근성 권한을 허용해 주세요",
     permissionHelp:
       "FixKey는 입력란을 확인하고 입력한 단어만 바꾸기 위해 접근성 및 입력 관찰 권한이 필요해요.",
+    inputPermission: "입력 모니터링을 허용해 주세요",
+    inputPermissionRequest: "입력 모니터링 허용하기",
+    inputPermissionHelp:
+      "잘못된 자판으로 입력한 단어를 교정하려면 누른 키를 확인할 수 있는 입력 모니터링 권한이 필요해요.",
+    accessibilityGranted: "접근성 권한은 이미 허용되어 있어요.",
+    inputPermissionSteps: [
+      "‘입력 모니터링 허용하기’를 누르고 macOS 안내를 따라 주세요.",
+      "시스템 설정 → 개인정보 보호 및 보안 → 입력 모니터링에서 FixKey를 켜 주세요. 돌아와서 ‘다시 확인’을 눌러 주세요. macOS가 요청하면 FixKey를 다시 시작해 주세요.",
+    ],
     permissionRequest: "접근성 허용하기",
     permissionWaiting:
       "권한을 허용하기 전까지 자동 교정은 꺼져 있어요. 허용한 뒤 ‘다시 확인’을 눌러 주세요.",
