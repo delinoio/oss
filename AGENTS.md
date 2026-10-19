@@ -67,9 +67,6 @@
 - `docs/project-typeopt.md`: typeopt Rust property optimizer project index.
 - `docs/project-typenative.md`: TypeNative native application framework project index.
 - `docs/crates-typeopt-foundation.md`: typeopt CLI, safety, Vite integration and benchmark contract.
-- `docs/project-fixkey.md`: FixKey keyboard-layout correction desktop project index (`crates/fixkey-core`, `apps/fixkey`).
-- `docs/crates-fixkey-core-foundation.md`: FixKey correction engine contract.
-- `docs/apps-fixkey-desktop-contract.md`: FixKey desktop application contract.
 
 - `docs/README.md`: Canonical docs catalog and naming rules.
 - `docs/repository-defaults.md`: Repository-wide default technology choices.

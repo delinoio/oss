@@ -54,7 +54,6 @@ enum ProjectId {
   AsyncCommitHook = "async-commit-hook",
   Forge = "forge",
   ReactForge = "react-forge",
-  FixKey = "fixkey",
 }
 ```
 

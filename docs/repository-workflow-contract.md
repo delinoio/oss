@@ -187,13 +187,13 @@ credentials or raw native content.
 
 `scripts/ci/run-rust.mjs` maps that validated selection to an explicit uncached
 `@delinoio/ci` Turbo task variant. Each variant declares only the selected
-DevHud, FixKey frontend and test-only pnport prerequisites through `dependsOn`; the leaf
+DevHud frontend and test-only pnport prerequisites through `dependsOn`; the leaf
 calls the existing Rust adapter with the original package list and locked Cargo
 flags. This preserves package selection without preparing unrelated desktop
 inputs. The published CLI selection fixture also runs as an uncached Turbo task
 in `changes`, after the pinned binary is prepared and before final planning.
 
-The Ubuntu workspace Rust Clippy and test jobs install WebKitGTK 4.1 development files when DevHud is selected, before compiling those hosts. Clippy also installs these desktop prerequisites when FixKey is selected because its all-features check enables the Tauri/Wry desktop graph. Its package supplies the JavaScriptCoreGTK 4.1 pkg-config metadata required by the resolved all-features graph. The originating change's Clippy job failed at this native prerequisite before linting source; the CI prerequisite repair does not claim a Rust source change.
+The Ubuntu workspace Rust Clippy and test jobs install WebKitGTK 4.1 development files when DevHud is selected, before compiling those hosts. Its package supplies the JavaScriptCoreGTK 4.1 pkg-config metadata required by the resolved all-features graph. The originating change's Clippy job failed at this native prerequisite before linting source; the CI prerequisite repair does not claim a Rust source change.
 
 Those same jobs build each selected desktop frontend. The generic test job builds pnport and its injection companion only when `pnport` is selected. Go setup remains required for pnport static-child fixtures and uses the pinned `go.mod` version.
 
@@ -708,7 +708,3 @@ The shared release planner exports `cargo_publish` from the central project poli
 The coordinator resolves it before configuration validation and version commits,
 then uses it to select Cargo registry credentials, Rust setup, caching and
 publication. Non-Cargo projects still validate their immutable source and tag.
-
-## FixKey validation and release
-
-FixKey uses the central affected planner for `fixkey-frontend` and main-push-only `fixkey-desktop`. Frontend and release-helper fixtures run on Linux; desktop feature tests and clippy run on Linux and Windows without native application interaction. PRs and affected manual validation preserve native-job exclusions. Mac runners belong only to the separate manual-main release workflow. The owning [desktop contract](apps-fixkey-desktop-contract.md#release-assembly) defines exact-source native-acceptance approval, protected signing/publication environments, immutable release tags, complete signed updater artifacts and license assembly. Builds, fixtures and signature checks must not be reported as native application or installer acceptance.

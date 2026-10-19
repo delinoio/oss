@@ -82,7 +82,6 @@ const devhudJobs = [
   "devhud-release-contracts",
 ];
 const achJobs = ["async-commit-hook"];
-const fixkeyJobs = ["fixkey-frontend", "fixkey-desktop"];
 
 function step(job, id) {
   return job.steps.find((candidate) => candidate.id === id);
@@ -469,9 +468,9 @@ test("one change plan gates every domain job before runner allocation", () => {
   );
   assert.deepEqual(
     Object.keys(jobPaths).sort(),
-    [...legacyJobs, ...devhudJobs, ...achJobs, ...fixkeyJobs].sort(),
+    [...legacyJobs, ...devhudJobs, ...achJobs].sort(),
   );
-  for (const id of [...legacyJobs, ...devhudJobs, ...achJobs, ...fixkeyJobs]) {
+  for (const id of [...legacyJobs, ...devhudJobs, ...achJobs]) {
     const job = workflow.jobs[id];
     assert.deepEqual(job.needs, "changes", id);
     assert.equal(
@@ -1902,7 +1901,7 @@ test("Rstack formatting uses the exact comparison and never caches results", () 
   assert.equal(packages["package.json"].devDependencies.rstack, "0.8.3");
 });
 
-test("FixKey-only Clippy installs native prerequisites before Cargo", () => {
+test("selected DevHud Clippy installs native prerequisites before Cargo", () => {
   const job = workflow.jobs["rust-clippy"];
   const preparation = namedStep(job, "Install Linux desktop prerequisites");
   const evaluate = (packages) =>
@@ -1913,10 +1912,7 @@ test("FixKey-only Clippy installs native prerequisites before Cargo", () => {
       fromJSON: JSON.parse,
       contains: (list, value) => list.includes(value),
     });
-  assert.equal(evaluate(["fixkey"]), true);
   assert.equal(evaluate(["devhud"]), true);
-  assert.equal(evaluate(["fixkey", "devhud"]), true);
-  assert.equal(evaluate(["fixkey-core"]), false);
   assert.equal(evaluate(["cargo-mono"]), false);
   for (const dependency of [
     "libgtk-3-dev",

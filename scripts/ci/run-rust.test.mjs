@@ -12,7 +12,7 @@ const config = JSON.parse(
 );
 
 test("selected Rust owners have exactly their required Turbo prerequisite graph", () => {
-  const owners = ["devhud", "pnport", "fixkey"];
+  const owners = ["devhud", "pnport"];
   for (const command of ["test", "clippy"]) {
     for (let mask = 0; mask < 1 << owners.length; mask++) {
       const packages = [
@@ -32,9 +32,6 @@ test("selected Rust owners have exactly their required Turbo prerequisite graph"
         ...(packages.includes("devhud") ? ["devhud#ci:build:frontend"] : []),
         ...(command === "test" && packages.includes("pnport")
           ? ["ci:pnport:companion"]
-          : []),
-        ...(packages.includes("fixkey")
-          ? ["fixkey-desktop#build:frontend"]
           : []),
       ];
       assert.deepEqual(task.dependsOn, expected, name);

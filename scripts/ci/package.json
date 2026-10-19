@@ -44,12 +44,6 @@
     "ci:runmoor:unit": "node from-root.mjs go test -race -count=1 ./cmds/runmoor/...",
     "ci:runmoor:docker": "node from-root.mjs go test -count=1 -run TestDockerIntegration -v -timeout 10m ./cmds/runmoor/internal/runmoor",
     "ci:format": "node from-root.mjs node scripts/ci/format-changed.mjs",
-    "format": "node from-root.mjs node scripts/ci/format-changed.mjs --write",
-    "ci:rust:test:fixkey": "node from-root.mjs node scripts/ci/rust-affected.mjs test",
-    "ci:rust:test:devhud-fixkey": "node from-root.mjs node scripts/ci/rust-affected.mjs test",
-    "ci:rust:test:pnport-fixkey": "node from-root.mjs node scripts/ci/rust-affected.mjs test",
-    "ci:rust:test:devhud-pnport-fixkey": "node from-root.mjs node scripts/ci/rust-affected.mjs test",
-    "ci:rust:clippy:fixkey": "node from-root.mjs node scripts/ci/rust-affected.mjs clippy",
-    "ci:rust:clippy:devhud-fixkey": "node from-root.mjs node scripts/ci/rust-affected.mjs clippy"
+    "format": "node from-root.mjs node scripts/ci/format-changed.mjs --write"
   }
 }

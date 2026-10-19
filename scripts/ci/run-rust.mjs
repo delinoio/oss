@@ -17,7 +17,6 @@ export function rustTask(command, packages) {
   const owners = [
     ["devhud", "devhud"],
     ...(command === "test" ? [["pnport", "pnport"]] : []),
-    ["fixkey", "fixkey"],
   ]
     .filter(([name]) => packages.includes(name))
     .map(([, label]) => label);
