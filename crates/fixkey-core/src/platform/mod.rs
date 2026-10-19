@@ -94,6 +94,19 @@ pub fn character_offset(text: &str, units: usize) -> Option<usize> {
     (offset == units).then(|| text.chars().count())
 }
 
+#[cfg(any(target_os = "macos", test))]
+fn empty_paragraph_text(mut text: String, caret: usize, selection_len: usize) -> String {
+    // Chromium editors can expose a lone empty-paragraph newline at offset
+    // zero, then remove it when the first physical character arrives. Only
+    // canonicalize that empty state, never trim a nonempty field. A real
+    // newline retained after typing still fails the complete insertion proof.
+    // Remove this normalization if providers expose stable empty values.
+    if text == "\n" && caret == 0 && selection_len == 0 {
+        text.clear();
+    }
+    text
+}
+
 #[cfg(any(target_os = "windows", target_os = "linux", test))]
 pub(super) fn pc_key(scan: u32, shift: bool, caps: bool) -> Key {
     if matches!(scan, 42 | 54 | 58) {
@@ -177,6 +190,59 @@ fn next_target() -> TargetId {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        observation::{completed_word, pending_matches},
+        session::{FieldSensitivity, FieldSnapshot},
+    };
+
+    #[test]
+    fn empty_paragraph_allows_only_the_exact_observed_insertion() {
+        let before = FieldSnapshot {
+            target: TargetId(1),
+            text: empty_paragraph_text("\n".into(), 0, 0),
+            caret: 0,
+            selection_len: 0,
+            sensitivity: FieldSensitivity::Normal,
+            supports_write: true,
+        };
+        let keys: Vec<_> = "zlqhemrk".chars().collect();
+        let current = FieldSnapshot {
+            text: "zlqhemrk".into(),
+            caret: 8,
+            ..before
+        };
+        assert!(pending_matches(&before, &current, &keys));
+        let completed = FieldSnapshot {
+            text: "zlqhemrk ".into(),
+            caret: 9,
+            ..before
+        };
+        assert_eq!(
+            completed_word(&before, &completed, &keys, " "),
+            Some("zlqhemrk".into())
+        );
+        for unexpected in ["zlqhemrk \n", "zlqhemrk extra", "other "] {
+            let edited = FieldSnapshot {
+                text: unexpected.into(),
+                ..completed
+            };
+            assert!(completed_word(&before, &edited, &keys, " ").is_none());
+        }
+    }
+
+    #[test]
+    fn empty_paragraph_keeps_real_text_newlines_carets_and_selections() {
+        for (text, caret, selected) in [
+            ("\n", 1, 0),
+            ("\n", 0, 1),
+            ("\n\n", 0, 0),
+            ("word\n", 4, 0),
+            (" \n", 0, 0),
+            ("", 0, 0),
+        ] {
+            assert_eq!(empty_paragraph_text(text.into(), caret, selected), text);
+        }
+    }
     #[test]
     fn physical_keys_keep_shift_caps_and_navigation_distinct() {
         assert!(matches!(pc_key(19, true, false), Key::Character('R')));

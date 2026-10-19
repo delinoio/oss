@@ -13,8 +13,8 @@ use std::{
 };
 
 use super::{
-    Application, Cursor, Gate, Handler, Identity, Key, KeyEvent, character_offset, utf16_offset,
-    write_ack::wait_for_transition,
+    Application, Cursor, Gate, Handler, Identity, Key, KeyEvent, character_offset,
+    empty_paragraph_text, utf16_offset, write_ack::wait_for_transition,
 };
 use crate::{
     SkipReason,
@@ -571,7 +571,7 @@ impl Accessibility for RawAdapter {
             target: target(&element),
             sensitivity: FieldSensitivity::Normal,
             supports_write: true,
-            text: content,
+            text: empty_paragraph_text(content, caret, end - caret),
             caret,
             selection_len: end - caret,
         };
