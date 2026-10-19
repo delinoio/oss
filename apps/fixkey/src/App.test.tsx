@@ -275,7 +275,9 @@ describe("settings desktop contract", () => {
     const { api } = fixture({ status: "permission-missing", active: false });
     mount(api);
     const dialog = await screen.findByRole("dialog");
-    expect(screen.getByText(/again for Input Monitoring/)).toBeTruthy();
+    expect(
+      screen.getByText(/Also enable FixKey in Input Monitoring/),
+    ).toBeTruthy();
     fireEvent(dialog, new Event("cancel", { bubbles: true, cancelable: true }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByText("Correction is inactive")).toBeTruthy();

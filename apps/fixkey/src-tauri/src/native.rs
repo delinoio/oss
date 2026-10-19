@@ -255,10 +255,17 @@ pub fn request_permission() -> Result<(), &'static str> {
             }
             let trusted = AXIsProcessTrustedWithOptions(options);
             CFRelease(options);
-            // AX prompting is asynchronous. Request input monitoring on a later
-            // click once accessibility is granted to avoid overlapping prompts.
-            if trusted && !CGPreflightListenEventAccess() {
-                let _ = CGRequestListenEventAccess();
+            // These are independent TCC services. Do not gate the input
+            // monitoring request on the asynchronous accessibility result:
+            // doing so leaves FixKey absent from the Input Monitoring list.
+            if !CGPreflightListenEventAccess() {
+                let input_monitoring_granted = CGRequestListenEventAccess();
+                tracing::info!(
+                    reason = "input-permission-requested",
+                    accessibility_granted = trusted,
+                    input_monitoring_granted,
+                    "fixkey input monitoring permission requested"
+                );
             }
         }
         tracing::info!(
