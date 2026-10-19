@@ -1194,12 +1194,10 @@ mod tests {
             ..before
         };
         assert!(insertion_ahead(&before, &published, &['z']));
-        let now = Instant::now();
+        let observed_at = Instant::now();
+        let now = observed_at + Duration::from_millis(1);
         let waiting = PendingKeys::new(now);
-        assert!(waiting.accepts(
-            now - Duration::from_millis(1),
-            now + Duration::from_millis(1)
-        ));
+        assert!(waiting.accepts(observed_at, now + Duration::from_millis(1)));
         assert!(!waiting.accepts(
             now + Duration::from_millis(1),
             now + Duration::from_millis(2)
