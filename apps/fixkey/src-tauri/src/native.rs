@@ -219,19 +219,21 @@ mod input_monitoring {
     }
 }
 
-/// Registers the app with Input Monitoring even when accessibility already
-/// provides effective listen access and no permission dialog is needed.
+/// Requests Input Monitoring registration even when accessibility already
+/// provides effective listen access. The result does not prove a list entry.
+#[cfg(target_os = "macos")]
 pub fn register_input_monitoring() {
-    #[cfg(target_os = "macos")]
-    {
-        let granted = input_monitoring::request();
-        tracing::info!(
-            reason = "input-permission-registration-requested",
-            input_monitoring_granted = granted,
-            "fixkey input monitoring registration requested"
-        );
-    }
+    let granted = input_monitoring::request();
+    tracing::info!(
+        reason = "input-permission-registration-requested",
+        input_monitoring_granted = granted,
+        "fixkey input monitoring registration requested"
+    );
 }
+
+/// Other platforms do not use the macOS permission registration API.
+#[cfg(not(target_os = "macos"))]
+pub const fn register_input_monitoring() {}
 
 #[cfg(any(target_os = "macos", test))]
 const fn macos_permission_reason(
