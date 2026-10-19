@@ -62,6 +62,7 @@ export interface DesktopApi {
     name:
       | "recheck"
       | "permission-settings"
+      | "request-permission"
       | "open-logs"
       | "delete-logs"
       | "support"

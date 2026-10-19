@@ -173,11 +173,56 @@ describe("settings desktop contract", () => {
     );
     expect(screen.getByText(/Your settings are preserved/)).toBeTruthy();
   });
+  it("requests permission once on first launch and closes after a successful recheck", async () => {
+    const { api, state } = fixture({
+      status: "permission-missing",
+      active: false,
+    });
+    mount(api);
+    await screen.findByRole("dialog");
+    await waitFor(() => expect(api.action).toHaveBeenCalledTimes(1));
+    expect(api.action).toHaveBeenCalledWith("request-permission");
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Allow accessibility access" }),
+    );
+    vi.mocked(api.state).mockResolvedValue({
+      ...state,
+      status: "active",
+      active: true,
+    });
+    fireEvent.click(screen.getAllByRole("button", { name: "Recheck" }).at(-1)!);
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+  it("shows request failures in the dialog and allows retry", async () => {
+    const { api } = fixture({
+      status: "permission-missing",
+      active: false,
+      osLanguage: "ko",
+    });
+    vi.mocked(api.action).mockRejectedValueOnce(
+      "permission-request-unavailable",
+    );
+    mount(api);
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() =>
+      expect(dialog.textContent).toContain("permission-request-unavailable"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "접근성 허용하기" }));
+    await waitFor(() => expect(api.action).toHaveBeenCalledTimes(2));
+    expect(screen.getByRole("dialog")).toBeTruthy();
+  });
+  it("does not ask for permission on an authorized launch", async () => {
+    const { api } = fixture();
+    mount(api);
+    await screen.findByText("Correction is active");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(api.action).not.toHaveBeenCalled();
+  });
   it("shows platform permission instructions and dismisses the dialog with Esc", async () => {
     const { api } = fixture({ status: "permission-missing", active: false });
     mount(api);
     const dialog = await screen.findByRole("dialog");
-    expect(screen.getByText(/Input Monitoring/)).toBeTruthy();
+    expect(screen.getByText(/again for Input Monitoring/)).toBeTruthy();
     fireEvent(dialog, new Event("cancel", { bubbles: true, cancelable: true }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
     expect(screen.getByText("Correction is inactive")).toBeTruthy();

@@ -192,11 +192,77 @@ pub fn unresolved_apps(excluded: &[ExcludedApp]) -> Vec<usize> {
         })
         .collect()
 }
+/// Requests access from FixKey while its permission dialog is visible.
+pub fn request_permission() -> Result<(), &'static str> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::{ffi::c_void, ptr};
+        type Ref = *const c_void;
+        #[link(name = "ApplicationServices", kind = "framework")]
+        unsafe extern "C" {
+            static kAXTrustedCheckOptionPrompt: Ref;
+            fn AXIsProcessTrustedWithOptions(options: Ref) -> bool;
+            fn CGPreflightListenEventAccess() -> bool;
+            fn CGRequestListenEventAccess() -> bool;
+        }
+        #[link(name = "CoreFoundation", kind = "framework")]
+        unsafe extern "C" {
+            static kCFBooleanTrue: Ref;
+            fn CFDictionaryCreate(
+                allocator: Ref,
+                keys: *const Ref,
+                values: *const Ref,
+                count: isize,
+                key_callbacks: Ref,
+                value_callbacks: Ref,
+            ) -> Ref;
+            fn CFRelease(value: Ref);
+        }
+        // SAFETY: Both entries are immortal framework constants. Null callbacks
+        // leave their ownership unchanged; the dictionary is released after
+        // use.
+        unsafe {
+            let key = kAXTrustedCheckOptionPrompt;
+            let value = kCFBooleanTrue;
+            let options =
+                CFDictionaryCreate(ptr::null(), &key, &value, 1, ptr::null(), ptr::null());
+            if options.is_null() {
+                return Err("permission-request-unavailable");
+            }
+            let trusted = AXIsProcessTrustedWithOptions(options);
+            CFRelease(options);
+            // AX prompting is asynchronous. Request input monitoring on a later
+            // click once accessibility is granted to avoid overlapping prompts.
+            if trusted && !CGPreflightListenEventAccess() {
+                let _ = CGRequestListenEventAccess();
+            }
+        }
+        tracing::info!(
+            reason = "permission-requested",
+            "fixkey permission requested"
+        );
+        Ok(())
+    }
+    #[cfg(not(target_os = "macos"))]
+    open_permission_settings()
+}
+
 pub fn open_permission_settings() -> Result<(), &'static str> {
     #[cfg(target_os = "macos")]
-    let command = std::process::Command::new("open")
-        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
-        .spawn();
+    let command = {
+        #[link(name = "ApplicationServices", kind = "framework")]
+        unsafe extern "C" {
+            fn AXIsProcessTrusted() -> bool;
+        }
+        // SAFETY: This parameterless query neither prompts nor reads user
+        // input.
+        let pane = if unsafe { AXIsProcessTrusted() } {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_ListenEvent"
+        } else {
+            "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+        };
+        std::process::Command::new("open").arg(pane).spawn()
+    };
     #[cfg(target_os = "windows")]
     let command = std::process::Command::new("explorer.exe")
         .arg("ms-settings:easeofaccess")
@@ -545,10 +611,10 @@ fn status(
         && !runtime.preferences.current().english_enabled
     {
         "languages-disabled"
-    } else if !runtime.dictionaries_ready() {
-        "dictionary-unavailable"
     } else if !Adapter::permission() {
         "permission-missing"
+    } else if !runtime.dictionaries_ready() {
+        "dictionary-unavailable"
     } else if !observer_ready {
         "input-observer-unavailable"
     } else {

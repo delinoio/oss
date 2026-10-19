@@ -332,3 +332,17 @@ progress {
     padding: 16px;
   }
 }
+
+.permission-privacy {
+  padding: 14px;
+  border-radius: 12px;
+  background: var(--soft);
+  line-height: 1.6;
+}
+.permission-steps {
+  padding-left: 24px;
+  line-height: 1.6;
+}
+.permission-steps li + li {
+  margin-top: 12px;
+}

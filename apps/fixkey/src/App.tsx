@@ -31,6 +31,7 @@ function Modal({
   useEffect(() => {
     const dialog = ref.current!;
     dialog.showModal();
+    dialog.querySelector<HTMLElement>("[data-autofocus]")?.focus();
     return () => dialog.close();
   }, []);
   return (
@@ -52,6 +53,7 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
   const [section, setSection] = useState(Section.General);
   const [error, setError] = useState<string | null>(null);
   const [permissionDismissed, setPermissionDismissed] = useState(false);
+  const permissionRequested = useRef(false);
   const [capture, setCapture] = useState(false);
   const [choosing, setChoosing] = useState(false);
   const [apps, setApps] = useState<ExcludedApp[]>([]);
@@ -81,6 +83,21 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
     },
     onError: (reason) => setError(errorCode(reason)),
   });
+  const requestPermission = action.mutate;
+  useEffect(() => {
+    if (
+      data?.platform === "macos-arm64" &&
+      (data.status === "permission-missing" ||
+        data.status === "input-permission-missing") &&
+      !permissionDismissed &&
+      !permissionRequested.current
+    ) {
+      // Request from FixKey itself so macOS can list this app in Accessibility.
+      // Polling must never repeat a dismissed system prompt.
+      permissionRequested.current = true;
+      requestPermission("request-permission");
+    }
+  }, [data?.platform, data?.status, permissionDismissed, requestPermission]);
   useEffect(() => {
     document.documentElement.lang = language;
     document.documentElement.dataset.theme = data?.settings.theme ?? "system";
@@ -385,16 +402,42 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
           onClose={() => setPermissionDismissed(true)}
         >
           <p>{t.permissionHelp}</p>
-          <p>{t.local}</p>
-          <p>{permissionInstruction}</p>
+          <p className="permission-privacy">{t.local}</p>
+          {data.platform === "macos-arm64" ? (
+            <ol className="permission-steps">
+              {t.permissionSteps.map((step) => (
+                <li key={step}>{step}</li>
+              ))}
+            </ol>
+          ) : (
+            <p>{permissionInstruction}</p>
+          )}
+          <p role="status">{t.permissionWaiting}</p>
+          {error && (
+            <p role="alert">
+              {t.error}: <code>{error}</code>
+            </p>
+          )}
           <div className="actions">
             <button
               className="primary"
-              onClick={() => action.mutate("permission-settings")}
+              data-autofocus
+              disabled={busy}
+              onClick={() => action.mutate("request-permission")}
             >
-              {t.openSettings}
+              {data.platform === "macos-arm64"
+                ? t.permissionRequest
+                : t.openSettings}
             </button>
-            <button onClick={() => action.mutate("recheck")}>
+            {data.platform === "macos-arm64" && (
+              <button
+                disabled={busy}
+                onClick={() => action.mutate("permission-settings")}
+              >
+                {t.openSettings}
+              </button>
+            )}
+            <button disabled={busy} onClick={() => action.mutate("recheck")}>
               {t.recheck}
             </button>
             <button onClick={() => setPermissionDismissed(true)}>

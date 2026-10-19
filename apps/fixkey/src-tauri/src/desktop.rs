@@ -268,6 +268,7 @@ async fn save_settings(
 enum Action {
     Recheck,
     PermissionSettings,
+    RequestPermission,
     OpenLogs,
     DeleteLogs,
     Support,
@@ -290,6 +291,7 @@ async fn desktop_action(
         Action::InstallUpdate => crate::updates::desktop::install(&app, &updater)
             .await
             .map_err(str::to_owned),
+        Action::RequestPermission => crate::native::request_permission().map_err(str::to_owned),
         Action::PermissionSettings => {
             crate::native::open_permission_settings().map_err(str::to_owned)
         }
