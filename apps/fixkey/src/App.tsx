@@ -53,6 +53,7 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
   const [section, setSection] = useState(Section.General);
   const [error, setError] = useState<string | null>(null);
   const [permissionDismissed, setPermissionDismissed] = useState(false);
+  const [inputSetupOpen, setInputSetupOpen] = useState(false);
   const permissionRequested = useRef(false);
   const [capture, setCapture] = useState(false);
   const [choosing, setChoosing] = useState(false);
@@ -77,7 +78,8 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
   });
   const action = useMutation({
     mutationFn: (name: Parameters<DesktopApi["action"]>[0]) => api.action(name),
-    onSuccess: () => {
+    onSuccess: (_, name) => {
+      if (name === "recheck") setInputSetupOpen(false);
       setError(null);
       void query.refetch();
     },
@@ -133,10 +135,16 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
     data.status === "input-permission-missing";
   const inputPermissionNeeded =
     data.platform === "macos-arm64" &&
-    data.status === "input-permission-missing";
-  const permissionTitle = inputPermissionNeeded
-    ? t.inputPermission
-    : t.permission;
+    (data.status === "input-permission-missing" || inputSetupOpen);
+  const closePermission = () => {
+    setInputSetupOpen(false);
+    setPermissionDismissed(true);
+  };
+  const permissionTitle = inputSetupOpen
+    ? t.inputPermissionSetup
+    : inputPermissionNeeded
+      ? t.inputPermission
+      : t.permission;
   const permissionRequestLabel = inputPermissionNeeded
     ? t.inputPermissionRequest
     : t.permissionRequest;
@@ -265,6 +273,16 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
                 >
                   {t.recheck}
                 </button>
+                {data.platform === "macos-arm64" && (
+                  <button
+                    onClick={() => {
+                      setInputSetupOpen(true);
+                      setPermissionDismissed(false);
+                    }}
+                  >
+                    {t.inputPermissionSetup}
+                  </button>
+                )}
               </section>
               <section className="card">
                 <h3>{t.languages}</h3>
@@ -417,15 +435,16 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
           )}
         </fieldset>
       </main>
-      {permissionNeeded && !permissionDismissed && (
-        <Modal
-          title={permissionTitle}
-          onClose={() => setPermissionDismissed(true)}
-        >
+      {(permissionNeeded || inputSetupOpen) && !permissionDismissed && (
+        <Modal title={permissionTitle} onClose={closePermission}>
           <p>
-            {inputPermissionNeeded ? t.inputPermissionHelp : t.permissionHelp}
+            {inputSetupOpen
+              ? t.inputPermissionListHelp
+              : inputPermissionNeeded
+                ? t.inputPermissionHelp
+                : t.permissionHelp}
           </p>
-          {inputPermissionNeeded && (
+          {data.status === "input-permission-missing" && (
             <p className="permission-granted">{t.accessibilityGranted}</p>
           )}
           <p className="permission-privacy">{t.local}</p>
@@ -441,7 +460,7 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
           ) : (
             <p>{permissionInstruction}</p>
           )}
-          <p role="status">{t.permissionWaiting}</p>
+          {!inputSetupOpen && <p role="status">{t.permissionWaiting}</p>}
           {error && (
             <p role="alert">
               {t.error}: <code>{error}</code>
@@ -469,9 +488,7 @@ export function App({ api = desktopApi }: { api?: DesktopApi }) {
             <button disabled={busy} onClick={() => action.mutate("recheck")}>
               {t.recheck}
             </button>
-            <button onClick={() => setPermissionDismissed(true)}>
-              {t.later}
-            </button>
+            <button onClick={closePermission}>{t.later}</button>
           </div>
         </Modal>
       )}

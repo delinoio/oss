@@ -1,4 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, expect, it, vi } from "vitest";
 import { App, CandidatePicker } from "./App";
@@ -264,6 +270,46 @@ describe("settings desktop contract", () => {
     fireEvent.click(screen.getAllByRole("button", { name: "Recheck" }).at(-1)!);
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
+  it.each([
+    ["en", "Set up Input Monitoring", "Open system settings", "Recheck"],
+    ["ko", "입력 모니터링 설정", "시스템 설정 열기", "다시 확인"],
+  ] as const)(
+    "keeps manual list setup available with effective access (%s)",
+    async (osLanguage, setup, open, recheck) => {
+      const { api } = fixture({ osLanguage });
+      mount(api);
+      fireEvent.click(await screen.findByRole("button", { name: setup }));
+      const dialog = await screen.findByRole("dialog", { name: setup });
+      expect(dialog.textContent).toContain("+");
+      expect(dialog.textContent).toContain("FixKey.app");
+      expect(api.action).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: open }));
+      await waitFor(() =>
+        expect(api.action).toHaveBeenCalledWith("permission-settings"),
+      );
+      await waitFor(() =>
+        expect(
+          (
+            within(dialog).getByRole("button", {
+              name: recheck,
+            }) as HTMLButtonElement
+          ).disabled,
+        ).toBe(false),
+      );
+      fireEvent.click(within(dialog).getByRole("button", { name: recheck }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(api.action).toHaveBeenCalledWith("recheck");
+      expect(screen.getByRole("button", { name: recheck })).toBeTruthy();
+      expect(api.save).not.toHaveBeenCalled();
+      fireEvent.click(screen.getByRole("button", { name: setup }));
+      const reopened = await screen.findByRole("dialog", { name: setup });
+      fireEvent(
+        reopened,
+        new Event("cancel", { bubbles: true, cancelable: true }),
+      );
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    },
+  );
   it("does not ask for permission on an authorized launch", async () => {
     const { api } = fixture();
     mount(api);

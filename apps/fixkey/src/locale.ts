@@ -56,6 +56,9 @@ export const messages = {
       "FixKey needs accessibility and input observation access to identify an editable control and replace only the completed word.",
     inputPermission: "Allow Input Monitoring",
     inputPermissionRequest: "Allow Input Monitoring",
+    inputPermissionSetup: "Set up Input Monitoring",
+    inputPermissionListHelp:
+      "Accessibility can already allow key listening even when FixKey is absent from Input Monitoring. macOS does not confirm a separate list entry here. Check the list in System Settings and add the current FixKey.app with + if it is missing.",
     inputPermissionHelp:
       "FixKey needs Input Monitoring to detect the keys used for keyboard-layout correction.",
     accessibilityGranted: "Accessibility access is already allowed.",
@@ -103,7 +106,7 @@ export const messages = {
       ],
       [
         "Permissions",
-        "Grant the accessibility and input permissions requested by your OS, then choose Recheck. Correction remains inactive until permissions and dictionaries are ready.",
+        "Grant the accessibility and input permissions requested by your OS, then choose Recheck. Correction remains inactive until permissions and dictionaries are ready. On macOS, Accessibility can provide effective key-listening access without a separate Input Monitoring entry. Use Set up Input Monitoring in General to check the list; if FixKey is absent, use + to add the current FixKey.app from Applications.",
       ],
       [
         "Layouts and correction",
@@ -195,6 +198,9 @@ export const messages = {
       "FixKey는 입력란을 확인하고 입력한 단어만 바꾸기 위해 접근성 및 입력 관찰 권한이 필요해요.",
     inputPermission: "입력 모니터링을 허용해 주세요",
     inputPermissionRequest: "입력 모니터링 허용하기",
+    inputPermissionSetup: "입력 모니터링 설정",
+    inputPermissionListHelp:
+      "입력 모니터링 목록에 FixKey가 없어도 접근성 권한으로 키 감지가 허용될 수 있어요. 앱에서는 별도 목록 등록 여부를 확인할 수 없어요. 시스템 설정에서 목록을 확인하고, 없다면 + 버튼으로 현재 FixKey.app을 추가해 주세요.",
     inputPermissionHelp:
       "잘못된 자판으로 입력한 단어를 교정하려면 누른 키를 확인할 수 있는 입력 모니터링 권한이 필요해요.",
     accessibilityGranted: "접근성 권한은 이미 허용되어 있어요.",
@@ -242,7 +248,7 @@ export const messages = {
       ],
       [
         "권한",
-        "운영체제에서 요청하는 접근성 및 입력 권한을 허용한 뒤 다시 확인해 주세요. 권한과 사전이 준비될 때까지 교정은 꺼져 있어요.",
+        "운영체제에서 요청하는 접근성 및 입력 권한을 허용한 뒤 다시 확인해 주세요. 권한과 사전이 준비될 때까지 교정은 꺼져 있어요. macOS에서는 별도 입력 모니터링 목록 등록 없이도 접근성 권한으로 키 감지가 허용될 수 있어요. 일반의 입력 모니터링 설정에서 목록을 확인하고, 없다면 + 버튼으로 응용 프로그램의 현재 FixKey.app을 추가해 주세요.",
       ],
       [
         "자판과 교정",
