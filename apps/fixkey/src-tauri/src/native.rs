@@ -234,7 +234,10 @@ pub fn register_input_monitoring() {
 }
 
 #[cfg(any(target_os = "macos", test))]
-fn macos_permission_reason(accessibility: bool, input_monitoring: bool) -> Option<&'static str> {
+const fn macos_permission_reason(
+    accessibility: bool,
+    input_monitoring: bool,
+) -> Option<&'static str> {
     match (accessibility, input_monitoring) {
         (false, _) => Some("permission-missing"),
         (true, false) => Some("input-permission-missing"),
@@ -256,7 +259,7 @@ fn permission_reason() -> Option<&'static str> {
     (!Adapter::permission()).then_some("permission-missing")
 }
 
-/// Requests access from FixKey while its permission dialog is visible.
+/// Requests access from `FixKey` while its permission dialog is visible.
 pub fn request_permission() -> Result<(), &'static str> {
     #[cfg(target_os = "macos")]
     {
@@ -286,8 +289,14 @@ pub fn request_permission() -> Result<(), &'static str> {
         let needs_settings = unsafe {
             let key = kAXTrustedCheckOptionPrompt;
             let value = kCFBooleanTrue;
-            let options =
-                CFDictionaryCreate(ptr::null(), &key, &value, 1, ptr::null(), ptr::null());
+            let options = CFDictionaryCreate(
+                ptr::null(),
+                &raw const key,
+                &raw const value,
+                1,
+                ptr::null(),
+                ptr::null(),
+            );
             if options.is_null() {
                 return Err("permission-request-unavailable");
             }

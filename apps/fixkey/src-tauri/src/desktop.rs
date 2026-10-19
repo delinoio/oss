@@ -535,9 +535,20 @@ pub(crate) fn notify(app: &AppHandle, code: &str) {
         (true, _) => "FixKey 상태를 확인해 주세요. 설정에서 원인 코드를 확인할 수 있어요.",
         (false, _) => "FixKey needs attention. Check the reason code in Settings.",
     };
+    if !app
+        .try_state::<crate::notifications::Notifications>()
+        .is_some_and(|notifications| notifications.enqueue(format!("{message}\n{code}")))
+    {
+        tracing::warn!(
+            reason = "notification-queue-unavailable",
+            "fixkey status notification skipped"
+        );
+    }
+}
+fn deliver_notification(message: &str) {
     if notify_rust::Notification::new()
         .summary("FixKey")
-        .body(&format!("{message}\n{code}"))
+        .body(message)
         .appname("FixKey")
         .show()
         .is_err()
@@ -619,6 +630,14 @@ fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
         os_language,
     })));
     app.manage(shared.clone());
+    if let Ok(notifications) = crate::notifications::Notifications::start(deliver_notification) {
+        app.manage(notifications);
+    } else {
+        tracing::warn!(
+            reason = "notification-worker-unavailable",
+            "fixkey notifications unavailable"
+        );
+    }
     let updater: SharedUpdater = Arc::new(Mutex::new(Updater::default()));
     app.manage(updater.clone());
     create_tray(app)?;
