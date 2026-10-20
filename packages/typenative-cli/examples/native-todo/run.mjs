@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
-import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, relative, isAbsolute, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { lowerTsx } from "../../test/experiments/custom-tsx/lower.mjs";
 import { runBuildTool } from "./build-tool.mjs";
+import { sha256, snapshotBuildInputs } from "./build-inputs.mjs";
 
 if (
   process.argv.length < 4 ||
@@ -59,6 +60,9 @@ process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
 const steps = [];
 let sourceRevision = null;
+let sourceDirty = null;
+let sourceHashes = {};
+let generatedHashes = {};
 async function run(name, command, args, timeout = 120_000) {
   if (controller.signal.aborted) throw new Error("Interrupted");
   process.stderr.write(`typenative-todo: ${name}\n`);
@@ -92,11 +96,37 @@ try {
     "HEAD",
   ]);
   sourceRevision = revision.stdout.trim();
+  const prefix = relative(repository, sources);
+  const sourcePaths = [
+    "Cargo.toml",
+    "Cargo.lock",
+    "host.rs",
+    "validation.rs",
+    "app.tsx",
+    "run.mjs",
+    "build-tool.mjs",
+    "build-inputs.mjs",
+  ].map((file) => join(prefix, file));
+  sourcePaths.push(
+    "packages/typenative-cli/test/experiments/custom-tsx/lower.mjs",
+  );
+  const status = await run("source-status", "git", [
+    "-C",
+    repository,
+    "status",
+    "--porcelain=v1",
+    "--untracked-files=all",
+    "--",
+    ...sourcePaths,
+  ]);
+  sourceDirty = status.stdout.trim().length > 0;
+  const inputs = await snapshotBuildInputs(repository, sourcePaths);
+  sourceHashes = inputs.hashes;
   const version = await run("compiler-version", compiler, ["--version"]);
   if (version.stdout.trim() !== "0.3.5")
     throw new Error("Unexpected compiler version");
   for (const file of ["Cargo.toml", "Cargo.lock", "host.rs", "validation.rs"])
-    await copyFile(join(sources, file), join(output, file));
+    await writeFile(join(output, file), inputs.files.get(join(prefix, file)));
   await writeFile(
     join(output, "package.json"),
     JSON.stringify({ private: true, type: "module" }),
@@ -112,10 +142,12 @@ try {
       },
     }),
   );
-  await writeFile(
-    join(output, "app.ts"),
-    lowerTsx(ts, await readFile(join(sources, "app.tsx"), "utf8")),
+  const lowered = lowerTsx(
+    ts,
+    inputs.files.get(join(prefix, "app.tsx")).toString("utf8"),
   );
+  generatedHashes = { "app.ts": sha256(lowered) };
+  await writeFile(join(output, "app.ts"), lowered);
   const rust = await run(
     "host-build",
     "cargo",
@@ -231,6 +263,9 @@ try {
         passed,
         failure,
         sourceRevision,
+        sourceDirty,
+        sourceHashes,
+        generatedHashes,
         node: process.version,
         versions: {
           scriptc: "0.3.5",

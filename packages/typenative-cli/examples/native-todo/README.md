@@ -38,6 +38,11 @@ prints the executable and `build-result.json` paths. To reopen the built app,
 execute `"$todo_tools/build/typenative-todo"` directly. Node is unnecessary for
 that command. Build failures identify the diagnostic file in the output directory.
 
+The report records the source revision, whether build inputs have uncommitted
+changes, SHA-256 hashes of the consumed source buffers and a hash of the lowered
+TypeScript. Dirty inputs are supported; their hashes identify the actual tested
+bytes independently of the previous commit.
+
 ## Validation and limits
 
 `pnpm --filter @delino/typenative-cli test` includes reference tests for task
