@@ -5,6 +5,7 @@ import { copyFile, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join, resolve, relative, isAbsolute, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { lowerTsx } from "../../test/experiments/custom-tsx/lower.mjs";
+import { runBuildTool } from "./build-tool.mjs";
 
 if (
   process.argv.length < 4 ||
@@ -50,44 +51,23 @@ if (
   );
 const compiler = join(dependencies, "node_modules/scriptc/bin/scriptc.exe");
 await mkdir(output);
-let child;
-let interrupted = false;
-function stop(signal) {
-  interrupted = true;
-  child?.kill(signal);
+const controller = new AbortController();
+function stop() {
+  controller.abort();
 }
 process.on("SIGINT", stop);
 process.on("SIGTERM", stop);
 const steps = [];
 let sourceRevision = null;
 async function run(name, command, args, timeout = 120_000) {
-  if (interrupted) throw new Error("Interrupted");
+  if (controller.signal.aborted) throw new Error("Interrupted");
   process.stderr.write(`typenative-todo: ${name}\n`);
   const start = performance.now();
-  let stdout = "";
-  let stderr = "";
-  const result = await new Promise((fulfill, reject) => {
-    child = spawn(command, args, {
-      cwd: output,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
-    child.stdout.on("data", (data) => {
-      stdout += data;
-    });
-    child.stderr.on("data", (data) => {
-      stderr += data;
-    });
-    const timer = setTimeout(() => child?.kill("SIGTERM"), timeout);
-    child.once("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
-    });
-    child.once("close", (status, signal) => {
-      clearTimeout(timer);
-      fulfill({ status, signal });
-    });
+  const { stdout, stderr, ...result } = await runBuildTool(command, args, {
+    cwd: output,
+    signal: controller.signal,
+    timeoutMs: timeout,
   });
-  child = undefined;
   const record = {
     name,
     command,
@@ -98,7 +78,7 @@ async function run(name, command, args, timeout = 120_000) {
   steps.push(record);
   await writeFile(join(output, `${name}.stdout`), stdout);
   await writeFile(join(output, `${name}.stderr`), stderr);
-  if (result.status !== 0)
+  if (result.status !== 0 || result.aborted || result.timedOut)
     throw new Error(`${name} failed; inspect ${output}/${name}.stderr`);
   return { stdout, stderr };
 }

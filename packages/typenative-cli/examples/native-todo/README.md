@@ -30,6 +30,9 @@ the window. Compiler dependencies and build artifacts stay outside the repositor
 The cold Rust build can take several minutes. `CARGO_TARGET_DIR` may select an
 existing build cache outside the repository.
 
+Interrupting or timing out a build terminates its process group, including
+compiler/linker descendants, and escalates to a forced stop when needed.
+
 Append `--build-only` to build and validate without opening the window. The runner
 prints the executable and `build-result.json` paths. To reopen the built app,
 execute `"$todo_tools/build/typenative-todo"` directly. Node is unnecessary for
