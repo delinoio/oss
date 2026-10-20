@@ -108,6 +108,22 @@ Different IDs have separate storage. Development builds, updates and rollbacks f
 
 ### CLI foundation boundary
 
+An executable todo example may live under `packages/typenative-cli/examples/native-todo/`.
+Its repository-owned TSX factory and application state must compile with the pinned
+ScriptC version and link to a standalone Rust Blitz window adapter in the same process.
+Keep compiler dependencies, copied Cargo sources, build output and validation artifacts
+outside the workspace. The example targets macOS arm64 only and must reject other hosts.
+The adapter runs the native event loop and calls compiled TypeScript through
+call-scoped, same-thread FFI callbacks. Window drawing and lifecycle callbacks
+remain synchronous inside Blitz/winit.
+Support an initially focused text input, Add/Enter submission, completion checkboxes,
+Delete buttons, remaining count, an empty state, resizing and scrolling. Escape all
+application text before HTML serialization. Preserve the input node while updating the
+list. Keyboard handlers must ignore composing Enter events. State is in memory for one
+process; this example does not enable installation, persistence, hot updates or the
+general `tn dev`, `tn build` and `tn run` pipeline. Report native window/input checks
+separately from compiler, scripted-event and offscreen checks.
+
 A custom TSX comparison may live under `packages/typenative-cli/test/experiments/custom-tsx/`. Limit its runtime to numeric signals, synchronous effects, intrinsic elements, text bindings and programmatically dispatched handlers. Compile its application with ScriptC and use a standalone Rust fixture for a same-process Blitz FFI rendering check. The fixture is not the planned production host or the public SDK. Keep dependency installation and generated native artifacts outside the workspace. Distinguish offscreen pixel rendering from window, OS-input and platform acceptance.
 
 The initial CLI must distinguish implemented commands from planned commands. `tn create <directory>` creates a non-overwriting custom TSX source scaffold with exact version selections. `tn doctor [--target <target>] [--scriptc <executable>] [--probe]` reports prerequisite checks. An explicitly requested probe compiles and executes a fixed console-only native program only on the current desktop target. It uses a temporary directory and removes its own artifacts. Before execution, validate the artifact header for the selected architecture: arm64 Mach-O, little-endian x86-64 ELF64, or AMD64 PE32+. Container magic alone does not establish the target architecture. Probe compilation and execution must allow SIGINT/SIGTERM handling, stop the active child, and await cleanup before returning an interrupted diagnostic. A successful probe does not establish TSX, renderer, plugin or platform acceptance.

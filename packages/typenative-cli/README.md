@@ -17,6 +17,10 @@ The target identifiers are `macos-arm64`, `windows-x64`, `linux-x64`, `ios-arm64
 
 `tn dev`, `tn build` and `tn run` fail with `TN_NATIVE_PIPELINE_UNAVAILABLE`. The custom TSX SDK, Blitz host, native state-preserving updates, application services, plugins and platform packages are not implemented. The SDK is not published. The generated component is a source scaffold, not a runnable native app. No platform has TypeNative acceptance from these checks.
 
+For a standalone native window example, see the [custom TSX todo application](examples/native-todo/README.md).
+It compiles TypeScript with ScriptC and renders with Blitz on macOS arm64. It does
+not enable the general application commands or establish full platform acceptance.
+
 The selected versions are framework `0.0.0-dev.0`, ScriptC `0.3.5` and Blitz revision `1e5479ae62737d60f7c2f8e8d31524f5cfe2ec01`. They are compatibility inputs, not a validated combination. No command upgrades them automatically.
 
 ## Diagnostics and troubleshooting

@@ -1,0 +1,28 @@
+[package]
+name = "typenative-todo-window"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+# The launcher copies this standalone adapter outside the repository.
+[workspace]
+
+[lib]
+crate-type = ["staticlib"]
+path = "host.rs"
+
+[dependencies]
+blitz-dom = { git = "https://github.com/dioxuslabs/blitz", rev = "1e5479ae62737d60f7c2f8e8d31524f5cfe2ec01", default-features = false, features = ["system-fonts"] }
+blitz-html = { git = "https://github.com/dioxuslabs/blitz", rev = "1e5479ae62737d60f7c2f8e8d31524f5cfe2ec01", default-features = false }
+blitz-shell = { git = "https://github.com/dioxuslabs/blitz", rev = "1e5479ae62737d60f7c2f8e8d31524f5cfe2ec01", default-features = false, features = ["accessibility", "clipboard"] }
+blitz-traits = { git = "https://github.com/dioxuslabs/blitz", rev = "1e5479ae62737d60f7c2f8e8d31524f5cfe2ec01", default-features = false }
+anyrender_vello_cpu = { version = "=0.18.0", features = ["softbuffer_window_renderer"] }
+anyrender = "=0.14.0"
+blitz-paint = { git = "https://github.com/dioxuslabs/blitz", rev = "1e5479ae62737d60f7c2f8e8d31524f5cfe2ec01", default-features = false }
+peniko = "=0.6.1"
+png = "=0.18.1"
+winit = "=0.31.0-beta.3"
+keyboard-types = "=0.8.3"
+tracing = "=0.1.41"
+tracing-subscriber = { version = "=0.3.20", default-features = false, features = ["fmt", "ansi"] }

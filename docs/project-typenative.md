@@ -11,6 +11,7 @@ Build an experimental native application framework for TypeScript developers usi
 ## Domain Ownership Map
 
 - `packages/typenative-cli/`: TypeScript developer CLI, distributed as `@delino/typenative-cli` with the `tn` executable.
+- `packages/typenative-cli/examples/native-todo/`: standalone ScriptC/custom-TSX todo example and macOS Blitz window adapter, built outside the workspace; not the production SDK or host.
 - `packages/typenative/` (planned): TypeScript SDK, custom TSX renderer and typed plugin bindings, distributed separately as `@delino/typenative`.
 - `crates/typenative-host/` (planned): Rust Blitz host, native FFI, application services and platform integration.
 
