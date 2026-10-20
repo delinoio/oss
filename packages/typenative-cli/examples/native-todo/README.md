@@ -27,6 +27,8 @@ already exist. The runner checks tool versions, copies the standalone Rust
 adapter, builds with the committed Cargo lockfile, compiles the application,
 checks its arm64 Mach-O header, runs the native integration checks and launches
 the window. Compiler dependencies and build artifacts stay outside the repository.
+Dependency, output and cache paths are canonicalized before containment checks;
+symlink aliases into the checkout are rejected before creating build output.
 The cold Rust build can take several minutes. `CARGO_TARGET_DIR` may select an
 existing build cache outside the repository.
 The runner explicitly selects Cargo's `aarch64-apple-darwin` target and links its

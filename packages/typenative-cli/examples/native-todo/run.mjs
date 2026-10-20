@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join, resolve, relative, isAbsolute, sep } from "node:path";
+import { mkdir, readFile, realpath, writeFile } from "node:fs/promises";
+import { dirname, join, resolve, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { lowerTsx } from "../../test/experiments/custom-tsx/lower.mjs";
 import { runBuildTool } from "./build-tool.mjs";
 import { sha256, snapshotBuildInputs } from "./build-inputs.mjs";
+import { externalBuildPath } from "./build-paths.mjs";
 
 if (
   process.argv.length < 4 ||
@@ -24,23 +25,14 @@ if (
   throw new Error(
     "Use Node 24 on macOS arm64 with Rust and the macOS SDK installed.",
   );
-const sources = dirname(fileURLToPath(import.meta.url));
-const repository = resolve(sources, "../../../..");
-const dependencies = resolve(process.argv[2]);
-const output = resolve(process.argv[3]);
-const targetRoot = process.env.CARGO_TARGET_DIR
-  ? resolve(process.env.CARGO_TARGET_DIR)
-  : join(output, "target");
-for (const directory of [dependencies, output, targetRoot]) {
-  const path = relative(repository, directory);
-  if (
-    path === "" ||
-    (path !== ".." && !path.startsWith(".." + sep) && !isAbsolute(path))
-  )
-    throw new Error(
-      "Keep dependencies and native build artifacts outside the repository.",
-    );
-}
+const sources = await realpath(dirname(fileURLToPath(import.meta.url)));
+const repository = await realpath(resolve(sources, "../../../.."));
+const dependencies = await externalBuildPath(repository, process.argv[2]);
+const output = await externalBuildPath(repository, process.argv[3]);
+const targetRoot = await externalBuildPath(
+  repository,
+  process.env.CARGO_TARGET_DIR ?? join(output, "target"),
+);
 const require = createRequire(join(dependencies, "package.json"));
 const ts = require("typescript");
 if (
@@ -107,6 +99,7 @@ try {
     "run.mjs",
     "build-tool.mjs",
     "build-inputs.mjs",
+    "build-paths.mjs",
   ].map((file) => join(prefix, file));
   sourcePaths.push(
     "packages/typenative-cli/test/experiments/custom-tsx/lower.mjs",
