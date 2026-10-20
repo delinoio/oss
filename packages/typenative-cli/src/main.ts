@@ -92,7 +92,7 @@ try {
     await createProject(destination);
     emit(
       Code.Ok,
-      "Created a React source scaffold. Native application execution is not implemented.",
+      "Created a custom TSX source scaffold. Native application execution is not implemented.",
       { frameworkReady: false },
     );
   } else if (command === "doctor") {
@@ -131,7 +131,7 @@ try {
       const result = await probeNative(compiler, target);
       emit(
         Code.Ok,
-        "Fixed native console probe passed. React, Blitz, plugins and engine absence are unverified.",
+        "Fixed native console probe passed. TSX rendering, Blitz, plugins and engine absence are unverified.",
         { probe: result, frameworkReady: false },
       );
     }
@@ -153,7 +153,7 @@ try {
       );
     throw new DiagnosticError(
       Code.Pipeline,
-      "The React/Blitz native pipeline is not implemented. No application was launched.",
+      "The TSX/Blitz native pipeline is not implemented. No application was launched.",
     );
   } else
     throw new DiagnosticError(

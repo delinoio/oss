@@ -42,10 +42,18 @@ test("create writes exact pins and preserves an existing project", async (t) => 
     await readFile(join(project, "typenative.json"), "utf8"),
   );
   assert.deepEqual(config.versions, versions);
-  assert.equal(
+  assert.deepEqual(
     JSON.parse(await readFile(join(project, "package.json"), "utf8"))
-      .dependencies.react,
-    "19.3.1",
+      .dependencies,
+    { "@delino/typenative": versions.framework },
+  );
+  const source = await readFile(join(project, "App.tsx"), "utf8");
+  assert.match(source, /import \{ h, signal \} from "@delino\/typenative"/);
+  assert.match(source, /count\.set\(count\.get\(\) \+ 1\)/);
+  assert.equal(
+    JSON.parse(await readFile(join(project, "tsconfig.json"), "utf8"))
+      .compilerOptions.jsx,
+    "preserve",
   );
   await writeFile(join(project, "App.tsx"), "private existing source");
   await assert.rejects(createProject(project), { code: Code.Create });

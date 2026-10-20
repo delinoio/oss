@@ -16,9 +16,9 @@ TypeNative applications, native-plugin authors and framework maintainers.
 
 ## Interfaces and Contracts
 
-The [SDK contract](packages-typenative-foundation.md#interfaces-and-contracts) owns the complete required behavior. The native ABI must connect React rendering mutations, events, scheduling and application lifecycle to Blitz. Support one desktop window or one mobile screen, resize/close, foreground/background, rotation, safe areas and virtual keyboards. Validate keyboard navigation, focus, accessibility semantics, screen readers and Korean IME.
+The [SDK contract](packages-typenative-foundation.md#interfaces-and-contracts) owns the complete required behavior. The native ABI must connect custom TSX rendering mutations, events, scheduling and application lifecycle to Blitz. Support one desktop window or one mobile screen, resize/close, foreground/background, rotation, safe areas and virtual keyboards. Validate keyboard navigation, focus, accessibility semantics, screen readers and Korean IME.
 
-Compatible native code updates must preserve process identity and compatible React state. Identity/Hook changes or host/plugin changes may restart with a stated reason. Compilation failure retains the last successful running application and state; with no successful build, launch nothing. Snapshot-and-restart is not a compatible update implementation.
+Compatible native code updates must preserve process identity and compatible application state. Component identity or state-structure changes or host/plugin changes may restart with a stated reason. Compilation failure retains the last successful running application and state; with no successful build, launch nothing. Snapshot-and-restart is not a compatible update implementation.
 
 Provide fetch/AbortSignal with TLS verification, asynchronous JSON key/value and file APIs, clipboard, HTTP(S) external URL opening, and typed trusted static plugins with async calls, cancellation and removable subscriptions. Release resources on cancellation, unsubscribe and shutdown. Return coded errors without automatic retries. Custom URL schemes and secret storage belong to separate trusted plugins.
 

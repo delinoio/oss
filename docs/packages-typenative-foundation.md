@@ -2,11 +2,11 @@
 
 ## Scope
 
-Own `packages/typenative-cli/` and the planned `packages/typenative/` SDK and React renderer. This contract preserves the complete framework requirements across the native host boundary.
+Own `packages/typenative-cli/` and the planned `packages/typenative/` SDK and custom TSX renderer. This contract preserves the complete framework requirements across the native host boundary.
 
 ## Runtime and Language
 
-Use TypeScript for SDK, React renderer and CLI; use Node.js 24 for CLI/build tools only. Compile application TypeScript with ScriptC. Use Rust for the Blitz host. Do not embed a JavaScript engine in development or distribution applications. Native compilation is outside the Rspack browser-bundle workflow.
+Use TypeScript for SDK, custom TSX renderer and CLI; use Node.js 24 for CLI/build tools only. Compile application TypeScript with ScriptC. Use Rust for the Blitz host. Do not embed a JavaScript engine in development or distribution applications. Native compilation is outside the Rspack browser-bundle workflow.
 
 ## Users and Operators
 
@@ -17,7 +17,7 @@ TypeScript application authors, trusted native-plugin authors and framework main
 **Project structure and implementation**
 
 - Use project ID `typenative`.
-- Implement the SDK, React renderer, and CLI in TypeScript; implement the Blitz host and native FFI in Rust, with required platform integration code.
+- Implement the SDK, custom TSX renderer, and CLI in TypeScript; implement the Blitz host and native FFI in Rust, with required platform integration code.
 - Create the project index and owning domain contracts before runtime implementation. Record the TypeScript/Rust choice as a project-specific exception to the repository language default.
 - Permit revision-pinned upstream patches or forks. Document their cause, scope, removal conditions, and original licenses.
 - Preserve existing projects and repository workflows.
@@ -42,11 +42,11 @@ The application pipeline uses `tn dev [--target <target>]`, `tn build [--target 
 - `dev` and `run` execute desktop applications only on the matching host target. Mobile execution requires explicit `ios-arm64-simulator` or `android-arm64-emulator` and a compatible prepared virtual device. If no compatible device exists, or more than one is available, fail with an actionable diagnostic rather than guessing. The user must leave exactly one compatible virtual device available.
 - `dev` compiles and launches the selected target with the update behavior below. `run` installs and launches the selected target's development package; reject a missing package or mismatched target. `build` does not launch an application. Never use cross-architecture emulation as target acceptance.
 
-**React and native development updates**
+**Custom TSX and native development updates**
 
-- Support the complete stable public client-side React 19.3.1 core API.
-- Preserve the application process and compatible React state when replacing compiled component code.
-- Changes that invalidate component identity or Hook structure, and native host/plugin changes, may restart the application with an explicit explanation.
+- Use a repository-owned TSX factory with intrinsic elements, numeric signals, synchronous effects, text bindings and explicit event handlers. Define additional supported syntax and behavior before extending this initial surface.
+- Preserve the application process and compatible application state when replacing compiled component code.
+- Changes that invalidate component identity or state structure, and native host/plugin changes, may restart the application with an explicit explanation.
 - Do not substitute snapshot-and-restart behavior for compatible updates.
 - On compilation failure, retain the last successful running application and its state. Report diagnostic codes and source locations. If no successful build exists, do not launch an application.
 - Add required compiler/runtime support when upstream capabilities are insufficient.
@@ -57,7 +57,7 @@ The application pipeline uses `tn dev [--target <target>]`, `tn build [--target 
 - Document supported HTML, CSS, and event behavior. Report statically detectable unsupported use through build diagnostics and dynamically detected use through development logs.
 - Support one desktop window and one mobile screen host, resizing, close handling, foreground/background transitions, rotation, safe areas, and the virtual keyboard.
 - Validate keyboard navigation, focus, accessibility semantics, screen-reader behavior, and Korean IME input.
-- Do not promise general compatibility with React DOM libraries.
+- Do not promise general compatibility with third-party UI framework libraries.
 
 **Platform acceptance**
 
@@ -108,11 +108,9 @@ Different IDs have separate storage. Development builds, updates and rollbacks f
 
 ### CLI foundation boundary
 
-An isolated Solid feasibility experiment may live under `packages/typenative-cli/test/experiments/solid/`. It compares native execution of the published client reactive runtime with a Node reference before attempting Blitz integration. It does not replace the required React SDK, change selected framework dependencies, or establish renderer acceptance. Keep experiment dependencies outside the workspace, select exact versions explicitly, and require expected output as well as a successful exit status. A compiler-produced executable alone is not a passing result.
+A custom TSX comparison may live under `packages/typenative-cli/test/experiments/custom-tsx/`. Limit its runtime to numeric signals, synchronous effects, intrinsic elements, text bindings and programmatically dispatched handlers. Compile its application with ScriptC and use a standalone Rust fixture for a same-process Blitz FFI rendering check. The fixture is not the planned production host or the public SDK. Keep dependency installation and generated native artifacts outside the workspace. Distinguish offscreen pixel rendering from window, OS-input and platform acceptance.
 
-A custom TSX comparison may live under `packages/typenative-cli/test/experiments/custom-tsx/`. Limit its runtime to numeric signals, synchronous effects, intrinsic elements, text bindings and programmatically dispatched handlers. Compile its application with ScriptC and use a standalone Rust fixture for a same-process Blitz FFI rendering check. The fixture is not the planned production host or a React-compatible SDK. Keep dependency installation and generated native artifacts outside the workspace. Distinguish offscreen pixel rendering from window, OS-input and platform acceptance.
-
-The initial CLI must distinguish implemented commands from planned commands. `tn create <directory>` creates a non-overwriting React source scaffold with exact version selections. `tn doctor [--target <target>] [--scriptc <executable>] [--probe]` reports prerequisite checks. An explicitly requested probe compiles and executes a fixed non-React native program only on the current desktop target. It uses a temporary directory and removes its own artifacts. Before execution, validate the artifact header for the selected architecture: arm64 Mach-O, little-endian x86-64 ELF64, or AMD64 PE32+. Container magic alone does not establish the target architecture. Probe compilation and execution must allow SIGINT/SIGTERM handling, stop the active child, and await cleanup before returning an interrupted diagnostic. A successful probe does not establish React, renderer, plugin or platform acceptance.
+The initial CLI must distinguish implemented commands from planned commands. `tn create <directory>` creates a non-overwriting custom TSX source scaffold with exact version selections. `tn doctor [--target <target>] [--scriptc <executable>] [--probe]` reports prerequisite checks. An explicitly requested probe compiles and executes a fixed console-only native program only on the current desktop target. It uses a temporary directory and removes its own artifacts. Before execution, validate the artifact header for the selected architecture: arm64 Mach-O, little-endian x86-64 ELF64, or AMD64 PE32+. Container magic alone does not establish the target architecture. Probe compilation and execution must allow SIGINT/SIGTERM handling, stop the active child, and await cleanup before returning an interrupted diagnostic. A successful probe does not establish TSX, renderer, plugin or platform acceptance.
 
 Until the native renderer pipeline exists, recognized `tn dev`, `tn build` and `tn run` commands must return `TN_NATIVE_PIPELINE_UNAVAILABLE` and exit with status `1`. This initial unavailable-pipeline result takes precedence over application target/toolchain checks; malformed CLI syntax still returns an argument error. Without `--json`, write one English `CODE: message` diagnostic to stderr, leave stdout empty, and honor `NO_COLOR`. With `--json`, write one newline-terminated JSON record to stdout and leave stderr empty. The record includes `code`, `message`, `versions`, `buildId`, `target` (canonical host target or null), `phase` (the requested command), `durationMs`, and `sourceLocation: null`. Never invoke a compiler, install a package or launch a process for an unavailable application command. Do not execute a JavaScript application or present a successful console-only build as a framework application. Keep unreleased packages private until release requirements are satisfied. A scaffold can pin a future SDK version without claiming that it can currently be installed.
 
@@ -131,9 +129,9 @@ Local structured diagnostics include component versions, build identifier, targe
 ## Build and Test
 
 - A developer can install the npm packages, inspect prerequisites, create an application, develop it, build it, and run the development package on every agreed platform.
-- All stable public client-side React 19.3.1 core APIs pass native conformance tests.
+- Supported custom TSX syntax, signals, effects, bindings and handlers pass native conformance tests.
 - Development and distribution applications contain no embedded JavaScript engine.
-- A compatible component change preserves the process ID and React state.
+- A compatible component change preserves the process ID and application state.
 - Incompatible changes explain their restart behavior; failed compilation leaves the last successful application and state intact.
 - Supported rendering, input, accessibility, lifecycle, storage, networking, clipboard, URL, and plugin behavior passes the agreed platform tests.
 - Unsupported functionality produces the specified diagnostics without being advertised as supported.
@@ -146,7 +144,7 @@ Local structured diagnostics include component versions, build identifier, targe
 ### Test scenarios
 
 - Install published-package candidates in clean consumers and run the complete CLI workflow.
-- Verify React API behavior, state scheduling, effects, cleanup, refs, context, and error handling in native builds.
+- Verify custom TSX factory behavior, signals, synchronous effects, text bindings, handlers and error handling in native builds.
 - Verify repeated native updates, unchanged process identity, state preservation, incompatible-change restarts, compilation failures, and subsequent recovery.
 - Verify supported HTML/CSS, events, scrolling, focus, screen readers, Korean composition, resizing, rotation, safe areas, and virtual keyboards.
 - Verify storage persistence, explicit deletion, path escape rejection, ordered writes, disk failures, and application shutdown.
@@ -159,15 +157,15 @@ Local structured diagnostics include component versions, build identifier, targe
 - Run repository-required formatting, relevant TypeScript tests, and root `cargo test` after Rust changes. Generate required assets before validation and remove generated repository-owned `dist` directories afterward.
 - Preserve affected CI selection and the prohibition on macOS runners for PRs, main pushes, and affected manual CI. Record macOS/iOS acceptance through permitted local or owning release validation.
 
-Run `pnpm --filter @delino/typenative-cli test` and `pnpm --filter @delino/typenative-cli build` for CLI changes. Use `tn doctor --probe` separately for a real compiler execution check. Record failed, skipped and unperformed checks explicitly. Unit fixtures that emulate tool output do not count as native acceptance. Run `pnpm --filter @delino/typenative-cli test:native` with `TN_SCRIPTC` set to the selected compiler executable for the initial real React compilation probe. This probe covers element creation, validation, cloning, child counting and ref initialization only. It must handle SIGINT/SIGTERM during tool checks, compilation and execution, await child termination, and remove temporary artifacts before emitting its final interrupted result. It must fail on compiler diagnostics, missing artifacts or failed native execution; it must not treat known upstream failures as successful tests. Passing this subset does not establish full React conformance, Blitz rendering or absence of embedded engines.
+Run `pnpm --filter @delino/typenative-cli test` and `pnpm --filter @delino/typenative-cli build` for CLI changes. Use `tn doctor --probe` separately for a real compiler execution check. Record failed, skipped and unperformed checks explicitly. Unit fixtures that emulate tool output do not count as native acceptance. Use the standalone custom TSX experiment instructions for the initial native rendering check. A passing offscreen fixture does not establish window, OS-input, engine-absence or platform acceptance.
 
 ## Dependencies and Integrations
 
-Initial investigation pins: React `19.3.1`; ScriptC `0.3.5` and reviewed source revision `d8c2b0f96d8de8fadf4937d93a701dfd3a10f4df`; Blitz revision `1e5479ae62737d60f7c2f8e8d31524f5cfe2ec01`. These selections are inputs for compatibility work, not an assertion that the combination passes acceptance. Do not automatically upgrade them. Preserve original licenses in distributions.
+Initial investigation pins: ScriptC `0.3.5` and reviewed source revision `d8c2b0f96d8de8fadf4937d93a701dfd3a10f4df`; Blitz revision `1e5479ae62737d60f7c2f8e8d31524f5cfe2ec01`. These selections are inputs for compatibility work, not an assertion that the combination passes acceptance. Do not automatically upgrade them. Preserve original licenses in distributions.
 
 ### Out of scope
 
-- React DOM compatibility guarantees, server-only React APIs, RSC, experimental React APIs, SSR, and web deployment.
+- Third-party UI framework compatibility, SSR and web deployment.
 - Embedded JavaScript engines in application development or distribution.
 - Additional CPU combinations and physical mobile-device acceptance.
 - Store submission and distribution signing automation.

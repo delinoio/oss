@@ -51,7 +51,7 @@ test("native records always include diagnostic code and nullable source location
     assert.equal(result.phase, "compile");
   }
   assert.equal(
-    createNativeResult("failed", {}, { code: "TN_REACT_COMPILE_FAILED" }).code,
-    "TN_REACT_COMPILE_FAILED",
+    createNativeResult("failed", {}, { code: "TN_NATIVE_COMPILE_FAILED" }).code,
+    "TN_NATIVE_COMPILE_FAILED",
   );
 });
