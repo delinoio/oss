@@ -6,6 +6,14 @@ Own the planned `crates/typenative-host/` Rust crate, Blitz integration, native 
 
 The SDK-owned `packages/typenative-cli/test/experiments/custom-tsx/` comparison may include a standalone Rust fixture copied outside the workspace for compilation. It checks ScriptC calls into one retained Blitz document and offscreen rendering only; it does not create or register the production host. Preserve the reviewed Blitz revision and exclude scripting engines from the fixture's dependency graph.
 
+The SDK-owned `packages/typenative-cli/examples/native-todo/` example may include a
+standalone Rust static library for a macOS arm64 Blitz window, DOM event forwarding,
+input reads and targeted DOM updates. Copy it outside the workspace before compilation.
+It is an executable example adapter, not the production host. Keep application state
+and event handlers in ScriptC-compiled TypeScript. Preserve the pinned Blitz revision,
+handle drawing/lifecycle synchronously and distinguish OS-input acceptance from
+synthetic event tests. The SDK contract defines the example's supported behavior.
+
 ## Runtime and Language
 
 Use Rust and required platform integration code. The host executes ScriptC-compiled code with no JavaScript engine. Use Blitz for HTML/CSS layout and rendering, without its Boa scripting example. Link runtime objects from the exact compiler installation that produced application code.
