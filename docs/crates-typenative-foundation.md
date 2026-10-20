@@ -4,6 +4,8 @@
 
 Own the planned `crates/typenative-host/` Rust crate, Blitz integration, native FFI, application services and desktop/mobile platform integration. Do not register the crate in the Cargo workspace until its skeleton exists.
 
+The SDK-owned `packages/typenative-cli/test/experiments/custom-tsx/` comparison may include a standalone Rust fixture copied outside the workspace for compilation. It checks ScriptC calls into one retained Blitz document and offscreen rendering only; it does not create or register the production host. Preserve the reviewed Blitz revision and exclude scripting engines from the fixture's dependency graph.
+
 ## Runtime and Language
 
 Use Rust and required platform integration code. The host executes ScriptC-compiled code with no JavaScript engine. Use Blitz for HTML/CSS layout and rendering, without its Boa scripting example. Link runtime objects from the exact compiler installation that produced application code.
@@ -14,9 +16,9 @@ TypeNative applications, native-plugin authors and framework maintainers.
 
 ## Interfaces and Contracts
 
-The [SDK contract](packages-typenative-foundation.md#interfaces-and-contracts) owns the complete required behavior. The native ABI must connect React rendering mutations, events, scheduling and application lifecycle to Blitz. Support one desktop window or one mobile screen, resize/close, foreground/background, rotation, safe areas and virtual keyboards. Validate keyboard navigation, focus, accessibility semantics, screen readers and Korean IME.
+The [SDK contract](packages-typenative-foundation.md#interfaces-and-contracts) owns the complete required behavior. The native ABI must connect custom TSX rendering mutations, events, scheduling and application lifecycle to Blitz. Support one desktop window or one mobile screen, resize/close, foreground/background, rotation, safe areas and virtual keyboards. Validate keyboard navigation, focus, accessibility semantics, screen readers and Korean IME.
 
-Compatible native code updates must preserve process identity and compatible React state. Identity/Hook changes or host/plugin changes may restart with a stated reason. Compilation failure retains the last successful running application and state; with no successful build, launch nothing. Snapshot-and-restart is not a compatible update implementation.
+Compatible native code updates must preserve process identity and compatible application state. Component identity or state-structure changes or host/plugin changes may restart with a stated reason. Compilation failure retains the last successful running application and state; with no successful build, launch nothing. Snapshot-and-restart is not a compatible update implementation.
 
 Provide fetch/AbortSignal with TLS verification, asynchronous JSON key/value and file APIs, clipboard, HTTP(S) external URL opening, and typed trusted static plugins with async calls, cancellation and removable subscriptions. Release resources on cancellation, unsubscribe and shutdown. Return coded errors without automatic retries. Custom URL schemes and secret storage belong to separate trusted plugins.
 

@@ -1,0 +1,24 @@
+[package]
+name = "typenative-custom-tsx-probe"
+version = "0.0.0"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+# This fixture is copied outside the repository before building.
+[workspace]
+
+[lib]
+crate-type = ["staticlib"]
+path = "host.rs"
+
+[dependencies]
+blitz-dom = { git = "https://github.com/dioxuslabs/blitz", rev = "1e5479ae62737d60f7c2f8e8d31524f5cfe2ec01", default-features = false, features = ["system-fonts"] }
+blitz-html = { git = "https://github.com/dioxuslabs/blitz", rev = "1e5479ae62737d60f7c2f8e8d31524f5cfe2ec01", default-features = false }
+blitz-paint = { git = "https://github.com/dioxuslabs/blitz", rev = "1e5479ae62737d60f7c2f8e8d31524f5cfe2ec01", default-features = false }
+blitz-traits = { git = "https://github.com/dioxuslabs/blitz", rev = "1e5479ae62737d60f7c2f8e8d31524f5cfe2ec01", default-features = false }
+anyrender = "=0.14.0"
+anyrender_vello_cpu = "=0.18.0"
+peniko = "=0.6.1"
+png = "=0.18.1"
+tracing = "=0.1.41"

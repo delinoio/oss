@@ -22,7 +22,6 @@ import {
 
 export const versions = Object.freeze({
   framework: "0.0.0-dev.0",
-  react: "19.3.1",
   scriptc: "0.3.5",
   blitz: "1e5479ae62737d60f7c2f8e8d31524f5cfe2ec01",
 });
@@ -449,7 +448,7 @@ export async function createProject(destination: string) {
           version: "0.0.0",
           private: true,
           type: "module",
-          dependencies: { react: versions.react },
+          dependencies: { "@delino/typenative": versions.framework },
         },
         null,
         2,
@@ -467,7 +466,7 @@ export async function createProject(destination: string) {
             target: "ES2023",
             module: "ESNext",
             moduleResolution: "Bundler",
-            jsx: "react-jsx",
+            jsx: "preserve",
             strict: true,
           },
           include: ["App.tsx"],
@@ -476,10 +475,10 @@ export async function createProject(destination: string) {
         2,
       ) + "\n",
     "App.tsx":
-      'import { useState } from "react";\n\nexport default function App() {\n  const [count, setCount] = useState(0);\n  return <button onClick={() => setCount(count + 1)}>Count: {count}</button>;\n}\n',
+      'import { h, signal } from "@delino/typenative";\n\nexport default function App() {\n  const count = signal(0);\n  return <button text={() => String(count.get())} onClick={() => count.set(count.get() + 1)} />;\n}\n',
     ".gitignore": "node_modules/\n.typenative/\ndist/\n",
     "README.md":
-      "# TypeNative source scaffold\n\nThis is a source scaffold, not a runnable native application yet. The React renderer, Blitz host and native development pipeline are not implemented. The SDK is not published. Do not use a browser or JavaScript-engine fallback as native validation.\n\nRun `tn doctor` to inspect selected prerequisites. Run `tn doctor --probe` for a fixed console-program compiler check. Neither command validates this React component. Platform execution and React conformance remain unverified.\n",
+      "# TypeNative source scaffold\n\nThis is a source scaffold, not a runnable native application yet. The custom TSX SDK, Blitz host and native development pipeline are not implemented. The SDK is not published. Do not use a browser or JavaScript-engine fallback as native validation.\n\nRun `tn doctor` to inspect selected prerequisites. Run `tn doctor --probe` for a fixed console-program compiler check. Neither command validates this TSX view. Platform execution and TSX runtime acceptance remain unverified.\n",
   };
   try {
     const identity = await lstat(directory, { bigint: true });
