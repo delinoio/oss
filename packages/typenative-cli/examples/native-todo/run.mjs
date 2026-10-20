@@ -51,6 +51,7 @@ if (
     "Prepare exact dependencies: scriptc@0.3.5 and typescript@5.9.3.",
   );
 const compiler = join(dependencies, "node_modules/scriptc/bin/scriptc.exe");
+const cargoTarget = "aarch64-apple-darwin";
 await mkdir(output);
 const controller = new AbortController();
 function stop() {
@@ -154,6 +155,8 @@ try {
     [
       "rustc",
       "--locked",
+      "--target",
+      cargoTarget,
       "--target-dir",
       targetRoot,
       "--",
@@ -206,7 +209,9 @@ try {
         returns: "void",
       },
     ],
-    libraries: [join(targetRoot, "debug/libtypenative_todo_window.a")],
+    libraries: [
+      join(targetRoot, cargoTarget, "debug/libtypenative_todo_window.a"),
+    ],
     system_libraries: [...new Set(systemLibraries)],
     frameworks: [...new Set(frameworks)],
   };
@@ -241,6 +246,8 @@ try {
   const graph = await run("host-dependencies", "cargo", [
     "tree",
     "--locked",
+    "--target",
+    cargoTarget,
     "--prefix",
     "none",
   ]);

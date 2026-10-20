@@ -29,6 +29,8 @@ checks its arm64 Mach-O header, runs the native integration checks and launches
 the window. Compiler dependencies and build artifacts stay outside the repository.
 The cold Rust build can take several minutes. `CARGO_TARGET_DIR` may select an
 existing build cache outside the repository.
+The runner explicitly selects Cargo's `aarch64-apple-darwin` target and links its
+target-specific static library, regardless of inherited `build.target` settings.
 
 Interrupting or timing out a build terminates its process group, including
 compiler/linker descendants, and escalates to a forced stop when needed.
