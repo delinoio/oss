@@ -1296,6 +1296,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "clairic-client"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "caf0449c7f60950ed643d3746c2c0015b967e214f93008ba1a95099beb52dba1"
+dependencies = [
+ "base64 0.22.1",
+ "reqwest 0.12.28",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "clang-sys"
 version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5346,6 +5360,36 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7421438de105a0827e44fadd05377727847d717c80ce29a229f85fd04c427b72"
 dependencies = [
  "jsonptr",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "jsonllm"
+version = "0.1.0"
+dependencies = [
+ "jsonllm-derive",
+ "jsonllm-shared",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
+name = "jsonllm-derive"
+version = "0.1.0"
+dependencies = [
+ "proc-macro-crate 3.4.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "jsonllm-shared"
+version = "0.1.0"
+dependencies = [
+ "clairic-client",
  "serde",
  "serde_json",
  "thiserror 2.0.18",

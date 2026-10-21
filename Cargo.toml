@@ -51,6 +51,9 @@ members = [
     "crates/vt_str",
     "crates/serde-feather",
     "crates/serde-feather-macros",
+    "crates/jsonllm-shared",
+    "crates/jsonllm-derive",
+    "crates/jsonllm",
     "crates/rustia",
     "crates/rustia-llm",
     "crates/rustia-macros",
@@ -70,7 +73,7 @@ tauri-plugin = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f4
 tauri-utils = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975" }
 
 [workspace.metadata.cargo-mono.publish.tag]
-packages = ["binpm", "nodeup", "with-watch", "cargo-mono", "rustia-rs", "rustia-macros", "rustia-llm"]
+packages = ["binpm", "nodeup", "with-watch", "cargo-mono", "rustia-rs", "rustia-macros", "rustia-llm", "jsonllm-shared", "jsonllm-derive", "jsonllm"]
 
 # The typeopt tests run the tsrs TypeScript compiler on every fixture.
 # Unoptimized, those crates dominate the workspace test time, so build them

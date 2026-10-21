@@ -44,6 +44,7 @@
 - [crates-nodeup-foundation](../docs/crates-nodeup-foundation.md)
 - [pnport Rust foundation](../docs/crates-pnport-foundation.md)
 - [React Forge Native Contract](../docs/crates-react-forge-contract.md)
+- [jsonllm Rust foundation](../docs/crates-jsonllm-foundation.md)
 - [crates-rustia-core-foundation](../docs/crates-rustia-core-foundation.md)
 - [crates-rustia-llm-foundation](../docs/crates-rustia-llm-foundation.md)
 - [crates-rustia-macros-foundation](../docs/crates-rustia-macros-foundation.md)

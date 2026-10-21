@@ -89,6 +89,7 @@
 - `docs/apps-react-forge-docs-foundation.md`: React Forge public guide routes, content, availability, and validation contract.
 - `docs/packages-docs-site-switcher-contract.md`: Shared accessible documentation site selector package contract.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
+- `docs/project-jsonllm.md`: jsonllm typed Clairic generation project index.
 - `docs/project-rustia.md`: Rustia multi-crate project index.
 - `docs/project-devhud.md`: DevHud cross-platform desktop/mobile utility project index and current the feature contract.
 - `docs/crates-binpm-foundation.md`: binpm Rust CLI, release asset source selection, global cache, and local tooling contract.

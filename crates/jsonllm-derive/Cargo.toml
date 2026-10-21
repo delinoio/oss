@@ -1,0 +1,19 @@
+[package]
+name = "jsonllm-derive"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Derive typed Clairic generation with jsonllm"
+homepage = "https://github.com/delinoio/oss/tree/main/crates/jsonllm-derive"
+repository = "https://github.com/delinoio/oss"
+readme = "README.md"
+publish = true
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro-crate = "3"
+proc-macro2 = "1"
+quote = "1"
+syn = { version = "2", features = ["full"] }
