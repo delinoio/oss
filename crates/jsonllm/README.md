@@ -8,7 +8,7 @@ jsonllm = "0.1"
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 ```
 
-```no_run
+```rust no_run
 use jsonllm::{Client, JsonGen};
 
 #[derive(Debug, jsonllm::JsonGen)]
@@ -158,12 +158,12 @@ assert_eq!(fields["quantity"].instructions.as_deref(),
 
 These types fail at compile time:
 
-```compile_fail
+```rust compile_fail
 #[derive(jsonllm::JsonGen)]
 struct Unsupported { enabled: bool }
 ```
 
-```compile_fail
+```rust compile_fail
 #[derive(jsonllm::JsonGen)]
 enum Unsupported { First, Second }
 ```
@@ -174,7 +174,7 @@ Build a `jsonllm::Request`, append embedded images through `jsonllm::clairic_cli
 
 The following example reads a local PNG and sends it with text and a reference date. It requires the same credentials and Tokio dependency as the first example. Image bytes are embedded in the request; remote image URLs are not supported.
 
-```no_run
+```rust no_run
 use jsonllm::{Client, JsonGen, Request, clairic_client::{Image, ImageType, Options}};
 
 #[derive(Debug, jsonllm::JsonGen)]
@@ -207,7 +207,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 To retain usage or confidence metadata, call `client.run(&request)` yourself with `request.fields = Invoice::fields()`, then decode with `Invoice::from_response(&response)`. This example compiles without sending a request during doctests:
 
-```no_run
+```rust no_run
 use jsonllm::{Client, Error, JsonGen, Request};
 
 #[derive(jsonllm::JsonGen)]
