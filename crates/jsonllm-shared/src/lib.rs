@@ -10,29 +10,81 @@ use serde_json::Value;
 /// Generation or typed response decoding failure.
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    /// Request validation, transport, or upstream API failure.
+    ///
+    /// The source can contain sensitive details. Filter it before logging.
     #[error("Clairic request failed")]
     Upstream(#[from] clairic_client::Error),
+    /// The response was truncated and cannot be accepted as a complete value.
     #[error("Clairic returned a truncated response")]
     Truncated,
+    /// An answer entry is absent, including for an optional field.
     #[error("Clairic response is missing field {field}")]
-    MissingField { field: String },
+    MissingField {
+        /// Wire name of the missing answer.
+        field: String,
+    },
+    /// An answer value cannot be decoded as the requested Rust type.
     #[error("Clairic returned an invalid value for field {field}")]
     InvalidField {
+        /// Wire name of the invalid answer.
         field: String,
+        /// Decoder failure. Custom decoders can include sensitive details.
         #[source]
         source: serde_json::Error,
     },
 }
 
 /// Map a Rust value to a Clairic field and decode its answer.
-/// Implement this trait for domain-specific scalar values.
+///
+/// Implement this trait for domain-specific scalar values. [`Self::field`]
+/// must describe the value shape accepted by [`Self::decode`]. Implement
+/// [`ListItem`] as well if the type can appear in a scalar list.
+///
+/// Built-in implementations cover `String`, integer and float primitives,
+/// `Option<T>` where `T: JsonField`, and `Vec<T>` where `T: ListItem`.
+/// Optional nulls become `None`; other values use the inner decoder.
+/// Numbers must fit the target Rust type. Float decoding rejects nonfinite
+/// results. Values are not coerced from strings.
+///
+/// ```
+/// use jsonllm_shared::{JsonField, serde_json::json};
+///
+/// assert_eq!(u8::decode(&json!(42))?, 42);
+/// assert!(u8::decode(&json!(256)).is_err());
+/// assert!(u8::decode(&json!("42")).is_err());
+/// assert_eq!(Option::<String>::decode(&json!(null))?, None);
+/// assert_eq!(Vec::<i16>::decode(&json!([-2, 3]))?, vec![-2, 3]);
+/// # Ok::<(), jsonllm_shared::serde_json::Error>(())
+/// ```
 pub trait JsonField: Sized {
+    /// Return the field kind and options used to request this value.
     fn field() -> Field;
+
+    /// Decode and validate one answer value.
+    ///
+    /// # Errors
+    ///
+    /// Return a serde error if the value has an incompatible shape or violates
+    /// the type's constraints. Avoid including answer values in error messages.
     fn decode(value: &Value) -> Result<Self, serde_json::Error>;
 }
 
 /// Scalar types that Clairic can return inside a list.
+///
+/// Implementations must choose an item kind compatible with their [`JsonField`]
+/// decoder. Built-in implementations cover strings and numeric primitives.
+/// `Option<T>` and `Vec<T>` do not implement this trait, so nullable elements
+/// and nested lists have no automatic mapping.
+///
+/// ```
+/// use jsonllm_shared::{ListItem, clairic_client::ListItemType};
+///
+/// assert_eq!(String::item_type(), ListItemType::Text);
+/// assert_eq!(u32::item_type(), ListItemType::Number);
+/// ```
 pub trait ListItem: JsonField {
+    /// Return the scalar item kind for a list of this type.
     fn item_type() -> ListItemType;
 }
 
@@ -125,7 +177,35 @@ impl<T: ListItem> JsonField for Vec<T> {
     }
 }
 
-/// Decode a required answer entry. Optional fields still require an entry.
+/// Decode one answer entry by its wire name.
+///
+/// Optional fields still require an entry: a present null decodes to `None`,
+/// while an absent answer returns [`Error::MissingField`]. Only the answer's
+/// value is passed to [`JsonField::decode`]; metadata and other answers are
+/// ignored. This helper does not check truncation. Use the facade's derived
+/// `JsonGen::from_response` to reject a truncated response before decoding.
+///
+/// # Errors
+///
+/// Returns [`Error::MissingField`] if the entry is absent, or
+/// [`Error::InvalidField`] if the decoder rejects its value.
+///
+/// ```
+/// use jsonllm_shared::{Error, decode_field, clairic_client::Response, serde_json};
+/// use serde_json::json;
+///
+/// let response: Response = serde_json::from_value(json!({
+///     "model": "clairic", "truncated": false,
+///     "usage": {"input_tokens": 1, "output_tokens": 1},
+///     "answers": {"count": {"type": "number", "value": 3}}
+/// }))?;
+/// assert_eq!(decode_field::<u8>(&response, "count")?, 3);
+/// assert!(matches!(
+///     decode_field::<Option<String>>(&response, "absent"),
+///     Err(Error::MissingField { .. })
+/// ));
+/// # Ok::<(), Box<dyn std::error::Error>>(())
+/// ```
 pub fn decode_field<T: JsonField>(response: &Response, field: &str) -> Result<T, Error> {
     let answer = response
         .answers

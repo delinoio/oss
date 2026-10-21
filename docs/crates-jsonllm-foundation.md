@@ -23,6 +23,10 @@ Rust developers extracting typed values with Cloudflare Workers AI credentials; 
 - `Error` distinguishes upstream, truncated, missing-field and invalid-field failures. Invalid-field errors retain the field name and serde source; display text omits response values.
 - The facade re-exports the macro, shared traits, Clairic client/types and serde_json for custom decoders. Renamed facade dependencies work.
 
+## Public Rust documentation
+
+Each crate includes its README as crate-level rustdoc for docs.rs. The facade guide covers credential and runtime setup, field instructions and renaming, generic fields, image requests, metadata retention, offline decoding, custom scalar/list mappings, and error handling. Public traits, methods, the derive macro, and error variants document their behavior and limits. Offline examples run as doctests; live-service and local-image examples compile with `no_run` and require caller-supplied credentials or files to execute. The derive crate links consumers to the facade examples.
+
 ## Storage
 
 Requests and responses remain in memory. No persistent storage.
@@ -37,7 +41,7 @@ Use tracing for field counts and generation outcomes. Do not log credentials, pr
 
 ## Build and Test
 
-Run `cargo test -p jsonllm-shared -p jsonllm-derive -p jsonllm` and root `cargo test`. Cover derive diagnostics, schema mapping, decoding failures and loopback HTTP integration without live credentials. Inspect package contents and licenses. Package verification is not live Cloudflare acceptance.
+Run `cargo test -p jsonllm-shared -p jsonllm-derive -p jsonllm` and root `cargo test`. Build all three crate docs with `RUSTDOCFLAGS="-D warnings" cargo doc --no-deps -p jsonllm-shared -p jsonllm-derive -p jsonllm`. Run their doctests as part of the package tests. Cover derive diagnostics, schema mapping, decoding failures and loopback HTTP integration without live credentials. Inspect package contents and licenses. Package verification is not live Cloudflare acceptance.
 
 ## Dependencies and Integrations
 

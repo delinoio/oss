@@ -1,6 +1,6 @@
 [package]
 name = "jsonllm"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "Apache-2.0"
 description = "Generate typed Rust values through Clairic"
@@ -10,8 +10,8 @@ readme = "README.md"
 publish = true
 
 [dependencies]
-jsonllm-shared = { version = "0.1.0", path = "../jsonllm-shared" }
-jsonllm-derive = { version = "0.1.0", path = "../jsonllm-derive" }
+jsonllm-shared = { version = "0.1.1", path = "../jsonllm-shared" }
+jsonllm-derive = { version = "0.1.1", path = "../jsonllm-derive" }
 tracing = "0.1"
 
 [dev-dependencies]
