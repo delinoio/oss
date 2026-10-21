@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Field definitions and images
 
-`FieldType` covers `Text`, `Number`, `Date`, `Time`, `Datetime`, `Duration`, `List`, `Estimate`, and `Forecast`. Set public optional fields to configure units, precision, null thresholds, bounds, grid steps, scales, horizons, and intervals. For duration fields, set `unit` with `DurationUnit::Days.as_str().to_owned()` (or another enum variant). Only seconds, minutes, hours, days, weeks, months, and years are accepted; omitting the unit uses the server default of seconds. Numeric fields still accept arbitrary unit labels such as `USD`. List fields need `items`; estimates and forecasts need `min` and `max`.
+Field names must match `^[A-Za-z_][A-Za-z0-9_.\-]{0,63}$`: 1–64 ASCII characters, beginning with a letter or underscore, followed by letters, digits, underscores, periods, or hyphens. Invalid names are rejected before network access. `FieldType` covers `Text`, `Number`, `Date`, `Time`, `Datetime`, `Duration`, `List`, `Estimate`, and `Forecast`. Set public optional fields to configure units, precision, null thresholds, bounds, grid steps, scales, horizons, and intervals. For duration fields, set `unit` with `DurationUnit::Days.as_str().to_owned()` (or another enum variant). Only seconds, minutes, hours, days, weeks, months, and years are accepted; omitting the unit uses the server default of seconds. Numeric fields still accept arbitrary unit labels such as `USD`. List fields need `items`; estimates and forecasts need `min` and `max`.
 
 ```rust
 use clairic_client::{Bound, Field, FieldType, Image, ImageType, ListItemType, Request, Step};

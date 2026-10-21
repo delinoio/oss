@@ -392,3 +392,43 @@ async fn validates_duration_units_before_network_access() {
         .validate()
         .unwrap();
 }
+
+#[tokio::test]
+async fn validates_field_names_before_network_access() {
+    let client = Client::with_endpoint(
+        "account",
+        "token",
+        "http://127.0.0.1:1/",
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    for name in [
+        "".to_owned(),
+        "a".repeat(65),
+        "invoice total".into(),
+        "1total".into(),
+        "-total".into(),
+        ".total".into(),
+        "total/amount".into(),
+        "total\n".into(),
+        "금액".into(),
+        "aé".into(),
+    ] {
+        let req = Request::new("Total 10").with_field(name, Field::new(FieldType::Number));
+        assert!(matches!(client.run(&req).await, Err(Error::Validation(_))));
+    }
+    for name in [
+        "a".to_owned(),
+        "_".into(),
+        "a".repeat(64),
+        "Invoice_9.total-USD".into(),
+    ] {
+        let req = Request::new("Total 10").with_field(name.clone(), Field::new(FieldType::Number));
+        req.validate().unwrap();
+        assert!(
+            serde_json::to_value(req).unwrap()["fields"]
+                .get(&name)
+                .is_some()
+        );
+    }
+}

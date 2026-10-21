@@ -317,7 +317,18 @@ impl Request {
         if total > 8 * 1024 * 1024 {
             return Err(Error::validation("images exceed 8 MiB in total"));
         }
-        for field in self.fields.values() {
+        for (name, field) in &self.fields {
+            let mut bytes = name.bytes();
+            if name.len() > 64
+                || !bytes
+                    .next()
+                    .is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+                || !bytes.all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-'))
+            {
+                return Err(Error::validation(
+                    "field names must match ^[A-Za-z_][A-Za-z0-9_.\\-]{0,63}$",
+                ));
+            }
             if let (FieldType::Duration, Some(unit)) = (field.kind, &field.unit) {
                 DurationUnit::try_from(unit.as_str())?;
             }
