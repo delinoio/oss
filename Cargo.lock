@@ -5367,7 +5367,7 @@ dependencies = [
 
 [[package]]
 name = "jsonllm"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "jsonllm-derive",
  "jsonllm-shared",
@@ -5377,7 +5377,7 @@ dependencies = [
 
 [[package]]
 name = "jsonllm-derive"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "proc-macro-crate 3.4.0",
  "proc-macro2",
@@ -5387,7 +5387,7 @@ dependencies = [
 
 [[package]]
 name = "jsonllm-shared"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "clairic-client",
  "serde",

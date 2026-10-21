@@ -8,6 +8,27 @@ use proc_macro2::{Span, TokenStream as Tokens};
 use quote::quote;
 use syn::{Data, DeriveInput, Fields, LitStr, parse_macro_input};
 
+/// Derive the `jsonllm::JsonGen` trait for a nonempty named struct.
+///
+/// Use this macro through the `jsonllm` facade. Every field type must implement
+/// `jsonllm::JsonField`; generic parameters and existing where clauses are
+/// preserved, with field-type bounds added to the generated implementation.
+/// A serde derive is not required, and serde attributes do not control mapping.
+///
+/// # Field attributes
+///
+/// - `#[jsonllm(rename = "wire_name")]` sets the request and answer name.
+/// - `#[jsonllm(instructions = "Extract this value")]` replaces instructions
+///   collected from the field's doc comments. Multiple doc lines are joined
+///   with newlines.
+///
+/// Names must match `[A-Za-z_][A-Za-z0-9_.-]{0,63}` and be unique within the
+/// struct. Raw identifiers use the name without `r#`. Unknown or duplicate
+/// options, struct-level attributes, enums, unions, empty structs, and tuple
+/// structs are rejected. Unsupported field types produce trait-bound errors.
+///
+/// See the [facade guide](https://docs.rs/jsonllm) for executable examples of
+/// generation, field attributes, generic structs, and custom scalar mappings.
 #[proc_macro_derive(JsonGen, attributes(jsonllm))]
 pub fn derive_json_gen(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
