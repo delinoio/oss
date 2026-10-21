@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -88,12 +88,6 @@ test("Selected release is manual, serialized, main-only and permission bounded",
   assert.equal(
     workflow.jobs.prepare.if,
     "github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main'",
-  );
-  assert.equal(
-    existsSync(
-      new URL("../../.github/workflows/auto-publish.yml", import.meta.url),
-    ),
-    false,
   );
 });
 
@@ -488,4 +482,86 @@ test("non-Cargo projects reach source validation and tagging without Cargo publi
       ].includes(project),
     );
   }
+});
+
+test("main pushes publish workspace crates with the verified prebuilt and no tag authority", () => {
+  const automatic = yaml.load(source(".github/workflows/publish-crates.yml"));
+  assert.deepEqual(automatic.on, { push: { branches: ["main"] } });
+  assert.deepEqual(automatic.permissions, { contents: "read" });
+  assert.deepEqual(automatic.concurrency, workflow.concurrency);
+  const job = automatic.jobs.publish;
+  assert.equal(job.if, workflow.jobs.prepare.if);
+  assert.equal(job["runs-on"], "ubuntu-latest");
+  assert.equal(job["timeout-minutes"], 60);
+  const checkout = job.steps.find((step) =>
+    step.uses?.startsWith("actions/checkout@"),
+  );
+  assert.deepEqual(checkout.with, {
+    ref: "${{ github.sha }}",
+    "fetch-depth": 0,
+    lfs: true,
+    "persist-credentials": false,
+  });
+  const prepare = job.steps.find((step) => step.id === "cargo-mono");
+  assert.equal(prepare.run, "node scripts/ci/cargo-mono-prebuilt.mjs");
+  const publish = job.steps.find(
+    (step) => step.name === "Publish unpublished workspace crates",
+  );
+  assert.equal(
+    publish.env.CARGO_MONO_BINARY,
+    "${{ steps.cargo-mono.outputs.binary }}",
+  );
+  assert.equal(
+    publish.env.CARGO_REGISTRY_TOKEN,
+    "${{ secrets.CARGO_REGISTRY_TOKEN }}",
+  );
+  assert.match(publish.run, /test -n "\$CARGO_REGISTRY_TOKEN"/u);
+  assert.match(publish.run, /"\$CARGO_MONO_BINARY" publish --all/u);
+  assert.ok(job.steps.indexOf(prepare) < job.steps.indexOf(publish));
+  assert.equal(publish["continue-on-error"], undefined);
+  assert.doesNotMatch(
+    JSON.stringify(automatic),
+    /cargo run|cargo install|git push|create-github-app-token|secrets\.DELINO_RELEASE_BOT/u,
+  );
+  for (const step of job.steps.filter((step) => step !== publish)) {
+    assert.doesNotMatch(JSON.stringify(step), /secrets\.CARGO_REGISTRY_TOKEN/u);
+  }
+});
+
+test("automatic publication rejects missing credentials and propagates upload failures", (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "workspace-publish-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const executable = path.join(directory, "cargo mono fixture");
+  const receipt = path.join(directory, "arguments");
+  writeFileSync(
+    executable,
+    `#!/bin/sh
+printf '%s\\n' "$@" > "$RECEIPT"
+exit 23
+`,
+    { mode: 0o700 },
+  );
+  const automatic = yaml.load(source(".github/workflows/publish-crates.yml"));
+  const step = automatic.jobs.publish.steps.find(
+    (step) => step.name === "Publish unpublished workspace crates",
+  );
+  const env = {
+    ...process.env,
+    CARGO_MONO_BINARY: executable,
+    RECEIPT: receipt,
+  };
+  const missing = spawnSync("bash", ["-e", "-c", step.run], {
+    env: { ...env, CARGO_REGISTRY_TOKEN: "" },
+    encoding: "utf8",
+  });
+  assert.equal(missing.status, 1);
+  assert.match(missing.stderr, /CARGO_REGISTRY_TOKEN is required/u);
+  assert.throws(() => readFileSync(receipt), { code: "ENOENT" });
+  const failed = spawnSync("bash", ["-e", "-c", step.run], {
+    env: { ...env, CARGO_REGISTRY_TOKEN: "fixture-token" },
+    encoding: "utf8",
+  });
+  assert.equal(failed.status, 23);
+  assert.equal(readFileSync(receipt, "utf8"), "publish\n--all\n");
+  assert.doesNotMatch(failed.stdout + failed.stderr, /fixture-token/u);
 });

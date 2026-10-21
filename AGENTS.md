@@ -33,6 +33,7 @@
 - Commit your work as frequent as possible using git. Do NOT use `--no-verify` flag.
 - Run `git commit` only after `git add`; once files are staged, commit without unnecessary delay so staged changes are preserved in history.
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
+- Workspace crate publication on main pushes uses the verified prebuilt cargo-mono and shares serialization with manual releases. Keep remote release-tag publication with its existing owner; follow `docs/repository-workflow-contract.md`.
 - CI changes must preserve default affected manual validation and exclude macOS runners from PRs, main pushes and affected manual runs. Do not add a full manual CI mode; retain owning release platform gates and follow `docs/repository-workflow-contract.md`.
 - Root `pnpm dev` is the DevHud team workflow. Documentation development uses `pnpm dev:public-docs` on the consolidated fixed port documented in `docs/apps-public-docs-foundation.md`; it fails on conflicts instead of automatically remapping a server.
 - Keep `.infisical.json`, `.dev-environment/`, real `.env` files, user credentials, and production/release/signing credentials uncommitted. Service-local `.env.example` files contain names, validation guidance, placeholders, and safe loopback defaults only; do not add a root environment example or expose internal secret paths in public product docs.
