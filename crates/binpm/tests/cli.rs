@@ -174,7 +174,7 @@ fn source_install_inside_project_announces_global_scope_before_failure() {
         ))
         .stdout(predicate::str::contains(format!(
             "project manifest detected: {}",
-            project.join("binpm.toml").display()
+            expected_project_path(&project, "binpm.toml").display()
         )))
         .stdout(predicate::str::contains("project manifest: not modified"))
         .stdout(predicate::str::contains(
@@ -190,6 +190,9 @@ fn structured_cache_ref_path(home: &Path, project: &Path, cmd: &str) -> PathBuf 
         .join(format!("{digest:x}.ref"))
 }
 
+// Child processes resolve their working directory through symlinks (for
+// example, /var to /private/var on macOS). Resolve the existing root before
+// joining paths that may not exist yet, such as manifest-only outputs.
 fn expected_project_path(project: &Path, relative: impl AsRef<Path>) -> std::path::PathBuf {
     fs::canonicalize(project)
         .expect("canonical project root")
@@ -765,22 +768,18 @@ fn add_manifest_only_writes_only_manifest_and_supports_additional_commands() {
         .stdout(predicate::str::contains("declared foo, bar"))
         .stdout(predicate::str::contains(format!(
             "manifest-only: did not update {}",
-            temp_dir.path().join("binpm.lock").display()
+            expected_project_path(temp_dir.path(), "binpm.lock").display()
         )))
         .stdout(predicate::str::contains(format!(
             "manifest-only: did not install executable {}",
-            temp_dir
-                .path()
-                .join(".binpm")
+            expected_project_path(temp_dir.path(), ".binpm")
                 .join("bin")
                 .join(local_executable_name("foo"))
                 .display()
         )))
         .stdout(predicate::str::contains(format!(
             "manifest-only: did not install executable {}",
-            temp_dir
-                .path()
-                .join(".binpm")
+            expected_project_path(temp_dir.path(), ".binpm")
                 .join("bin")
                 .join(local_executable_name("bar"))
                 .display()
@@ -2387,9 +2386,7 @@ version = "1.0.0"
 "#,
     )
     .expect("write manifest");
-    let expected_executable = temp_dir
-        .path()
-        .join(".binpm")
+    let expected_executable = expected_project_path(temp_dir.path(), ".binpm")
         .join("bin")
         .join(local_executable_name("tool"));
     let mut command = binpm();
@@ -2448,9 +2445,7 @@ version = "1.0.0"
     );
     assert_eq!(
         payload["declared_only_tools"][0]["expected_executable_path"],
-        temp_dir
-            .path()
-            .join(".binpm")
+        expected_project_path(temp_dir.path(), ".binpm")
             .join("bin")
             .join(local_executable_name("tool"))
             .display()
@@ -5118,6 +5113,7 @@ fn local_update_json_dry_run_reports_orphan_cleanup_paths() {
     let home = temp_dir.path().join("binpm-home");
     let project = temp_dir.path().join("project");
     fs::create_dir_all(project.join(".binpm").join("packages")).expect("create packages");
+    let project = fs::canonicalize(&project).expect("canonical project root");
     fs::create_dir_all(project.join(".binpm").join("bin")).expect("create bin directory");
     fs::create_dir_all(home.join("cache").join("refs")).expect("create cache refs");
     fs::write(project.join("binpm.toml"), "version = 1\n").expect("write manifest");

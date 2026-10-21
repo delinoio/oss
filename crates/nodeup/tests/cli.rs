@@ -66,7 +66,10 @@ fn closed_loopback_download_base_url() -> String {
 
 impl TestEnv {
     fn new() -> Self {
-        let root = tempfile::tempdir().unwrap().keep();
+        // Match the physical working directory used by child processes,
+        // including macOS temporary directories reached through /var ->
+        // /private/var.
+        let root = tempfile::tempdir().unwrap().keep().canonicalize().unwrap();
         let nodeup_root = root.join("nodeup");
         let data_root = nodeup_root.join("data");
         let cache_root = nodeup_root.join("cache");
