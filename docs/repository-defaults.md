@@ -39,6 +39,7 @@ Treat project IDs as stable enum-style values:
 
 ```ts
 enum ProjectId {
+  ClairicClient = "clairic-client",
   Binpm = "binpm",
   Bundlewhy = "bundlewhy",
   CargoMono = "cargo-mono",

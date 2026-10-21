@@ -60,6 +60,11 @@ Record new implementation status, validation results and unresolved limits in pu
 
 ## Project Catalog
 
+### clairic-client
+
+- [Project index](project-clairic-client.md)
+- [Rust client foundation](crates-clairic-client-foundation.md)
+
 ### bundlewhy
 
 - [Project index](project-bundlewhy.md)

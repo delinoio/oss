@@ -63,6 +63,8 @@
 
 ## Canonical Directory Map
 
+- `docs/project-clairic-client.md`: standalone Clairic Rust client project index.
+
 - `docs/project-bundlewhy.md`: bundlewhy bundler optimization debugger project index (Rust core, web UI, protocol, adapters).
 - `docs/project-typeopt.md`: typeopt Rust property optimizer project index.
 - `docs/project-typenative.md`: TypeNative native application framework project index.

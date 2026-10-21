@@ -30,6 +30,8 @@
 
 ## Owning contracts
 
+- [Clairic client foundation](../docs/crates-clairic-client-foundation.md)
+
 - [bundlewhy Rust foundation](../docs/crates-bundlewhy-foundation.md)
 - [typeopt Rust CLI foundation](../docs/crates-typeopt-foundation.md)
 

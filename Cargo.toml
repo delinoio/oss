@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = [
+    "crates/clairic-client",
     "crates/typeopt",
     "crates/bundlewhy",
     "crates/forge-tree-doc",
