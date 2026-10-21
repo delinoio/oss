@@ -141,6 +141,11 @@ Record new implementation status, validation results and unresolved limits in pu
 - [crates-serde-feather-core-foundation.md](crates-serde-feather-core-foundation.md)
 - [crates-serde-feather-macros-foundation.md](crates-serde-feather-macros-foundation.md)
 
+### jsonllm
+
+- [Project index](project-jsonllm.md)
+- [Rust foundation](crates-jsonllm-foundation.md)
+
 ### rustia
 
 - [project-rustia.md](project-rustia.md)

@@ -49,6 +49,7 @@ enum ProjectId {
   Runmoor = "runmoor",
   SerdeFeather = "serde-feather",
   Rustia = "rustia",
+  Jsonllm = "jsonllm",
   PublicDocs = "public-docs",
   DevHud = "devhud",
   AsyncCommitHook = "async-commit-hook",

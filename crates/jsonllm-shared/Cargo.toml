@@ -1,0 +1,16 @@
+[package]
+name = "jsonllm-shared"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Shared field mapping and decoding for jsonllm"
+homepage = "https://github.com/delinoio/oss/tree/main/crates/jsonllm-shared"
+repository = "https://github.com/delinoio/oss"
+readme = "README.md"
+publish = true
+
+[dependencies]
+clairic-client = "0.1.0"
+serde = "1"
+serde_json = "1"
+thiserror = "2"

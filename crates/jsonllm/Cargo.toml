@@ -1,0 +1,18 @@
+[package]
+name = "jsonllm"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Generate typed Rust values through Clairic"
+homepage = "https://github.com/delinoio/oss/tree/main/crates/jsonllm"
+repository = "https://github.com/delinoio/oss"
+readme = "README.md"
+publish = true
+
+[dependencies]
+jsonllm-shared = { version = "0.1.0", path = "../jsonllm-shared" }
+jsonllm-derive = { version = "0.1.0", path = "../jsonllm-derive" }
+tracing = "0.1"
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util"] }
