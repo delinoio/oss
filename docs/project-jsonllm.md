@@ -13,6 +13,7 @@ Generate typed Rust values from text or images through Clairic with only `#[deri
 - `crates/jsonllm-shared`: field mapping and response decoding contracts.
 - `crates/jsonllm-derive`: derive macro expansion.
 - `crates/jsonllm`: public facade and asynchronous generation.
+  Its `examples/invoice.rs` is the runnable live extraction example; its README owns user setup and troubleshooting.
 
 ## Domain Contract Documents
 

@@ -41,6 +41,8 @@ Run `cargo test -p jsonllm-shared -p jsonllm-derive -p jsonllm` and root `cargo 
 
 ## Dependencies and Integrations
 
+The facade's `examples/invoice.rs` performs one live `Invoice::generate` call using `CLOUDFLARE_ACCOUNT_ID` and `CLOUDFLARE_API_TOKEN`. It checks a fixed public invoice's string, number, list and optional-null fields and exits unsuccessfully on configuration, generation or value mismatch. It prints only the verified sample and sanitized errors, without credentials or raw upstream debug output. Its README documents token creation, account scoping, execution, expected output, troubleshooting and cleanup. Live inference is an explicit manual check, separate from credential-free Cargo tests; it does not retry billable requests.
+
 Use clairic-client 0.1, serde_json, serde, tracing, thiserror, syn, quote and proc-macro-crate. Runtime depends on shared and derive; shared has no macro dependency.
 
 Publish with `cargo mono publish --package jsonllm-shared --package jsonllm-derive --package jsonllm`. The selected packages are ordered by their dependencies. First publication requires registry credentials and available crate names; dependent dry runs need the dependencies published or a local registry fixture.
