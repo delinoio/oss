@@ -1,0 +1,44 @@
+name: Publish crates
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+# Share the registry lock with manual releases. Never interrupt an upload.
+concurrency:
+  group: release-project
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          lfs: true
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+      - name: Prepare verified prebuilt cargo-mono
+        id: cargo-mono
+        run: node scripts/ci/cargo-mono-prebuilt.mjs
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: nightly-2026-09-28
+      - name: Publish unpublished workspace crates
+        env:
+          CARGO_MONO_BINARY: ${{ steps.cargo-mono.outputs.binary }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: |
+          test -n "$CARGO_REGISTRY_TOKEN" || { echo 'CARGO_REGISTRY_TOKEN is required' >&2; exit 1; }
+          echo "Publishing workspace crates from $(git rev-parse HEAD)"
+          "$CARGO_MONO_BINARY" publish --all
