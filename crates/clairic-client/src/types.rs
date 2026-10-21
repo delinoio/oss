@@ -21,6 +21,52 @@ pub enum FieldType {
     Forecast,
 }
 
+/// Supported duration units. Omitted duration units default to seconds
+/// upstream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DurationUnit {
+    Seconds,
+    Minutes,
+    Hours,
+    Days,
+    Weeks,
+    Months,
+    Years,
+}
+
+impl DurationUnit {
+    /// Return the API unit label, also suitable for `Field::unit`.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Seconds => "seconds",
+            Self::Minutes => "minutes",
+            Self::Hours => "hours",
+            Self::Days => "days",
+            Self::Weeks => "weeks",
+            Self::Months => "months",
+            Self::Years => "years",
+        }
+    }
+}
+
+impl TryFrom<&str> for DurationUnit {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        match value {
+            "seconds" => Ok(Self::Seconds),
+            "minutes" => Ok(Self::Minutes),
+            "hours" => Ok(Self::Hours),
+            "days" => Ok(Self::Days),
+            "weeks" => Ok(Self::Weeks),
+            "months" => Ok(Self::Months),
+            "years" => Ok(Self::Years),
+            _ => Err(Error::validation("unsupported duration unit")),
+        }
+    }
+}
+
 /// Element type of a list field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -272,6 +318,9 @@ impl Request {
             return Err(Error::validation("images exceed 8 MiB in total"));
         }
         for field in self.fields.values() {
+            if let (FieldType::Duration, Some(unit)) = (field.kind, &field.unit) {
+                DurationUnit::try_from(unit.as_str())?;
+            }
             if field.kind == FieldType::List && field.items.is_none() {
                 return Err(Error::validation("list fields require items"));
             }

@@ -347,3 +347,48 @@ fn rejects_invalid_estimate_ranges() {
             .is_err()
     );
 }
+
+#[tokio::test]
+async fn validates_duration_units_before_network_access() {
+    let client = Client::with_endpoint(
+        "account",
+        "token",
+        "http://127.0.0.1:1/",
+        Duration::from_secs(1),
+    )
+    .unwrap();
+    for unit in ["day", "", "SECONDS", "fortnights", " seconds"] {
+        let mut field = Field::new(FieldType::Duration);
+        field.unit = Some(unit.into());
+        let req = Request::new("Two days").with_field("duration", field);
+        assert!(matches!(client.run(&req).await, Err(Error::Validation(_))));
+    }
+    for unit in [
+        DurationUnit::Seconds,
+        DurationUnit::Minutes,
+        DurationUnit::Hours,
+        DurationUnit::Days,
+        DurationUnit::Weeks,
+        DurationUnit::Months,
+        DurationUnit::Years,
+    ] {
+        let label = unit.as_str();
+        assert_eq!(DurationUnit::try_from(label).unwrap(), unit);
+        assert_eq!(serde_json::to_value(unit).unwrap(), label);
+        let field: Field = serde_json::from_value(json!({"type":"duration","unit":label})).unwrap();
+        Request::new("Two days")
+            .with_field("duration", field)
+            .validate()
+            .unwrap();
+    }
+    Request::new("Two days")
+        .with_field("duration", Field::new(FieldType::Duration))
+        .validate()
+        .unwrap();
+    let mut number = Field::new(FieldType::Number);
+    number.unit = Some("USD per item".into());
+    Request::new("USD 10 per item")
+        .with_field("price", number)
+        .validate()
+        .unwrap();
+}

@@ -40,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 ## Field definitions and images
 
-`FieldType` covers `Text`, `Number`, `Date`, `Time`, `Datetime`, `Duration`, `List`, `Estimate`, and `Forecast`. Set public optional fields to configure units, precision, null thresholds, bounds, grid steps, scales, horizons, and intervals. List fields need `items`; estimates and forecasts need `min` and `max`.
+`FieldType` covers `Text`, `Number`, `Date`, `Time`, `Datetime`, `Duration`, `List`, `Estimate`, and `Forecast`. Set public optional fields to configure units, precision, null thresholds, bounds, grid steps, scales, horizons, and intervals. For duration fields, set `unit` with `DurationUnit::Days.as_str().to_owned()` (or another enum variant). Only seconds, minutes, hours, days, weeks, months, and years are accepted; omitting the unit uses the server default of seconds. Numeric fields still accept arbitrary unit labels such as `USD`. List fields need `items`; estimates and forecasts need `min` and `max`.
 
 ```rust
 use clairic_client::{Bound, Field, FieldType, Image, ImageType, ListItemType, Request, Step};
