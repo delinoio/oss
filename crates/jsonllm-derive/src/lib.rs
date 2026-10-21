@@ -78,14 +78,12 @@ fn expand(input: &DeriveInput, path: &Tokens) -> syn::Result<Tokens> {
                     *target = Some(meta.value()?.parse()?);
                     Ok(())
                 })?;
-            } else if attr.path().is_ident("doc") {
-                if let syn::Meta::NameValue(meta) = &attr.meta {
-                    if let syn::Expr::Lit(expr) = &meta.value {
-                        if let syn::Lit::Str(value) = &expr.lit {
-                            docs.push(value.value().trim().to_owned());
-                        }
-                    }
-                }
+            } else if attr.path().is_ident("doc")
+                && let syn::Meta::NameValue(meta) = &attr.meta
+                && let syn::Expr::Lit(expr) = &meta.value
+                && let syn::Lit::Str(value) = &expr.lit
+            {
+                docs.push(value.value().trim().to_owned());
             }
         }
         let rust_name = ident.to_string();
