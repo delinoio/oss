@@ -25,5 +25,3 @@
 - [React Forge SFX contract](../docs/packages-react-forge-sfx-contract.md)
 - [Project: devhud](../docs/project-devhud.md)
 - [pnport](../docs/project-pnport.md)
-
-- [TypeNative SDK and CLI](../docs/packages-typenative-foundation.md)

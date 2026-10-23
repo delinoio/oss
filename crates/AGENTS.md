@@ -63,5 +63,3 @@
 - [Project: serde-feather](../docs/project-serde-feather.md)
 - [Project: with-watch](../docs/project-with-watch.md)
 - [Repository License Contract](../docs/repository-license-contract.md)
-
-- [TypeNative native host](../docs/crates-typenative-foundation.md)
