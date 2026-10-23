@@ -153,13 +153,13 @@ jobs:
         run: |
           node packages/pnport/scripts/benchmark.mjs "$RUNNER_TEMP/pnport-typescript" "$RUNNER_TEMP/pnport-benchmark" "packages/pnport/dist/$PNPORT_SUFFIX/bin/pnport" "$PNPORT_REVISION"
       - name: Save candidate numeric benchmark results
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: pnport-benchmark-${{ matrix.suffix }}-${{ needs.prepare.outputs.revision }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/pnport-benchmark/benchmark.json
           if-no-files-found: error
           retention-days: 30
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: pnport-native-${{ matrix.suffix }}
           path: packages/pnport/dist/
@@ -181,7 +181,7 @@ jobs:
         with:
           version: 10.26.2
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           pattern: pnport-native-*
           path: packages/pnport/dist/native
@@ -194,7 +194,7 @@ jobs:
           node packages/pnport/scripts/publish.mjs
           node packages/pnport/scripts/github-release.mjs
           node packages/pnport/scripts/homebrew.mjs
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: pnport-complete-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
           path: packages/pnport/dist/
@@ -217,7 +217,7 @@ jobs:
         with:
           node-version-file: .nvmrc
       - run: npm install --global npm@11.6.2 --ignore-scripts --no-audit --no-fund
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: pnport-complete-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
           path: packages/pnport/dist
@@ -239,7 +239,7 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: pnport-complete-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
           path: packages/pnport/dist
@@ -267,7 +267,7 @@ jobs:
         with:
           version: 10.26.2
       - run: pnpm install --frozen-lockfile --ignore-scripts
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: pnport-complete-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
           path: packages/pnport/dist

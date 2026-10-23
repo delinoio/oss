@@ -111,7 +111,7 @@ jobs:
           NODE
 
       - name: Upload bounded metadata report
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: devhud-cef-security-review-${{ github.run_id }}-${{ github.run_attempt }}
           path: devhud-cef-security-review.json
