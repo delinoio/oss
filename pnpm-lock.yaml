@@ -308,7 +308,7 @@ importers:
         version: link:../../packages/docs-site-switcher
       '@rspress/core':
         specifier: 2.0.14
-        version: 2.0.14(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
+        version: 2.0.14(@rspack/core@2.2.9(@swc/helpers@0.5.23))(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)
       entities:
         specifier: 6.0.1
         version: 6.0.1
@@ -428,7 +428,7 @@ importers:
     dependencies:
       '@modelcontextprotocol/sdk':
         specifier: 1.32.0
-        version: 1.32.0(zod@4.6.5)
+        version: 1.32.0(zod@4.6.6)
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
@@ -445,8 +445,8 @@ importers:
         specifier: 11.1.1
         version: 11.1.1
       zod:
-        specifier: 4.6.5
-        version: 4.6.5
+        specifier: 4.6.6
+        version: 4.6.6
     devDependencies:
       '@types/node':
         specifier: 24.10.1
@@ -3456,8 +3456,8 @@ packages:
     peerDependencies:
       zod: ^3.25.28 || ^4
 
-  zod@4.6.5:
-    resolution: {integrity: sha512-v5l/aFXZQeai4awLbOpSoHecE9UiMrnfx75tEXLjNonXVARxQ5mOeipTjROUchszUNCqnE+hqAMujRsRHsut2Q==}
+  zod@4.6.6:
+    resolution: {integrity: sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA==}
 
   zwitch@2.0.4:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
@@ -3995,7 +3995,7 @@ snapshots:
       '@types/react': 19.2.14
       react: 19.2.8
 
-  '@modelcontextprotocol/sdk@1.32.0(zod@4.6.5)':
+  '@modelcontextprotocol/sdk@1.32.0(zod@4.6.6)':
     dependencies:
       '@hono/node-server': 2.1.1(hono@4.13.9)
       ajv: 8.20.0
@@ -4012,8 +4012,8 @@ snapshots:
       json-schema-typed: 8.0.2
       pkce-challenge: 5.0.1
       raw-body: 3.0.2
-      zod: 4.6.5
-      zod-to-json-schema: 3.25.2(zod@4.6.5)
+      zod: 4.6.6
+      zod-to-json-schema: 3.25.2(zod@4.6.6)
     transitivePeerDependencies:
       - supports-color
 
@@ -4279,7 +4279,7 @@ snapshots:
     optionalDependencies:
       '@rspack/core': 2.2.9(@swc/helpers@0.5.23)
 
-  '@rspress/core@2.0.14(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)':
+  '@rspress/core@2.0.14(@rspack/core@2.2.9(@swc/helpers@0.5.23))(@types/mdast@4.0.4)(@types/react@19.2.14)(micromark-util-types@2.0.2)(micromark@4.0.2)':
     dependencies:
       '@mdx-js/mdx': 3.1.1
       '@mdx-js/react': 3.1.1(@types/react@19.2.14)(react@19.2.8)
@@ -6799,10 +6799,10 @@ snapshots:
 
   xmlchars@2.2.0: {}
 
-  zod-to-json-schema@3.25.2(zod@4.6.5):
+  zod-to-json-schema@3.25.2(zod@4.6.6):
     dependencies:
-      zod: 4.6.5
+      zod: 4.6.6
 
-  zod@4.6.5: {}
+  zod@4.6.6: {}
 
   zwitch@2.0.4: {}
