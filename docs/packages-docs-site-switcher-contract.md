@@ -8,8 +8,8 @@
 
 ## Interfaces and Contracts
 
-- `DocumentationSiteId` is the stable enum for `PublicDocs`, `Runmoor`, `Nodeup`, `Binpm`, `AsyncCommitHook`, `Clibox`, `Pnport`, `ReactForge`, and `Bundlewhy`.
-- `DOCUMENTATION_SITES` is the fixed registry of user-facing labels and same-origin destinations: `/`, `/runmoor/`, `/nodeup/`, `/binpm/`, `/async-commit-hook/`, `/clibox/`, `/pnport/`, `/react-forge/`, and `/bundlewhy/`.
+- `DocumentationSiteId` is the stable enum for `PublicDocs`, `Runmoor`, `Nodeup`, `Binpm`, `AsyncCommitHook`, `Clibox`, `Pnport`, and `Bundlewhy`.
+- `DOCUMENTATION_SITES` is the fixed registry of user-facing labels and same-origin destinations: `/`, `/runmoor/`, `/nodeup/`, `/binpm/`, `/async-commit-hook/`, `/clibox/`, `/pnport/`, and `/bundlewhy/`.
 - Production destinations remain clean same-origin subpaths. The consolidated `public-docs` development server uses fixed loopback port `46302`; selector activation remains on that server and uses the same production-relative destinations, so development behavior does not create hydration differences.
 - `DocsSiteSwitcher` renders a button and a `menu` of `menuitem` links. The selected destination carries `aria-current="page"`; the trigger exposes `aria-expanded` and controls the menu.
 - The selector supports arrow-key and Home/End navigation, Enter activation, Escape close, outside-click close, and focus return to the trigger.
@@ -29,13 +29,9 @@
 
 ## Package integration
 
-- `packages/docs-site-switcher`: shared accessible documentation site selector used by the consolidated Public Docs root and all eight project content sections. Follow `packages-docs-site-switcher-contract.md`; keep its fixed site registry, enum IDs, keyboard behavior, focus management, and active-route semantics synchronized across consumers.
+- `packages/docs-site-switcher`: shared accessible documentation site selector used by the consolidated Public Docs root and all seven project content sections. Follow `packages-docs-site-switcher-contract.md`; keep its fixed site registry, enum IDs, keyboard behavior, focus management, and active-route semantics synchronized across consumers.
 
 ## Change Triggers
 
 - Update this contract and `docs/README.md` when a documentation destination, public label, accessibility contract, or package ownership changes.
 - Update `docs/apps-public-docs-foundation.md` when the shared selector changes the consolidated documentation surface.
-
-React Forge now has eighteen clean guide routes, including unreleased `/react-forge/formats/glb/` and `/react-forge/formats/fbx/`. The shared selector destination remains `/react-forge/`; its active state and existing documentation hosts are unchanged. See `apps-react-forge-docs-foundation.md` for availability and validation boundaries.
-
-The React Forge `/formats/sfx/` guide uses the existing `/react-forge/` registry entry and selected-site state. It adds no new site or selector destination.

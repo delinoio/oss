@@ -127,59 +127,6 @@ const bundlewhyPages = [
   { text: "Troubleshooting", link: "/bundlewhy/troubleshooting" },
 ];
 
-const reactForgeGroups = [
-  {
-    text: "Start",
-    items: [
-      {
-        text: "Overview",
-        link: "/react-forge/",
-        activeMatch: "^/react-forge/$",
-      },
-      { text: "Installation", link: "/react-forge/installation" },
-      { text: "Getting Started", link: "/react-forge/getting-started" },
-      { text: "Sessions and Common API", link: "/react-forge/sessions" },
-    ],
-  },
-  {
-    text: "Create Documents",
-    items: [
-      { text: "PPTX", link: "/react-forge/formats/pptx/" },
-      { text: "DOCX", link: "/react-forge/formats/docx/" },
-      { text: "XLSX", link: "/react-forge/formats/xlsx/" },
-      { text: "PDF", link: "/react-forge/formats/pdf/" },
-    ],
-  },
-  {
-    text: "Edit and Automate",
-    items: [
-      { text: "Office Editing", link: "/react-forge/office-editing" },
-      { text: "Figma Design", link: "/react-forge/formats/figma/" },
-      { text: "CLI", link: "/react-forge/cli" },
-      { text: "Local MCP", link: "/react-forge/mcp" },
-    ],
-  },
-  {
-    text: "More Formats",
-    items: [
-      { text: "GLB", link: "/react-forge/formats/glb/" },
-      { text: "FBX", link: "/react-forge/formats/fbx/" },
-      { text: "Game SFX", link: "/react-forge/formats/sfx/" },
-      { text: "Pixel Sprites", link: "/react-forge/formats/sprite/" },
-    ],
-  },
-  {
-    text: "Help",
-    items: [
-      {
-        text: "Limits and Troubleshooting",
-        link: "/react-forge/limits-and-troubleshooting",
-      },
-      { text: "Releases and Validation", link: "/react-forge/releases" },
-    ],
-  },
-];
-
 const projectPages = [
   { text: "Runmoor", link: "/runmoor/", activeMatch: "^/runmoor" },
   { text: "Nodeup", link: "/nodeup/", activeMatch: "^/nodeup" },
@@ -242,7 +189,6 @@ export default defineConfig({
       ],
       "/clibox/": [{ text: "clibox", items: cliboxPages }],
       "/pnport/": [{ text: "pnport", items: pnportPages }],
-      "/react-forge/": reactForgeGroups,
       "/bundlewhy/": [{ text: "bundlewhy", items: bundlewhyPages }],
       "/runmoor/": [{ text: "Runmoor", items: runmoorPages }],
       "/nodeup/": [{ text: "Nodeup", items: nodeupPages }],

@@ -26,13 +26,9 @@ A rerun accepted before a startup failure shows its run ID, diagnostic, recovery
 
 ### Application integration
 
-- `apps/public-docs`: Rspress static public documentation app, including the `docs/binpm`, `docs/nodeup`, `docs/runmoor`, `docs/async-commit-hook`, `docs/clibox`, `docs/pnport`, and `docs/react-forge` content roots.
+- `apps/public-docs`: Rspress static public documentation app, including the `docs/binpm`, `docs/nodeup`, `docs/runmoor`, `docs/async-commit-hook`, `docs/clibox`, `docs/pnport` content roots.
 
-- `public-docs` is the sole production documentation publisher. It builds the `docs/runmoor`, `docs/nodeup`, `docs/binpm`, `docs/async-commit-hook`, `docs/clibox`, `docs/pnport`, and `docs/react-forge` content roots directly below their same-name canonical subpaths; no package-local documentation workspaces or output directories are independently published.
-
-- Every assembled documentation page must expose the shared site selector for Delino OSS, Runmoor, Nodeup, binpm, async-commit-hook, clibox, pnport, and React Forge. Production and the consolidated development server at port `46302` use the same clean relative destinations; never remap project links to retired per-project ports. It must expose `aria-expanded` and `aria-current`, support keyboard selection, Escape/outside-click close, and focus return.
-
-- Nodeup, binpm, Runmoor, async-commit-hook, clibox, pnport, and React Forge are exposed from `apps/public-docs/docs` through canonical same-origin subpaths `/nodeup`, `/binpm`, `/runmoor`, `/async-commit-hook`, `/clibox`, `/pnport`, and `/react-forge`. Their Markdown is owned directly by these content roots and must not be duplicated elsewhere. pnport's guides describe verified 0.1.2 availability with known macOS failures and incomplete full acceptance; future availability changes require verified distribution.
+- `public-docs` is the sole production documentation publisher. It builds the `docs/runmoor`, `docs/nodeup`, `docs/binpm`, `docs/async-commit-hook`, `docs/clibox`, `docs/pnport` content roots directly below their same-name canonical subpaths; no package-local documentation workspaces or output directories are independently published.
 
 - Public-docs `build`, `build:frontend`, and `ci:routes` must hash all eight canonical `scripts/install/{nodeup,binpm,async-commit-hook,pnport}.{sh,ps1}` sources through package-local external inputs. Preserve inherited build inputs, dependencies, outputs, and deterministic caching; installer changes must not invalidate unrelated workspace caches.
 
@@ -44,7 +40,7 @@ A rerun accepted before a startup failure shows its run ID, diagnostic, recovery
 
 - Documentation development uses the consolidated `127.0.0.1:46302` public-docs server. Preserve all migrated guide sections, the `/docs` section-link migration, and installer bytes. The async release workflow validates the consolidated docs but does not deploy a standalone site.
 
-- The canonical public-docs production origin is `https://oss.delino.io`; shared Linux package guidance is `https://oss.delino.io/linux-packages`. Consolidated project documentation uses the same origin with `/runmoor`, `/nodeup`, `/binpm`, `/async-commit-hook`, `/clibox`, `/pnport`, and `/react-forge` prefixes.
+- The canonical public-docs production origin is `https://oss.delino.io`; shared Linux package guidance is `https://oss.delino.io/linux-packages`. Consolidated project documentation uses the same origin with `/runmoor`, `/nodeup`, `/binpm`, `/async-commit-hook`, `/clibox`, `/pnport` prefixes.
 
 - Public-docs cached `build`, `build:frontend`, and `ci:routes` tasks must hash the eight canonical `scripts/install/{nodeup,binpm,async-commit-hook,pnport}.{sh,ps1}` sources. Preserve inherited build inputs, generated outputs, and exact installer byte checks; CI job selection alone does not invalidate task caches.
 

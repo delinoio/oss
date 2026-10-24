@@ -18,7 +18,6 @@ on:
             clibox,
             pnport,
             async-commit-hook,
-            react-forge,
           ]
       bump:
         description: SemVer increment (next is pnport only)

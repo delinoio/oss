@@ -17,7 +17,6 @@ export enum DocumentationSiteId {
   AsyncCommitHook = "async-commit-hook",
   Clibox = "clibox",
   Pnport = "pnport",
-  ReactForge = "react-forge",
   Bundlewhy = "bundlewhy",
 }
 
@@ -62,11 +61,6 @@ export const DOCUMENTATION_SITES = [
     id: DocumentationSiteId.Pnport,
     label: "pnport",
     href: "/pnport/",
-  },
-  {
-    id: DocumentationSiteId.ReactForge,
-    label: "React Forge",
-    href: "/react-forge/",
   },
   {
     id: DocumentationSiteId.Bundlewhy,

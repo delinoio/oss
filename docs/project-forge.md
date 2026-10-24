@@ -11,6 +11,7 @@ Create and edit Office documents through a typed, validated document tree withou
 ## Domain Ownership Map
 
 - `crates/forge-tree-doc`: `forge_tree_doc`, the format-independent presentation DSL, validation, layout, and transactional patches.
+- `crates/forge-package`: bounded ZIP/XML package primitives shared by the presentation engine.
 - `crates/forge-pptx`: PPTX generation, import, package preservation, and embedded Forge metadata.
 - `crates/delino-forge`: CLI, stdio MCP, local revision store, and optional preview subprocesses.
 
@@ -20,7 +21,7 @@ Create and edit Office documents through a typed, validated document tree withou
 
 ## Cross-Domain Invariants
 
-- Rust is explicitly selected instead of the repository's default Go. All three crates remain `publish = false`.
+- Rust is explicitly selected instead of the repository's default Go. All four crates remain `publish = false`.
 - Files, assets, and revisions remain in user-owned local storage instead of R2. There is no cloud service, telemetry, internal LLM, or implicit network asset retrieval.
 - CLI and MCP use the same implementation. `stdout` is reserved for JSON results or MCP protocol; redacted structured logs use `stderr`.
 - Supported edits preserve unrelated original package parts and unsupported XML. Unsupported edits fail explicitly rather than flattening or dropping content.
@@ -30,11 +31,11 @@ Create and edit Office documents through a typed, validated document tree withou
 
 ## Implementation Status
 
-PPTX v1 is implemented in the three private crates. See the Rust contract for supported preservation boundaries, schema/examples, local verification evidence and the pending hosted CI matrix. Local usage is documented in `crates/delino-forge/README.md`.
+PPTX v1 is implemented in the four private crates. See the Rust contract for supported preservation boundaries, schema/examples, local verification evidence and the pending hosted CI matrix. Local usage is documented in `crates/delino-forge/README.md`.
 
 ## Project requirements
 
-- `forge` -> `crates/forge-tree-doc`, `crates/forge-pptx`, `crates/delino-forge`; follow `project-forge.md` and `crates-forge-foundation.md`. Keep all three packages private, local-only, and preserve unsupported PPTX content during supported edits. Opened documents export to a separate path; reject replacement of their tracked source even with explicit overwrite. CLI/MCP share one core; optional preview is not a generation dependency.
+- `forge` -> `crates/forge-tree-doc`, `crates/forge-package`, `crates/forge-pptx`, `crates/delino-forge`; follow `project-forge.md` and `crates-forge-foundation.md`. Keep all four packages private, local-only, and preserve unsupported PPTX content during supported edits. Opened documents export to a separate path; reject replacement of their tracked source even with explicit overwrite. CLI/MCP share one core; optional preview is not a generation dependency.
 
 ## Change Policy
 

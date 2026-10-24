@@ -104,11 +104,6 @@ export function matricesForEvent(event, mode = Mode.Affected) {
         (row) => row.os !== "macos",
       ),
     },
-    reactForgeMatrix: {
-      include: nativeMatrices["react-forge"].filter(
-        (row) => row.platform !== "darwin",
-      ),
-    },
     pnportMatrix: {
       include: pnportMatrix.include.filter(
         (row) => !row.runner.startsWith("macos"),
@@ -283,7 +278,6 @@ export function main(env = process.env) {
     forced: JSON.stringify(plan.forced),
     go_test_matrix: JSON.stringify(matrices.goTestMatrix),
     desktop_matrix: JSON.stringify(matrices.desktopMatrix),
-    react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix),
     pnport_matrix: JSON.stringify(matrices.pnportMatrix),
   };
   appendFileSync(

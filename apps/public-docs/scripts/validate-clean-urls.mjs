@@ -141,60 +141,6 @@ const pnportHeadings = {
   ],
 };
 
-const reactForgeHeadings = {
-  "/react-forge/": [
-    "React Forge",
-    "Start with a presentation",
-    "Where it runs",
-    "Choose a workflow",
-  ],
-  "/react-forge/installation": [
-    "Install React Forge",
-    "Requirements",
-    "Verify the installation",
-  ],
-  "/react-forge/getting-started": ["Getting started", "Next steps"],
-  "/react-forge/sessions": [
-    "Sessions and common API",
-    "Fonts and assets",
-    "Inspection and measurement",
-    "Lifecycle and diagnostics",
-  ],
-  "/react-forge/formats/pptx/": ["Author PPTX presentations"],
-  "/react-forge/formats/docx/": ["Author DOCX documents"],
-  "/react-forge/formats/xlsx/": ["Author XLSX workbooks"],
-  "/react-forge/formats/pdf/": ["Author tagged PDF"],
-  "/react-forge/formats/sfx/": ["Game sound effects (WAV)"],
-  "/react-forge/formats/sprite/": [
-    "Pixel sprites and animation",
-    "Create an animated sprite",
-    "Limits and boundaries",
-  ],
-  "/react-forge/office-editing": ["Edit existing Office files"],
-  "/react-forge/formats/figma/": [
-    "Figma Design creation and editing",
-    "Reopen and edit",
-    "Publication outcomes and receipts",
-  ],
-  "/react-forge/cli": ["One-shot CLI tasks"],
-  "/react-forge/mcp": [
-    "Local MCP sessions",
-    "Typical local document sequence",
-    "Figma and failure recovery",
-  ],
-  "/react-forge/limits-and-troubleshooting": [
-    "Limits and troubleshooting",
-    "Common failures",
-    "Boundaries",
-  ],
-  "/react-forge/releases": [
-    "Releases and validation",
-    "Choose by availability",
-    "Validation scope",
-    "Update or roll back",
-  ],
-};
-
 const bundlewhyHeadings = {
   "/bundlewhy/": [
     "bundlewhy",
@@ -284,11 +230,7 @@ const stableRouteIds = [
   "/with-watch",
 ];
 const projectSlugs = Object.keys(projectRoutes).filter(
-  (slug) =>
-    slug !== "clibox" &&
-    slug !== "pnport" &&
-    slug !== "react-forge" &&
-    slug !== "bundlewhy",
+  (slug) => slug !== "clibox" && slug !== "pnport" && slug !== "bundlewhy",
 );
 
 const outputDir = path.resolve("doc_build");
@@ -356,7 +298,6 @@ async function collectHtmlFiles(directory, depth = 0) {
 const htmlFiles = await collectHtmlFiles(outputDir);
 const failures = [];
 
-// Existing project sections have separate validators. clibox, pnport, React Forge, and bundlewhy also
 // use the strict article/resource checks below, with exact route exceptions.
 for (const slug of projectSlugs) {
   if (!(await pathExists(path.join(outputDir, slug)))) {
@@ -371,7 +312,6 @@ function attributeValue(match) {
 const requiredHeadings = new Map([
   ...Object.entries(cliboxHeadings),
   ...Object.entries(pnportHeadings),
-  ...Object.entries(reactForgeHeadings),
   ...Object.entries(bundlewhyHeadings),
   ["/devhud", ["DevHud"]],
   [
@@ -482,43 +422,6 @@ const requiredLinks = new Map([
   ],
   ["/pnport/diagnostics", ["/pnport/cache"]],
   [
-    "/react-forge/",
-    [
-      "/react-forge/installation",
-      "/react-forge/getting-started",
-      "/react-forge/sessions",
-      "/react-forge/formats/pptx/",
-      "/react-forge/formats/docx/",
-      "/react-forge/formats/xlsx/",
-      "/react-forge/formats/pdf/",
-      "/react-forge/office-editing",
-      "/react-forge/formats/figma/",
-      "/react-forge/cli",
-      "/react-forge/mcp",
-      "/react-forge/formats/sfx/",
-      "/react-forge/formats/sprite/",
-      "/react-forge/limits-and-troubleshooting",
-      "/react-forge/releases",
-    ],
-  ],
-  [
-    "/react-forge/installation",
-    [
-      "/react-forge/getting-started",
-      "/react-forge/releases",
-      "/react-forge/formats/figma/",
-    ],
-  ],
-  [
-    "/react-forge/formats/figma/",
-    [
-      "/react-forge/cli",
-      "/react-forge/mcp",
-      "/react-forge/limits-and-troubleshooting",
-    ],
-  ],
-  ["/react-forge/mcp", ["/react-forge/formats/figma/"]],
-  [
     "/bundlewhy/",
     [
       "/bundlewhy/installation",
@@ -553,7 +456,6 @@ const requiredLinks = new Map([
       "https://oss.delino.io/async-commit-hook/",
       "https://oss.delino.io/clibox/",
       "https://oss.delino.io/pnport/",
-      "https://oss.delino.io/react-forge/",
       "https://oss.delino.io/bundlewhy/",
     ],
   ],
@@ -566,7 +468,6 @@ const requiredLinks = new Map([
       "https://oss.delino.io/async-commit-hook/",
       "https://oss.delino.io/clibox/",
       "https://oss.delino.io/pnport/",
-      "https://oss.delino.io/react-forge/",
       "https://oss.delino.io/bundlewhy/",
     ],
   ],
@@ -1211,27 +1112,6 @@ for (const [routeId, headings] of requiredHeadings) {
   }
   if (!/<main\b[^>]*>/iu.test(pageContents))
     failures.push(`${routeId} is missing a main landmark`);
-}
-
-for (const routeId of [
-  "/react-forge/formats/glb/",
-  "/react-forge/formats/fbx/",
-  "/react-forge/formats/sfx/",
-  "/react-forge/formats/sprite/",
-]) {
-  const route = routeOutputFiles.find((entry) => entry.routeId === routeId);
-  const contents = route ? await readFile(route.outputFile, "utf8") : "";
-  const introduction = visibleText(articleContent(contents)).slice(0, 550);
-  if (!/\bAvailable in npm 0\.2\.0\b/iu.test(introduction)) {
-    failures.push(
-      `${routeId} is missing its main-content npm 0.2.0 availability notice`,
-    );
-  }
-  if (/\bUnreleased\b|not included in npm/iu.test(introduction)) {
-    failures.push(
-      `${routeId} still identifies the format as unreleased or unavailable`,
-    );
-  }
 }
 
 for (const [routeId, links] of requiredLinks) {
