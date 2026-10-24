@@ -54,7 +54,6 @@ enum ProjectId {
   DevHud = "devhud",
   AsyncCommitHook = "async-commit-hook",
   Forge = "forge",
-  ReactForge = "react-forge",
 }
 ```
 

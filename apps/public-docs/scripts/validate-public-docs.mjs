@@ -18,14 +18,12 @@ const selectorDestinations = [
   "/async-commit-hook/",
   "/clibox/",
   "/pnport/",
-  "/react-forge/",
   "/bundlewhy/",
 ];
 const projectSecuritySlugs = new Set([
   "runmoor",
   "async-commit-hook",
   "pnport",
-  "react-forge",
   "bundlewhy",
 ]);
 const forbiddenProjectContent = [
@@ -35,7 +33,6 @@ const forbiddenProjectContent = [
   /(?:\/Users\/|\/home\/[a-z]|\.infisical)/iu,
   /(?:apps|cmds|servers|protos)\/(?:runmoor|async-commit-hook|devhud)(?:\/|\b)/iu,
   /(?:crates|packages)\/pnport(?:\/|\b)/iu,
-  /(?:crates|packages)\/react-forge(?:\/|\b)/iu,
   /(?:apps|crates|packages|protos)\/bundlewhy(?:-web)?(?:\/|\b)/iu,
 ];
 const rootRoutes = [
@@ -176,12 +173,7 @@ for (const [slug, routes] of Object.entries(projectRoutes)) {
         );
       }
     }
-    if (
-      slug === "clibox" ||
-      slug === "pnport" ||
-      slug === "react-forge" ||
-      slug === "bundlewhy"
-    ) {
+    if (slug === "clibox" || slug === "pnport" || slug === "bundlewhy") {
       const sidebar =
         contents.match(
           /<aside\b[^>]*class="[^"]*rp-doc-layout__sidebar[^"]*"[^>]*>[\s\S]*?<\/aside>/iu,
@@ -211,17 +203,6 @@ for (const [slug, routes] of Object.entries(projectRoutes)) {
         if (!sidebar.includes(`href="${publicRoute(slug, child)}"`)) {
           failures.push(
             `${publicRoute(slug, route)} is missing a sidebar link`,
-          );
-        }
-      }
-      if (slug === "react-forge") {
-        const sidebarText = visibleProjectText(sidebar);
-        if (
-          !sidebarText.includes("More Formats") ||
-          sidebarText.includes("Unreleased Previews")
-        ) {
-          failures.push(
-            `${publicRoute(slug, route)} has an incorrect React Forge format group label`,
           );
         }
       }
@@ -371,23 +352,7 @@ const redirects = await readFile(
   "utf8",
 ).catch(() => "");
 const expectedRedirects =
-  [
-    "/async-commit-hook/docs /async-commit-hook/docs/ 301",
-    ...[
-      "pptx",
-      "docx",
-      "xlsx",
-      "pdf",
-      "figma",
-      "sfx",
-      "sprite",
-      "glb",
-      "fbx",
-    ].flatMap((format) => [
-      `/react-forge/${format} /react-forge/formats/${format}/ 301`,
-      `/react-forge/${format}/ /react-forge/formats/${format}/ 301`,
-    ]),
-  ].join("\n") + "\n";
+  "/async-commit-hook/docs /async-commit-hook/docs/ 301\n";
 if (redirects !== expectedRedirects)
   failures.push("public documentation redirects are missing or incorrect");
 const headers = await readFile(

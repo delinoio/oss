@@ -34,7 +34,7 @@ Record new implementation status, validation results and unresolved limits in pu
 - Do not arbitrarily omit, delete, or simplify requested or source-backed content during documentation edits unless the user explicitly asks for that outcome.
 - If documentation content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret.
 - Update or create the relevant `AGENTS.md` in the same change only when development procedures, directory ownership or repository/domain development rules change; follow the [instruction-update policy](#instruction-update-policy).
-- `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Public documentation is owned and built by `apps/public-docs`; the project content roots are `apps/public-docs/docs/{runmoor,nodeup,binpm,async-commit-hook,clibox,pnport,react-forge}`. Those pages must curate from these contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
+- `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Public documentation is owned and built by `apps/public-docs`; the project content roots are `apps/public-docs/docs/{runmoor,nodeup,binpm,async-commit-hook,clibox,pnport,bundlewhy}`. Those pages must curate from these contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 
 ## Naming Rules
 
@@ -72,21 +72,6 @@ Record new implementation status, validation results and unresolved limits in pu
 
 - [Project index](project-typeopt.md)
 - [Rust CLI foundation](crates-typeopt-foundation.md)
-
-### React Forge
-
-- [Project index](project-react-forge.md)
-- [Public documentation](apps-react-forge-docs-foundation.md) (`apps/public-docs/docs/react-forge`, canonical URL `https://oss.delino.io/react-forge/`, eighteen user-guide routes)
-- [Complete issue requirements](packages-react-forge-requirements.md)
-- [GLB/FBX scenes and animation](packages-react-forge-scene-contract.md) (static scenes released; animation unreleased): generation, materials, sessions and interoperability evidence requirements.
-- [Game SFX and WAV export](packages-react-forge-sfx-contract.md)
-- [Node sessions and CLI](packages-react-forge-contract.md)
-- [Sprite authoring and export](packages-react-forge-sprite-contract.md) (unreleased)
-- [Session-based stdio MCP](packages-react-forge-mcp-contract.md)
-- [Native engines and preservation](crates-react-forge-contract.md)
-- [Validation and benchmarks](packages-react-forge-validation.md)
-- [Public npm release](packages-react-forge-release-contract.md)
-- [React Forge Figma contract](packages-react-forge-figma-contract.md).
 
 ### Forge
 
@@ -132,7 +117,7 @@ Record new implementation status, validation results and unresolved limits in pu
 ### public-docs
 
 - [project-public-docs.md](project-public-docs.md)
-- [apps-public-docs-foundation.md](apps-public-docs-foundation.md) (single `oss.delino.io` publisher, eight project subpaths including bundlewhy, site selector, and stable `/devhud` section)
+- [apps-public-docs-foundation.md](apps-public-docs-foundation.md) (single `oss.delino.io` publisher, seven project subpaths including bundlewhy, site selector, and stable `/devhud` section)
 - [packages-docs-site-switcher-contract.md](packages-docs-site-switcher-contract.md) (shared accessible documentation site selector package and fixed site registry)
 
 ### serde-feather

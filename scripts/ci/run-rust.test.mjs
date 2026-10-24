@@ -39,13 +39,8 @@ test("selected Rust owners have exactly their required Turbo prerequisite graph"
   }
 });
 
-test("invalid, excluded and empty Rust selections cannot start a task", () => {
-  for (const packages of [
-    [],
-    ["forge-scene"],
-    ["pnport", "pnport"],
-    ["--workspace"],
-  ]) {
+test("invalid and empty Rust selections cannot start a task", () => {
+  for (const packages of [[], ["pnport", "pnport"], ["--workspace"]]) {
     assert.throws(() => rustTask("test", packages));
   }
   assert.throws(() => rustTask("fmt", ["cargo-mono"]));

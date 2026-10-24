@@ -13,7 +13,6 @@ This page provides a high-level public catalog of projects in the Delino OSS mon
 - [`async-commit-hook`](https://oss.delino.io/async-commit-hook/): Asynchronous checks against committed source for developers and coding agents.
 - [`clibox`](https://oss.delino.io/clibox/): Cross-platform command-line utilities for environments, ports, clipboard, transformations, readiness, and configuration.
 - [`pnport`](https://oss.delino.io/pnport/): Yarn 4 Plug'n'Play subprocess filesystem tool; 0.1.0 is available for macOS and glibc Linux with [known limits](/pnport/installation). Windows is planned for 0.2.0.
-- [`React Forge`](https://oss.delino.io/react-forge/): Public React document sessions for PPTX, DOCX, XLSX, tagged PDF, and explicit Figma Design publication, with CLI and local MCP workflows.
 - [`bundlewhy`](https://oss.delino.io/bundlewhy/): Local CLI and web UI that explain why Vite or Rspack could not apply an optimization to a client production build; 0.1.0 is in development and not yet published to npm.
 - `public-docs`: Rspress public documentation app.
 
@@ -21,4 +20,4 @@ This page provides a high-level public catalog of projects in the Delino OSS mon
 
 Authoritative implementation contracts are maintained in the repository's internal project documents.
 Use this public catalog for orientation, and use internal project docs for precise engineering and operational details.
-Project subpaths are the canonical entry points for Nodeup, binpm, Runmoor, async-commit-hook, clibox, pnport, React Forge, and bundlewhy public guidance.
+Project subpaths are the canonical entry points for Nodeup, binpm, Runmoor, async-commit-hook, clibox, pnport, and bundlewhy public guidance.

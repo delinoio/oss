@@ -32,20 +32,7 @@ const assetExtensions = new Set([
 const lfsAssets = [
   "apps/devhud/src-tauri/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf",
   "crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf",
-  "packages/react-forge/examples/audio-studio-assets/brushed-roughness.png",
-  "packages/react-forge/examples/audio-studio-assets/leather-normal.png",
-  "packages/react-forge/examples/audio-studio-assets/leather-roughness.png",
-  "packages/react-forge/examples/travel-ir-assets/coast.png",
-  "packages/react-forge/examples/travel-ir-assets/horizon.png",
-  "packages/react-forge/examples/travel-ir-assets/product.png",
   "servers/devhud-api/internal/r2/removal.png",
-];
-// Keep the complete AURA texture set in LFS, including its smaller companions.
-const companionTextures = [
-  "packages/react-forge/examples/audio-studio-assets/brushed-normal.png",
-  "packages/react-forge/examples/audio-studio-assets/display.png",
-  "packages/react-forge/examples/audio-studio-assets/fabric-normal.png",
-  "packages/react-forge/examples/audio-studio-assets/wordmark.png",
 ];
 const hydratedJobs = {
   "CI.yml": [
@@ -55,7 +42,6 @@ const hydratedJobs = {
     "rust-test",
     "forge-test",
     "forge-render",
-    "react-forge",
     "devhud-frontend",
     "devhud-rust-conformance",
     "devhud-desktop",
@@ -63,7 +49,6 @@ const hydratedJobs = {
     "devhud-api",
     "devhud-oci",
   ],
-  "release-react-forge.yml": ["build"],
   "release-async-commit-hook.yml": ["validate"],
   "package-devhud-private.yml": ["desktop", "oci"],
 };
@@ -84,7 +69,7 @@ test("large repository assets are stored as LFS pointers", () => {
     );
   }
 
-  for (const path of [...lfsAssets, ...companionTextures]) {
+  for (const path of lfsAssets) {
     const pointer = execFileSync("git", ["show", `HEAD:${path}`], {
       encoding: "utf8",
     });

@@ -22,7 +22,6 @@ export const fixtureNames = [
   ...consumers,
   "core-lib",
   "unrelated",
-  "forge-scene",
   "pnport",
   "pnport-preload",
 ].sort();

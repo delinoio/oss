@@ -46,7 +46,7 @@ test("rustfmt configuration selects only formatting on PRs and main pushes", () 
       "crates/binpm/src/.hidden/",
       "apps/devhud/src-tauri/",
       "apps/delidev/src-tauri/src/",
-      "packages/react-forge/",
+      "packages/example/",
       ".cargo/",
       ".github/actions/example/",
     ]) {
@@ -95,13 +95,13 @@ test("shared path matching includes every hidden segment and preserves glob boun
     ["scripts/release/*devhud*", "scripts/release/.devhud-fixture", true],
     ["scripts/release/*devhud*", "scripts/release/.x/devhud-fixture", false],
     [
-      "packages/react-forge/examples/**/*.tsx",
-      "packages/react-forge/examples/.file.tsx",
+      "packages/example/examples/**/*.tsx",
+      "packages/example/examples/.file.tsx",
       true,
     ],
     [
-      "packages/react-forge/examples/**/*.tsx",
-      "packages/react-forge/examples/.x/.y/.file.tsx",
+      "packages/example/examples/**/*.tsx",
+      "packages/example/examples/.x/.y/.file.tsx",
       true,
     ],
     ["apps/devhud/**", "apps/devhud/.space name.ts", true],
@@ -323,9 +323,13 @@ test("Go report runner changes select native Go tests without widening other job
   }
 });
 
-test("root Rust toolchain changes select Forge validation and rendering", () => {
+test("root Rust toolchain and shared package changes select Forge validation and rendering", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
-    for (const path of ["rust-toolchain", "rust-toolchain.toml"]) {
+    for (const path of [
+      "rust-toolchain",
+      "rust-toolchain.toml",
+      "crates/forge-package/src/lib.rs",
+    ]) {
       for (const id of ["forge-test", "forge-render"]) {
         assert.equal(
           planJobs(event, [path]).jobs[id],
@@ -855,11 +859,6 @@ test("integrated project docs select the public-docs workspace and shared inputs
         "source-format",
       ]);
     }
-    const reactForgeContract = planJobs(event, [
-      "docs/apps-react-forge-docs-foundation.md",
-    ]);
-    assert.equal(reactForgeContract.jobs[id], true);
-    assert.equal(reactForgeContract.forced[id], true);
     const needs = results(event, paths);
     assert.equal(validateResults(needs), true);
     for (const result of ["failure", "cancelled", "skipped"]) {
@@ -1213,7 +1212,6 @@ function results(event, paths, mode = Mode.Affected) {
         event,
         go_test_matrix: JSON.stringify(matrices.goTestMatrix),
         desktop_matrix: JSON.stringify(matrices.desktopMatrix),
-        react_forge_matrix: JSON.stringify(matrices.reactForgeMatrix),
       },
     },
     "ci-contracts": { result: "success" },
@@ -1286,77 +1284,14 @@ test("aggregate accepts only success and skips explicitly authorized by the plan
   assert.throws(() => validateResults(wrongMatrix), /desktop_matrix/u);
 });
 
-test("React Forge runs on affected PRs and main, with shared package regression coverage", () => {
-  for (const event of [Event.PullRequest, Event.Push]) {
-    for (const path of [
-      ".gitattributes",
-      "packages/react-forge/src/session.ts",
-      "packages/react-forge/tests/session.test.tsx",
-      "packages/react-forge/bin/react-forge.mjs",
-      "packages/react-forge/examples/travel-ir.tsx",
-      "packages/react-forge/examples/travel-ir-assets/coast.png",
-      "packages/react-forge/scripts/validate-host.sh",
-      "crates/react-forge-node/src/lib.rs",
-      "crates/forge-pdf/src/lib.rs",
-      "crates/forge-sprite/src/lib.rs",
-      "crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf",
-      "rust-toolchain",
-      "pnpm-lock.yaml",
-    ]) {
-      assert.equal(
-        planJobs(event, [path]).jobs["react-forge"],
-        true,
-        `react-forge: ${path}`,
-      );
-    }
-    for (const id of ["react-forge", "forge-test", "forge-render"])
-      assert.equal(
-        planJobs(event, ["crates/forge-package/src/lib.rs"]).jobs[id],
-        true,
-        id,
-      );
-    assert.equal(
-      planJobs(event, ["docs/project-with-watch.md"]).jobs["react-forge"],
-      false,
-    );
-    for (const path of [
-      "packages/react-forge/README.md",
-      "packages/react-forge/AGENTS.md",
-      "packages/react-forge/examples/README.md",
-      "packages/react-forge/examples/travel-ir-assets/README.md",
-      "crates/forge-pdf/README.md",
-      "crates/react-forge-node/AGENTS.md",
-      "docs/packages-react-forge-contract.md",
-      "docs/project-react-forge.md",
-    ]) {
-      assert.equal(
-        planJobs(event, [path]).jobs["react-forge"],
-        false,
-        `react-forge: ${path}`,
-      );
-    }
-    assert.equal(
-      Object.hasOwn(
-        planJobs(event, ["packages/react-forge/src/session.ts"]).jobs,
-        "react-forge-scenes",
-      ),
-      false,
-    );
-  }
-});
-
 test("event matrices retain only the authorized native hosts", () => {
   for (const event of [Event.PullRequest, Event.Push]) {
-    const { desktopMatrix, reactForgeMatrix } = matricesForEvent(event);
+    const { desktopMatrix } = matricesForEvent(event);
     assert.deepEqual(
       desktopMatrix.include.map(({ id }) => id),
       nativeMatrices["devhud-desktop"]
         .filter(({ os }) => os !== "macos")
         .map(({ id }) => id),
-    );
-    assert.deepEqual(
-      reactForgeMatrix.include.map(({ id }) => id),
-      ["linux-x64-gnu", "linux-arm64-gnu", "win32-x64-msvc"],
     );
   }
 });
@@ -1515,7 +1450,6 @@ test("path-rule edits force only changed eligible jobs", () => {
     const plan = planJobs(event, ["scripts/ci/job-paths.json"], previous);
     assert.equal(plan.jobs["go-test"], true);
     assert.equal(plan.jobs["devhud-frontend"], true);
-    assert.equal(plan.jobs["react-forge"], false);
     assert.equal(plan.jobs["devhud-desktop"], false);
     assert.equal(plan.forced["go-test"], true);
   }
@@ -1528,13 +1462,13 @@ test("path-rule edits force only changed eligible jobs", () => {
     "scripts/ci/native-matrices.json",
   ]) {
     const plan = planJobs(Event.Push, [path]);
-    assert.equal(plan.jobs["react-forge"], true, path);
+    assert.equal(plan.jobs["forge-test"], true, path);
   }
 });
 
 test("unrelated packages and protocols do not select DevHud jobs", () => {
   for (const path of [
-    "packages/react-forge/src/session.ts",
+    "packages/example/src/session.ts",
     "packages/docs-site-switcher/src/index.ts",
     "protos/async_commit_hook/v1/ach.proto",
     "servers/unrelated/main.go",
@@ -1560,11 +1494,10 @@ test("unrelated packages and protocols do not select DevHud jobs", () => {
   }
 });
 
-test("aggregate rejects missing, excluded and inconsistent Rust package selections", () => {
+test("aggregate rejects missing and inconsistent Rust package selections", () => {
   for (const value of [
     undefined,
     "{}",
-    '["forge-scene"]',
     '["fixture-package","fixture-package"]',
     "[]",
   ]) {
@@ -1683,7 +1616,6 @@ test("CI Result rejects missing modes, native execution on affected manual CI, a
     "clibox_matrix",
     "pnport_matrix",
     "desktop_matrix",
-    "react_forge_matrix",
   ]) {
     for (const value of [undefined, "{", "{}", "null", "[]"]) {
       const needs = results(Event.Manual, []);

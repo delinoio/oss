@@ -19,11 +19,7 @@ import {
 } from "./plan.mjs";
 
 export const rustJobs = Object.freeze(["rust-test", "rust-clippy"]);
-export const excludedRustPackages = Object.freeze([
-  "forge-scene",
-  "forge-glb",
-  "forge-fbx",
-]);
+export const excludedRustPackages = Object.freeze([]);
 export const RustSelection = Object.freeze({
   Affected: "affected",
   Full: "full",
