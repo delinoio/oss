@@ -16,7 +16,7 @@
   },
   "devDependencies": {
     "@delinoio/docs-site-switcher": "workspace:*",
-    "@rspress/core": "2.0.14",
+    "@rspress/core": "2.0.23",
     "entities": "6.0.1"
   }
 }
