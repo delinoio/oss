@@ -66,7 +66,7 @@ jobs:
             -v "$(command -v gh):/usr/local/bin/gh:ro" -v "$(command -v cosign):/usr/local/bin/cosign:ro" \
             -e GH_TOKEN -e RELEASE_PROJECT -e RELEASE_VERSION -e RELEASE_REVISION \
             delino-linux-package-tools bash -c 'node scripts/release/linux-packages.mjs --project "$RELEASE_PROJECT" --version "$RELEASE_VERSION" --revision "$RELEASE_REVISION" --mode dry-run --output /output'
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: linux-package-fixture-${{ inputs.project }}
           path: ${{ runner.temp }}/package-fixture
@@ -104,7 +104,7 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: linux-package-fixture-${{ inputs.project }}
           path: ${{ runner.temp }}/package-fixture

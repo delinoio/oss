@@ -131,7 +131,7 @@ jobs:
             echo "historical release recovery requires the retained original release configuration" >&2
             exit 1
           fi
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: devhud-release-plan-${{ github.run_id }}-${{ github.run_attempt }}
           path: devhud-release-plan.json
@@ -207,7 +207,7 @@ jobs:
             echo "run_id=$run_id"
             echo "run_attempt=$run_attempt"
           } >> "$GITHUB_OUTPUT"
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ steps.select.outputs.artifact_id }}
           github-token: ${{ github.token }}
@@ -282,7 +282,7 @@ jobs:
             persist-credentials: false,
             ref: "${{ needs.identity.outputs.revision }}",
           }
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         if: ${{ needs.identity.outputs.configuration_reused == 'true' }}
         with:
           artifact-ids: ${{ needs.identity.outputs.configuration_artifact_id }}
@@ -306,7 +306,7 @@ jobs:
             mkdir -p release-configuration
             node scripts/release/devhud-public-release.mjs configuration-binding "${arguments[@]}" --output release-configuration/devhud-release-configuration.json
           fi
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: ${{ needs.identity.outputs.configuration_reused != 'true' }}
         with:
           name: ${{ needs.identity.outputs.configuration_artifact_name }}
@@ -393,7 +393,7 @@ jobs:
         uses: ./.clibox-tooling/.github/actions/setup-clibox
         with:
           working-directory: .clibox-tooling
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
           github-token: ${{ github.token }}
@@ -443,7 +443,7 @@ jobs:
       - name: Submit Chrome package for deferred review at 100 percent
         if: ${{ matrix.provider == 'chrome-web-store' && needs.identity.outputs.retry != 'true' && (steps.store_state.outputs.status == 'unsubmitted' || steps.store_state.outputs.status == 'withdrawn') }}
         run: node scripts/release/devhud-store-release.mjs submit chrome-web-store --artifact private-artifacts/devhud-chrome-web-store.zip --output store-submission.json
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           {
             name: "devhud-store-submission-${{ matrix.provider }}-${{ github.run_attempt }}",
@@ -535,7 +535,7 @@ jobs:
           cp apps/public-docs/doc_build/devhud.html "$candidate/devhud.html"
           cp -R apps/public-docs/doc_build/devhud/. "$candidate/devhud/"
           cp -R apps/public-docs/doc_build/static/. "$candidate/static/"
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: "devhud-public-docs-candidate-${{ github.run_attempt }}"
           path: ${{ runner.temp }}/devhud-public-docs-candidate
@@ -590,7 +590,7 @@ jobs:
           set -euo pipefail
           actual=$(node scripts/release/devhud-public-release.mjs configuration-fingerprint)
           test "$actual" = "$EXPECTED_CONFIGURATION_FINGERPRINT"
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
           github-token: ${{ github.token }}
@@ -673,7 +673,7 @@ jobs:
           set -euo pipefail
           actual=$(node scripts/release/devhud-public-release.mjs configuration-fingerprint)
           test "$actual" = "$EXPECTED_CONFIGURATION_FINGERPRINT"
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
           github-token: ${{ github.token }}
@@ -798,7 +798,7 @@ jobs:
             persist-credentials: false,
             ref: "${{ needs.identity.outputs.revision }}",
           }
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
           github-token: ${{ github.token }}
@@ -900,7 +900,7 @@ jobs:
           set -euo pipefail
           actual=$(node scripts/release/devhud-public-release.mjs configuration-fingerprint)
           test "$actual" = "$EXPECTED_CONFIGURATION_FINGERPRINT"
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           artifact-ids: ${{ needs.candidate.outputs.artifact_id }}
           github-token: ${{ github.token }}
@@ -980,7 +980,7 @@ jobs:
           set -euo pipefail
           actual=$(node scripts/release/devhud-public-release.mjs configuration-fingerprint)
           test "$actual" = "$EXPECTED_CONFIGURATION_FINGERPRINT"
-      - uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: "devhud-public-docs-candidate-${{ github.run_attempt }}"
           path: ${{ runner.temp }}/devhud-public-docs-candidate

@@ -15,4 +15,4 @@ jsonllm-derive = { version = "0.1.1", path = "../jsonllm-derive" }
 tracing = "0.1"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util"] }
+tokio = { version = "=1.49.0", features = ["macros", "rt-multi-thread", "net", "io-util"] }

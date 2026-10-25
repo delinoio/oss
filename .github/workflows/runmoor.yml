@@ -78,7 +78,7 @@ jobs:
           key: ${{ steps.ci-node.outputs.cache-key }}
       - name: Preserve Turbo run summaries
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: turbo-runmoor-${{ github.run_attempt }}
           path: .turbo/runs/*.json
