@@ -13,7 +13,8 @@
   },
   "scripts": {
     "test": "node --test test/*.test.mjs scripts/*.test.mjs ../../crates/bundlewhy/adapters/*.test.mjs",
-    "test:acceptance": "node scripts/acceptance.mjs"
+    "test:acceptance": "node scripts/acceptance.mjs",
+    "test:package": "node scripts/smoke.mjs"
   },
   "devDependencies": {
     "@rspack/core": "2.2.9",

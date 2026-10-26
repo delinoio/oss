@@ -19,6 +19,7 @@ on:
             pnport,
             async-commit-hook,
             react-forge,
+            bundlewhy,
           ]
       bump:
         description: SemVer increment (next is pnport only)

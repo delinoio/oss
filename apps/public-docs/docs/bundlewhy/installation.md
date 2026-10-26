@@ -18,6 +18,8 @@ bundlewhy is not yet published to npm. Version 0.1.0 is in development. The npm 
 | Linux (glibc) | x64          |
 | Windows       | x64          |
 
+Linux x64 requires glibc 2.34 or newer.
+
 Other platforms are not planned for 0.1.0. On an unsupported platform, or when the platform package is missing, the launcher reports an error with reinstall guidance. It does not download or compile a fallback.
 
 ## Planned npm entry point

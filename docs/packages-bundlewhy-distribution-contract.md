@@ -18,7 +18,30 @@ Developers running `npx @delino/bundlewhy analyze ...` and maintainers running a
 - Adapters never write project source, configuration or lockfiles; build output goes to the bundlewhy run directory. Vite keeps a configured relative or absolute root for the diagnostic build and collection context; when no root is configured, it uses the selected project root. Configuration summaries contain option names and summarized values, never environment values.
 - The Rust binary embeds the adapter files and writes them into each run directory, so the installed adapter version always matches the binary.
 - Distribution: the public `@delino/bundlewhy` launcher resolves a platform package for macOS arm64 (`darwin-arm64`), Linux x64 with glibc (`linux-x64-gnu`) and Windows x64 (`win32-x64-msvc`) and executes its binary without a shell, forwarding arguments, stdio, exit codes and signals. Unsupported platforms and missing platform packages report a structured error with reinstall guidance; there is no download or compile fallback. Release artifacts publish exact Node.js and platform requirements and the frozen engine matrix. Rollback installs a previous version.
-- The workspace package is private until a release workflow is approved.
+- The source workspace stays private. Release tooling explicitly generates the public launcher and three platform manifests; it never changes the source package to public or adds unpublished platform dependencies to the workspace.
+
+### Release workflow
+
+`Release Project` includes `bundlewhy`. It synchronizes `crates/bundlewhy/Cargo.toml`, the workspace entry in `Cargo.lock` and `packages/bundlewhy/package.json` in one version-only commit, validates the immutable source and pushes `bundlewhy@v<version>`. The crate retains `publish = false`; this path needs no Cargo registry token and does not publish to crates.io. The coordinator does not wait for the downstream distribution workflow.
+
+`release-bundlewhy.yml` accepts the exact version tag or a manual dry run (default `dry_run=true`). Publication requires the first-party exact tag and commit; a manual publication must select that tag, while a development branch may only dry-run. A project-wide concurrency group serializes versions without cancelling an active release.
+
+The native release matrix contains only macOS arm64, Linux x64/glibc and Windows x64/MSVC. Each host installs the frozen workspace with scripts disabled, tests and builds the self-contained web UI before Cargo compilation, runs the package/adapter tests and native Rust tests, builds a release binary and verifies its version. Linux uses the shared digest-pinned AlmaLinux 9 image with baseline x86-64 and glibc 2.34. Release builds must never set `BUNDLEWHY_ALLOW_MISSING_UI`. Native npm and pnpm consumer smoke tests install the candidate with scripts disabled and exercise help, version, engine matrix, usage errors, both fixture analyses, and interactive HTML export from the installed launcher. A missing platform dependency must fail with reinstall guidance. Generated `dist` output is removed after native validation, including failures.
+
+The source package owns `scripts/common.mjs`, `package.mjs`, `smoke.mjs`, `publish.mjs` and `github-release.mjs`. The package builder reuses clibox's bounded tar reader and executable-mode finalizer. The publishers reuse clibox's registry integrity reconciliation and immutable GitHub draft publication, plus the shared source-bound Sigstore verifier. These consumers are explicit CI/Turbo inputs; native consumer tasks are not cacheable.
+
+Generated packages carry the exact source commit, version, platform metadata, README, complete root Apache-2.0 LICENSE and NOTICE. The launcher pins all three optional native dependencies to its exact version and requires Node.js 22.18+. Only the launcher, notices and native executable belong in the generated packages; no install hook or project dependency is shipped. Text is canonical UTF-8/LF across Windows and Unix builds, and Unix executable modes are finalized before integrity is recorded. Assembly rejects missing or extra packages, source/version drift, changed launcher text and notices, and malformed archives before publication.
+
+Native jobs upload `bundlewhy-native-<suffix>` artifacts. Assembly verifies exactly four npm tarballs and retains `bundlewhy-npm-<version>-<revision>` for 30 days. Both publication jobs consume that exact verified set. npm publishes and confirms the native packages before publishing the launcher, using npm 11.6.2, GitHub Actions OIDC and provenance. Each of these packages requires npm Trusted Publisher configuration for repository `delinoio/oss` and workflow `release-bundlewhy.yml`:
+
+- `@delino/bundlewhy`
+- `@delino/bundlewhy-darwin-arm64`
+- `@delino/bundlewhy-linux-x64-gnu`
+- `@delino/bundlewhy-win32-x64-msvc`
+
+The signed GitHub Release publishes those same four `.tgz` files, SHA256SUMS and a source/workflow-bound Sigstore bundle for each file (ten assets total). Each native tarball contains its executable at `package/bin/bundlewhy` or `package/bin/bundlewhy.exe`; it is also the npm platform payload. GitHub and npm publication are separate downstream jobs, and either can be recovered independently. Before any write, existing versions/assets must match the verified bytes; conflicting contents fail. The GitHub publisher discovers the unique draft, resumes missing uploads, verifies remote contents and signatures, then publishes. A complete public release is read-only. Rerun the failed publication job with the retained artifact; never move a tag or replace public assets to recover a partial release. A dry run validates packaging without requesting publication credentials or signing.
+
+Public availability notices remain until actual publication is verified. Fixture, package and local native checks do not establish hosted three-platform or external-application acceptance.
 
 ## Storage
 

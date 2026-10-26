@@ -13,7 +13,7 @@ Explain why a bundler or its default JavaScript minifier could not apply an opti
 - `crates/bundlewhy`: Rust analysis core, CLI (`analyze`, `open`, `export`, `engines`), result bundle storage, size measurement, local Connect server and HTML export.
 - `apps/bundlewhy-web`: React/TypeScript web UI built into one self-contained HTML document that the Rust binary embeds and serves.
 - `protos/bundlewhy/v1`: Connect RPC schema shared by the Rust server, the web UI and exported reports.
-- `packages/bundlewhy`: minimal JavaScript engine collector adapters, the npm/npx entry point, acceptance fixtures and distribution tooling.
+- `packages/bundlewhy`: minimal JavaScript engine collector adapters, the npm/npx entry point, acceptance fixtures and distribution tooling (three native targets and the tag-triggered npm/GitHub release workflow).
 - `apps/public-docs/docs/bundlewhy`: public installation, usage, interpretation, privacy, limitation and troubleshooting guides.
 
 ## Domain Contract Documents

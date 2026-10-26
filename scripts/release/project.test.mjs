@@ -40,6 +40,7 @@ const achFiles = [
 const files = [
   "Cargo.lock",
   "packages/clibox/package.json",
+  "packages/bundlewhy/package.json",
   "packages/pnport/package.json",
   "packages/react-forge/package.json",
   ...[
@@ -48,6 +49,7 @@ const files = [
     "nodeup",
     "with-watch",
     "clibox",
+    "bundlewhy",
     "pnport",
     "pnport-core",
     "pnport-preload",
@@ -145,7 +147,7 @@ for (const project of Object.values(Project))
           ? 5
           : project === Project.AsyncCommitHook
             ? 4
-            : project === Project.Clibox
+            : [Project.Clibox, Project.Bundlewhy].includes(project)
               ? 3
               : plan.kind === Kind.Rust
                 ? 2

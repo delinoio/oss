@@ -252,7 +252,14 @@
       "package.json",
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",
-      "turbo.json"
+      "turbo.json",
+      "packages/clibox/scripts/**",
+      "scripts/release/linux-packages/**",
+      "scripts/release/project.mjs",
+      ".github/workflows/release-bundlewhy.yml",
+      "crates/bundlewhy/Cargo.toml",
+      "LICENSE",
+      "NOTICE"
     ]
   },
   "pnport-native": {

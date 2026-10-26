@@ -2,7 +2,7 @@
 
 bundlewhy explains why your bundler or its default JavaScript minifier could not apply an optimization to a client production build. It runs one diagnostic build of a trusted local Vite or Rspack project and opens a local web UI. Each diagnostic shows the optimization rule, the condition outcomes, the relevant code, the supporting evidence, the dependency path and a corrective direction with safety conditions. bundlewhy never changes your source code, configuration or lockfiles.
 
-> Status: 0.1.0 is in development and is not published to npm yet.
+> The commands below require a published npm release. See the [installation guide](https://oss.delino.io/bundlewhy/installation) for current availability.
 
 ## Usage
 
@@ -38,7 +38,7 @@ Results stay in the directory you choose until you delete them. Nothing is uploa
 
 ## Platforms
 
-Node.js 22.18 or newer on macOS arm64, Linux x64 (glibc) or Windows x64.
+Node.js 22.18 or newer on macOS arm64, Linux x64 (glibc 2.34 or newer) or Windows x64.
 
 ## Support
 

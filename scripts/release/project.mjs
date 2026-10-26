@@ -14,6 +14,7 @@ export const Project = Object.freeze({
   Pnport: "pnport",
   AsyncCommitHook: "async-commit-hook",
   ReactForge: "react-forge",
+  Bundlewhy: "bundlewhy",
 });
 export const Bump = Object.freeze({
   Patch: "patch",
@@ -29,6 +30,7 @@ export function releaseTag(project, version) {
   return `${project}@v${version}`;
 }
 const versions = Object.freeze({
+  bundlewhy: { kind: Kind.Rust, file: "crates/bundlewhy/Cargo.toml" },
   clibox: { kind: Kind.Rust, file: "crates/clibox/Cargo.toml" },
   pnport: { kind: Kind.Rust, file: "crates/pnport/Cargo.toml" },
   binpm: { kind: Kind.Rust, file: "crates/binpm/Cargo.toml" },
@@ -64,12 +66,12 @@ function descriptor(project) {
   return versions[project];
 }
 
-// Rust source versioning is independent from registry distribution: clibox
-// and pnport ship through npm and native packages.
+// Rust source versioning is independent from registry distribution: clibox,
+// pnport and bundlewhy ship through npm and native packages.
 export function requiresCargoPublish(project) {
   return (
     descriptor(project).kind === Kind.Rust &&
-    ![Project.Clibox, Project.Pnport].includes(project)
+    ![Project.Clibox, Project.Pnport, Project.Bundlewhy].includes(project)
   );
 }
 
@@ -247,11 +249,11 @@ export function readVersion(
 ) {
   const { file, kind } = descriptor(project);
   const current = replaceVersion(read(file), project, kind).current;
-  if (project === Project.Clibox) {
-    const npm = JSON.parse(read("packages/clibox/package.json"));
+  if ([Project.Clibox, Project.Bundlewhy].includes(project)) {
+    const npm = JSON.parse(read(`packages/${project}/package.json`));
     requireValue(
-      npm.name === "@delino/clibox" && npm.version === current,
-      "clibox Cargo/npm versions disagree",
+      npm.name === `@delino/${project}` && npm.version === current,
+      `${project} Cargo/npm versions disagree`,
     );
   }
   if (project === Project.Pnport) {
@@ -323,8 +325,8 @@ export function versionChanges(project, bump, read) {
       version,
     );
   }
-  if (project === Project.Clibox) {
-    const file = "packages/clibox/package.json";
+  if ([Project.Clibox, Project.Bundlewhy].includes(project)) {
+    const file = `packages/${project}/package.json`;
     const source = read(file);
     requireValue(
       [...source.matchAll(/^  "version": "[^"]+",$/gmu)].length === 1,

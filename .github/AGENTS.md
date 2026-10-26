@@ -10,5 +10,7 @@
 
 ## Owning contracts
 
+- [bundlewhy distribution](../docs/packages-bundlewhy-distribution-contract.md)
+
 - [pnport](../docs/project-pnport.md)
 - [Repository Workflow Contract](../docs/repository-workflow-contract.md)

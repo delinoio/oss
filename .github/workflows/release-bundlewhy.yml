@@ -1,0 +1,210 @@
+name: Release bundlewhy
+
+on:
+  push:
+    tags: ["bundlewhy@v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact source version without v prefix
+        required: true
+      dry_run:
+        description: Build and validate without publication
+        type: choice
+        options: ["true", "false"]
+        default: "true"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-bundlewhy
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-22.04
+    outputs:
+      version: ${{ steps.source.outputs.version }}
+      dry_run: ${{ steps.source.outputs.dry_run }}
+      revision: ${{ steps.source.outputs.revision }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Validate exact release identity
+        id: source
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+          REQUESTED_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          node --input-type=module <<'JS'
+          import { appendFileSync, readFileSync } from 'node:fs';
+          import { sourceMetadata, Project } from './scripts/release/project.mjs';
+          import { revision } from './packages/bundlewhy/scripts/common.mjs';
+          const source = sourceMetadata({ project: Project.Bundlewhy, event: process.env.GITHUB_EVENT_NAME, ref: process.env.GITHUB_REF, requestedVersion: process.env.REQUESTED_VERSION, requestedDryRun: process.env.REQUESTED_DRY_RUN }, file => readFileSync(file, 'utf8').replaceAll('\r\n', '\n'));
+          if (source.dry_run !== 'true' && (process.env.GITHUB_REPOSITORY !== 'delinoio/oss' || process.env.GITHUB_REF !== `refs/tags/${source.tag}`)) throw new Error('Publication requires the exact first-party release tag');
+          const commit = revision();
+          if (commit !== process.env.GITHUB_SHA) throw new Error('Checkout identity mismatch');
+          appendFileSync(process.env.GITHUB_OUTPUT, Object.entries({ ...source, revision: commit }).map(([key, value]) => `${key}=${value}\n`).join(''));
+          JS
+
+  build:
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-14
+            target: aarch64-apple-darwin
+            suffix: darwin-arm64
+          - runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            suffix: linux-x64-gnu
+          - runner: windows-latest
+            target: x86_64-pc-windows-msvc
+            suffix: win32-x64-msvc
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+          lfs: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+          architecture: ${{ startsWith(matrix.target, 'aarch64-') && 'arm64' || 'x64' }}
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+        with:
+          version: 10.26.2
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
+        with:
+          toolchain: nightly-2026-09-28
+          targets: ${{ matrix.target }}
+      - run: pnpm install --frozen-lockfile --ignore-scripts
+      - name: Test and build the embedded UI
+        run: pnpm --filter bundlewhy-web test
+      - name: Test adapters, launcher and distribution contracts
+        run: pnpm --filter @delino/bundlewhy test
+      - name: Build Linux with the pinned compatibility image
+        if: runner.os == 'Linux'
+        env:
+          RELEASE_TARGET: ${{ matrix.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          image=$(node -p 'JSON.parse(require("node:fs").readFileSync("packaging/linux/pins.json")).rust_image')
+          docker run --rm -v "$PWD:/workspace" -w /workspace "$image" bash scripts/release/linux-packages/build-rust.sh bundlewhy "$RELEASE_TARGET"
+          sudo chown -R "$(id -u):$(id -g)" target
+      - name: Test and package the native executable
+        shell: bash
+        env:
+          BUNDLEWHY_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          cargo test --locked -p bundlewhy --target "$BUNDLEWHY_TARGET"
+          if [[ "$BUNDLEWHY_TARGET" != *-linux-gnu ]]; then
+            cargo build --locked --release -p bundlewhy --target "$BUNDLEWHY_TARGET"
+          fi
+          binary="$GITHUB_WORKSPACE/target/$BUNDLEWHY_TARGET/release/bundlewhy"
+          if [[ "$BUNDLEWHY_TARGET" == *windows* ]]; then binary="$binary.exe"; fi
+          node packages/bundlewhy/scripts/package.mjs binary --target "$BUNDLEWHY_TARGET" --binary "$binary"
+          pnpm --filter @delino/bundlewhy test:package --target "$BUNDLEWHY_TARGET" --binary "$binary"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bundlewhy-native-${{ matrix.suffix }}
+          path: packages/bundlewhy/dist/tarballs/*.tgz
+          if-no-files-found: error
+          retention-days: 30
+      - name: Remove generated distribution output
+        if: always()
+        shell: bash
+        run: rm -rf "apps/bundlewhy-web/dist" "packages/bundlewhy/dist"
+
+  package:
+    needs: [prepare, build]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: bundlewhy-native-*
+          merge-multiple: true
+          path: packages/bundlewhy/dist/tarballs
+      - name: Assemble and validate the complete release
+        run: |
+          node packages/bundlewhy/scripts/package.mjs main
+          node packages/bundlewhy/scripts/publish.mjs
+          node packages/bundlewhy/scripts/github-release.mjs
+      - uses: actions/upload-artifact@v7
+        with:
+          name: bundlewhy-npm-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
+          path: packages/bundlewhy/dist/tarballs/*.tgz
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    needs: [prepare, package]
+    if: ${{ needs.prepare.outputs.dry_run == 'false' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/bundlewhy@v') }}
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - name: Install pinned npm for trusted publishing
+        run: npm install --global npm@11.6.2 --ignore-scripts --no-audit --no-fund
+      - uses: actions/download-artifact@v8
+        with:
+          name: bundlewhy-npm-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
+          path: packages/bundlewhy/dist/tarballs
+      - name: Publish verified native packages before the launcher
+        run: node packages/bundlewhy/scripts/publish.mjs --publish
+
+  publish-release:
+    needs: [prepare, package]
+    if: ${{ needs.prepare.outputs.dry_run == 'false' && github.repository == 'delinoio/oss' && startsWith(github.ref, 'refs/tags/bundlewhy@v') }}
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.prepare.outputs.revision }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: bundlewhy-npm-${{ needs.prepare.outputs.version }}-${{ needs.prepare.outputs.revision }}
+          path: packages/bundlewhy/dist/tarballs
+      - uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
+      - name: Verify or publish the signed immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node packages/bundlewhy/scripts/github-release.mjs --publish
