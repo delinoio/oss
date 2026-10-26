@@ -85,6 +85,7 @@ validation. The two targets run independently with read-only contents access,
 no secrets and no publication. Logs record revision, target and development-only
 acceptance. PR coverage includes pnport, shared fspy implementations, package
 tooling, workflow/validator inputs and shared dependency/toolchain inputs.
+The affected paths include the checked-in root `rust-toolchain` selector.
 This is an explicit exception for the separate Windows development workflow;
 `CI.yml` retains its PR/manual native exclusions and affected selection.
 It does not establish complete Windows release or minimum-OS acceptance.
@@ -94,7 +95,10 @@ native debugger for diagnostics. `PNPORT_WINDOWS_DEBUGGER` is a test-only switch
 ordinary source and installed-archive validation never enables it. The replay
 retains the original failure regardless of its own result, has a bounded wait,
 and records module-relative code locations and repository symbols only. It
-never uploads process memory, native payloads or crash dumps. Hook recursion
+never uploads process memory, native payloads or crash dumps. Symbol lookup uses
+the actual loaded image path, including for installed archives. Missing or
+unusable symbols produce an explicit unavailable result without falling back to
+the debug build image. Hook recursion
 and child-creation flags use OS-managed TLS with preserved Win32 last-error
 values; thread and process teardown cannot re-enter runtime state through
 image-based guard storage.
