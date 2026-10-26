@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { matchesGlob } from "node:path";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { load } from "js-yaml";
 import { developmentMatrix } from "../../packages/pnport/scripts/native-matrix.mjs";
@@ -16,7 +18,7 @@ const workflow = load(
 test("Windows development planning selects native hosts without release authority", () => {
   const output = execFileSync(
     process.execPath,
-    [new URL("./pnport-windows-matrix.mjs", import.meta.url).pathname],
+    [fileURLToPath(new URL("./pnport-windows-matrix.mjs", import.meta.url))],
     { encoding: "utf8" },
   );
   const matrix = JSON.parse(output.trim().slice("matrix=".length));
@@ -49,4 +51,20 @@ test("Windows development planning selects native hosts without release authorit
     JSON.stringify(workflow),
     /secrets\.|pull_request_target|release-project|publish/,
   );
+});
+
+test("Windows development covers the checked-in Rust toolchain selector", () => {
+  const toolchain = "rust-toolchain";
+  assert.ok(existsSync(new URL(`../../${toolchain}`, import.meta.url)));
+  const paths = workflow.on.pull_request.paths;
+  const selects = (patterns, changedPath) =>
+    patterns.some((pattern) => matchesGlob(changedPath, pattern));
+  assert.ok(selects(paths, toolchain));
+  assert.ok(selects(paths, "Cargo.toml"));
+  assert.ok(selects(paths, "crates/pnport/src/main.rs"));
+  assert.equal(selects(paths, "docs/project-pnport.md"), false);
+  const stalePaths = paths.map((path) =>
+    path === toolchain ? "rust-toolchain.toml" : path,
+  );
+  assert.equal(selects(stalePaths, toolchain), false);
 });

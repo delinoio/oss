@@ -76,6 +76,8 @@ cwd through the guarded native spelling lookup before selecting its PnP owner.
 Short directory names and caller casing must identify the same package as the
 canonical manifest path. This preserves declared-bin precedence, ambiguity and
 package-escape rejection; it does not broaden the dependency search.
+Explicit executable paths bypass this dependency-owner lookup. Relative explicit
+paths remain relative to the original caller cwd, not its lookup spelling.
 
 Native process creation resolves a partial `lpApplicationName` against the
 caller's current drive and directory, never against the requested child
