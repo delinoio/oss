@@ -27,7 +27,6 @@ import {
   tagRevision,
   requiresCargoPublish,
   releaseTag,
-  reactForgeVersionPublished,
 } from "./project.mjs";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -42,7 +41,6 @@ const files = [
   "packages/clibox/package.json",
   "packages/bundlewhy/package.json",
   "packages/pnport/package.json",
-  "packages/react-forge/package.json",
   ...[
     "binpm",
     "cargo-mono",
@@ -91,13 +89,6 @@ sources["packages/pnport/package.json"] =
     2,
   ) + "\n";
 const read = (file) => sources[file];
-const readReactForgeRecovery = (file) =>
-  file === "packages/react-forge/package.json"
-    ? read(file).replace(
-        /("version": ")[^"]+/u,
-        (_, prefix) => `${prefix}0.1.0`,
-      )
-    : read(file);
 const bot = {
   name: "delino-release-bot[bot]",
   email: "123+delino-release-bot[bot]@users.noreply.github.com",
@@ -395,34 +386,6 @@ test("pnport first minor bump produces 0.1.0 with CLI, preload, npm, and lockste
   }
 });
 
-test("React Forge patch after the failed 0.1.0 tag updates only its private source manifest", () => {
-  const plan = versionChanges(
-    Project.ReactForge,
-    Bump.Patch,
-    readReactForgeRecovery,
-  );
-  assert.equal(plan.previous_version, "0.1.0");
-  assert.equal(plan.version, "0.1.1");
-  assert.deepEqual(Object.keys(plan.changes), [
-    "packages/react-forge/package.json",
-  ]);
-  assert.equal(
-    JSON.parse(plan.changes["packages/react-forge/package.json"]).version,
-    "0.1.1",
-  );
-  assert.equal(requiresCargoPublish(Project.ReactForge), false);
-  assert.throws(() =>
-    readVersion(Project.ReactForge, (file) =>
-      file === "packages/react-forge/package.json"
-        ? readReactForgeRecovery(file).replace(
-            '"name": "@delino/react-forge"',
-            '"name": "foreign"',
-          )
-        : readReactForgeRecovery(file),
-    ),
-  );
-});
-
 for (const file of achFiles)
   test(`async-commit-hook rejects drift and missing, duplicate or malformed versions in ${file}`, () => {
     const current = readVersion(Project.AsyncCommitHook, read);
@@ -588,7 +551,7 @@ test("async-commit-hook version drift fails before preflight or version writes",
 for (const project of Object.values(Project))
   test(`${project} commit journals and resumes the same run after main advances`, async (t) => {
     const fixtureState = fixture(t);
-    const bump = project === Project.ReactForge ? Bump.Patch : Bump.Minor;
+    const bump = Bump.Minor;
     const options = {
       directory: fixtureState.directory,
       project,
@@ -758,74 +721,6 @@ test("Preflight rejects existing releases, tags and uncertain API results", asyn
       },
     })),
     revision,
-  );
-});
-
-test("React Forge requires patch recovery while the current version is unpublished", async () => {
-  for (const bump of [Bump.Minor, Bump.Major]) {
-    const plan = versionChanges(
-      Project.ReactForge,
-      bump,
-      readReactForgeRecovery,
-    );
-    await assert.rejects(
-      preflightVersion(plan, absent, async () => false),
-      /requires the next patch version/u,
-    );
-    await preflightVersion(plan, absent, async () => true);
-  }
-  await preflightVersion(
-    versionChanges(Project.ReactForge, Bump.Patch, readReactForgeRecovery),
-    absent,
-    async () => {
-      throw new Error("Patch must not read npm");
-    },
-  );
-  const later = (file) =>
-    file === "packages/react-forge/package.json"
-      ? readReactForgeRecovery(file).replace(
-          /("version": ")0\.1\.0/u,
-          (_, prefix) => `${prefix}0.1.1`,
-        )
-      : readReactForgeRecovery(file);
-  await assert.rejects(
-    preflightVersion(
-      versionChanges(Project.ReactForge, Bump.Minor, later),
-      absent,
-      async () => false,
-    ),
-    /requires the next patch version/u,
-  );
-});
-
-test("React Forge npm publication lookup fails closed on uncertain responses", async () => {
-  const version = "0.1.1";
-  const metadata = {
-    name: "@delino/react-forge",
-    version,
-    dist: { integrity: "sha512-fixture" },
-  };
-  const lookup = (status, body = metadata) =>
-    reactForgeVersionPublished(version, async (url, options) => {
-      assert.equal(
-        url,
-        "https://registry.npmjs.org/%40delino%2Freact-forge/0.1.1",
-      );
-      assert.equal(options.redirect, "error");
-      return { status, ok: status === 200, json: async () => body };
-    });
-  assert.equal(await lookup(404), false);
-  assert.equal(await lookup(200), true);
-  await assert.rejects(lookup(503), /HTTP 503/u);
-  await assert.rejects(
-    lookup(200, { ...metadata, version: "0.1.2" }),
-    /identity mismatch/u,
-  );
-  await assert.rejects(
-    reactForgeVersionPublished(version, async () => {
-      throw new Error("transport");
-    }),
-    /lookup failed/u,
   );
 });
 

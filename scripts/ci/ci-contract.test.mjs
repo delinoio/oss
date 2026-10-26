@@ -59,7 +59,6 @@ const legacyJobs = [
   "rust-test",
   "forge-test",
   "forge-render",
-  "react-forge",
   "linux-packages",
   "node-public-docs-test",
   "node-clibox-test",
@@ -605,7 +604,7 @@ test("DevHud client test-only changes require semantic type checking and runtime
       "packages/devhud-api-client/tests/validation.test.ts",
     ]);
     assert.equal(plan.jobs["devhud-frontend"], true, event);
-    const unrelated = planJobs(event, ["packages/react-forge/src/session.ts"]);
+    const unrelated = planJobs(event, ["packages/example/src/session.ts"]);
     assert.equal(unrelated.jobs["devhud-frontend"], false, event);
   }
 });
@@ -1510,145 +1509,6 @@ test("Forge retains three-platform interoperability and mandatory Linux renderin
   assert.match(renderCommands, /--test render -- --ignored/u);
 });
 
-test("React Forge validates selected CI hosts without scene-specific CI tests", () => {
-  const job = workflow.jobs["react-forge"];
-  assert.equal(job["runs-on"], "${{ matrix.runner }}");
-  assert.equal(job.strategy["fail-fast"], false);
-  const platforms = JSON.parse(
-    readFileSync(
-      `${root}/packages/react-forge/src/native-platforms.json`,
-      "utf8",
-    ),
-  );
-  assert.equal(
-    job.strategy.matrix,
-    "${{ fromJSON(needs.changes.outputs.react_forge_matrix) }}",
-  );
-  assert.deepEqual(
-    nativeMatrices["react-forge"].map(({ id }) => id),
-    [
-      "darwin-x64",
-      "darwin-arm64",
-      "linux-x64-gnu",
-      "linux-arm64-gnu",
-      "win32-x64-msvc",
-    ],
-  );
-  for (const host of nativeMatrices["react-forge"]) {
-    const declared = platforms.find(({ id }) => id === host.id);
-    assert.equal(host.platform, declared.platform);
-    assert.equal(host.architecture, declared.architecture);
-    assert.equal(host.target, declared.target);
-  }
-  assert.equal(
-    namedStep(
-      job,
-      "Validate native engine, installed CLI, renders, and benchmark",
-    ).run,
-    "node scripts/ci/run-affected.mjs @delino/react-forge ci:host",
-  );
-  assert.ok(jobTaskGraph(job).has("@delino/react-forge#test"));
-  assert.match(
-    readFileSync(`${root}/packages/react-forge/scripts/ci-host.mjs`, "utf8"),
-    /validate-host\.sh/u,
-  );
-  const commands = readFileSync(
-    `${root}/packages/react-forge/scripts/validate-host.sh`,
-    "utf8",
-  );
-  for (const command of [
-    "forge-package",
-    "forge-document",
-    "forge-docx",
-    "forge-xlsx",
-    "forge-pdf",
-    "forge-sprite",
-    "react-forge-node",
-    "turbo run build typecheck lint test --filter=@delino/react-forge",
-    "test:render",
-    "benchmark",
-    "install-smoke.mjs",
-    "windows_console",
-    "examples/travel-ir.tsx",
-    "--include-ignored",
-  ])
-    assert.ok(commands.includes(command), command);
-  assert.doesNotMatch(commands, /-p forge-(?:scene|glb|fbx)\b/u);
-  assert.match(commands, /export REACT_FORGE_SKIP_SCENE_TESTS=1/u);
-  const sceneTests = readFileSync(
-    `${root}/packages/react-forge/tests/scene.test.tsx`,
-    "utf8",
-  );
-  assert.match(
-    sceneTests,
-    /process\.env\.REACT_FORGE_SKIP_SCENE_TESTS === "1" \? test\.skip : test/u,
-  );
-  assert.match(JSON.stringify(job.steps), /render-requirements\.txt/u);
-  assert.equal(
-    namedStep(job, "Remove generated package output").if,
-    "always()",
-  );
-  const evidence = namedStep(job, "Retain rendering and benchmark evidence");
-  assert.equal(evidence.with["retention-days"], 7);
-  assert.equal(evidence.if, "always()");
-  const release = load(
-    readFileSync(`${root}/.github/workflows/release-react-forge.yml`, "utf8"),
-  );
-  assert.equal(
-    release.jobs.build.steps.find(
-      ({ name }) =>
-        name ===
-        "Validate native engine, installed CLI, renders, and benchmark",
-    )?.run,
-    'bash packages/react-forge/scripts/validate-host.sh "${{ matrix.target }}"',
-  );
-  const tasks = JSON.parse(
-    readFileSync(`${root}/packages/react-forge/turbo.json`, "utf8"),
-  ).tasks;
-  for (const name of ["build", "test", "test:render", "benchmark", "ci:host"])
-    assert.equal(tasks[name].cache, false, name);
-  assert.deepEqual(tasks["ci:host"].dependsOn, [
-    "build",
-    "typecheck",
-    "lint",
-    "test",
-    "typecheck:examples",
-  ]);
-  assert.equal(
-    job.env.CARGO_TARGET_DIR,
-    "${{ github.workspace }}/target/react-forge",
-  );
-  const rustCache = job.steps.find(({ uses }) =>
-    uses?.startsWith("Swatinem/rust-cache@"),
-  );
-  assert.equal(rustCache.with.workspaces.trim(), ". -> target/react-forge");
-  assert.equal(
-    rustCache.with["save-if"],
-    "${{ github.ref == 'refs/heads/main' }}",
-  );
-  assert.equal(rustCache.with["cache-on-failure"], false);
-  assert.ok(tasks.test.passThroughEnv.includes("REACT_FORGE_SKIP_SCENE_TESTS"));
-});
-
-test("React Forge CI removes scene-engine and visual jobs while retaining document regressions", () => {
-  const native = workflow.jobs["react-forge"];
-  assert.equal(native["timeout-minutes"], 60);
-  assert.equal(workflow.jobs["react-forge-scenes"], undefined);
-  assert.equal(jobPaths["react-forge-scenes"], undefined);
-  assert.equal(
-    workflow.jobs["ci-result"].needs.includes("react-forge-scenes"),
-    false,
-  );
-  assert.doesNotMatch(
-    JSON.stringify(native.steps),
-    /test:scenes|react-forge-scene-inputs|blender\.tar\.xz/u,
-  );
-  assert.doesNotMatch(
-    JSON.stringify(workflow),
-    /react-forge-scenes|react-forge-scene-inputs|render-scenes\.py|compare-scenes\.py/u,
-  );
-});
-
 test("Rust CI consumes one verified prebuilt selection and gates native preparation", () => {
   const changes = workflow.jobs.changes;
   assert.equal(changes["runs-on"], "ubuntu-24.04");
@@ -1861,7 +1721,6 @@ test("CI exposes no full manual input and allocates no macOS runner on any event
         forge_matrix: matrices.forgeMatrix,
         clibox_matrix: matrices.cliboxMatrix,
         desktop_matrix: matrices.desktopMatrix,
-        react_forge_matrix: matrices.reactForgeMatrix,
         pnport_matrix: matrices.pnportMatrix,
       }).map(([name, value]) => [name, JSON.stringify(value)]),
     );

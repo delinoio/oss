@@ -86,7 +86,6 @@
 - `docs/project-nodeup.md`: Node.js version manager project index.
 - `docs/project-with-watch.md`: Command rerun watcher CLI project index.
 - `docs/project-public-docs.md`: Public docs app project index.
-- `docs/apps-react-forge-docs-foundation.md`: React Forge public guide routes, content, availability, and validation contract.
 - `docs/packages-docs-site-switcher-contract.md`: Shared accessible documentation site selector package contract.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-jsonllm.md`: jsonllm typed Clairic generation project index.

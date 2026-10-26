@@ -40,7 +40,6 @@ describe("DocsSiteSwitcher", () => {
       "async-commit-hook",
       "clibox",
       "pnport",
-      "React Forge",
       "bundlewhy",
     ]);
     expect(menu.getAttribute("id")).toBe(trigger.getAttribute("aria-controls"));
@@ -53,7 +52,6 @@ describe("DocsSiteSwitcher", () => {
       "/async-commit-hook/",
       "/clibox/",
       "/pnport/",
-      "/react-forge/",
       "/bundlewhy/",
     ]);
   });
@@ -146,27 +144,6 @@ describe("DocsSiteSwitcher", () => {
 
   it.each(["/pnport-extra", "/pnportish/editors"])(
     "does not select pnport for unrelated path %s",
-    (pathname) =>
-      expect(getDocumentationSiteForPathname(pathname)).toBe(
-        DocumentationSiteId.PublicDocs,
-      ),
-  );
-
-  it.each([
-    "/react-forge",
-    "/react-forge/",
-    "/react-forge/formats/figma/",
-    "/react-forge/mcp/",
-  ])("selects React Forge for %s", (pathname) => {
-    renderSwitcher(getDocumentationSiteForPathname(pathname));
-    fireEvent.click(screen.getByRole("button", { name: "React Forge" }));
-    const selected = screen.getByRole("menuitem", { name: "React Forge" });
-    expect(selected.getAttribute("aria-current")).toBe("page");
-    expect(document.activeElement).toBe(selected);
-  });
-
-  it.each(["/react-forge-extra", "/react-forgeish/mcp"])(
-    "does not select React Forge for unrelated path %s",
     (pathname) =>
       expect(getDocumentationSiteForPathname(pathname)).toBe(
         DocumentationSiteId.PublicDocs,

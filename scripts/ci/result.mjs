@@ -26,7 +26,6 @@ export function validateResults(needs) {
     ["pnport_matrix", matrices.pnportMatrix],
     ["go_test_matrix", matrices.goTestMatrix],
     ["desktop_matrix", matrices.desktopMatrix],
-    ["react_forge_matrix", matrices.reactForgeMatrix],
   ]) {
     const actual = JSON.parse(needs.changes.outputs[output]);
     if (JSON.stringify(actual) !== JSON.stringify(matrix))

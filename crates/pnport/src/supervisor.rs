@@ -237,6 +237,19 @@ fn pending_entry_state(
     path: &Path,
     identity: Option<(u64, u64)>,
 ) -> Result<Option<pnport::launch::EntryState>> {
+    pending_entry_state_with(path, identity, |metadata| {
+        let token = path.file_name().ok_or_else(injection_error)?;
+        pnport::launch::entry_state(&session.join("launch-starting").join(token), metadata)
+            .map_err(|_| injection_error())
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn pending_entry_state_with(
+    path: &Path,
+    identity: Option<(u64, u64)>,
+    observe: impl FnOnce(&fs::Metadata) -> Result<pnport::launch::EntryState>,
+) -> Result<Option<pnport::launch::EntryState>> {
     let current = match fs::symlink_metadata(path) {
         Ok(current) if current.is_file() => current,
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
@@ -245,17 +258,18 @@ fn pending_entry_state(
     if marker_identity(&current) != identity {
         return Ok(None);
     }
-    #[cfg(unix)]
-    {
-        let token = path.file_name().ok_or_else(injection_error)?;
-        pnport::launch::entry_state(&session.join("launch-starting").join(token), &current)
-            .map(Some)
-            .map_err(|_| injection_error())
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = session;
-        Ok(Some(pnport::launch::EntryState::Missing))
+    let state = observe(&current)?;
+    // Readiness unlinks pending before releasing the constructor lease. The
+    // lease probe can therefore observe an unlocked old inode (or a removed
+    // entry) after the metadata above was read. Confirm pending *after* the
+    // probe so successful completion cannot look like abandoned initialization.
+    match fs::symlink_metadata(path) {
+        Ok(current) if current.is_file() && marker_identity(&current) == identity => {
+            Ok(Some(state))
+        }
+        Ok(current) if current.is_file() => Ok(None),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        _ => Err(injection_error()),
     }
 }
 
@@ -639,7 +653,22 @@ pub fn run(view: &mut View, artifact: &Path, executable: &Path, args: &[OsString
         #[cfg(target_os = "macos")]
         cleanup?;
         tracing::debug!(action = "cleanup", "Owned process group stopped");
-        result
+        // A signal can arrive after the loop's first check, including while
+        // observing exit/readiness or cleaning up. Once owned cleanup succeeds,
+        // retain cancellation instead of returning a child result or an
+        // initialization error caused by that cancellation. Cleanup failures
+        // above still fail closed.
+        let signal = SIGNAL.load(Ordering::SeqCst);
+        if signal != 0 {
+            tracing::debug!(
+                action = "execution_cancelled",
+                signal,
+                "Owned execution stopped after cancellation"
+            );
+            Ok(128 + signal)
+        } else {
+            result
+        }
     }
 }
 #[cfg(target_os = "macos")]
@@ -695,6 +724,27 @@ mod failure_tests {
 #[cfg(all(test, target_os = "macos"))]
 mod pending_launch_tests {
     use super::*;
+
+    #[test]
+    fn completed_constructor_cannot_be_rejected_from_a_stale_pending_observation() {
+        let session = tempfile::tempdir().unwrap();
+        fs::create_dir(session.path().join("pending")).unwrap();
+        let pending = session.path().join("pending/pnport-test");
+        let entered = session.path().join("launch-starting/pnport-test");
+        fs::write(&pending, b"").unwrap();
+        let entry = pnport::launch::Entry::begin(session.path(), "pnport-test").unwrap();
+        let identity = marker_identity(&fs::metadata(&pending).unwrap());
+        let result = pending_entry_state_with(&pending, identity, |metadata| {
+            // The constructor completes after the supervisor stats pending,
+            // before it opens the entry. Missing now means completion, not an
+            // image that exceeded its missing-initializer deadline.
+            entry.acknowledge().unwrap();
+            drop(entry);
+            pnport::launch::entry_state(&entered, metadata).map_err(|_| injection_error())
+        })
+        .unwrap();
+        assert!(result.is_none());
+    }
 
     #[test]
     fn abandoned_entry_retains_a_failure_published_after_the_first_read() {
@@ -877,6 +927,8 @@ mod tests {
         LiveUnacknowledgedDescendant,
         DescendantCacheContention,
         AbandonedDescendantInitialization,
+        HangupAtExit,
+        HangupBeforeReadiness,
     }
 
     impl Scenario {
@@ -900,6 +952,8 @@ mod tests {
                 Self::AbandonedDescendantInitialization => {
                     "killed_descendant_initializer_stops_a_running_root"
                 }
+                Self::HangupAtExit => "hangup_during_exit_observation_retains_signal_status",
+                Self::HangupBeforeReadiness => "hangup_before_readiness_retains_signal_status",
             }
         }
     }
@@ -977,6 +1031,77 @@ mod tests {
             .unwrap()
             .success());
         (root, View::new(graph, cache, session), executable)
+    }
+
+    struct HangupAtExit;
+
+    impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for HangupAtExit {
+        fn on_event(
+            &self,
+            event: &tracing::Event<'_>,
+            _context: tracing_subscriber::layer::Context<'_, S>,
+        ) {
+            struct Action(bool);
+            impl tracing::field::Visit for Action {
+                fn record_debug(&mut self, _: &tracing::field::Field, _: &dyn std::fmt::Debug) {}
+
+                fn record_str(&mut self, field: &tracing::field::Field, value: &str) {
+                    self.0 |= field.name() == "action" && value == "child_exit";
+                }
+            }
+            let mut action = Action(false);
+            event.record(&mut action);
+            if action.0 {
+                // Deliver a real signal after the loop's cancellation check,
+                // exactly when it observes the native child's exit. This
+                // controls scheduling without a product-only test switch.
+                assert_eq!(unsafe { libc::raise(libc::SIGHUP) }, 0);
+            }
+        }
+    }
+
+    fn hangup_at_exit(scenario: Scenario, missing_readiness: bool) {
+        use tracing_subscriber::prelude::*;
+
+        if run_in_fresh_process(scenario) {
+            return;
+        }
+        let (root, mut view, executable) = fixture();
+        let library = if missing_readiness {
+            let source = root.path().join("unacknowledged.c");
+            let library = root.path().join("unacknowledged.dylib");
+            fs::write(&source, "void unacknowledged(void) {}\n").unwrap();
+            assert!(Command::new("cc")
+                .arg("-dynamiclib")
+                .arg(&source)
+                .arg("-o")
+                .arg(&library)
+                .status()
+                .unwrap()
+                .success());
+            library
+        } else {
+            test_artifact().unwrap()
+        };
+        let subscriber = tracing_subscriber::registry().with(HangupAtExit);
+        let result = tracing::subscriber::with_default(subscriber, || {
+            run(&mut view, &library, &executable, &[])
+        });
+        record_outcome(scenario, &result);
+        assert_eq!(SIGNAL.load(Ordering::SeqCst), libc::SIGHUP);
+        assert_eq!(result.unwrap(), 128 + libc::SIGHUP);
+        assert_eq!(view.session.join("ready").exists(), !missing_readiness);
+        assert!(!view.session.join("owner/alive").exists());
+    }
+
+    #[test]
+    fn hangup_during_exit_observation_retains_signal_status() {
+        hangup_at_exit(Scenario::HangupAtExit, false);
+    }
+
+    #[test]
+    fn hangup_before_readiness_retains_signal_status() {
+        hangup_at_exit(Scenario::HangupBeforeReadiness, true);
     }
 
     #[test]

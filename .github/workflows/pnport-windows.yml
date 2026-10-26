@@ -11,7 +11,7 @@ on:
       - ".github/workflows/pnport-windows.yml"
       - "Cargo.toml"
       - "Cargo.lock"
-      - "rust-toolchain.toml"
+      - "rust-toolchain"
       - ".cargo/**"
       - ".nvmrc"
       - "package.json"

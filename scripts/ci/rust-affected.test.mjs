@@ -70,8 +70,8 @@ test("metadata lockfile mutation fails planning and cleans the worktree", (t) =>
     2,
   );
 });
-test("default AGENTS exclusion and scene exclusion produce authorized empty jobs", (t) => {
-  for (const path of ["unrelated/AGENTS.md", "forge-scene/fixture.txt"]) {
+test("default AGENTS exclusion produces authorized empty jobs", (t) => {
+  for (const path of ["unrelated/AGENTS.md"]) {
     const f = rustFixture(t);
     f.write(path, "change");
     f.commit();
@@ -244,7 +244,7 @@ test("Rust checks preserve flags, literal arguments and Cargo failures", (t) => 
       }),
     /spawn failed/u,
   );
-  for (const packages of [[], ["--workspace"], ["forge-scene"], ["app", "app"]])
+  for (const packages of [[], ["--workspace"], ["app", "app"]])
     assert.throws(() => runRustCheck("test", packages));
 });
 

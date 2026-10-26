@@ -13,7 +13,6 @@ export const Project = Object.freeze({
   Clibox: "clibox",
   Pnport: "pnport",
   AsyncCommitHook: "async-commit-hook",
-  ReactForge: "react-forge",
   Bundlewhy: "bundlewhy",
 });
 export const Bump = Object.freeze({
@@ -22,7 +21,7 @@ export const Bump = Object.freeze({
   Major: "major",
   Next: "next",
 });
-export const Kind = Object.freeze({ Rust: "rust", Go: "go", Node: "node" });
+export const Kind = Object.freeze({ Rust: "rust", Go: "go" });
 const repository = "delinoio/oss";
 const botName = "delino-release-bot[bot]";
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -42,7 +41,6 @@ const versions = Object.freeze({
     kind: Kind.Go,
     file: "cmds/async-commit-hook/internal/core/model.go",
   },
-  "react-forge": { kind: Kind.Node, file: "packages/react-forge/package.json" },
 });
 const asyncCommitHookVersions = Object.freeze([
   { file: "apps/async-commit-hook/package.json", name: "async-commit-hook" },
@@ -135,24 +133,6 @@ export function bumpVersion(version, bump) {
 // complete TOML sections, never a dependency's version or an external lock entry.
 // Reject ambiguous/new layouts until their release contract is explicitly added.
 function replaceVersion(source, project, kind, next) {
-  if (kind === Kind.Node) {
-    const manifest = JSON.parse(source);
-    requireValue(
-      manifest.name === "@delino/react-forge" && manifest.private === true,
-      "React Forge source package identity mismatch",
-    );
-    const pattern = /^  "version": "([^"]+)",$/gmu;
-    const matches = [...source.matchAll(pattern)];
-    requireValue(
-      matches.length === 1 && matches[0][1] === manifest.version,
-      "Missing or ambiguous React Forge version",
-    );
-    versionParts(manifest.version);
-    return {
-      current: manifest.version,
-      text: next ? source.replace(pattern, `  "version": "${next}",`) : source,
-    };
-  }
   const pattern =
     kind === Kind.Rust
       ? /(^\[package\]\s*\n)([\s\S]*?)(?=^\[|$(?![\s\S]))/gmu
@@ -282,7 +262,7 @@ export function versionChanges(project, bump, read) {
     "The next bump is reserved for pnport",
   );
   if (
-    [Project.Pnport, Project.ReactForge].includes(project) &&
+    project === Project.Pnport &&
     previous_version === "0.0.0" &&
     bump !== Bump.Next
   ) {
@@ -764,52 +744,7 @@ export async function createLegacyReleaseTag({ tag, revision, request }) {
   return { tag, revision, target_commitish: revision };
 }
 
-export async function reactForgeVersionPublished(version, request = fetch) {
-  versionParts(version);
-  let response;
-  try {
-    response = await request(
-      `https://registry.npmjs.org/${encodeURIComponent("@delino/react-forge")}/${version}`,
-      { redirect: "error", signal: AbortSignal.timeout(30000) },
-    );
-  } catch {
-    throw new Error("React Forge npm registry lookup failed");
-  }
-  if (response.status === 404) return false;
-  requireValue(
-    response.ok,
-    `React Forge npm registry lookup failed with HTTP ${response.status}`,
-  );
-  let metadata;
-  try {
-    metadata = await response.json();
-  } catch {
-    throw new Error("Invalid React Forge npm registry response");
-  }
-  requireValue(
-    metadata.name === "@delino/react-forge" &&
-      metadata.version === version &&
-      typeof metadata.dist?.integrity === "string",
-    "React Forge npm registry identity mismatch",
-  );
-  return true;
-}
-
-export async function preflightVersion(
-  plan,
-  request,
-  reactForgePublished = reactForgeVersionPublished,
-) {
-  if (
-    plan.project === Project.ReactForge &&
-    plan.previous_version !== "0.0.0" &&
-    plan.bump !== Bump.Patch
-  ) {
-    requireValue(
-      await reactForgePublished(plan.previous_version),
-      "A failed React Forge release requires the next patch version",
-    );
-  }
+export async function preflightVersion(plan, request) {
   requireValue(
     (await tagRevision(plan.tag, request)) === null,
     "Next version tag already exists",
