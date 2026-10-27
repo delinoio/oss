@@ -39,7 +39,7 @@ export function SignInPage({
 }) {
   const params = new URLSearchParams(window.location.search);
   const reason = error ?? params.get("error");
-  const destination = returnTo ?? params.get("return_to") ?? "/";
+  const destination = returnTo ?? params.get("return_to") ?? "/overview";
   return (
     <AccountSurface
       title="Sign in to AIPRouter"
@@ -112,7 +112,7 @@ export function AccountPage({
             ? "Your account has been deleted."
             : "Your session has ended."}
         </p>
-        <a href={signInHref("/")}>Sign in</a>
+        <a href={signInHref("/overview")}>Sign in</a>
       </AccountSurface>
     );
   return (

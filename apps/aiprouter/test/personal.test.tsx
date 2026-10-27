@@ -223,7 +223,7 @@ describe("unknown values and dialogs", () => {
 });
 describe("organization boundary", () => {
   it("retains the first key-name input when the shell becomes dirty", async () => {
-    window.history.replaceState(null, "", "/?page=keys&organization=one");
+    window.history.replaceState(null, "", "/keys?organization=one");
     const user = userEvent.setup();
     mount(<App />, (r) => {
       r.service(AccountService, { getSession: () => session });
@@ -249,7 +249,7 @@ describe("organization boundary", () => {
     expect(beforeUnload.defaultPrevented).toBe(true);
   });
   it("removes previous keys and open dialogs immediately when switching organization", async () => {
-    window.history.replaceState(null, "", "/?page=keys&organization=one");
+    window.history.replaceState(null, "", "/keys?organization=one");
     const user = userEvent.setup();
     let secondRequested = false;
     mount(<App />, (r) => {
@@ -393,7 +393,7 @@ describe("routing and pools", () => {
 });
 
 it("clears privileged navigation after a scoped read loses permission without ending login", async () => {
-  window.history.replaceState(null, "", "/?page=keys&organization=one");
+  window.history.replaceState(null, "", "/keys?organization=one");
   mount(<App />, (r) => {
     r.service(AccountService, { getSession: () => session });
     r.service(OrganizationService, {

@@ -42,50 +42,24 @@ export function pageHref(page: Page, organization?: string) {
   if (organization) params.set("organization", organization);
   return pagePaths[page] + (params.size ? `?${params}` : "");
 }
-const aliases: Record<string, Page> = {
-  "/": "overview",
-  "/organizations": "overview",
-  "/connect-client": "connect",
-  "/invitations/accept": "invitation",
-  "/instance": "instance",
-  "/instance/usage": "instance",
-};
 export function resolveRoute(url: URL) {
-  let page =
-    (Object.keys(pagePaths) as Page[]).find(
-      (key) => pagePaths[key] === url.pathname,
-    ) ?? aliases[url.pathname];
+  let page = (Object.keys(pagePaths) as Page[]).find(
+    (key) => pagePaths[key] === url.pathname,
+  );
   if (Object.values(operatorPaths).some((path) => path === url.pathname))
     page = "instance";
-  const standalone = ["device", "invitation", "ownership", "sign-in"].includes(
-    page ?? "",
-  );
-  // Older links used ?page= on whichever pathname the browser was visiting.
-  const requestedPage = url.searchParams.get("page");
-  const legacy =
-    requestedPage &&
-    Object.hasOwn(pagePaths, requestedPage) &&
-    !["device", "invitation", "ownership", "sign-in"].includes(requestedPage)
-      ? requestedPage
-      : null;
-  if (page && !standalone && legacy && Object.hasOwn(pagePaths, legacy))
-    page = legacy as Page;
   if (!page) return undefined;
+  const standalone = ["device", "invitation", "ownership", "sign-in"].includes(
+    page,
+  );
+  if (
+    url.searchParams.has("page") ||
+    url.searchParams.has("org") ||
+    (!standalone && url.searchParams.has("organization_id"))
+  )
+    return undefined;
   const canonical = new URL(url);
-  canonical.pathname =
-    page === "instance" && !legacy
-      ? operatorPaths[operatorSection(url.pathname)]
-      : pagePaths[page];
-  canonical.searchParams.delete("page");
-  const organization =
-    url.searchParams.get("organization") ??
-    url.searchParams.get("organization_id") ??
-    url.searchParams.get("org");
-  if (!standalone) {
-    canonical.searchParams.delete("organization_id");
-    canonical.searchParams.delete("org");
-    if (organization) canonical.searchParams.set("organization", organization);
-    else canonical.searchParams.delete("organization");
-  }
+  if (!standalone && !canonical.searchParams.get("organization"))
+    canonical.searchParams.delete("organization");
   return { page, url: canonical };
 }

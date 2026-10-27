@@ -134,11 +134,7 @@ function AuthenticatedApp({ page }: { page: Page }) {
   const cache = useQueryClient();
   const transport = useTransport();
   const [scope, setScope] = useState(
-    () =>
-      new URLSearchParams(window.location.search).get("organization") ??
-      new URLSearchParams(window.location.search).get("organization_id") ??
-      new URLSearchParams(window.location.search).get("org") ??
-      "",
+    () => new URLSearchParams(window.location.search).get("organization") ?? "",
   );
   const [switcher, setSwitcher] = useState(false);
   const [menu, setMenu] = useState(false);
@@ -289,7 +285,7 @@ function AuthenticatedApp({ page }: { page: Page }) {
     ) : (
       <main className="standalone">
         <Notice tone="danger">Instance operator access is required.</Notice>
-        <a href="/">Back to organizations</a>
+        <a href="/overview">Back to organizations</a>
       </main>
     );
   const links = (organization: Organization | undefined) => (

@@ -42,7 +42,7 @@ export function signInHref(
     !returnTo.startsWith("//") &&
     !returnTo.includes("\\")
       ? returnTo
-      : "/";
+      : "/overview";
   return `/auth/login?return_to=${encodeURIComponent(safe)}`;
 }
 

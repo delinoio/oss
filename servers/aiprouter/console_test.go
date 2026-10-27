@@ -46,7 +46,7 @@ func TestConsoleServingBoundaries(t *testing.T) {
 }
 func TestReturnToRejectsOpenRedirects(t *testing.T) {
 	for _, value := range []string{"https://evil.test/device", "//evil.test/device", "/\\evil.test", "/auth/logout", "/v1/models", "/unknown", "/%2F%2Fevil.test", "/device\r\nLocation: https://evil.test"} {
-		if safeReturnTo(value) != "/" {
+		if safeReturnTo(value) != "/overview" {
 			t.Fatalf("accepted unsafe return %q", value)
 		}
 	}
@@ -54,6 +54,44 @@ func TestReturnToRejectsOpenRedirects(t *testing.T) {
 		target := route + "?organization=fixture"
 		if safeReturnTo(target) != target {
 			t.Fatalf("console return lost: %s", target)
+		}
+	}
+}
+
+func TestRetiredConsoleRoutesAreRejected(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("fixture console"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	h, err := consoleHandler(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, route := range []string{
+		"/", "/?organization=&page=keys", "/organizations", "/connect-client",
+		"/invitations/accept?token=secret", "/instance", "/instance/usage",
+		"/providers?page=keys", "/keys?org=fixture", "/keys?organization_id=fixture",
+		"/device?page=keys", "/keys?page=", "/keys?org=", "/keys?organization_id=",
+	} {
+		t.Run(route, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			h.ServeHTTP(w, httptest.NewRequest("GET", route, nil))
+			if w.Code != 404 {
+				t.Fatalf("retired console route %s: %d", route, w.Code)
+			}
+			if got := safeReturnTo(route); got != "/overview" {
+				t.Fatalf("retired return target %s: %s", route, got)
+			}
+		})
+	}
+	for _, target := range []string{
+		"/ownership?organization_id=fixture&transfer_id=transfer",
+		"/invitation?token=fixture", "/device?user_code=fixture",
+	} {
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, httptest.NewRequest("GET", target, nil))
+		if w.Code != 200 || safeReturnTo(target) != target {
+			t.Fatalf("standalone flow target lost: %s (%d)", target, w.Code)
 		}
 	}
 }
