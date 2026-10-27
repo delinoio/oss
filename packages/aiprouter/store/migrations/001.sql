@@ -36,7 +36,13 @@ ALTER TABLE api_keys ADD COLUMN IF NOT EXISTS handed_off boolean NOT NULL DEFAUL
 ALTER TABLE usage ADD COLUMN IF NOT EXISTS expires_at timestamptz NOT NULL DEFAULT now()+interval '30 days';
 ALTER TABLE daily_usage ADD COLUMN IF NOT EXISTS expires_at timestamptz NOT NULL DEFAULT now()+interval '365 days';
 ALTER TABLE audits ADD COLUMN IF NOT EXISTS expires_at timestamptz NOT NULL DEFAULT now()+interval '90 days';
-CREATE UNIQUE INDEX IF NOT EXISTS daily_usage_scope ON daily_usage(org_id,user_id,day,model);
+-- Migration replay also rebuilds backup-excluded temporary state. Once version 2
+-- expands usage dimensions, never reintroduce the superseded narrow constraint.
+DO $$ BEGIN
+ IF NOT EXISTS(SELECT 1 FROM schema_versions WHERE version=2) THEN
+  CREATE UNIQUE INDEX IF NOT EXISTS daily_usage_scope ON daily_usage(org_id,user_id,day,model);
+ END IF;
+END $$;
 ALTER TABLE admissions ADD COLUMN IF NOT EXISTS usage_recorded boolean NOT NULL DEFAULT false;
 ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS state text NOT NULL DEFAULT 'pending';
 ALTER TABLE artifacts ADD COLUMN IF NOT EXISTS content_type text NOT NULL DEFAULT 'image/png';

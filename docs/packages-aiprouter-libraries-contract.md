@@ -18,6 +18,8 @@ Provide shared mechanisms for protocol/client integration, typed configuration, 
 
 ## Storage
 
+Migration replay must preserve expanded provider/outcome usage dimensions and recreate backup-excluded temporary tables without reinstating superseded constraints.
+
 Storage adapters must preserve the owning service or CLI storage boundary; no separate shared secret store or cross-tenant cache.
 
 ## Security
