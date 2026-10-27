@@ -832,7 +832,6 @@
   "addPriceOverride": "Add price override",
   "serviceTier_e9cf60": "Service tier",
   "currency": "Currency",
-  "ratesPerMillionTokensBlankMeansUnknown": "Rates per million tokens. Blank means unknown. Enter 0 only for a confirmed zero price. Historical estimates remain unchanged.",
   "saveOverride": "Save override",
   "editPriceOverride": "Edit price override",
   "futureRequestsUseTheBundledPriceWhere": "Future requests use the bundled price where available; otherwise cost is unknown. Historical estimates remain unchanged.",
@@ -905,8 +904,6 @@
   "collectionChangedDuringReview": "Collection changed during review",
   "repeatedPageToken": "Repeated page token",
   "pricesChangedSinceYouOpenedThisForm": "Prices changed since you opened this form. Your entries are preserved. Refresh the current price and review it before saving again.",
-  "perMillionTokens_21d1dd": "{value0}: {value1} per million tokens",
-  "defaultTier": "Default tier",
   "currency_633895": "Currency: {value0}",
   "noOverrideExistsForThisProviderModel": "No override exists for this provider, model and tier.",
   "currentSavedPrice": "Current saved price",
@@ -1267,5 +1264,15 @@
   "editOverrideFor": "Edit override for {value0}",
   "deleteOverrideFor": "Delete override for {value0}",
   "priceRecordName": "{value0} / {value1} ({value2})",
-  "priceChangesAreUnavailableBecauseTheServer": "Price changes are unavailable because the server did not return a price revision. Try again to reload the list."
+  "priceChangesAreUnavailableBecauseTheServer": "Price changes are unavailable because the server did not return a price revision. Try again to reload the list.",
+  "priceIdentity": "Price identity",
+  "tokenRates": "Token rates",
+  "leaveEmptyToApplyWhenNoTierSpecific": "Leave empty to apply when no tier-specific override matches.",
+  "usdIsCurrentlySupported": "USD is currently supported.",
+  "yourEnteredRates": "Your entered rates",
+  "currencyUnitsPerMillionTokens": "Currency units per million tokens",
+  "blankMeansUnknownEnterZeroOnlyFor": "Blank means unknown. Enter 0 only for a confirmed zero price.",
+  "historicalEstimatesRemainUnchanged": "Historical estimates remain unchanged.",
+  "reviewedRevisionSelectedYourEntriesAre": "Reviewed revision selected. Your entries are unchanged.",
+  "reviewDoesNotDeleteThisOverrideDeletion": "Review does not delete this override. Deletion affects future requests only."
 }

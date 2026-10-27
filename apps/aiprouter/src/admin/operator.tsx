@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale } from "../i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import { OperatorService, type PriceOverride } from "@aiprouter/client";
 import { Card, Notice, PageHeader } from "../ui";
@@ -18,7 +18,11 @@ import {
 import { DestinationPolicyForm, DestinationPolicyNotice } from "./destinations";
 import { RequestLimitsForm } from "./limits";
 import { RetentionForm } from "./retention";
-import { usePriceRevision, type PriceSnapshot } from "./price-revision";
+import {
+  PriceReviewContext,
+  usePriceRevision,
+  type PriceSnapshot,
+} from "./price-revision";
 import {
   PriceRates,
   priceRateFields,
@@ -271,10 +275,21 @@ function PriceEditor({
   );
   const save = useMutation(OperatorService.method.setPriceOverride);
   const dirty = useDirtyForm();
+  const ids = useId();
+  const tierHelpId = `${ids}-tier`;
+  const currencyHelpId = `${ids}-currency`;
+  const ratesHelpId = `${ids}-rates`;
+  const currencyRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     dirty(true);
     return () => dirty(false);
   }, [dirty]);
+  // Edit locks the identity fields, so initial focus moves to the first
+  // editable control instead of a read-only identity value. This effect runs
+  // after the Dialog's own initial focus because the Dialog is a child.
+  useEffect(() => {
+    if (price) currencyRef.current?.focus();
+  }, [price]);
   return (
     <Dialog
       title={
@@ -283,6 +298,7 @@ function PriceEditor({
       onClose={onClose}
     >
       <form
+        className="admin-price-form"
         onSubmit={(e) => {
           e.preventDefault();
           if (snapshot.blocked) return;
@@ -307,59 +323,80 @@ function PriceEditor({
           );
         }}
       >
-        <label>
-          {translate("providerId")}
-          <input
-            required
-            readOnly={!!price}
-            value={provider}
-            onChange={(e) => setProvider(e.target.value)}
-          />
-        </label>
-        <label>
-          {translate("modelId_089ef2")}
-          <input
-            required
-            readOnly={!!price}
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-          />
-        </label>
-        <label>
-          {translate("serviceTier_e9cf60")}
-          <input
-            readOnly={!!price}
-            value={tier}
-            onChange={(e) => setTier(e.target.value)}
-          />
-        </label>
-        <label>
-          {translate("currency")}
-          <input
-            required
-            pattern="[A-Z]{3}"
-            maxLength={3}
-            value={currency}
-            onChange={(e) => setCurrency(e.target.value.toUpperCase())}
-          />
-        </label>
-        <p>{translate("ratesPerMillionTokensBlankMeansUnknown")}</p>
-        <div className="admin-form-grid">
-          {priceRateFields().map(([field, name]) => (
-            <label key={field}>
-              {name}
-              <input
-                inputMode="decimal"
-                pattern="[0-9]+([.][0-9]+)?"
-                value={rates[field]}
-                onChange={(e) =>
-                  setRates({ ...rates, [field]: e.target.value })
-                }
-              />
-            </label>
-          ))}
-        </div>
-        <ErrorNotice error={action.error} />
+        <fieldset className="admin-price-group">
+          <legend>{translate("priceIdentity")}</legend>
+          <label>
+            {translate("providerId")}
+            <input
+              required
+              readOnly={!!price}
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+            />
+          </label>
+          <label>
+            {translate("modelId_089ef2")}
+            <input
+              required
+              readOnly={!!price}
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+            />
+          </label>
+          <label>
+            {translate("serviceTier_e9cf60")}
+            <input
+              readOnly={!!price}
+              aria-describedby={tierHelpId}
+              value={tier}
+              onChange={(e) => setTier(e.target.value)}
+            />
+          </label>
+          <small id={tierHelpId}>
+            {translate("leaveEmptyToApplyWhenNoTierSpecific")}
+          </small>
+        </fieldset>
+        <fieldset className="admin-price-group">
+          <legend>{translate("tokenRates")}</legend>
+          <label>
+            {translate("currency")}
+            <input
+              ref={currencyRef}
+              required
+              pattern="[A-Z]{3}"
+              maxLength={3}
+              aria-describedby={currencyHelpId}
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value.toUpperCase())}
+            />
+          </label>
+          <small id={currencyHelpId}>
+            {translate("usdIsCurrentlySupported")}
+          </small>
+          <h3>{translate("yourEnteredRates")}</h3>
+          <p>{translate("currencyUnitsPerMillionTokens")}</p>
+          <div className="admin-form-grid admin-price-rate-grid">
+            {priceRateFields().map(([field, name]) => (
+              <label key={field}>
+                {name}
+                <input
+                  inputMode="decimal"
+                  pattern="[0-9]+([.][0-9]+)?"
+                  aria-describedby={ratesHelpId}
+                  value={rates[field]}
+                  onChange={(e) =>
+                    setRates({ ...rates, [field]: e.target.value })
+                  }
+                />
+              </label>
+            ))}
+          </div>
+          <small id={ratesHelpId}>
+            {translate("blankMeansUnknownEnterZeroOnlyFor")}
+          </small>
+          <p>{translate("historicalEstimatesRemainUnchanged")}</p>
+        </fieldset>
+        {!snapshot.conflicted && <ErrorNotice error={action.error} />}
         {snapshot.controls}
         <div className="admin-actions">
           <button type="button" data-cancel onClick={onClose}>
@@ -367,6 +404,7 @@ function PriceEditor({
           </button>
           <button
             className="admin-primary"
+            data-price-submit
             disabled={action.pending || snapshot.blocked}
           >
             {translate("saveOverride")}
@@ -389,7 +427,12 @@ function PriceDeletion({
   onClose: () => void;
 }) {
   useLocale();
-  const snapshot = usePriceRevision(revision, price, action);
+  const snapshot = usePriceRevision(
+    revision,
+    price,
+    action,
+    PriceReviewContext.Delete,
+  );
   const remove = useMutation(OperatorService.method.deletePriceOverride);
   return (
     <Confirm
@@ -410,7 +453,7 @@ function PriceDeletion({
       }}
     >
       <p>{translate("futureRequestsUseTheBundledPriceWhere")}</p>
-      <ErrorNotice error={action.error} />
+      {!snapshot.conflicted && <ErrorNotice error={action.error} />}
       {snapshot.controls}
     </Confirm>
   );

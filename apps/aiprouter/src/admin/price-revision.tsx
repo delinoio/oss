@@ -1,10 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale } from "../i18n";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import type { PriceOverride } from "@aiprouter/client";
 import { useApi } from "../api";
 import { ErrorNotice, type useAction } from "./common";
+import { PriceRates, priceRecordName } from "./price-display";
+
+// Controls the context-specific helper shown in the current-price review.
+export enum PriceReviewContext {
+  Save = "save",
+  Delete = "delete",
+}
+// The primary submit action of the surrounding dialog. It receives focus after
+// the operator explicitly adopts the reviewed revision.
+const submitActionSelector =
+  "[data-price-submit], form .admin-actions button:not([data-cancel])";
 
 export type PriceIdentity = Pick<
   PriceOverride,
@@ -15,6 +26,7 @@ export function usePriceRevision(
   initial: string,
   identity: PriceIdentity,
   action: ReturnType<typeof useAction>,
+  context: PriceReviewContext = PriceReviewContext.Save,
 ) {
   useLocale();
   const api = useApi();
@@ -31,6 +43,18 @@ export function usePriceRevision(
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<unknown>();
   const active = useRef(false);
+  const controlsRef = useRef<HTMLDivElement>(null);
+  // Counts explicit adoptions so the announcement and focus move run once each.
+  const [adoptions, setAdoptions] = useState(0);
+  // Identity key whose reviewed revision was adopted, if any.
+  const [adoptedKey, setAdoptedKey] = useState<string>();
+  useEffect(() => {
+    if (!adoptions) return;
+    controlsRef.current
+      ?.closest("dialog")
+      ?.querySelector<HTMLElement>(submitActionSelector)
+      ?.focus();
+  }, [adoptions]);
   const conflicted =
     !!action.error && ConnectError.from(action.error).code === Code.Aborted;
   async function refresh() {
@@ -39,6 +63,7 @@ export function usePriceRevision(
     setRefreshing(true);
     setError(undefined);
     setReview(undefined);
+    setAdoptedKey(undefined);
     try {
       let token = "",
         snapshotRevision = "";
@@ -80,7 +105,7 @@ export function usePriceRevision(
     }
   }
   const controls = (
-    <>
+    <div ref={controlsRef} className="admin-price-review">
       {conflicted && (
         <p role="alert">{translate("pricesChangedSinceYouOpenedThisForm")}</p>
       )}
@@ -97,58 +122,52 @@ export function usePriceRevision(
       {review && (
         <section
           aria-label={translate("currentPriceReview")}
-          className="admin-banner"
+          className="admin-banner admin-price-current"
         >
           <h3>{translate("currentSavedPrice")}</h3>
           {review.price ? (
             <>
-              <p>
-                {review.price.providerId} / {review.price.modelId} ·{" "}
-                {review.price.serviceTier || translate("defaultTier")}
-              </p>
+              <p>{priceRecordName(review.price)}</p>
               <p>
                 {translate("currency_633895", {
                   value0: review.price.rates?.currency || translate("unknown"),
                 })}
               </p>
-              {(
-                [
-                  ["input", translate("input")],
-                  ["output", translate("output")],
-                  ["cacheRead", translate("cacheRead")],
-                  ["cacheWrite", translate("cacheWrite")],
-                  ["cacheWriteShort", translate("shortCacheWrite")],
-                  ["cacheWriteLong", translate("longCacheWrite")],
-                ] as const
-              ).map(([key, label]) => (
-                <p key={key}>
-                  {translate("perMillionTokens_21d1dd", {
-                    value0: label,
-                    value1: review.price?.rates?.[key] ?? translate("unknown"),
-                  })}
-                </p>
-              ))}
+              <PriceRates rates={review.price.rates} />
             </>
           ) : (
             <p>{translate("noOverrideExistsForThisProviderModel")}</p>
           )}
-          <p>{translate("yourEnteredRatesHaveNotChangedSaving")}</p>
+          <p>
+            {context === PriceReviewContext.Delete
+              ? translate("reviewDoesNotDeleteThisOverrideDeletion")
+              : translate("yourEnteredRatesHaveNotChangedSaving")}
+          </p>
           <button
             type="button"
             onClick={() => {
               setRevision(review.revision);
               setReview(undefined);
               action.clearError();
+              setAdoptedKey(identityKey);
+              setAdoptions((count) => count + 1);
             }}
           >
             {translate("useReviewedRevision")}
           </button>
         </section>
       )}
-    </>
+      <p role="status" className="admin-price-adopted">
+        {adoptedKey === identityKey && !review && !conflicted
+          ? translate("reviewedRevisionSelectedYourEntriesAre")
+          : ""}
+      </p>
+    </div>
   );
   return {
     revision,
+    // The conflict alert in the controls already announces this mutation error.
+    conflicted,
     blocked: !revision || conflicted || refreshing || !!review,
     controls,
   };

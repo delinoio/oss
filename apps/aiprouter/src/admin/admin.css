@@ -1044,3 +1044,77 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Add/Edit price override dialog: grouped identity and token-rate fields. */
+.admin-dialog:has(.admin-price-form) {
+  width: min(720px, calc(100vw - 32px));
+}
+.admin-price-form {
+  display: grid;
+  gap: 24px;
+}
+.admin-price-group {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+.admin-price-group > legend {
+  padding: 0;
+  margin-bottom: 12px;
+  color: #191f28;
+  font-size: 18px;
+  font-weight: 600;
+}
+.admin-dialog .admin-price-group label {
+  margin-bottom: 0;
+}
+.admin-dialog:has(.admin-price-current) {
+  width: min(800px, calc(100vw - 32px));
+}
+.admin-price-group h3,
+.admin-price-group p {
+  margin: 0;
+}
+.admin-price-group small,
+.admin-price-group p {
+  color: #4e5968;
+  overflow-wrap: anywhere;
+}
+.admin-price-rate-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.admin-price-review {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  min-width: 0;
+}
+.admin-price-review > p,
+.admin-price-review > button {
+  margin: 0;
+}
+.admin-price-current {
+  width: 100%;
+  box-sizing: border-box;
+  display: grid;
+  gap: 8px;
+  border: 1px solid #1d4ed8;
+  background: #ffffff;
+  color: #191f28;
+  overflow-wrap: anywhere;
+}
+.admin-price-current h3,
+.admin-price-current p {
+  margin: 0;
+}
+.admin-price-adopted:empty {
+  display: none;
+}
+@media (max-width: 600px) {
+  .admin-price-rate-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
