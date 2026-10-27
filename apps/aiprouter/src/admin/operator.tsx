@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale } from "../i18n";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import { create } from "@bufbuild/protobuf";
@@ -28,6 +29,7 @@ import { Summary, timeRange } from "./reporting";
 import { usePriceRevision, type PriceSnapshot } from "./price-revision";
 
 export function Health() {
+  useLocale();
   const health = useQuery(
     OperatorService.method.getInstanceHealth,
     {},
@@ -46,8 +48,8 @@ export function Health() {
   return (
     <>
       <PageHeader
-        title="Instance health"
-        description="Whole-instance availability and request aggregates."
+        title={translate("instanceHealth")}
+        description={translate("wholeInstanceAvailabilityAndRequestAggregates")}
       />
       {health.isPending ? (
         <Loading />
@@ -55,50 +57,54 @@ export function Health() {
         <ErrorNotice error={health.error} retry={() => void health.refetch()} />
       ) : (
         <Card>
-          <h2>Availability</h2>
+          <h2>{translate("availability")}</h2>
           <div className="admin-metrics">
             <div>
-              <span>Service</span>
+              <span>{translate("service")}</span>
               <strong>
                 {health.data?.health?.service
                   ? label(HealthState[health.data.health.service])
-                  : "Unknown"}
+                  : translate("unknown")}
               </strong>
             </div>
             <div>
-              <span>Database</span>
+              <span>{translate("database")}</span>
               <strong>
                 {health.data?.health?.database
                   ? label(HealthState[health.data.health.database])
-                  : "Unknown"}
+                  : translate("unknown")}
               </strong>
             </div>
           </div>
           <p>
-            Last successful cleanup:{" "}
-            {date(health.data?.health?.lastCleanupSuccessAt)}
+            {translate("lastSuccessfulCleanup", {
+              value0: date(health.data?.health?.lastCleanupSuccessAt),
+            })}
           </p>
           <p>
-            Consecutive cleanup failures:{" "}
-            {health.data?.health?.lastCleanupSuccessAt
-              ? health.data.health.consecutiveCleanupFailures
-              : "Unknown"}
+            {translate("consecutiveCleanupFailures", {
+              value0: health.data?.health?.lastCleanupSuccessAt
+                ? health.data.health.consecutiveCleanupFailures
+                : translate("unknown"),
+            })}
           </p>
           <p>
-            Usage recording health:{" "}
-            {health.data?.health?.usageRecording
-              ? label(HealthState[health.data.health.usageRecording])
-              : "Unknown"}
-            . Recording failures can leave request totals incomplete.
+            {translate("usageRecordingHealthRecordingFailuresCanLeave", {
+              value0: health.data?.health?.usageRecording
+                ? label(HealthState[health.data.health.usageRecording])
+                : translate("unknown"),
+            })}
           </p>
-          <button onClick={() => void health.refetch()}>Refresh health</button>
+          <button onClick={() => void health.refetch()}>
+            {translate("refreshHealth")}
+          </button>
         </Card>
       )}
       <Card>
-        <h2>Aggregate period</h2>
+        <h2>{translate("aggregatePeriod")}</h2>
         <div className="admin-form-grid">
           <label>
-            From (UTC)
+            {translate("fromUtc")}
             <input
               type="date"
               value={dates.start}
@@ -106,7 +112,7 @@ export function Health() {
             />
           </label>
           <label>
-            Through (UTC)
+            {translate("throughUtc")}
             <input
               type="date"
               value={dates.end}
@@ -114,7 +120,9 @@ export function Health() {
             />
           </label>
         </div>
-        {!valid && <p role="alert">Choose a valid start and end date.</p>}
+        {!valid && (
+          <p role="alert">{translate("chooseAValidStartAndEndDate")}</p>
+        )}
       </Card>
       {valid &&
         (usage.isPending ? (
@@ -132,21 +140,22 @@ export function InstanceConfiguration({
 }: {
   section: "limits" | "retention" | "destinations";
 }) {
+  useLocale();
   const query = useQuery(OperatorService.method.getInstanceSettings, {});
   return (
     <>
       <PageHeader
         title={
           {
-            limits: "Request limits",
-            retention: "Retention",
-            destinations: "Approved destinations",
+            limits: translate("requestLimits"),
+            retention: translate("retention"),
+            destinations: translate("approvedDestinations"),
           }[section]
         }
         description={
           section === "limits"
-            ? "Applied per user within each organization."
-            : "Manage instance policy."
+            ? translate("appliedPerUserWithinEachOrganization")
+            : translate("manageInstancePolicy")
         }
       />
       {query.isPending ? (
@@ -160,7 +169,7 @@ export function InstanceConfiguration({
           section={section}
         />
       ) : (
-        <Empty>Instance settings are unavailable.</Empty>
+        <Empty>{translate("instanceSettingsAreUnavailable")}</Empty>
       )}
     </>
   );
@@ -172,6 +181,7 @@ function ConfigurationForm({
   settings: InstanceSettings;
   section: "limits" | "retention" | "destinations";
 }) {
+  useLocale();
   // Keep the reviewed snapshot across background refetches. A new revision
   // must not silently replace safe edits or authorize overwriting newer policy.
   const [settings, setSettings] = useState(initialSettings);
@@ -234,7 +244,7 @@ function ConfigurationForm({
         {section === "limits" && draft.requestLimits && (
           <>
             <label>
-              Requests per minute
+              {translate("requestsPerMinute")}
               <input
                 type="number"
                 required
@@ -254,9 +264,9 @@ function ConfigurationForm({
                 }}
               />
             </label>
-            <p>1–6,000 requests per minute. Default: 120.</p>
+            <p>{translate("message16000RequestsPerMinuteDefault")}</p>
             <label>
-              Concurrent requests
+              {translate("concurrentRequests")}
               <input
                 type="number"
                 required
@@ -276,10 +286,7 @@ function ConfigurationForm({
                 }}
               />
             </label>
-            <p>
-              1–100 concurrent requests. Default: 10. These limits apply per
-              user within each organization.
-            </p>
+            <p>{translate("message1100ConcurrentRequestsDefault10These")}</p>
           </>
         )}
         {section === "retention" && draft.retention && (
@@ -288,21 +295,21 @@ function ConfigurationForm({
               [
                 {
                   field: "requestDays",
-                  name: "Request metadata",
+                  name: translate("requestMetadata"),
                   min: 1,
                   max: 90,
                   default: 30,
                 },
                 {
                   field: "aggregateDays",
-                  name: "Daily aggregates",
+                  name: translate("dailyAggregates"),
                   min: 30,
                   max: 730,
                   default: 365,
                 },
                 {
                   field: "auditDays",
-                  name: "Audit records",
+                  name: translate("auditRecords"),
                   min: 30,
                   max: 365,
                   default: 90,
@@ -310,7 +317,7 @@ function ConfigurationForm({
               ] as const
             ).map((item) => (
               <label key={item.field}>
-                {item.name} (days)
+                {translate("days", { value0: item.name })}
                 <input
                   type="number"
                   required
@@ -330,7 +337,11 @@ function ConfigurationForm({
                   }}
                 />
                 <small>
-                  {item.min}–{item.max} days. Default: {item.default}.
+                  {translate("daysDefault", {
+                    value0: item.min,
+                    value1: item.max,
+                    value2: item.default,
+                  })}
                 </small>
               </label>
             ))}
@@ -338,14 +349,7 @@ function ConfigurationForm({
         )}
         {section === "destinations" && (
           <>
-            <p>
-              Public HTTPS destinations are allowed by default. Approve precise
-              origins to permit private-network or local HTTP destinations.
-              Leave networks empty for exact-origin approval. A nonempty network
-              list restricts every resolved address for that origin to those
-              networks, even for public HTTPS. Redirect and DNS checks still
-              apply.
-            </p>
+            <p>{translate("publicHttpsDestinationsAreAllowedByDefault")}</p>
             <div className="admin-records">
               {draft.allowedDestinations.map((destination, index) => (
                 <article
@@ -356,8 +360,10 @@ function ConfigurationForm({
                     <h3>{destination.origin}</h3>
                     <p>
                       {destination.allowedCidrs.length > 0
-                        ? `Restricted networks: ${destination.allowedCidrs.join(", ")}`
-                        : "Exact-origin approval; no CIDR narrowing."}
+                        ? translate("restrictedNetworks", {
+                            value0: destination.allowedCidrs.join(", "),
+                          })
+                        : translate("message_4d358e5232")}
                     </p>
                   </div>
                   <div className="admin-actions">
@@ -370,7 +376,7 @@ function ConfigurationForm({
                         setNetworks(destination.allowedCidrs.join("\n"));
                       }}
                     >
-                      Edit approval
+                      {translate("editApproval")}
                     </button>
                     <button
                       type="button"
@@ -385,17 +391,17 @@ function ConfigurationForm({
                         setChanged(true);
                       }}
                     >
-                      Remove approval
+                      {translate("removeApproval")}
                     </button>
                   </div>
                 </article>
               ))}
             </div>
             {!draft.allowedDestinations.length && (
-              <Empty>No additional destinations approved.</Empty>
+              <Empty>{translate("noAdditionalDestinationsApproved")}</Empty>
             )}
             <label>
-              Exact origin
+              {translate("exactOrigin")}
               <input
                 type="url"
                 value={origin}
@@ -404,7 +410,7 @@ function ConfigurationForm({
               />
             </label>
             <label>
-              Allowed networks (optional)
+              {translate("allowedNetworksOptional")}
               <textarea
                 rows={3}
                 value={networks}
@@ -414,9 +420,7 @@ function ConfigurationForm({
               />
             </label>
             <p id="destination-networks-help">
-              Enter CIDR ranges, one per line or separated by commas. Clearing
-              this field removes network narrowing for this origin, including
-              public HTTPS.
+              {translate("enterCidrRangesOnePerLineOr")}
             </p>
             <div className="admin-actions">
               <button
@@ -458,8 +462,8 @@ function ConfigurationForm({
                 }}
               >
                 {editingDestination === undefined
-                  ? "Add to review"
-                  : "Update review"}
+                  ? translate("addToReview")
+                  : translate("updateReview")}
               </button>
               {destinationInputDirty && (
                 <button
@@ -470,7 +474,7 @@ function ConfigurationForm({
                     setEditingDestination(undefined);
                   }}
                 >
-                  Cancel destination edit
+                  {translate("cancelDestinationEdit")}
                 </button>
               )}
             </div>
@@ -487,7 +491,7 @@ function ConfigurationForm({
               !draft.retention
             }
           >
-            Review and save changes
+            {translate("reviewAndSaveChanges")}
           </button>
         </div>
       </form>
@@ -495,8 +499,8 @@ function ConfigurationForm({
         <Confirm
           title={
             section === "destinations"
-              ? "Save destination policy"
-              : "Reduce retention"
+              ? translate("saveDestinationPolicy")
+              : translate("reduceRetention")
           }
           pending={action.pending}
           onClose={() => setReview(false)}
@@ -504,48 +508,46 @@ function ConfigurationForm({
         >
           {section === "destinations" ? (
             <>
-              <p>Only these additional destinations will remain approved:</p>
+              <p>
+                {translate("onlyTheseAdditionalDestinationsWillRemainApproved")}
+              </p>
               <ul>
                 {draft.allowedDestinations.map((d, i) => (
                   <li key={d.id || i}>
                     <strong>{d.origin}</strong> —{" "}
                     {d.allowedCidrs.length
-                      ? `Restricted to ${d.allowedCidrs.join(", ")}. Addresses outside these networks are blocked, including public HTTPS.`
-                      : "Exact-origin approval with no CIDR narrowing. Clearing previous networks broadens access for this origin."}
+                      ? translate(
+                          "restrictedToAddressesOutsideTheseNetworksAre",
+                          { value0: d.allowedCidrs.join(", ") },
+                        )
+                      : translate("message_c6474071b6")}
                   </li>
                 ))}
               </ul>
               <p>
-                Removing approval blocks future connections that require it.
-                Adding approval permits connections to the specified origin.
+                {translate(
+                  "removingApprovalBlocksFutureConnectionsThatRequire",
+                )}
               </p>
             </>
           ) : (
             <p>
-              Records older than the new limits become unavailable and are
-              eligible for deletion. Request metadata:{" "}
-              {draft.retention?.requestDays} days. Daily aggregates:{" "}
-              {draft.retention?.aggregateDays} days. Audit records:{" "}
-              {draft.retention?.auditDays} days. Existing backups follow
-              operator policy.
+              {translate("recordsOlderThanTheNewLimitsBecome", {
+                value0: draft.retention?.requestDays,
+                value1: draft.retention?.aggregateDays,
+                value2: draft.retention?.auditDays,
+              })}
             </p>
           )}
           <ErrorNotice error={action.error} />
           {!!action.error &&
             section === "destinations" &&
             ConnectError.from(action.error).code === Code.InvalidArgument && (
-              <p>
-                Check the exact origins and CIDR prefixes. Duplicate canonical
-                origins and invalid network prefixes are not accepted.
-              </p>
+              <p>{translate("checkTheExactOriginsAndCidrPrefixes")}</p>
             )}
           {!!action.error &&
             ConnectError.from(action.error).code === Code.Aborted && (
-              <p>
-                Your draft and network entries are preserved. The saved policy
-                changed. Reload the current settings and review your changes
-                before submitting again.
-              </p>
+              <p>{translate("yourDraftAndNetworkEntriesArePreserved")}</p>
             )}
         </Confirm>
       )}
@@ -565,15 +567,17 @@ export function validOrigin(value: string) {
     return false;
   }
 }
-const rateFields = [
-  ["input", "Input"],
-  ["output", "Output"],
-  ["cacheRead", "Cache read"],
-  ["cacheWrite", "Cache write"],
-  ["cacheWriteShort", "Short cache write"],
-  ["cacheWriteLong", "Long cache write"],
-] as const;
+const rateFields = () =>
+  [
+    ["input", translate("input")],
+    ["output", translate("output")],
+    ["cacheRead", translate("cacheRead")],
+    ["cacheWrite", translate("cacheWrite")],
+    ["cacheWriteShort", translate("shortCacheWrite")],
+    ["cacheWriteLong", translate("longCacheWrite")],
+  ] as const;
 export function Prices() {
+  useLocale();
   const [token, setToken] = useState("");
   const [editing, setEditing] = useState<PriceSnapshot>();
   const [deleting, setDeleting] = useState<PriceSnapshot>();
@@ -585,8 +589,8 @@ export function Prices() {
   return (
     <>
       <PageHeader
-        title="Price overrides"
-        description="Common prices in currency units per million tokens. Applies to new requests only."
+        title={translate("priceOverrides")}
+        description={translate("commonPricesInCurrencyUnitsPerMillion")}
         action={
           <button
             className="admin-primary"
@@ -601,7 +605,7 @@ export function Prices() {
               setEditing({ revision: query.data!.revision });
             }}
           >
-            Add price override
+            {translate("addPriceOverride")}
           </button>
         }
       />
@@ -620,7 +624,7 @@ export function Prices() {
         <Card>
           {!query.data?.overrides.length && (
             <Empty>
-              No price overrides. Bundled prices apply where available.
+              {translate("noPriceOverridesBundledPricesApplyWhere")}
             </Empty>
           )}
           <div className="admin-records">
@@ -631,16 +635,22 @@ export function Prices() {
                     {price.providerId} / {price.modelId}
                   </h2>
                   <p>
-                    Tier: {price.serviceTier || "Default"} · Provenance:
-                    Instance operator override
+                    {translate("tierProvenanceInstanceOperatorOverride", {
+                      value0: price.serviceTier || translate("default"),
+                    })}
                   </p>
-                  <p>Updated {date(price.updatedAt)}</p>
-                  {rateFields.map(([field, name]) => (
+                  <p>
+                    {translate("updated", { value0: date(price.updatedAt) })}
+                  </p>
+                  {rateFields().map(([field, name]) => (
                     <p key={field}>
                       {name}:{" "}
                       {price.rates?.[field] === undefined
-                        ? "Unknown"
-                        : `${price.rates.currency} ${price.rates[field]} per million tokens`}
+                        ? translate("unknown")
+                        : translate("perMillionTokens", {
+                            value0: price.rates.currency,
+                            value1: price.rates[field],
+                          })}
                     </p>
                   ))}
                 </div>
@@ -652,7 +662,7 @@ export function Prices() {
                       setEditing({ price, revision: query.data!.revision });
                     }}
                   >
-                    Edit override
+                    {translate("editOverride")}
                   </button>
                   <button
                     disabled={!query.data?.revision || action.pending}
@@ -661,7 +671,7 @@ export function Prices() {
                       setDeleting({ price, revision: query.data!.revision });
                     }}
                   >
-                    Delete override
+                    {translate("deleteOverride")}
                   </button>
                 </div>
               </article>
@@ -704,13 +714,14 @@ function PriceEditor({
   action: ReturnType<typeof useAction>;
   onClose: () => void;
 }) {
+  useLocale();
   const [provider, setProvider] = useState(price?.providerId ?? "");
   const [model, setModel] = useState(price?.modelId ?? "");
   const [tier, setTier] = useState(price?.serviceTier ?? "");
   const [currency, setCurrency] = useState(price?.rates?.currency ?? "USD");
   const [rates, setRates] = useState<Record<string, string>>(() =>
     Object.fromEntries(
-      rateFields.map(([field]) => [field, price?.rates?.[field] ?? ""]),
+      rateFields().map(([field]) => [field, price?.rates?.[field] ?? ""]),
     ),
   );
   const snapshot = usePriceRevision(
@@ -726,7 +737,9 @@ function PriceEditor({
   }, [dirty]);
   return (
     <Dialog
-      title={price ? "Edit price override" : "Add price override"}
+      title={
+        price ? translate("editPriceOverride") : translate("addPriceOverride")
+      }
       onClose={onClose}
     >
       <form
@@ -755,7 +768,7 @@ function PriceEditor({
         }}
       >
         <label>
-          Provider ID
+          {translate("providerId")}
           <input
             required
             readOnly={!!price}
@@ -764,7 +777,7 @@ function PriceEditor({
           />
         </label>
         <label>
-          Model ID
+          {translate("modelId_089ef2")}
           <input
             required
             readOnly={!!price}
@@ -773,7 +786,7 @@ function PriceEditor({
           />
         </label>
         <label>
-          Service tier
+          {translate("serviceTier_e9cf60")}
           <input
             readOnly={!!price}
             value={tier}
@@ -781,7 +794,7 @@ function PriceEditor({
           />
         </label>
         <label>
-          Currency
+          {translate("currency")}
           <input
             required
             pattern="[A-Z]{3}"
@@ -790,12 +803,9 @@ function PriceEditor({
             onChange={(e) => setCurrency(e.target.value.toUpperCase())}
           />
         </label>
-        <p>
-          Rates per million tokens. Blank means unknown. Enter 0 only for a
-          confirmed zero price. Historical estimates remain unchanged.
-        </p>
+        <p>{translate("ratesPerMillionTokensBlankMeansUnknown")}</p>
         <div className="admin-form-grid">
-          {rateFields.map(([field, name]) => (
+          {rateFields().map(([field, name]) => (
             <label key={field}>
               {name}
               <input
@@ -813,13 +823,13 @@ function PriceEditor({
         {snapshot.controls}
         <div className="admin-actions">
           <button type="button" data-cancel onClick={onClose}>
-            Cancel
+            {translate("cancel")}
           </button>
           <button
             className="admin-primary"
             disabled={action.pending || snapshot.blocked}
           >
-            Save override
+            {translate("saveOverride")}
           </button>
         </div>
       </form>
@@ -838,11 +848,12 @@ function PriceDeletion({
   action: ReturnType<typeof useAction>;
   onClose: () => void;
 }) {
+  useLocale();
   const snapshot = usePriceRevision(revision, price, action);
   const remove = useMutation(OperatorService.method.deletePriceOverride);
   return (
     <Confirm
-      title="Delete price override"
+      title={translate("deletePriceOverride")}
       name={price.modelId}
       pending={action.pending || snapshot.blocked}
       onClose={onClose}
@@ -854,14 +865,11 @@ function PriceDeletion({
               overrideId: price.id,
               expectedRevision: snapshot.revision,
             }),
-          { done: onClose, success: "Price override deleted." },
+          { done: onClose, success: translate("priceOverrideDeleted") },
         );
       }}
     >
-      <p>
-        Future requests use the bundled price where available; otherwise cost is
-        unknown. Historical estimates remain unchanged.
-      </p>
+      <p>{translate("futureRequestsUseTheBundledPriceWhere")}</p>
       <ErrorNotice error={action.error} />
       {snapshot.controls}
     </Confirm>

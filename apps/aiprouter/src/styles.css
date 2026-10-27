@@ -745,3 +745,28 @@ caption {
   border-radius: 12px;
   background: linear-gradient(90deg, #e9edf3, #f0f3f7, #e9edf3);
 }
+
+.language-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 24px;
+}
+.language-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 100%;
+  font-size: 14px;
+}
+.language-selector select {
+  min-height: 44px;
+  max-width: 100%;
+}
+@media (max-width: 600px) {
+  .language-toolbar {
+    padding: 12px 16px;
+  }
+}

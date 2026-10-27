@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale, formatNumber } from "../i18n";
 import { useContext, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
@@ -41,58 +42,56 @@ export function timeRange(start: string, end: string) {
   };
 }
 export function Summary({ summary }: { summary?: UsageSummary }) {
+  useLocale();
   return (
     <Card>
-      <h2>Usage summary</h2>
+      <h2>{translate("usageSummary")}</h2>
       {summary ? (
         <>
           <div className="admin-metrics">
             <div>
-              <span>Requests</span>
+              <span>{translate("requests")}</span>
               <strong>{String(summary.requestCount)}</strong>
             </div>
             <div>
-              <span>Known estimated cost</span>
+              <span>{translate("knownEstimatedCost")}</span>
               <strong>
                 {summary.knownCosts.length
                   ? summary.knownCosts.map(money).join(" · ")
-                  : "Unknown"}
+                  : translate("unknown")}
               </strong>
             </div>
             <div>
-              <span>Confirmed input tokens</span>
-              <strong>
-                {summary.knownUsage?.inputTokens?.toString() ?? "Unknown"}
-              </strong>
+              <span>{translate("confirmedInputTokens")}</span>
+              <strong>{formatNumber(summary.knownUsage?.inputTokens)}</strong>
             </div>
             <div>
-              <span>Confirmed output tokens</span>
-              <strong>
-                {summary.knownUsage?.outputTokens?.toString() ?? "Unknown"}
-              </strong>
+              <span>{translate("confirmedOutputTokens")}</span>
+              <strong>{formatNumber(summary.knownUsage?.outputTokens)}</strong>
             </div>
           </div>
           <p>
-            {String(summary.missingCostCount)} requests with unknown cost ·{" "}
-            {String(summary.missingUsageCount)} missing usage ·{" "}
-            {String(summary.missingPriceCount)} missing price
+            {translate("requestsWithUnknownCostMissingUsageMissing", {
+              value0: String(summary.missingCostCount),
+              value1: String(summary.missingUsageCount),
+              value2: String(summary.missingPriceCount),
+            })}
           </p>
           <p>
-            Failed requests: {String(summary.failedRequestCount)}. Recorded
-            metadata may be incomplete if usage recording failed.
+            {translate("failedRequestsRecordedMetadataMayBeIncomplete", {
+              value0: String(summary.failedRequestCount),
+            })}
           </p>
         </>
       ) : (
-        <Empty>Usage summary is unavailable.</Empty>
+        <Empty>{translate("usageSummaryIsUnavailable")}</Empty>
       )}
-      <p>
-        Estimates, not billing. Currency is shown with each known cost. Price
-        changes apply to new requests only.
-      </p>
+      <p>{translate("estimatesNotBillingCurrencyIsShownWith")}</p>
     </Card>
   );
 }
 export function OrganizationUsage() {
+  useLocale();
   const { organizationId } = useContext(AdminAuthority);
   const [dates, setDates] = useState(initialDates);
   const [userId, setUserId] = useState("");
@@ -140,15 +139,15 @@ export function OrganizationUsage() {
   return (
     <>
       <PageHeader
-        title="Organization usage"
-        description="Per-member request metadata. No credentials, prompts or response bodies."
+        title={translate("organizationUsage")}
+        description={translate("perMemberRequestMetadataNoCredentialsPrompts")}
       />
       <Card>
         <details className="admin-filters" open>
-          <summary>Filters</summary>
+          <summary>{translate("filters_546ebb")}</summary>
           <div className="admin-form-grid">
             <label>
-              From (UTC)
+              {translate("fromUtc")}
               <input
                 type="date"
                 value={dates.start}
@@ -160,7 +159,7 @@ export function OrganizationUsage() {
               />
             </label>
             <label>
-              Through (UTC)
+              {translate("throughUtc")}
               <input
                 type="date"
                 value={dates.end}
@@ -172,7 +171,7 @@ export function OrganizationUsage() {
               />
             </label>
             <label>
-              Member ID
+              {translate("memberId")}
               <input
                 value={userId}
                 onChange={(e) => {
@@ -180,11 +179,11 @@ export function OrganizationUsage() {
                   setToken("");
                   setDailyToken("");
                 }}
-                placeholder="All members"
+                placeholder={translate("allMembers")}
               />
             </label>
             <label>
-              Model
+              {translate("model")}
               <input
                 value={modelId}
                 onChange={(e) => {
@@ -192,14 +191,14 @@ export function OrganizationUsage() {
                   setToken("");
                   setDailyToken("");
                 }}
-                placeholder="All models"
+                placeholder={translate("allModels")}
               />
             </label>
             <label>
-              Provider
+              {translate("provider")}
               <input
                 value={providerId}
-                placeholder="All providers"
+                placeholder={translate("allProviders")}
                 onChange={(e) => {
                   setProviderId(e.target.value);
                   setToken("");
@@ -208,7 +207,7 @@ export function OrganizationUsage() {
               />
             </label>
             <label>
-              Outcome
+              {translate("outcome")}
               <select
                 value={outcome}
                 onChange={(e) => {
@@ -217,24 +216,22 @@ export function OrganizationUsage() {
                   setDailyToken("");
                 }}
               >
-                <option value="">All outcomes</option>
+                <option value="">{translate("allOutcomes")}</option>
                 {Object.values(RequestOutcome)
                   .filter((v) => typeof v === "number")
                   .map((v) => (
                     <option value={v} key={v}>
                       {v === RequestOutcome.UNSPECIFIED
-                        ? "Unknown"
+                        ? translate("unknown")
                         : label(RequestOutcome[v as number])}
                     </option>
                   ))}
               </select>
             </label>
           </div>
-          <button onClick={reset}>Clear filters</button>
+          <button onClick={reset}>{translate("clearFilters")}</button>
         </details>
-        {!valid && (
-          <p role="alert">Choose an end date on or after the start date.</p>
-        )}
+        {!valid && <p role="alert">{translate("chooseAnEndDateOnOrAfter")}</p>}
       </Card>
       {valid && (
         <>
@@ -249,7 +246,7 @@ export function OrganizationUsage() {
             <Summary summary={summary.data?.summary} />
           )}
           <Card>
-            <h2>Daily usage</h2>
+            <h2>{translate("dailyUsage")}</h2>
             {daily.isPending ? (
               <Loading />
             ) : daily.error ? (
@@ -267,36 +264,46 @@ export function OrganizationUsage() {
                     >
                       <div>
                         <h3>
-                          {day.date} UTC · {day.modelId || "All models"}
+                          {translate("utc", {
+                            value0: day.date,
+                            value1: day.modelId || translate("allModels"),
+                          })}
                         </h3>
-                        <p>Member: {day.userId || "Deleted user"}</p>
                         <p>
-                          Requests:{" "}
-                          {day.summary?.requestCount?.toString() ?? "Unknown"}
+                          {translate("member_0975eb", {
+                            value0:
+                              day.userId || translate("message_152bc3aa4e"),
+                          })}
                         </p>
                         <p>
-                          Known estimated cost:{" "}
-                          {day.summary?.knownCosts.length
-                            ? day.summary.knownCosts.map(money).join(" · ")
-                            : "Unknown"}
+                          {translate("requests_f598de", {
+                            value0: formatNumber(day.summary?.requestCount),
+                          })}
                         </p>
                         <p>
-                          Unknown cost:{" "}
-                          {day.summary?.missingCostCount?.toString() ??
-                            "Unknown"}{" "}
-                          · Missing usage:{" "}
-                          {day.summary?.missingUsageCount?.toString() ??
-                            "Unknown"}{" "}
-                          · Missing price:{" "}
-                          {day.summary?.missingPriceCount?.toString() ??
-                            "Unknown"}
+                          {translate("knownEstimatedCost_ad4501", {
+                            value0: day.summary?.knownCosts.length
+                              ? day.summary.knownCosts.map(money).join(" · ")
+                              : translate("unknown"),
+                          })}
+                        </p>
+                        <p>
+                          {translate("unknownCostMissingUsageMissingPrice", {
+                            value0: formatNumber(day.summary?.missingCostCount),
+                            value1: formatNumber(
+                              day.summary?.missingUsageCount,
+                            ),
+                            value2: formatNumber(
+                              day.summary?.missingPriceCount,
+                            ),
+                          })}
                         </p>
                       </div>
                     </article>
                   ))}
                 </div>
                 {!daily.data?.days.length && (
-                  <Empty>No daily usage matches these filters.</Empty>
+                  <Empty>{translate("noDailyUsageMatchesTheseFilters")}</Empty>
                 )}
                 <Pager
                   token={dailyToken}
@@ -307,7 +314,7 @@ export function OrganizationUsage() {
             )}
           </Card>
           <Card>
-            <h2>Request metadata</h2>
+            <h2>{translate("requestMetadata")}</h2>
             {query.isPending ? (
               <Loading />
             ) : query.error ? (
@@ -324,29 +331,41 @@ export function OrganizationUsage() {
                         <h3>{record.modelId}</h3>
                         <p>{date(record.occurredAt)}</p>
                         <p>
-                          Member: {record.userId || "Deleted user"} ·{" "}
-                          {record.outcome === RequestOutcome.UNSPECIFIED
-                            ? "Unknown outcome"
-                            : label(RequestOutcome[record.outcome])}
+                          {translate("member_827fcf", {
+                            value0:
+                              record.userId || translate("message_152bc3aa4e"),
+                            value1:
+                              record.outcome === RequestOutcome.UNSPECIFIED
+                                ? translate("unknownOutcome")
+                                : label(RequestOutcome[record.outcome]),
+                          })}
                         </p>
                         <p>
-                          Input:{" "}
-                          {record.usage?.inputTokens?.toString() ?? "Unknown"} ·
-                          Output:{" "}
-                          {record.usage?.outputTokens?.toString() ?? "Unknown"}
+                          {translate("inputOutput", {
+                            value0: formatNumber(record.usage?.inputTokens),
+                            value1: formatNumber(record.usage?.outputTokens),
+                          })}
                         </p>
-                        <p>Estimated cost: {money(record.estimatedCost)}</p>
-                        <p>Request ID: {record.requestId || "Unknown"}</p>
+                        <p>
+                          {translate("estimatedCost", {
+                            value0: money(record.estimatedCost),
+                          })}
+                        </p>
+                        <p>
+                          {translate("requestId", {
+                            value0: record.requestId || translate("unknown"),
+                          })}
+                        </p>
                       </div>
                       <button onClick={() => setDetail(record)}>
-                        View estimate details
+                        {translate("viewEstimateDetails")}
                       </button>
                     </article>
                   ))}
                 </div>
                 {!records.length && (
                   <Empty>
-                    No requests match these filters. Clear filters to try again.
+                    {translate("noRequestsMatchTheseFiltersClearFilters")}
                   </Empty>
                 )}
                 <Pager
@@ -361,27 +380,42 @@ export function OrganizationUsage() {
       )}
       {detail && (
         <Dialog
-          title="Request estimate"
+          title={translate("requestEstimate")}
           onClose={() => setDetail(undefined)}
           initial="cancel"
         >
-          <p>Request ID: {detail.requestId}</p>
-          <p>Estimated cost: {money(detail.estimatedCost)}</p>
+          <p>{translate("requestId", { value0: detail.requestId })}</p>
           <p>
-            Price provenance:{" "}
-            {detail.appliedPrice
-              ? label(PriceSource[detail.appliedPrice.source])
-              : "Unknown"}
+            {translate("estimatedCost", {
+              value0: money(detail.estimatedCost),
+            })}
           </p>
-          <p>Revision: {detail.appliedPrice?.sourceRevision || "Unknown"}</p>
-          <p>Service tier: {detail.appliedPrice?.serviceTier || "Unknown"}</p>
           <p>
-            This estimate was fixed when the request was processed. Later price
-            updates do not change it.
+            {translate("priceProvenance", {
+              value0: detail.appliedPrice
+                ? label(PriceSource[detail.appliedPrice.source])
+                : translate("unknown"),
+            })}
           </p>
-          <p>Error code: {detail.errorCode || "None reported"}</p>
+          <p>
+            {translate("revision", {
+              value0:
+                detail.appliedPrice?.sourceRevision || translate("unknown"),
+            })}
+          </p>
+          <p>
+            {translate("serviceTier", {
+              value0: detail.appliedPrice?.serviceTier || translate("unknown"),
+            })}
+          </p>
+          <p>{translate("thisEstimateWasFixedWhenTheRequest")}</p>
+          <p>
+            {translate("errorCode", {
+              value0: detail.errorCode || translate("message_ffcae7fc61"),
+            })}
+          </p>
           <button data-cancel onClick={() => setDetail(undefined)}>
-            Close
+            {translate("close")}
           </button>
         </Dialog>
       )}
@@ -389,6 +423,7 @@ export function OrganizationUsage() {
   );
 }
 export function Audit({ operator = false }: { operator?: boolean }) {
+  useLocale();
   const { organizationId } = useContext(AdminAuthority);
   const [token, setToken] = useState("");
   const [actor, setActor] = useState("");
@@ -423,15 +458,19 @@ export function Audit({ operator = false }: { operator?: boolean }) {
   return (
     <>
       <PageHeader
-        title={operator ? "Instance audit" : "Organization audit"}
-        description="Permission, lifecycle and configuration events. Safe metadata only."
+        title={
+          operator ? translate("instanceAudit") : translate("organizationAudit")
+        }
+        description={translate(
+          "permissionLifecycleAndConfigurationEventsSafeMetadata",
+        )}
       />
       <Card>
         <details open className="admin-filters">
-          <summary>Filters</summary>
+          <summary>{translate("filters_546ebb")}</summary>
           <div className="admin-form-grid">
             <label>
-              Actor ID
+              {translate("actorId")}
               <input
                 value={actor}
                 onChange={(e) => {
@@ -441,7 +480,7 @@ export function Audit({ operator = false }: { operator?: boolean }) {
               />
             </label>
             <label>
-              Action
+              {translate("action")}
               <select
                 value={action}
                 onChange={(e) => {
@@ -449,7 +488,7 @@ export function Audit({ operator = false }: { operator?: boolean }) {
                   setToken("");
                 }}
               >
-                <option value="">All actions</option>
+                <option value="">{translate("allActions")}</option>
                 {Object.values(AuditAction)
                   .filter((v) => typeof v === "number")
                   .map((v) => (
@@ -460,7 +499,7 @@ export function Audit({ operator = false }: { operator?: boolean }) {
               </select>
             </label>
             <label>
-              Outcome
+              {translate("outcome")}
               <select
                 value={outcome}
                 onChange={(e) => {
@@ -468,20 +507,20 @@ export function Audit({ operator = false }: { operator?: boolean }) {
                   setToken("");
                 }}
               >
-                <option value="">All outcomes</option>
+                <option value="">{translate("allOutcomes")}</option>
                 {Object.values(AuditOutcome)
                   .filter((v) => typeof v === "number")
                   .map((value) => (
                     <option key={value} value={value}>
                       {value === AuditOutcome.UNSPECIFIED
-                        ? "Unknown"
+                        ? translate("unknown")
                         : label(AuditOutcome[value as number])}
                     </option>
                   ))}
               </select>
             </label>
             <label>
-              From (UTC)
+              {translate("fromUtc")}
               <input
                 type="date"
                 value={dates.start}
@@ -492,7 +531,7 @@ export function Audit({ operator = false }: { operator?: boolean }) {
               />
             </label>
             <label>
-              Through (UTC)
+              {translate("throughUtc")}
               <input
                 type="date"
                 value={dates.end}
@@ -512,13 +551,11 @@ export function Audit({ operator = false }: { operator?: boolean }) {
               setToken("");
             }}
           >
-            Clear filters
+            {translate("clearFilters")}
           </button>
         </details>
         {!valid ? (
-          <p role="alert">
-            Choose both dates with the end on or after the start.
-          </p>
+          <p role="alert">{translate("chooseBothDatesWithTheEndOn")}</p>
         ) : query.isPending ? (
           <Loading />
         ) : query.error ? (
@@ -531,9 +568,7 @@ export function Audit({ operator = false }: { operator?: boolean }) {
               ))}
             </div>
             {!records.length && (
-              <Empty>
-                No audit records match. Clear filters or check another page.
-              </Empty>
+              <Empty>{translate("noAuditRecordsMatchClearFiltersOr")}</Empty>
             )}
             <Pager
               token={token}
@@ -547,24 +582,37 @@ export function Audit({ operator = false }: { operator?: boolean }) {
   );
 }
 function AuditRow({ record }: { record: AuditRecord }) {
+  useLocale();
   return (
     <article className="admin-record">
       <div>
         <h2>
           {record.action === AuditAction.UNSPECIFIED
-            ? "Unknown action"
+            ? translate("unknownAction")
             : label(AuditAction[record.action])}
         </h2>
         <p>{date(record.occurredAt)}</p>
-        <p>Actor: {record.actorUserId || "Deleted user"}</p>
-        <p>Target: {record.resourceId || "Unknown"}</p>
         <p>
-          Outcome:{" "}
-          {record.outcome === AuditOutcome.UNSPECIFIED
-            ? "Unknown"
-            : label(AuditOutcome[record.outcome])}
+          {translate("actor", {
+            value0: record.actorUserId || translate("message_152bc3aa4e"),
+          })}
         </p>
-        {record.requestId && <p>Request ID: {record.requestId}</p>}
+        <p>
+          {translate("target", {
+            value0: record.resourceId || translate("unknown"),
+          })}
+        </p>
+        <p>
+          {translate("outcome_3bacad", {
+            value0:
+              record.outcome === AuditOutcome.UNSPECIFIED
+                ? translate("unknown")
+                : label(AuditOutcome[record.outcome]),
+          })}
+        </p>
+        {record.requestId && (
+          <p>{translate("requestId", { value0: record.requestId })}</p>
+        )}
       </div>
     </article>
   );

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale, getLocale, formatDecimal } from "./i18n";
 import {
   cloneElement,
   isValidElement,
@@ -21,6 +22,7 @@ export function Button({
 }: ComponentProps<"button"> & {
   variant?: "primary" | "secondary" | "danger" | "ghost";
 }) {
+  useLocale();
   return (
     <button
       type="button"
@@ -34,6 +36,7 @@ export function Card({
   className = "",
   ...props
 }: ComponentProps<"section">) {
+  useLocale();
   return (
     <section className={`card ${className}`} {...props}>
       {children}
@@ -47,6 +50,7 @@ export function Badge({
   children: ReactNode;
   tone?: "neutral" | "success" | "warning" | "danger" | "info";
 }) {
+  useLocale();
   return <span className={`badge ${tone}`}>{children}</span>;
 }
 export function PageHeader({
@@ -58,6 +62,7 @@ export function PageHeader({
   description?: ReactNode;
   action?: ReactNode;
 }) {
+  useLocale();
   return (
     <header className="page-heading">
       <div>
@@ -77,6 +82,7 @@ export function Field({
   children: ReactNode;
   hint?: ReactNode;
 }) {
+  useLocale();
   const id = useId();
   const child = isValidElement(children)
     ? (children as ReactElement<Record<string, unknown>>)
@@ -104,6 +110,7 @@ export function Notice({
   children: ReactNode;
   tone?: "info" | "danger" | "warning" | "success";
 }) {
+  useLocale();
   return (
     <div
       className={`notice ${tone}`}
@@ -120,23 +127,31 @@ export function ErrorNotice({
   error: unknown;
   retry?: () => void;
 }) {
+  useLocale();
   if (!error) return null;
   const detail = ConnectError.from(error).findDetails(ErrorDetailSchema)[0];
   return (
     <Notice tone="danger">
       {errorMessage(error)}
-      {detail?.requestId && <p>Request ID: {detail.requestId}</p>}
-      {detail?.retryAfterSeconds !== undefined && (
-        <p>Try again after {detail.retryAfterSeconds} seconds.</p>
+      {detail?.requestId && (
+        <p>{translate("requestId", { value0: detail.requestId })}</p>
       )}
-      {retry && <Button onClick={retry}>Try again</Button>}
+      {detail?.retryAfterSeconds !== undefined && (
+        <p>
+          {translate("tryAgainAfterSeconds", {
+            value0: detail.retryAfterSeconds,
+          })}
+        </p>
+      )}
+      {retry && <Button onClick={retry}>{translate("tryAgain")}</Button>}
     </Notice>
   );
 }
 export function Loading() {
+  useLocale();
   return (
     <div className="loading-state" role="status" aria-busy="true">
-      <p>Loading…</p>
+      <p>{translate("loading")}</p>
       <div className="skeleton" aria-hidden="true" />
     </div>
   );
@@ -150,6 +165,7 @@ export function EmptyState({
   children?: ReactNode;
   action?: ReactNode;
 }) {
+  useLocale();
   return (
     <Card className="empty">
       <h2>{title}</h2>
@@ -171,6 +187,7 @@ export function Dialog({
   initialFocus?: string;
   wide?: boolean;
 }) {
+  useLocale();
   const ref = useRef<HTMLDialogElement>(null);
   const reportDirty = useDirtyForm();
   const reportDirtyRef = useRef(reportDirty);
@@ -221,7 +238,11 @@ export function Dialog({
     >
       <div className="dialog-heading">
         <h2 id={titleId}>{title}</h2>
-        <Button aria-label="Close dialog" variant="ghost" onClick={onClose}>
+        <Button
+          aria-label={translate("closeDialog")}
+          variant="ghost"
+          onClick={onClose}
+        >
           ×
         </Button>
       </div>
@@ -236,7 +257,7 @@ export function ConfirmDialog({
   onConfirm,
   pending = false,
   error,
-  confirmLabel = "Confirm",
+  confirmLabel = translate("confirm"),
   danger = true,
 }: {
   title: string;
@@ -248,20 +269,21 @@ export function ConfirmDialog({
   confirmLabel?: string;
   danger?: boolean;
 }) {
+  useLocale();
   return (
     <Dialog title={title} onClose={onClose} initialFocus="[data-cancel]">
       <p>{children}</p>
       <ErrorNotice error={error} />
       <div className="actions">
         <Button data-cancel onClick={onClose}>
-          Cancel
+          {translate("cancel")}
         </Button>
         <Button
           variant={danger ? "danger" : "primary"}
           disabled={pending}
           onClick={onConfirm}
         >
-          {pending ? "Saving…" : confirmLabel}
+          {pending ? translate("message_23e39291d6") : confirmLabel}
         </Button>
       </div>
     </Dialog>
@@ -280,33 +302,34 @@ export function Pagination({
   hasPrevious?: boolean;
   pending?: boolean;
 }) {
+  useLocale();
   return (
     <div className="actions">
       <Button disabled={!hasPrevious || pending} onClick={onFirst}>
-        First page
+        {translate("firstPage")}
       </Button>
       <Button disabled={!next || pending} onClick={() => next && onNext(next)}>
-        Next page
+        {translate("nextPage")}
       </Button>
     </div>
   );
 }
 export function CopyButton({
   value,
-  label = "Copy",
+  label = translate("copy"),
 }: {
   value: string;
   label?: string;
 }) {
+  useLocale();
   const [message, setMessage] = useState("");
   return (
     <>
       <Button
         onClick={() => {
           void navigator.clipboard.writeText(value).then(
-            () => setMessage("Copied."),
-            () =>
-              setMessage("Copy failed. Select and copy the value manually."),
+            () => setMessage(translate("copied")),
+            () => setMessage(translate("copyFailedSelectAndCopyTheValue")),
           );
         }}
       >
@@ -318,21 +341,16 @@ export function CopyButton({
 }
 export function formatDate(value?: Timestamp) {
   return value
-    ? new Date(Number(value.seconds) * 1000).toLocaleString("en-US", {
+    ? new Date(Number(value.seconds) * 1000).toLocaleString(getLocale(), {
         timeZone: "UTC",
         dateStyle: "medium",
         timeStyle: "short",
       }) + " UTC"
-    : "Unknown";
+    : translate("unknown");
 }
 export function formatMoney(value?: Money) {
-  return value ? `${value.currency} ${value.decimalAmount}` : "Unknown";
-}
-export function enumLabel(value: string | undefined) {
   return value
-    ? value
-        .toLowerCase()
-        .replaceAll("_", " ")
-        .replace(/^./, (c) => c.toUpperCase())
-    : "Unknown";
+    ? `${value.currency} ${formatDecimal(value.decimalAmount)}`
+    : translate("unknown");
 }
+export { enumLabel } from "./i18n";

@@ -21,6 +21,8 @@
 !protos/
 !protos/**
 !scripts/
+!scripts/localization/
+!scripts/localization/**
 !scripts/aiprouter/
 !scripts/aiprouter/licenses.py
 !scripts/aiprouter/console-notices.mjs

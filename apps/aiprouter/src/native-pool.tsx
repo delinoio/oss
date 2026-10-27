@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale } from "./i18n";
 import { create } from "@bufbuild/protobuf";
 import {
   NativePoolOptionsSchema,
@@ -47,7 +48,7 @@ export function nativePoolError(
 ): string | undefined {
   if (!options && !members.some((m) => m.nativeOptions)) return;
   if (!provider)
-    return "Native settings require OAuth connections from one provider: OpenAI, Anthropic, or Anthropic 2. These providers cannot be mixed.";
+    return translate("nativeSettingsRequireOauthConnectionsFromOne");
   const bounded = (n: number | undefined, min: number, max: number) =>
     n === undefined || (Number.isInteger(n) && n >= min && n <= max);
   for (const m of members) {
@@ -58,11 +59,11 @@ export function nativePoolError(
         !bounded(o.priority, -100, 100) ||
         (o.allowCredits && provider !== "openai"))
     )
-      return "Check member thresholds, native priority, and provider-specific credit settings.";
+      return translate("checkMemberThresholdsNativePriorityAndProvider");
   }
   if (!options) return;
   if (!bounded(options.upstreamFailoverThreshold, 0, 20))
-    return "Upstream failover threshold must be 0–20, or empty for the default of 3.";
+    return translate("upstreamFailoverThresholdMustBe020");
   if (
     options.pinnedTransientPolicy !== undefined &&
     ![
@@ -71,47 +72,47 @@ export function nativePoolError(
       NativePinnedTransientPolicy.DETOUR_NEW_THREADS,
     ].includes(options.pinnedTransientPolicy)
   )
-    return "Choose a supported pinned transient policy.";
+    return translate("chooseASupportedPinnedTransientPolicy");
   if (
     provider !== "openai" &&
     (options.upstreamFailoverThreshold !== undefined ||
       options.failureWindow !== undefined ||
       options.pinnedTransientPolicy !== undefined)
   )
-    return "Upstream failover, failure window, and pinned transient policy require a Codex pool. Clear incompatible settings before saving.";
+    return translate("upstreamFailoverFailureWindowAndPinnedTransient");
 
   if (
     !bounded(options.stickyLimit, 1, 100) ||
     !bounded(options.autoSwitchThreshold, 0, 100)
   )
-    return "Sticky limit must be 1–100 and switching threshold 0–100, or empty for defaults.";
+    return translate("stickyLimitMustBe1100And");
   if (
     provider === "openai" &&
     (options.quotaWindow !== NativeQuotaWindow.UNSPECIFIED ||
       options.nativeMessages !== undefined ||
       options.routes.length)
   )
-    return "Quota windows, native messages, and model rules require an Anthropic pool. Clear incompatible settings before saving.";
+    return translate("quotaWindowsNativeMessagesAndModelRules");
   if (
     provider !== "openai" &&
     (options.strategy === NativePoolStrategy.RESET_FIRST ||
       options.cacheAffinity !== undefined ||
       options.excludedPlans.length)
   )
-    return "Reset-first, cache affinity, and excluded plans require an OpenAI pool. Clear incompatible settings before saving.";
+    return translate("message_522839c681");
   if (
     options.excludedPlans.length > 100 ||
     new Set(options.excludedPlans.map((p) => p.toLowerCase())).size !==
       options.excludedPlans.length ||
     options.excludedPlans.some((p) => !p.trim() || p.length > 128)
   )
-    return "Use up to 100 nonempty unique excluded plans, each at most 128 characters (case-insensitive).";
+    return translate("useUpTo100NonemptyUniqueExcluded");
   if (
     options.routes.length > 32 ||
     new Set(options.routes.map((r) => r.name)).size !== options.routes.length ||
     new Set(options.routes.map((r) => r.match)).size !== options.routes.length
   )
-    return "Use at most 32 model rules with unique names and patterns.";
+    return translate("useAtMost32ModelRulesWith");
   for (const r of options.routes) {
     if (
       !/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(r.name) ||
@@ -123,7 +124,7 @@ export function nativePoolError(
       new Set(r.connectionIds).size !== r.connectionIds.length ||
       r.connectionIds.some((id) => !members.some((m) => m.connectionId === id))
     )
-      return "Each model rule needs a safe unique name, a valid model pattern, and 1–32 distinct current pool connections.";
+      return translate("eachModelRuleNeedsASafeUnique");
   }
 }
 function OptionalNumber({
@@ -141,6 +142,7 @@ function OptionalNumber({
   max: number;
   hint: string;
 }) {
+  useLocale();
   return (
     <Field label={label} hint={hint}>
       <input
@@ -167,6 +169,7 @@ function OptionalBoolean({
   onChange: (n: boolean | undefined) => void;
   hint: string;
 }) {
+  useLocale();
   return (
     <Field label={label} hint={hint}>
       <select
@@ -177,9 +180,9 @@ function OptionalBoolean({
           )
         }
       >
-        <option value="">Default</option>
-        <option value="true">Enabled</option>
-        <option value="false">Disabled</option>
+        <option value="">{translate("default")}</option>
+        <option value="true">{translate("enabled")}</option>
+        <option value="false">{translate("disabled")}</option>
       </select>
     </Field>
   );
@@ -199,23 +202,20 @@ export function NativePoolFields({
   accounts: ProviderConnection[];
   isNew: boolean;
 }) {
+  useLocale();
   const provider = nativeProvider(members, accounts),
     codex = provider === "openai";
   const error = nativePoolError(options, members, provider);
   const name = (id: string) =>
-    accounts.find((a) => a.id === id)?.name ?? "Unavailable connection";
+    accounts.find((a) => a.id === id)?.name ??
+    translate("unavailableConnection");
   return (
     <details>
-      <summary>Native OAuth pool settings</summary>
-      <p>
-        Applies to pools containing OAuth connections from exactly one provider:
-        OpenAI (Codex), Anthropic, or Anthropic 2. Generic session affinity
-        above remains separate.
-      </p>
+      <summary>{translate("nativeOauthPoolSettings")}</summary>
+      <p>{translate("appliesToPoolsContainingOauthConnectionsFrom")}</p>
       {!provider && (
         <Notice>
-          Add connections from one supported OAuth provider to configure native
-          pooling.
+          {translate("addConnectionsFromOneSupportedOauthProvider")}
         </Notice>
       )}
       <label className="check">
@@ -228,22 +228,22 @@ export function NativePoolFields({
               e.target.checked ? create(NativePoolOptionsSchema) : undefined,
             )
           }
-        />{" "}
-        Configure pool-level native settings
+        />
+        {translate("configurePoolLevelNativeSettings")}
       </label>
       {options && provider && (
         <>
           <OptionalBoolean
-            label="Native pooling"
+            label={translate("nativePooling")}
             value={options.enabled}
             hint={
               isNew
-                ? "Default enables native pooling when this pool is created. Choose Disabled to opt out."
-                : "An unspecified saved value is disabled. Choose Enabled to opt in."
+                ? translate("defaultEnablesNativePoolingWhenThisPool")
+                : translate("anUnspecifiedSavedValueIsDisabledChoose")
             }
             onChange={(enabled) => onChange({ ...options, enabled })}
           />
-          <Field label="Native selection strategy">
+          <Field label={translate("nativeSelectionStrategy")}>
             <select
               value={options.strategy}
               onChange={(e) =>
@@ -251,7 +251,7 @@ export function NativePoolFields({
               }
             >
               <option value={NativePoolStrategy.UNSPECIFIED}>
-                Default (quota)
+                {translate("defaultQuota")}
               </option>
               {[
                 NativePoolStrategy.QUOTA,
@@ -266,19 +266,19 @@ export function NativePoolFields({
             </select>
           </Field>
           <OptionalNumber
-            label="Sticky account limit"
+            label={translate("stickyAccountLimit")}
             value={options.stickyLimit}
             min={1}
             max={100}
-            hint="Empty uses 1."
+            hint={translate("emptyUses1")}
             onChange={(stickyLimit) => onChange({ ...options, stickyLimit })}
           />
           <OptionalNumber
-            label="Pool switching threshold (%)"
+            label={translate("poolSwitchingThreshold")}
             value={options.autoSwitchThreshold}
             min={0}
             max={100}
-            hint="Empty uses 80. Zero disables voluntary quota switching."
+            hint={translate("emptyUses80ZeroDisablesVoluntaryQuota")}
             onChange={(autoSwitchThreshold) =>
               onChange({ ...options, autoSwitchThreshold })
             }
@@ -286,26 +286,26 @@ export function NativePoolFields({
           {codex ? (
             <>
               <OptionalNumber
-                label="Upstream failover threshold"
+                label={translate("upstreamFailoverThreshold")}
                 value={options.upstreamFailoverThreshold}
                 min={0}
                 max={20}
-                hint="Empty uses 3. Zero disables upstream-failure-based failover."
+                hint={translate("emptyUses3ZeroDisablesUpstreamFailure")}
                 onChange={(upstreamFailoverThreshold) =>
                   onChange({ ...options, upstreamFailoverThreshold })
                 }
               />
               <OptionalBoolean
-                label="Failure window"
+                label={translate("failureWindow")}
                 value={options.failureWindow}
-                hint="Default: enabled. Uses a sliding 60-second failure ratio; Disabled uses only the consecutive-failure counter."
+                hint={translate("defaultEnabledUsesASliding60Second")}
                 onChange={(failureWindow) =>
                   onChange({ ...options, failureWindow })
                 }
               />
               <Field
-                label="Pinned transient policy"
-                hint="Empty uses Keep. Detour applies only to new threads on a degraded manually pinned account; existing bound threads are unchanged."
+                label={translate("pinnedTransientPolicy")}
+                hint={translate("emptyUsesKeepDetourAppliesOnlyTo")}
               >
                 <select
                   value={options.pinnedTransientPolicy ?? ""}
@@ -319,32 +319,34 @@ export function NativePoolFields({
                     })
                   }
                 >
-                  <option value="">Default (keep)</option>
+                  <option value="">{translate("defaultKeep")}</option>
                   {options.pinnedTransientPolicy ===
                     NativePinnedTransientPolicy.UNSPECIFIED && (
                     <option value={NativePinnedTransientPolicy.UNSPECIFIED}>
-                      Unspecified (keep)
+                      {translate("unspecifiedKeep")}
                     </option>
                   )}
-                  <option value={NativePinnedTransientPolicy.KEEP}>Keep</option>
+                  <option value={NativePinnedTransientPolicy.KEEP}>
+                    {translate("keep")}
+                  </option>
                   <option
                     value={NativePinnedTransientPolicy.DETOUR_NEW_THREADS}
                   >
-                    Detour new threads
+                    {translate("detourNewThreads")}
                   </option>
                 </select>
               </Field>
               <OptionalBoolean
-                label="Cache affinity"
+                label={translate("cacheAffinity")}
                 value={options.cacheAffinity}
-                hint="Default: enabled for Codex."
+                hint={translate("defaultEnabledForCodex")}
                 onChange={(cacheAffinity) =>
                   onChange({ ...options, cacheAffinity })
                 }
               />
               <Field
-                label="Excluded plans"
-                hint="One plan per line, up to 100. Names are case-insensitive."
+                label={translate("excludedPlans")}
+                hint={translate("onePlanPerLineUpTo100")}
               >
                 <textarea
                   value={options.excludedPlans.join("\n")}
@@ -361,7 +363,7 @@ export function NativePoolFields({
             </>
           ) : (
             <>
-              <Field label="Native quota window">
+              <Field label={translate("nativeQuotaWindow")}>
                 <select
                   value={options.quotaWindow}
                   onChange={(e) =>
@@ -372,7 +374,7 @@ export function NativePoolFields({
                   }
                 >
                   <option value={NativeQuotaWindow.UNSPECIFIED}>
-                    Default (five-hour)
+                    {translate("defaultFiveHour")}
                   </option>
                   {[
                     NativeQuotaWindow.FIVE_HOUR,
@@ -386,24 +388,25 @@ export function NativePoolFields({
                 </select>
               </Field>
               <OptionalBoolean
-                label="Native messages"
+                label={translate("nativeMessages")}
                 value={options.nativeMessages}
-                hint="Default: enabled. Disabled uses legacy translation."
+                hint={translate("defaultEnabledDisabledUsesLegacyTranslation")}
                 onChange={(nativeMessages) =>
                   onChange({ ...options, nativeMessages })
                 }
               />
-              <h3>Ordered model rules</h3>
-              <p>
-                The first matching rule selects an ordered subset of this pool.
-                Rules apply only while native pooling is enabled.
-              </p>
+              <h3>{translate("orderedModelRules")}</h3>
+              <p>{translate("theFirstMatchingRuleSelectsAnOrdered")}</p>
               {options.routes.map((route, index) => (
                 <fieldset key={index}>
-                  <legend>Model rule {index + 1}</legend>
+                  <legend>
+                    {translate("modelRule", { value0: index + 1 })}
+                  </legend>
                   <Field
-                    label={`Rule name ${index + 1}`}
-                    hint="Letters, digits, underscores, or hyphens; start with a letter or digit."
+                    label={translate("ruleName", { value0: index + 1 })}
+                    hint={translate(
+                      "lettersDigitsUnderscoresOrHyphensStartWith",
+                    )}
                   >
                     <input
                       required
@@ -421,8 +424,8 @@ export function NativePoolFields({
                     />
                   </Field>
                   <Field
-                    label={`Model pattern ${index + 1}`}
-                    hint="Use * and ? as wildcards; maximum 128 characters."
+                    label={translate("modelPattern", { value0: index + 1 })}
+                    hint={translate("useAndAsWildcardsMaximum128Characters")}
                   >
                     <input
                       required
@@ -458,7 +461,7 @@ export function NativePoolFields({
                               });
                             }}
                           >
-                            Move connection up
+                            {translate("moveConnectionUp")}
                           </Button>
                           <Button
                             onClick={() =>
@@ -477,13 +480,17 @@ export function NativePoolFields({
                               })
                             }
                           >
-                            Remove rule connection
+                            {translate("removeRuleConnection")}
                           </Button>
                         </div>
                       </li>
                     ))}
                   </ol>
-                  <Field label={`Add rule connection ${index + 1}`}>
+                  <Field
+                    label={translate("addRuleConnection", {
+                      value0: index + 1,
+                    })}
+                  >
                     <select
                       value=""
                       disabled={route.connectionIds.length >= 32}
@@ -505,7 +512,9 @@ export function NativePoolFields({
                           });
                       }}
                     >
-                      <option value="">Choose a pool connection</option>
+                      <option value="">
+                        {translate("chooseAPoolConnection")}
+                      </option>
                       {members
                         .filter(
                           (m) => !route.connectionIds.includes(m.connectionId),
@@ -531,8 +540,8 @@ export function NativePoolFields({
                           ),
                         })
                       }
-                    />{" "}
-                    Use the full pool only when no listed connection is eligible
+                    />
+                    {translate("useTheFullPoolOnlyWhenNo")}
                   </label>
                   <div className="actions">
                     <Button
@@ -546,7 +555,7 @@ export function NativePoolFields({
                         onChange({ ...options, routes });
                       }}
                     >
-                      Move rule up
+                      {translate("moveRuleUp")}
                     </Button>
                     <Button
                       onClick={() =>
@@ -556,7 +565,7 @@ export function NativePoolFields({
                         })
                       }
                     >
-                      Remove model rule {index + 1}
+                      {translate("removeModelRule", { value0: index + 1 })}
                     </Button>
                   </div>
                 </fieldset>
@@ -570,7 +579,7 @@ export function NativePoolFields({
                   })
                 }
               >
-                Add model rule
+                {translate("addModelRule")}
               </Button>
             </>
           )}
@@ -578,7 +587,7 @@ export function NativePoolFields({
       )}
       {provider && (
         <>
-          <h3>Member native options</h3>
+          <h3>{translate("memberNativeOptions")}</h3>
           {members.map((member, index) => {
             const current = member.nativeOptions;
             const update = (
@@ -603,27 +612,35 @@ export function NativePoolFields({
                           : undefined,
                       )
                     }
-                  />{" "}
-                  Override native options for {name(member.connectionId)}
+                  />
+                  {translate("overrideNativeOptionsFor", {
+                    value0: name(member.connectionId),
+                  })}
                 </label>
                 {current && (
                   <>
                     <OptionalNumber
-                      label={`Switching threshold for ${name(member.connectionId)} (%)`}
+                      label={translate("switchingThresholdFor", {
+                        value0: name(member.connectionId),
+                      })}
                       value={current.autoSwitchThreshold}
                       min={0}
                       max={100}
-                      hint="Empty inherits the pool threshold. Zero disables voluntary quota switching."
+                      hint={translate(
+                        "emptyInheritsThePoolThresholdZeroDisables",
+                      )}
                       onChange={(autoSwitchThreshold) =>
                         update({ ...current, autoSwitchThreshold })
                       }
                     />
                     <OptionalNumber
-                      label={`Native priority for ${name(member.connectionId)}`}
+                      label={translate("nativePriorityFor", {
+                        value0: name(member.connectionId),
+                      })}
                       value={current.priority}
                       min={-100}
                       max={100}
-                      hint="Higher values come first. Separate from the pool member order above."
+                      hint={translate("higherValuesComeFirstSeparateFromThe")}
                       onChange={(priority) => update({ ...current, priority })}
                     />
                     <label className="check">
@@ -636,12 +653,15 @@ export function NativePoolFields({
                             useRemainingQuota: e.target.checked,
                           })
                         }
-                      />{" "}
-                      Use remaining quota for {name(member.connectionId)}
+                      />
+                      {translate("useRemainingQuotaFor", {
+                        value0: name(member.connectionId),
+                      })}
                     </label>
                     <p>
-                      Using remaining quota makes the effective switching
-                      threshold zero.
+                      {translate(
+                        "usingRemainingQuotaMakesTheEffectiveSwitching",
+                      )}
                     </p>
                     {codex && (
                       <label className="check">
@@ -654,8 +674,10 @@ export function NativePoolFields({
                               allowCredits: e.target.checked,
                             })
                           }
-                        />{" "}
-                        Allow credits for {name(member.connectionId)}
+                        />
+                        {translate("allowCreditsFor", {
+                          value0: name(member.connectionId),
+                        })}
                       </label>
                     )}
                   </>
@@ -666,10 +688,7 @@ export function NativePoolFields({
         </>
       )}
       {error && <Notice tone="warning">{error}</Notice>}
-      <p>
-        Saving replaces all native pool and member options. Clearing them
-        removes saved settings; it does not change generic affinity.
-      </p>
+      <p>{translate("savingReplacesAllNativePoolAndMember")}</p>
       {(options || members.some((m) => m.nativeOptions)) && (
         <Button
           onClick={() => {
@@ -677,7 +696,7 @@ export function NativePoolFields({
             onMembers(members.map((m) => ({ ...m, nativeOptions: undefined })));
           }}
         >
-          Clear all native settings
+          {translate("clearAllNativeSettings")}
         </Button>
       )}
     </details>

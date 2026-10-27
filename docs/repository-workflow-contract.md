@@ -633,7 +633,7 @@ AIPRouter uses the root `github.com/delinoio/oss` Go module. The module selects 
 
 The central `node-labs-site-test` job owns `apps/labs-site/**` and its project/foundation contracts. It uses one frozen script-disabled workspace install and the shared affected runner with the exact planner comparison to run `labs-site test` on Ubuntu. Shared workspace and development-wrapper inputs force validation. The final CI result includes this job. PRs, main pushes, and manual dispatch retain affected selection and existing native platform restrictions. This job validates TypeScript and the static production build; it does not publish to Cloudflare Pages or establish domain, DNS, TLS, or production HTTP acceptance. See [the labs-site foundation](apps-labs-site-foundation.md).
 
-## Labs localization validation
+## Shared localization validation
 
 The existing Labs Site and Labs Docs jobs also own `scripts/localization/**` and
 `docs/apps-labs-localization-contract.md`. Shared tooling changes select both
@@ -641,3 +641,5 @@ jobs through the existing affected planner. App tests run offline auth/generatio
 fixtures and freshness checks before static builds; cached build and route leaves
 include the shared tool inputs. CI does not authenticate with ChatGPT or generate
 translations. See the [localization contract](apps-labs-localization-contract.md).
+
+The AIPRouter workflow also selects `scripts/localization/**` changes. Its console tests and production builds check catalog freshness offline and report wholly unstarted target languages as deferred; the Docker console stage includes the shared CLI inputs. Package-local Turbo inputs include catalogs and shared localization tooling for test/build invalidation. Authentication and translation generation remain local maintainer operations and never run in CI.

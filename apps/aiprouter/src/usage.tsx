@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale, formatNumber } from "./i18n";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
@@ -26,41 +27,50 @@ import {
   Pagination,
 } from "./ui";
 export function SummaryCards({ summary }: { summary?: UsageSummary }) {
+  useLocale();
   return (
     <div className="stats">
       <Card>
-        <p>Requests</p>
-        <strong>{summary?.requestCount.toString() ?? "Unknown"}</strong>
+        <p>{translate("requests")}</p>
+        <strong>{formatNumber(summary?.requestCount)}</strong>
       </Card>
       <Card>
-        <p>Known estimated cost</p>
+        <p>{translate("knownEstimatedCost")}</p>
         <strong>
           {summary?.knownCosts.length
             ? summary.knownCosts.map(formatMoney).join(" · ")
-            : "Unknown"}
+            : translate("unknown")}
         </strong>
         <p>
           {summary
-            ? `${summary.missingCostCount} requests with unknown cost`
-            : "Unknown cost coverage"}
+            ? translate("requestsWithUnknownCost", {
+                value0: summary.missingCostCount,
+              })
+            : translate("unknownCostCoverage")}
         </p>
       </Card>
       <Card>
-        <p>Confirmed tokens</p>
+        <p>{translate("confirmedTokens")}</p>
         <strong>
-          {summary?.knownUsage?.inputTokens?.toString() ?? "Unknown"} in /{" "}
-          {summary?.knownUsage?.outputTokens?.toString() ?? "Unknown"} out
+          {translate("inOut", {
+            value0: formatNumber(summary?.knownUsage?.inputTokens),
+            value1: formatNumber(summary?.knownUsage?.outputTokens),
+          })}
         </strong>
         <p>
           {summary
-            ? `${summary.missingUsageCount} missing usage · ${summary.missingPriceCount} missing prices`
-            : "Unknown usage coverage"}
+            ? translate("missingUsageMissingPrices", {
+                value0: summary.missingUsageCount,
+                value1: summary.missingPriceCount,
+              })
+            : translate("unknownUsageCoverage")}
         </p>
       </Card>
     </div>
   );
 }
 export function UsagePage({ organization, session }: PageProps) {
+  useLocale();
   const [range, setRange] = useState(() => ({
     start: new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10),
     end: new Date().toISOString().slice(0, 10),
@@ -105,7 +115,7 @@ export function UsagePage({ organization, session }: PageProps) {
   };
   const filterForm = (
     <>
-      <Field label="Start date (UTC)">
+      <Field label={translate("startDateUtc")}>
         <input
           type="date"
           required
@@ -116,7 +126,7 @@ export function UsagePage({ organization, session }: PageProps) {
           }}
         />
       </Field>
-      <Field label="End date (UTC)">
+      <Field label={translate("endDateUtc")}>
         <input
           type="date"
           required
@@ -127,7 +137,7 @@ export function UsagePage({ organization, session }: PageProps) {
           }}
         />
       </Field>
-      <Field label="Model ID">
+      <Field label={translate("modelId_089ef2")}>
         <input
           value={model}
           onChange={(e) => {
@@ -136,7 +146,7 @@ export function UsagePage({ organization, session }: PageProps) {
           }}
         />
       </Field>
-      <Field label="Provider ID">
+      <Field label={translate("providerId")}>
         <input
           value={provider}
           onChange={(e) => {
@@ -145,7 +155,7 @@ export function UsagePage({ organization, session }: PageProps) {
           }}
         />
       </Field>
-      <Field label="Outcome">
+      <Field label={translate("outcome")}>
         <select
           value={outcome}
           onChange={(e) => {
@@ -153,8 +163,10 @@ export function UsagePage({ organization, session }: PageProps) {
             setToken("");
           }}
         >
-          <option value={-1}>All outcomes</option>
-          <option value={RequestOutcome.UNSPECIFIED}>Unknown outcome</option>
+          <option value={-1}>{translate("allOutcomes")}</option>
+          <option value={RequestOutcome.UNSPECIFIED}>
+            {translate("unknownOutcome")}
+          </option>
           {[
             RequestOutcome.SUCCEEDED,
             RequestOutcome.UPSTREAM_ERROR,
@@ -168,37 +180,39 @@ export function UsagePage({ organization, session }: PageProps) {
           ))}
         </select>
       </Field>
-      <Button onClick={reset}>Clear filters</Button>
+      <Button onClick={reset}>{translate("clearFilters")}</Button>
     </>
   );
   const visible = records.data?.records;
   return (
     <>
       <PageHeader
-        title="Your usage"
-        description={`Your requests in ${organization.name}. Last 7 days by default. Times shown in UTC.`}
+        title={translate("yourUsage")}
+        description={translate("yourRequestsInLast7DaysBy", {
+          value0: organization.name,
+        })}
       />
-      <Notice>
-        Costs are estimates, not billing. Unknown usage and prices are never
-        counted as zero. Recording failures can leave totals incomplete.
-      </Notice>
+      <Notice>{translate("costsAreEstimatesNotBillingUnknownUsage")}</Notice>
       <div className="desktop-filters filters">{filterForm}</div>
       <Button className="mobile-filters" onClick={() => setFilters(true)}>
-        Filters ({Number(!!model) + Number(outcome !== -1) + Number(!!provider)}
-        )
+        {translate("filters", {
+          value0: Number(!!model) + Number(outcome !== -1) + Number(!!provider),
+        })}
       </Button>
       {filters && (
-        <Dialog title="Usage filters" onClose={() => setFilters(false)}>
+        <Dialog
+          title={translate("usageFilters")}
+          onClose={() => setFilters(false)}
+        >
           {filterForm}
           <Button variant="primary" onClick={() => setFilters(false)}>
-            Done
+            {translate("done")}
           </Button>
         </Dialog>
       )}
       {!valid && (
         <Notice tone="danger">
-          Choose a valid date range. The end date must be on or after the start
-          date.
+          {translate("chooseAValidDateRangeTheEnd")}
         </Notice>
       )}
       <ErrorNotice error={summary.error} retry={() => void summary.refetch()} />
@@ -219,10 +233,10 @@ export function UsagePage({ organization, session }: PageProps) {
         <Loading />
       ) : visible?.length === 0 ? (
         <EmptyState
-          title="No matching requests"
-          action={<Button onClick={reset}>Clear filters</Button>}
+          title={translate("noMatchingRequests")}
+          action={<Button onClick={reset}>{translate("clearFilters")}</Button>}
         >
-          Requests appear after a client uses your routing.
+          {translate("requestsAppearAfterAClientUsesYour")}
         </EmptyState>
       ) : valid ? (
         <div className="records">
@@ -235,13 +249,25 @@ export function UsagePage({ organization, session }: PageProps) {
                   {enumLabel(RequestOutcome[r.outcome])}
                 </p>
                 <p>
-                  Tokens: {r.usage?.inputTokens?.toString() ?? "Unknown"} in /{" "}
-                  {r.usage?.outputTokens?.toString() ?? "Unknown"} out
+                  {translate("tokensInOut", {
+                    value0: formatNumber(r.usage?.inputTokens),
+                    value1: formatNumber(r.usage?.outputTokens),
+                  })}
                 </p>
-                <p>Estimated cost: {formatMoney(r.estimatedCost)}</p>
-                <small>Request ID: {r.requestId || "Unknown"}</small>
+                <p>
+                  {translate("estimatedCost", {
+                    value0: formatMoney(r.estimatedCost),
+                  })}
+                </p>
+                <small>
+                  {translate("requestId", {
+                    value0: r.requestId || translate("unknown"),
+                  })}
+                </small>
               </div>
-              <Button onClick={() => setDetail(r)}>View estimate</Button>
+              <Button onClick={() => setDetail(r)}>
+                {translate("viewEstimate")}
+              </Button>
             </Card>
           ))}
         </div>
@@ -253,27 +279,45 @@ export function UsagePage({ organization, session }: PageProps) {
         hasPrevious={!!token}
       />
       {detail && (
-        <Dialog title="Request estimate" onClose={() => setDetail(undefined)}>
-          <p>Request ID: {detail.requestId}</p>
-          <p>Estimated cost: {formatMoney(detail.estimatedCost)}</p>
+        <Dialog
+          title={translate("requestEstimate")}
+          onClose={() => setDetail(undefined)}
+        >
+          <p>{translate("requestId", { value0: detail.requestId })}</p>
           <p>
-            Price source:{" "}
-            {enumLabel(
-              detail.appliedPrice
-                ? PriceSource[detail.appliedPrice.source]
-                : undefined,
-            )}
+            {translate("estimatedCost", {
+              value0: formatMoney(detail.estimatedCost),
+            })}
           </p>
           <p>
-            Price revision: {detail.appliedPrice?.sourceRevision || "Unknown"}
+            {translate("priceSource", {
+              value0: enumLabel(
+                detail.appliedPrice
+                  ? PriceSource[detail.appliedPrice.source]
+                  : undefined,
+              ),
+            })}
           </p>
-          <p>Applied: {formatDate(detail.appliedPrice?.appliedAt)}</p>
-          <p>Service tier: {detail.appliedPrice?.serviceTier || "Unknown"}</p>
-          <Notice>
-            The applied price and estimate are fixed for this request. Later
-            price changes do not change this estimate.
-          </Notice>
-          <Button onClick={() => setDetail(undefined)}>Done</Button>
+          <p>
+            {translate("priceRevision", {
+              value0:
+                detail.appliedPrice?.sourceRevision || translate("unknown"),
+            })}
+          </p>
+          <p>
+            {translate("applied", {
+              value0: formatDate(detail.appliedPrice?.appliedAt),
+            })}
+          </p>
+          <p>
+            {translate("serviceTier", {
+              value0: detail.appliedPrice?.serviceTier || translate("unknown"),
+            })}
+          </p>
+          <Notice>{translate("theAppliedPriceAndEstimateAreFixed")}</Notice>
+          <Button onClick={() => setDetail(undefined)}>
+            {translate("done")}
+          </Button>
         </Dialog>
       )}
     </>
@@ -298,6 +342,7 @@ export function UsageTrend({
   providerId?: string;
   outcome?: RequestOutcome;
 }) {
+  useLocale();
   const [token, setToken] = useState("");
   const query = useQuery(UsageService.method.listDailyUsage, {
     organizationId,
@@ -315,23 +360,20 @@ export function UsageTrend({
   }, 1n);
   return (
     <Card>
-      <h2>Requests over time</h2>
-      <p>
-        Daily recorded requests in UTC. Missing records remain unknown.
-        Estimates include only known costs.
-      </p>
+      <h2>{translate("requestsOverTime")}</h2>
+      <p>{translate("dailyRecordedRequestsInUtcMissingRecords")}</p>
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       {query.isPending ? (
         <Loading />
       ) : days.length === 0 ? (
-        <p>No daily records available for this range.</p>
+        <p>{translate("noDailyRecordsAvailableForThisRange")}</p>
       ) : (
         <>
           <div className="usage-bars" aria-hidden="true">
             {days.map((d, i) => (
               <div key={`${d.date}:${d.modelId}:${i}`}>
                 <span className="bar-count">
-                  {d.summary?.requestCount.toString() ?? "Unknown"}
+                  {formatNumber(d.summary?.requestCount)}
                 </span>
                 <span
                   className="usage-bar"
@@ -346,33 +388,31 @@ export function UsageTrend({
             ))}
           </div>
           <details>
-            <summary>View daily data table</summary>
+            <summary>{translate("viewDailyDataTable")}</summary>
             <div className="table-wrap">
               <table>
-                <caption>Daily recorded usage (UTC)</caption>
+                <caption>{translate("dailyRecordedUsageUtc")}</caption>
                 <thead>
                   <tr>
-                    <th>Date</th>
-                    <th>Model</th>
-                    <th>Requests</th>
-                    <th>Known estimated cost</th>
-                    <th>Unknown cost count</th>
+                    <th>{translate("date")}</th>
+                    <th>{translate("model")}</th>
+                    <th>{translate("requests")}</th>
+                    <th>{translate("knownEstimatedCost")}</th>
+                    <th>{translate("unknownCostCount")}</th>
                   </tr>
                 </thead>
                 <tbody>
                   {days.map((d, i) => (
                     <tr key={i}>
                       <th scope="row">{d.date}</th>
-                      <td>{d.modelId || "All models"}</td>
-                      <td>{d.summary?.requestCount.toString() ?? "Unknown"}</td>
+                      <td>{d.modelId || translate("allModels")}</td>
+                      <td>{formatNumber(d.summary?.requestCount)}</td>
                       <td>
                         {d.summary?.knownCosts.length
                           ? d.summary.knownCosts.map(formatMoney).join(" · ")
-                          : "Unknown"}
+                          : translate("unknown")}
                       </td>
-                      <td>
-                        {d.summary?.missingCostCount.toString() ?? "Unknown"}
-                      </td>
+                      <td>{formatNumber(d.summary?.missingCostCount)}</td>
                     </tr>
                   ))}
                 </tbody>

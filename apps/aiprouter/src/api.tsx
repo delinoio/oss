@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate } from "./i18n";
 import {
   useCallback,
   createContext,
@@ -103,26 +104,27 @@ export function useRefresh() {
 export function errorMessage(error: unknown): string {
   const e = ConnectError.from(error);
   if (e.code === Code.Unauthenticated)
-    return "Your session expired. Sign in again. Your action was not retried.";
+    return translate("yourSessionExpiredSignInAgainYour");
   if (e.code === Code.PermissionDenied)
-    return "Your permissions changed. This action is no longer available.";
+    return translate("yourPermissionsChangedThisActionIsNo");
   if (e.code === Code.Unimplemented)
-    return "This operation is not available on this server.";
+    return translate("thisOperationIsNotAvailableOnThis");
   if (e.code === Code.Unavailable)
-    return "The server is unavailable. Try again when the connection is restored.";
+    return translate("theServerIsUnavailableTryAgainWhen");
   if (e.code === Code.ResourceExhausted)
-    return "Too many requests. Wait before trying again.";
+    return translate("tooManyRequestsWaitBeforeTryingAgain");
   // Server diagnostics may contain submitted values; only display safe, fixed messages.
   if (e.code === Code.InvalidArgument)
-    return "Check the entered values and the allowed destination policy, then try again.";
-  if (e.code === Code.NotFound) return "This resource is no longer available.";
+    return translate("checkTheEnteredValuesAndTheAllowed");
+  if (e.code === Code.NotFound)
+    return translate("thisResourceIsNoLongerAvailable");
   if (
     e.code === Code.AlreadyExists ||
     e.code === Code.FailedPrecondition ||
     e.code === Code.Aborted
   )
-    return "This action conflicts with the current state. Refresh and check dependencies before trying again.";
-  return "The action could not be completed. Try again.";
+    return translate("thisActionConflictsWithTheCurrentState");
+  return translate("theActionCouldNotBeCompletedTry");
 }
 export const DirtyContext = createContext<(dirty: boolean) => void>(() => {});
 export function useDirtyForm() {

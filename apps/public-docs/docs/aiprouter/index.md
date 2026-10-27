@@ -21,6 +21,10 @@ The console guides you through this order:
 
 See [organizations](guide/organizations.md), [providers](guide/providers.md), and [clients](guide/clients.md).
 
+## Console language
+
+Use the language selector at the top right of the console, including the sign-in page. Language options are English, Korean, Japanese, Simplified Chinese, Spanish, French, German, and Brazilian Portuguese. English is the default. Translations have not been generated yet, so selecting another language currently keeps the console text in English. Your choice applies to this browser and does not change the selected organization or page. Dates and numbers follow the selected language; displayed timezones remain explicit. These public guides remain in English.
+
 ## Product boundaries
 
 AIPRouter is not a hosted SaaS, billing service, or remote command executor. It does not provide shared organization credentials, automatic import, user data export, or permanent conversation or media storage. Configuring a client and using an HTTP loopback relay are distinct from executing that client as a provider backend; the latter is excluded.

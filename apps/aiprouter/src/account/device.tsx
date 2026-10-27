@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale } from "../i18n";
 import { pageHref } from "../routes";
 import { useRef, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
@@ -23,6 +24,7 @@ enum Expiry {
 }
 
 export function DevicePage({ initialCode }: { initialCode?: string }) {
+  useLocale();
   const [input, setInput] = useState(
     initialCode ??
       new URLSearchParams(window.location.search).get("user_code") ??
@@ -31,8 +33,8 @@ export function DevicePage({ initialCode }: { initialCode?: string }) {
   const [code, setCode] = useState(input.trim());
   return (
     <AccountSurface
-      title="Connect this device?"
-      subtitle="Verify the details below and approve only a connection you started."
+      title={translate("connectThisDevice")}
+      subtitle={translate("verifyTheDetailsBelowAndApproveOnly")}
     >
       {code ? (
         <DeviceReview key={code} code={code} onReset={() => setCode("")} />
@@ -45,7 +47,7 @@ export function DevicePage({ initialCode }: { initialCode?: string }) {
           }}
         >
           <label>
-            Connection code
+            {translate("connectionCode")}
             <input
               autoFocus
               autoComplete="off"
@@ -58,10 +60,10 @@ export function DevicePage({ initialCode }: { initialCode?: string }) {
             />
           </label>
           <p className="account-hint">
-            Enter the one-time code shown by your CLI.
+            {translate("enterTheOneTimeCodeShownBy")}
           </p>
           <button className="account-primary" type="submit">
-            Review connection
+            {translate("reviewConnection")}
           </button>
         </form>
       )}
@@ -76,6 +78,7 @@ function DeviceReview({
   code: string;
   onReset: () => void;
 }) {
+  useLocale();
   const now = useNow();
   const [organizationId, setOrganizationId] = useState("");
   const [expiry, setExpiry] = useState(Expiry.ThirtyDays);
@@ -142,7 +145,9 @@ function DeviceReview({
 
   return (
     <div className="account-card">
-      {inspected.isPending && <p role="status">Checking connection code…</p>}
+      {inspected.isPending && (
+        <p role="status">{translate("checkingConnectionCode")}</p>
+      )}
       <AccountError
         error={error}
         retry={() => {
@@ -154,42 +159,43 @@ function DeviceReview({
       {authorization && (
         <>
           <dl className="account-details">
-            <dt>Server</dt>
+            <dt>{translate("server_aef7de")}</dt>
             <dd>{authorization.serverAddress}</dd>
-            <dt>Device</dt>
+            <dt>{translate("device")}</dt>
             <dd>{authorization.deviceName}</dd>
             {state !== State.PENDING && authorization.organizationId && (
               <>
-                <dt>Organization</dt>
+                <dt>{translate("organization")}</dt>
                 <dd>
                   {orgs.find((org) => org.id === authorization.organizationId)
                     ?.name ?? authorization.organizationId}
                 </dd>
-                <dt>Key expiry</dt>
+                <dt>{translate("keyExpiry")}</dt>
                 <dd>
                   {authorization.keyExpiresAt
                     ? dateLabel(authorization.keyExpiresAt)
-                    : "No expiry"}
+                    : translate("noExpiry")}
                 </dd>
               </>
             )}
           </dl>
-          <p>Connection code</p>
+          <p>{translate("connectionCode")}</p>
           <strong className="account-code">{code}</strong>
+          <p>{translate("confirmThisCodeMatchesYourCliApprove")}</p>
           <p>
-            Confirm this code matches your CLI. Approve only a connection you
-            started.
-          </p>
-          <p>
-            Original deadline:{" "}
-            {deadline === undefined
-              ? "Not available"
-              : dateLabel(timestampFromDate(new Date(deadline)))}
+            {translate("originalDeadline", {
+              value0:
+                deadline === undefined
+                  ? translate("notAvailable")
+                  : dateLabel(timestampFromDate(new Date(deadline))),
+            })}
           </p>
           {remaining !== undefined && (
             <p aria-live="off">
-              Code expires in {Math.floor(remaining / 60)}:
-              {String(remaining % 60).padStart(2, "0")}
+              {translate("codeExpiresIn", {
+                value0: Math.floor(remaining / 60),
+                value1: String(remaining % 60).padStart(2, "0"),
+              })}
             </p>
           )}
           {state === State.PENDING && (
@@ -233,14 +239,14 @@ function DeviceReview({
                 }}
               />
               <label>
-                Organization
+                {translate("organization")}
                 <select
                   required
                   value={organizationId}
                   disabled={busy || organizations.isError}
                   onChange={(event) => setOrganizationId(event.target.value)}
                 >
-                  <option value="">Choose an organization</option>
+                  <option value="">{translate("chooseAnOrganization")}</option>
                   {orgs.map((org) => (
                     <option key={org.id} value={org.id}>
                       {org.name}
@@ -253,9 +259,9 @@ function DeviceReview({
                 orgs.length === 0 && (
                   <p>
                     <a href="/overview">
-                      Create an organization or accept an invitation
+                      {translate("createAnOrganizationOrAcceptAnInvitation")}
                     </a>
-                    , then return to this code before its deadline.
+                    {translate("thenReturnToThisCodeBeforeIts")}
                   </p>
                 )}
               {organizations.hasNextPage && (
@@ -266,19 +272,23 @@ function DeviceReview({
                     void organizations.fetchNextPage();
                   }}
                 >
-                  Load more organizations
+                  {translate("loadMoreOrganizations")}
                 </button>
               )}
               <label>
-                Key expiry
+                {translate("keyExpiry")}
                 <select
                   value={expiry}
                   disabled={busy}
                   onChange={(event) => setExpiry(event.target.value as Expiry)}
                 >
-                  <option value={Expiry.ThirtyDays}>30 days</option>
-                  <option value={Expiry.NinetyDays}>90 days</option>
-                  <option value={Expiry.None}>No expiry</option>
+                  <option value={Expiry.ThirtyDays}>
+                    {translate("message30Days")}
+                  </option>
+                  <option value={Expiry.NinetyDays}>
+                    {translate("message90Days")}
+                  </option>
+                  <option value={Expiry.None}>{translate("noExpiry")}</option>
                 </select>
               </label>
               <div className="account-actions">
@@ -289,7 +299,9 @@ function DeviceReview({
                     !actionable || !selectedOrg || organizations.isError
                   }
                 >
-                  {approve.isPending ? "Approving…" : "Approve connection"}
+                  {approve.isPending
+                    ? translate("message_e99dcb0a97")
+                    : translate("approveConnection")}
                 </button>
                 <button
                   type="button"
@@ -306,7 +318,9 @@ function DeviceReview({
                     )
                   }
                 >
-                  {deny.isPending ? "Denying…" : "Deny"}
+                  {deny.isPending
+                    ? translate("message_a3830dd8c9")
+                    : translate("message_05a2d7332e")}
                 </button>
               </div>
             </form>
@@ -314,16 +328,12 @@ function DeviceReview({
           <div role="status">
             {state === State.APPROVED && (
               <>
-                <h2>Approved — waiting for CLI storage</h2>
+                <h2>{translate("approvedWaitingForCliStorage")}</h2>
+                <p>{translate("returnToYourCliToFinishApproval")}</p>
                 <p>
-                  Return to your CLI to finish. Approval does not confirm that
-                  your CLI stored the key.
-                </p>
-                <p>
-                  If local storage fails, the CLI attempts to revoke the key. If
-                  it reports incomplete revocation, revoke the CLI key in{" "}
+                  {translate("ifLocalStorageFailsTheCliAttempts")}
                   <a href={pageHref("keys", authorization.organizationId)}>
-                    API keys
+                    {translate("apiKeys")}
                   </a>
                   .
                 </p>
@@ -331,44 +341,31 @@ function DeviceReview({
             )}
             {state === State.DELIVERED && (
               <>
-                <h2>Connected</h2>
-                <p>
-                  The CLI confirmed that it stored the key. Continue in your CLI
-                  to review client settings.
-                </p>
+                <h2>{translate("connected")}</h2>
+                <p>{translate("theCliConfirmedThatItStoredThe")}</p>
               </>
             )}
             {state === State.DENIED && (
               <>
-                <h2>Connection denied</h2>
-                <p>
-                  This request was denied. Start a new connection from your CLI
-                  if needed.
-                </p>
+                <h2>{translate("connectionDenied")}</h2>
+                <p>{translate("thisRequestWasDeniedStartANew")}</p>
               </>
             )}
             {state === State.EXPIRED && (
               <>
-                <h2>Connection expired</h2>
-                <p>
-                  The original deadline has passed. An unclaimed key is revoked
-                  by the server. Start a new connection from your CLI.
-                </p>
+                <h2>{translate("connectionExpired")}</h2>
+                <p>{translate("theOriginalDeadlineHasPassedAnUnclaimed")}</p>
               </>
             )}
             {state === State.REVOKED && (
               <>
-                <h2>Connection not completed</h2>
-                <p>
-                  The connection key was revoked. Check the CLI for storage or
-                  delivery errors, then start a new connection.
-                </p>
+                <h2>{translate("connectionNotCompleted")}</h2>
+                <p>{translate("theConnectionKeyWasRevokedCheckThe")}</p>
               </>
             )}
             {state === State.UNSPECIFIED && (
               <p>
-                Connection status is unavailable. Refresh before taking any
-                action.
+                {translate("connectionStatusIsUnavailableRefreshBeforeTaking")}
               </p>
             )}
           </div>
@@ -376,7 +373,7 @@ function DeviceReview({
       )}
       <div className="account-actions">
         <button type="button" disabled={busy} onClick={onReset}>
-          Enter another code
+          {translate("enterAnotherCode")}
         </button>
       </div>
     </div>

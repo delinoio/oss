@@ -4,8 +4,10 @@ import { createRoot } from "react-dom/client";
 import { ApiProvider } from "./api";
 import { App } from "./app";
 import "./styles.css";
+import { LanguageSelector } from "./i18n";
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
+    <LanguageSelector />
     <ApiProvider>
       <App />
     </ApiProvider>

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale, enumLabel } from "./i18n";
 import { useState } from "react";
 import { create } from "@bufbuild/protobuf";
 import { useQuery } from "@connectrpc/connect-query";
@@ -31,15 +32,15 @@ import {
   Notice,
 } from "./ui";
 export function HostedHelpers({ organizationId }: { organizationId: string }) {
+  useLocale();
   const [open, setOpen] = useState(false);
   return (
     <Card>
-      <h2>Hosted helpers</h2>
-      <p>
-        Choose your own accounts for web search, image understanding, and image
-        or video generation.
-      </p>
-      <Button onClick={() => setOpen(true)}>Configure hosted helpers</Button>
+      <h2>{translate("hostedHelpers")}</h2>
+      <p>{translate("chooseYourOwnAccountsForWebSearch")}</p>
+      <Button onClick={() => setOpen(true)}>
+        {translate("configureHostedHelpers")}
+      </Button>
       {open && (
         <HostedLoader
           organizationId={organizationId}
@@ -56,19 +57,20 @@ function HostedLoader({
   organizationId: string;
   onClose: () => void;
 }) {
+  useLocale();
   const query = useQuery(HostedSettingsService.method.getHostedSettings, {
     organizationId,
   });
   const resources = usePersonalResources(organizationId);
   if (query.isPending)
     return (
-      <Dialog title="Hosted helpers" onClose={onClose}>
+      <Dialog title={translate("hostedHelpers")} onClose={onClose}>
         <Loading />
       </Dialog>
     );
   if (query.error)
     return (
-      <Dialog title="Hosted helpers" onClose={onClose}>
+      <Dialog title={translate("hostedHelpers")} onClose={onClose}>
         <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       </Dialog>
     );
@@ -95,6 +97,7 @@ function OptionalBoolean({
   value: boolean | undefined;
   onChange: (value: boolean | undefined) => void;
 }) {
+  useLocale();
   return (
     <Field label={label}>
       <select
@@ -105,9 +108,9 @@ function OptionalBoolean({
           )
         }
       >
-        <option value="">Default</option>
-        <option value="true">Enabled</option>
-        <option value="false">Disabled</option>
+        <option value="">{translate("default")}</option>
+        <option value="true">{translate("enabled")}</option>
+        <option value="false">{translate("disabled")}</option>
       </select>
     </Field>
   );
@@ -127,6 +130,7 @@ function OptionalNumber({
   min?: number;
   hint?: string;
 }) {
+  useLocale();
   return (
     <Field label={label} hint={hint}>
       <input
@@ -153,6 +157,7 @@ function EnumField({
   values: Record<string, string | number>;
   onChange: (value: number | undefined) => void;
 }) {
+  useLocale();
   return (
     <Field label={label}>
       <select
@@ -161,12 +166,12 @@ function EnumField({
           onChange(e.target.value === "" ? undefined : Number(e.target.value))
         }
       >
-        <option value="">Default</option>
+        <option value="">{translate("default")}</option>
         {Object.entries(values)
           .filter(([, v]) => typeof v === "number" && v !== 0)
           .map(([name, v]) => (
             <option key={name} value={v}>
-              {name.replaceAll("_", " ")}
+              {enumLabel(name)}
             </option>
           ))}
       </select>
@@ -186,24 +191,25 @@ function TargetFields({
   connections: ProviderConnection[];
   pools: Pool[];
 }) {
+  useLocale();
   const current = target?.selection.case
     ? `${target.selection.case}:${target.selection.value}`
     : "";
   const options = [
     ...connections.map((c) => ({
-      value: `connectionId:${c.id}`,
-      label: `Connection: ${c.name}`,
+      value: translate("connectionid", { value0: c.id }),
+      label: translate("connection", { value0: c.name }),
     })),
     ...pools.map((p) => ({
-      value: `poolId:${p.id}`,
-      label: `Pool: ${p.name}`,
+      value: translate("poolid", { value0: p.id }),
+      label: translate("pool", { value0: p.name }),
     })),
   ];
   return (
     <>
       <Field
         label={`${label} account`}
-        hint="Select a personal connection or pool. The server checks readiness and backend compatibility."
+        hint={translate("selectAPersonalConnectionOrPoolThe")}
       >
         <select
           value={current}
@@ -224,9 +230,11 @@ function TargetFields({
             );
           }}
         >
-          <option value="">No account selected</option>
+          <option value="">{translate("noAccountSelected")}</option>
           {current && !options.some((o) => o.value === current) && (
-            <option value={current}>Saved account unavailable</option>
+            <option value={current}>
+              {translate("savedAccountUnavailable")}
+            </option>
           )}
           {options.map((o) => (
             <option key={o.value} value={o.value}>
@@ -236,7 +244,7 @@ function TargetFields({
         </select>
       </Field>
       {target && (
-        <Field label={`${label} model ID`}>
+        <Field label={translate("modelId", { value0: label })}>
           <input
             value={target.modelId}
             onChange={(e) =>
@@ -270,6 +278,7 @@ function HostedEditor({
   resourcesPending: boolean;
   onClose: () => void;
 }) {
+  useLocale();
   const api = useApi();
   const action = useAction();
   const [draft, setDraft] = useState(() =>
@@ -280,11 +289,8 @@ function HostedEditor({
     images = draft.images;
   const targetProps = { connections, pools };
   return (
-    <Dialog title="Hosted helpers" onClose={onClose}>
-      <p>
-        Private to you in this organization. Helpers use their own selected
-        accounts, not the account serving the main request.
-      </p>
+    <Dialog title={translate("hostedHelpers")} onClose={onClose}>
+      <p>{translate("privateToYouInThisOrganizationHelpers")}</p>
       <ErrorNotice error={resourcesError} />
       <form
         onSubmit={(e) => {
@@ -296,12 +302,12 @@ function HostedEditor({
                 settings: draft,
               }),
             onClose,
-            "Hosted helper settings saved.",
+            translate("hostedHelperSettingsSaved"),
           );
         }}
       >
         <fieldset>
-          <legend>Web search</legend>
+          <legend>{translate("webSearch")}</legend>
           <label className="check">
             <input
               type="checkbox"
@@ -314,20 +320,20 @@ function HostedEditor({
                     : undefined,
                 })
               }
-            />{" "}
-            Configure web search
+            />
+            {translate("configureWebSearch")}
           </label>
           {search && (
             <>
               <OptionalBoolean
-                label="Web search availability"
+                label={translate("webSearchAvailability")}
                 value={search.enabled}
                 onChange={(enabled) =>
                   setDraft({ ...draft, search: { ...search, enabled } })
                 }
               />
               <EnumField
-                label="Search backend"
+                label={translate("searchBackend")}
                 value={search.backend}
                 values={HostedSearchBackend}
                 onChange={(backend) =>
@@ -335,7 +341,7 @@ function HostedEditor({
                 }
               />
               <TargetFields
-                label="Search"
+                label={translate("search")}
                 {...targetProps}
                 target={search.target}
                 onChange={(target) =>
@@ -343,9 +349,9 @@ function HostedEditor({
                 }
               />
               <details>
-                <summary>Advanced search settings</summary>
+                <summary>{translate("advancedSearchSettings")}</summary>
                 <EnumField
-                  label="Search reasoning effort"
+                  label={translate("searchReasoningEffort")}
                   value={search.reasoning}
                   values={ReasoningEffort}
                   onChange={(reasoning) =>
@@ -353,10 +359,10 @@ function HostedEditor({
                   }
                 />
                 <OptionalNumber
-                  label="Maximum searches per turn"
+                  label={translate("maximumSearchesPerTurn")}
                   value={search.maxSearchesPerTurn}
                   max={32}
-                  hint="Default: 3. Zero disables searches."
+                  hint={translate("default3ZeroDisablesSearches")}
                   onChange={(maxSearchesPerTurn) =>
                     setDraft({
                       ...draft,
@@ -365,11 +371,11 @@ function HostedEditor({
                   }
                 />
                 <OptionalNumber
-                  label="Search timeout (ms)"
+                  label={translate("searchTimeoutMs")}
                   value={search.timeoutMs}
                   min={1}
                   max={600000}
-                  hint="Default: 60000."
+                  hint={translate("default60000")}
                   onChange={(timeoutMs) =>
                     setDraft({ ...draft, search: { ...search, timeoutMs } })
                   }
@@ -392,8 +398,8 @@ function HostedEditor({
                             },
                           })
                         }
-                      />{" "}
-                      Configure X search
+                      />
+                      {translate("configureXSearch")}
                     </label>
                     {search.xSearch && (
                       <>
@@ -413,12 +419,12 @@ function HostedEditor({
                                 },
                               })
                             }
-                          />{" "}
-                          Enable X search
+                          />
+                          {translate("enableXSearch")}
                         </label>
                         <Field
-                          label="Allowed X handles"
-                          hint="One per line, up to 20. Use either allowed or excluded handles."
+                          label={translate("allowedXHandles")}
+                          hint={translate("onePerLineUpTo20Use")}
                         >
                           <textarea
                             value={search.xSearch.allowedXHandles.join("\n")}
@@ -438,7 +444,7 @@ function HostedEditor({
                             }
                           />
                         </Field>
-                        <Field label="Excluded X handles">
+                        <Field label={translate("excludedXHandles")}>
                           <textarea
                             value={search.xSearch.excludedXHandles.join("\n")}
                             onChange={(e) =>
@@ -457,7 +463,7 @@ function HostedEditor({
                             }
                           />
                         </Field>
-                        <Field label="X search from date">
+                        <Field label={translate("xSearchFromDate")}>
                           <input
                             type="date"
                             value={search.xSearch.fromDate ?? ""}
@@ -475,7 +481,7 @@ function HostedEditor({
                             }
                           />
                         </Field>
-                        <Field label="X search to date">
+                        <Field label={translate("xSearchToDate")}>
                           <input
                             type="date"
                             value={search.xSearch.toDate ?? ""}
@@ -502,7 +508,7 @@ function HostedEditor({
           )}
         </fieldset>
         <fieldset>
-          <legend>Image understanding</legend>
+          <legend>{translate("imageUnderstanding")}</legend>
           <label className="check">
             <input
               type="checkbox"
@@ -515,20 +521,20 @@ function HostedEditor({
                     : undefined,
                 })
               }
-            />{" "}
-            Configure image understanding
+            />
+            {translate("configureImageUnderstanding")}
           </label>
           {vision && (
             <>
               <OptionalBoolean
-                label="Image understanding availability"
+                label={translate("imageUnderstandingAvailability")}
                 value={vision.enabled}
                 onChange={(enabled) =>
                   setDraft({ ...draft, vision: { ...vision, enabled } })
                 }
               />
               <EnumField
-                label="Vision backend"
+                label={translate("visionBackend")}
                 value={vision.backend}
                 values={HostedVisionBackend}
                 onChange={(backend) =>
@@ -544,8 +550,8 @@ function HostedEditor({
               />
               {vision.backend === HostedVisionBackend.ROUTED ? (
                 <Field
-                  label="Vision route model"
-                  hint="Use an existing personal routing model ID."
+                  label={translate("visionRouteModel")}
+                  hint={translate("useAnExistingPersonalRoutingModelId")}
                 >
                   <input
                     required
@@ -570,7 +576,7 @@ function HostedEditor({
                 </Field>
               ) : (
                 <TargetFields
-                  label="Vision"
+                  label={translate("vision")}
                   {...targetProps}
                   target={
                     vision.selection.case === "target"
@@ -591,12 +597,12 @@ function HostedEditor({
                 />
               )}
               <details>
-                <summary>Advanced vision settings</summary>
+                <summary>{translate("advancedVisionSettings")}</summary>
                 <OptionalNumber
-                  label="Maximum descriptions per turn"
+                  label={translate("maximumDescriptionsPerTurn")}
                   value={vision.maxDescriptionsPerTurn}
                   max={16}
-                  hint="Default: 8. Zero disables descriptions."
+                  hint={translate("default8ZeroDisablesDescriptions")}
                   onChange={(maxDescriptionsPerTurn) =>
                     setDraft({
                       ...draft,
@@ -605,11 +611,11 @@ function HostedEditor({
                   }
                 />
                 <OptionalNumber
-                  label="Vision timeout (ms)"
+                  label={translate("visionTimeoutMs")}
                   value={vision.timeoutMs}
                   min={1}
                   max={2147483647}
-                  hint="Default: 45000."
+                  hint={translate("default45000")}
                   onChange={(timeoutMs) =>
                     setDraft({ ...draft, vision: { ...vision, timeoutMs } })
                   }
@@ -619,7 +625,7 @@ function HostedEditor({
           )}
         </fieldset>
         <fieldset>
-          <legend>Image and video generation</legend>
+          <legend>{translate("imageAndVideoGeneration")}</legend>
           <label className="check">
             <input
               type="checkbox"
@@ -632,14 +638,14 @@ function HostedEditor({
                     : undefined,
                 })
               }
-            />{" "}
-            Configure image and video generation
+            />
+            {translate("configureImageAndVideoGeneration")}
           </label>
           {images && (
             <>
-              <p>Requires an XAI API-key connection or compatible pool.</p>
+              <p>{translate("requiresAnXaiApiKeyConnectionOr")}</p>
               <TargetFields
-                label="Media"
+                label={translate("media")}
                 {...targetProps}
                 target={images.target}
                 onChange={(target) =>
@@ -656,8 +662,8 @@ function HostedEditor({
                       images: { ...images, bridgeEnabled: e.target.checked },
                     })
                   }
-                />{" "}
-                Enable image generation
+                />
+                {translate("enableImageGeneration")}
               </label>
               <label className="check">
                 <input
@@ -672,14 +678,14 @@ function HostedEditor({
                       },
                     })
                   }
-                />{" "}
-                Enable video generation
+                />
+                {translate("enableVideoGeneration")}
               </label>
               <details>
-                <summary>Advanced media settings</summary>
+                <summary>{translate("advancedMediaSettings")}</summary>
                 <Field
-                  label="Image model override"
-                  hint="Default: grok-imagine-image-quality."
+                  label={translate("imageModelOverride")}
+                  hint={translate("defaultGrokImagineImageQuality")}
                 >
                   <input
                     maxLength={512}
@@ -696,7 +702,7 @@ function HostedEditor({
                   />
                 </Field>
                 <OptionalNumber
-                  label="Image timeout (ms)"
+                  label={translate("imageTimeoutMs")}
                   value={images.timeoutMs}
                   min={1}
                   max={300000}
@@ -705,8 +711,8 @@ function HostedEditor({
                   }
                 />
                 <Field
-                  label="Video model override"
-                  hint="Default: grok-imagine-video."
+                  label={translate("videoModelOverride")}
+                  hint={translate("defaultGrokImagineVideo")}
                 >
                   <input
                     maxLength={512}
@@ -723,11 +729,11 @@ function HostedEditor({
                   />
                 </Field>
                 <OptionalNumber
-                  label="Video timeout (ms)"
+                  label={translate("videoTimeoutMs")}
                   value={images.videoTimeoutMs}
                   min={1}
                   max={300000}
-                  hint="Default: 300000, including polling."
+                  hint={translate("default300000IncludingPolling")}
                   onChange={(videoTimeoutMs) =>
                     setDraft({
                       ...draft,
@@ -740,20 +746,19 @@ function HostedEditor({
           )}
         </fieldset>
         <Notice>
-          Save replaces all hosted helper settings. Unchecking a configuration
-          removes its saved settings; it does not always disable the provider
-          default. Select Disabled to explicitly disable search or image
-          understanding.
+          {translate("saveReplacesAllHostedHelperSettingsUnchecking")}
         </Notice>
         <ErrorNotice error={action.error} />
         <div className="actions">
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{translate("cancel")}</Button>
           <Button
             type="submit"
             variant="primary"
             disabled={action.pending || resourcesPending || !!resourcesError}
           >
-            {action.pending ? "Saving…" : "Save helper settings"}
+            {action.pending
+              ? translate("message_23e39291d6")
+              : translate("saveHelperSettings")}
           </Button>
         </div>
       </form>

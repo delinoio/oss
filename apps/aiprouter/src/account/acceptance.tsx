@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale } from "../i18n";
 import { pageHref } from "../routes";
 import { useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
@@ -28,6 +29,7 @@ export function InvitationPage({
   token?: string;
   onAccepted?: (organization: Organization) => void;
 }) {
+  useLocale();
   const [token, setToken] = useState(
     suppliedToken ??
       new URLSearchParams(window.location.search).get("token") ??
@@ -67,13 +69,21 @@ export function InvitationPage({
     !mine.isError;
   return (
     <AccountSurface
-      title={organization ? "Invitation accepted" : "Join an organization"}
-      subtitle="Use the account with the invited, verified email address."
+      title={
+        organization
+          ? translate("invitationAccepted")
+          : translate("joinAnOrganization")
+      }
+      subtitle={translate("useTheAccountWithTheInvitedVerified")}
     >
       {organization ? (
         <div className="account-card">
-          <p role="status">You joined {organization.name}.</p>
-          <a href={pageHref("overview", organization.id)}>Open organization</a>
+          <p role="status">
+            {translate("youJoined", { value0: organization.name })}
+          </p>
+          <a href={pageHref("overview", organization.id)}>
+            {translate("openOrganization")}
+          </a>
         </div>
       ) : (
         <div className="account-card">
@@ -97,7 +107,7 @@ export function InvitationPage({
               }}
             >
               <label>
-                Invitation link or code
+                {translate("invitationLinkOrCode")}
                 <input
                   autoFocus
                   type="text"
@@ -109,14 +119,18 @@ export function InvitationPage({
                 />
               </label>
               <button className="account-primary" type="submit">
-                Review invitation
+                {translate("reviewInvitation")}
               </button>
             </form>
           ) : (
             <>
-              <p>Signed in as {session.data?.email ?? "…"}</p>
+              <p>
+                {translate("signedInAs", {
+                  value0: session.data?.email ?? "…",
+                })}
+              </p>
               {(token ? detail.isPending : mine.isPending) && (
-                <p role="status">Loading invitation…</p>
+                <p role="status">{translate("loadingInvitation")}</p>
               )}
               <AccountError
                 error={detail.error ?? mine.error}
@@ -129,29 +143,28 @@ export function InvitationPage({
                 <>
                   <h2>{invitation.organizationName}</h2>
                   <dl className="account-details">
-                    <dt>Invited email</dt>
+                    <dt>{translate("invitedEmail")}</dt>
                     <dd>{invitation.email}</dd>
-                    <dt>Role</dt>
+                    <dt>{translate("role")}</dt>
                     <dd>
                       {invitation.role === Role.ADMINISTRATOR
-                        ? "Administrator"
+                        ? translate("administrator")
                         : invitation.role === Role.MEMBER
-                          ? "Member"
-                          : "Unknown"}
+                          ? translate("member")
+                          : translate("unknown")}
                     </dd>
-                    <dt>Expires</dt>
+                    <dt>{translate("expires_f6725f")}</dt>
                     <dd>{dateLabel(invitation.expiresAt)}</dd>
                   </dl>
                   {expired && invitation.state === LifecycleState.PENDING ? (
                     <p role="status">
-                      This invitation has expired. Ask an administrator for a
-                      new invitation.
+                      {translate("thisInvitationHasExpiredAskAnAdministrator")}
                     </p>
                   ) : (
                     invitation.state !== LifecycleState.PENDING && (
                       <p role="status">
                         {invitationStates[invitation.state] ??
-                          "Invitation status is unavailable."}
+                          translate("invitationStatusIsUnavailable")}
                       </p>
                     )
                   )}
@@ -159,8 +172,7 @@ export function InvitationPage({
               )}
               {!token && mine.isSuccess && !invitation && !mine.hasNextPage && (
                 <p role="alert">
-                  This invitation is no longer pending or is unavailable to your
-                  account. Open the original email link for its current status.
+                  {translate("thisInvitationIsNoLongerPendingOr")}
                 </p>
               )}
               <AccountError error={accept.error} />
@@ -172,7 +184,7 @@ export function InvitationPage({
                     void mine.fetchNextPage();
                   }}
                 >
-                  Check more invitations
+                  {translate("checkMoreInvitations")}
                 </button>
               )}
               <button
@@ -195,7 +207,9 @@ export function InvitationPage({
                   });
                 }}
               >
-                {accept.isPending ? "Accepting…" : "Accept invitation"}
+                {accept.isPending
+                  ? translate("message_a168fd64e9")
+                  : translate("acceptInvitation")}
               </button>
             </>
           )}
@@ -206,24 +220,39 @@ export function InvitationPage({
 }
 
 const invitationStates: Partial<Record<LifecycleState, string>> = {
-  [LifecycleState.ACCEPTED]: "This invitation has already been used.",
-  [LifecycleState.CANCELED]: "This invitation was canceled.",
-  [LifecycleState.EXPIRED]:
-    "This invitation has expired. Ask an administrator for a new invitation.",
-  [LifecycleState.SUPERSEDED]:
-    "This invitation was replaced. Open the newest invitation email.",
-  [LifecycleState.FAILED]:
-    "Invitation delivery failed and this link is invalid. Ask an administrator to resend it.",
+  get [LifecycleState.ACCEPTED]() {
+    return translate("thisInvitationHasAlreadyBeenUsed");
+  },
+  get [LifecycleState.CANCELED]() {
+    return translate("thisInvitationWasCanceled");
+  },
+  get [LifecycleState.EXPIRED]() {
+    return translate("thisInvitationHasExpiredAskAnAdministrator");
+  },
+  get [LifecycleState.SUPERSEDED]() {
+    return translate("thisInvitationWasReplacedOpenTheNewest");
+  },
+  get [LifecycleState.FAILED]() {
+    return translate("invitationDeliveryFailedAndThisLinkIs");
+  },
 };
 
 const transferStates: Partial<Record<LifecycleState, string>> = {
-  [LifecycleState.ACCEPTED]:
-    "This ownership transfer has already been accepted.",
-  [LifecycleState.CANCELED]: "This ownership transfer was canceled.",
-  [LifecycleState.EXPIRED]: "This ownership transfer has expired.",
-  [LifecycleState.SUPERSEDED]:
-    "This ownership transfer was replaced by a newer request.",
-  [LifecycleState.FAILED]: "This ownership transfer is no longer available.",
+  get [LifecycleState.ACCEPTED]() {
+    return translate("thisOwnershipTransferHasAlreadyBeenAccepted");
+  },
+  get [LifecycleState.CANCELED]() {
+    return translate("thisOwnershipTransferWasCanceled");
+  },
+  get [LifecycleState.EXPIRED]() {
+    return translate("thisOwnershipTransferHasExpired");
+  },
+  get [LifecycleState.SUPERSEDED]() {
+    return translate("thisOwnershipTransferWasReplacedByA");
+  },
+  get [LifecycleState.FAILED]() {
+    return translate("thisOwnershipTransferIsNoLongerAvailable");
+  },
 };
 
 export function OwnershipAcceptancePage({
@@ -233,6 +262,7 @@ export function OwnershipAcceptancePage({
   organizationId?: string;
   onAccepted?: (organization: Organization) => void;
 }) {
+  useLocale();
   const organizationId =
     suppliedId ??
     new URLSearchParams(window.location.search).get("organization_id") ??
@@ -276,21 +306,18 @@ export function OwnershipAcceptancePage({
     !session.isError;
   return (
     <AccountSurface
-      title="Accept organization ownership"
-      subtitle="Review the change before accepting."
+      title={translate("acceptOrganizationOwnership")}
+      subtitle={translate("reviewTheChangeBeforeAccepting")}
     >
       <div className="account-card">
         {!organizationId && (
-          <p role="alert">
-            This link is missing its organization. Ask the current owner for a
-            new link.
-          </p>
+          <p role="alert">{translate("thisLinkIsMissingItsOrganizationAsk")}</p>
         )}
         {organizationId &&
           (transfer.isPending ||
             organization.isPending ||
             session.isPending) && (
-            <p role="status">Loading ownership transfer…</p>
+            <p role="status">{translate("loadingOwnershipTransfer")}</p>
           )}
         <AccountError
           error={session.error ?? organization.error ?? transfer.error}
@@ -303,34 +330,35 @@ export function OwnershipAcceptancePage({
         {nomination && organization.data?.organization && (
           <>
             <h2>{organization.data.organization.name}</h2>
+            <p>{translate("youWillBecomeTheOwnerThePrevious")}</p>
             <p>
-              You will become the owner. The previous owner will become an
-              administrator. Ownership does not change until you accept.
+              {translate("expires", {
+                value0: dateLabel(nomination.expiresAt),
+              })}
             </p>
-            <p>Expires: {dateLabel(nomination.expiresAt)}</p>
             {replaced ? (
-              <p role="alert">
-                This request was replaced by a newer ownership transfer. Ask the
-                owner for the current link.
-              </p>
+              <p role="alert">{translate("thisRequestWasReplacedByANewer")}</p>
             ) : expired ? (
-              <p role="status">This ownership transfer has expired.</p>
+              <p role="status">
+                {translate("thisOwnershipTransferHasExpired")}
+              </p>
             ) : nomination.state !== LifecycleState.PENDING ? (
               <p role="status">
                 {transferStates[nomination.state] ??
-                  "Ownership transfer status is unavailable."}
+                  translate("ownershipTransferStatusIsUnavailable")}
               </p>
             ) : (
               nomination.toUserId !== session.data?.userId && (
                 <p role="alert">
-                  Only the nominated member can accept this transfer. Sign in
-                  with the nominated account.
+                  {translate("onlyTheNominatedMemberCanAcceptThis")}
                 </p>
               )
             )}
             <AccountError error={accept.error} />
             {accept.isSuccess ? (
-              <p role="status">Ownership accepted. You are now the owner.</p>
+              <p role="status">
+                {translate("ownershipAcceptedYouAreNowTheOwner")}
+              </p>
             ) : (
               <button
                 type="button"
@@ -353,18 +381,20 @@ export function OwnershipAcceptancePage({
                   );
                 }}
               >
-                {accept.isPending ? "Accepting…" : "Accept ownership"}
+                {accept.isPending
+                  ? translate("message_a168fd64e9")
+                  : translate("acceptOwnership")}
               </button>
             )}
             <p>
               <a href={pageHref("overview", organizationId)}>
-                Back to organization
+                {translate("backToOrganization")}
               </a>
             </p>
           </>
         )}
         {transfer.isSuccess && !nomination && (
-          <p>No pending ownership transfer is available.</p>
+          <p>{translate("noPendingOwnershipTransferIsAvailable")}</p>
         )}
       </div>
     </AccountSurface>

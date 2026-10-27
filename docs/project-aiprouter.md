@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a self-hosted, organization-based, multi-tenant and multi-user AI provider router. Each user exclusively uses personal provider credentials, account pools, and routing within each organization. Deliver a Go service and client configuration CLI, an English responsive React console, and a Docker Compose deployment. PostgreSQL owns durable and encrypted temporary state; R2 holds temporary generated images and hosted video output under the service media limits.
+Build a self-hosted, organization-based, multi-tenant and multi-user AI provider router. Each user exclusively uses personal provider credentials, account pools, and routing within each organization. Deliver a Go service and client configuration CLI, a multilingual responsive React console, and a Docker Compose deployment. PostgreSQL owns durable and encrypted temporary state; R2 holds temporary generated images and hosted video output under the service media limits.
 
 ## Project ID
 

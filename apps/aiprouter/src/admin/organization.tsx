@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale, getLocale } from "../i18n";
 import { useContext, useEffect, useState } from "react";
 import { useMutation, useQuery, useTransport } from "@connectrpc/connect-query";
 import { createClient, Code, ConnectError } from "@connectrpc/connect";
@@ -33,6 +34,7 @@ import {
 } from "./common";
 
 export function Members() {
+  useLocale();
   const { organizationId, role } = useContext(AdminAuthority);
   const transport = useTransport();
   const [token, setToken] = useState("");
@@ -62,7 +64,10 @@ export function Members() {
       !target ||
       !canRemove(org.organization?.role ?? Role.UNSPECIFIED, target.role)
     )
-      throw new ConnectError("Permission changed", Code.PermissionDenied);
+      throw new ConnectError(
+        translate("permissionChanged"),
+        Code.PermissionDenied,
+      );
   }
   const members =
     query.data?.members.filter((m) =>
@@ -73,20 +78,26 @@ export function Members() {
   return (
     <>
       <PageHeader
-        title="Members"
-        description="Manage membership. Personal credentials and request content stay private."
+        title={translate("members")}
+        description={translate(
+          "manageMembershipPersonalCredentialsAndRequestContent",
+        )}
       />
       {action.feedback}
       <Card>
         <label>
-          Search this page
+          {translate("searchThisPage")}
           <input
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
-        {search && <button onClick={() => setSearch("")}>Clear filters</button>}
+        {search && (
+          <button onClick={() => setSearch("")}>
+            {translate("clearFilters")}
+          </button>
+        )}
         {query.isPending ? (
           <Loading />
         ) : query.error ? (
@@ -102,7 +113,9 @@ export function Members() {
                     <span className="admin-badge">
                       {label(Role[member.role])}
                     </span>
-                    <p>Joined {date(member.joinedAt)}</p>
+                    <p>
+                      {translate("joined", { value0: date(member.joinedAt) })}
+                    </p>
                   </div>
                   <div className="admin-actions">
                     {role === Role.OWNER && member.role !== Role.OWNER && (
@@ -126,8 +139,8 @@ export function Members() {
                         }
                       >
                         {member.role === Role.ADMINISTRATOR
-                          ? "Make member"
-                          : "Make administrator"}
+                          ? translate("makeMember")
+                          : translate("makeAdministrator")}
                       </button>
                     )}
                     {canRemove(role, member.role) && (
@@ -135,7 +148,9 @@ export function Members() {
                         className="admin-danger-outline"
                         onClick={() => setSelected(member)}
                       >
-                        Remove {member.displayName || member.email}
+                        {translate("remove_3028bf", {
+                          value0: member.displayName || member.email,
+                        })}
                       </button>
                     )}
                   </div>
@@ -145,8 +160,8 @@ export function Members() {
             {!members.length && (
               <Empty>
                 {search
-                  ? "No members match this page. Clear filters or check another page."
-                  : "No members available."}
+                  ? translate("noMembersMatchThisPageClearFilters")
+                  : translate("noMembersAvailable")}
               </Empty>
             )}
             <Pager
@@ -159,7 +174,7 @@ export function Members() {
       </Card>
       {selected && (
         <Confirm
-          title="Remove member"
+          title={translate("removeMember")}
           name={selected.displayName || selected.email}
           pending={action.pending}
           onClose={() => setSelected(undefined)}
@@ -174,20 +189,17 @@ export function Members() {
               },
               {
                 done: () => setSelected(undefined),
-                success: "Member removed.",
+                success: translate("memberRemoved"),
               },
             )
           }
         >
           <p>
-            Remove {selected.displayName || selected.email}? Their organization
-            keys stop working immediately. Personal providers, configuration and
-            temporary state are deleted. Rejoining requires configuration again.
+            {translate("removeTheirOrganizationKeysStopWorkingImmediately", {
+              value0: selected.displayName || selected.email,
+            })}
           </p>
-          <p>
-            Usage remains subject to retention. Already-dispatched responses may
-            finish.
-          </p>
+          <p>{translate("usageRemainsSubjectToRetentionAlreadyDispatched")}</p>
           <ErrorNotice error={action.error} />
         </Confirm>
       )}
@@ -196,27 +208,31 @@ export function Members() {
 }
 
 export function invitationStatus(invitation: Invitation, now: number) {
-  if (invitation.state === LifecycleState.ACCEPTED) return "Accepted";
-  if (invitation.state === LifecycleState.CANCELED) return "Canceled";
-  if (invitation.state === LifecycleState.SUPERSEDED) return "Superseded";
+  if (invitation.state === LifecycleState.ACCEPTED)
+    return translate("accepted");
+  if (invitation.state === LifecycleState.CANCELED)
+    return translate("canceled");
+  if (invitation.state === LifecycleState.SUPERSEDED)
+    return translate("superseded");
   if (
     invitation.state === LifecycleState.FAILED ||
     invitation.deliveryState === DeliveryState.FAILED
   )
-    return "Delivery failed";
+    return translate("deliveryFailed");
   if (
     invitation.state === LifecycleState.EXPIRED ||
     (milliseconds(invitation.expiresAt) ?? Infinity) <= now
   )
-    return "Expired";
+    return translate("expired");
   if (invitation.deliveryState === DeliveryState.RETRY_PENDING)
-    return "Retry scheduled";
-  if (invitation.deliveryState === DeliveryState.SENT) return "Sent";
+    return translate("retryScheduled");
+  if (invitation.deliveryState === DeliveryState.SENT) return translate("sent");
   if (invitation.deliveryState === DeliveryState.QUEUED)
-    return "Pending delivery";
-  return "Unknown status";
+    return translate("pendingDelivery");
+  return translate("unknownStatus");
 }
 export function Invitations() {
+  useLocale();
   const { organizationId } = useContext(AdminAuthority);
   const [token, setToken] = useState("");
   const [open, setOpen] = useState(false);
@@ -241,8 +257,8 @@ export function Invitations() {
   return (
     <>
       <PageHeader
-        title="Invitations"
-        description="Invite a member to this organization."
+        title={translate("invitations")}
+        description={translate("inviteAMemberToThisOrganization")}
         action={
           <button
             className="admin-primary"
@@ -251,16 +267,12 @@ export function Invitations() {
               setOpen(true);
             }}
           >
-            Invite member
+            {translate("inviteMember")}
           </button>
         }
       />
       {action.feedback}
-      <p>
-        Resends are at least one minute apart. The organization is limited to
-        100 send attempts per hour. A manual resend invalidates the old link and
-        starts a new seven-day invitation.
-      </p>
+      <p>{translate("resendsAreAtLeastOneMinuteApart")}</p>
       {query.isPending ? (
         <Loading />
       ) : query.error ? (
@@ -268,7 +280,7 @@ export function Invitations() {
       ) : (
         <Card>
           {!query.data?.invitations.length && (
-            <Empty>No invitations yet. Invite your first member.</Empty>
+            <Empty>{translate("noInvitationsYetInviteYourFirstMember")}</Empty>
           )}
           <div className="admin-records">
             {query.data?.invitations.map((invitation) => {
@@ -287,33 +299,42 @@ export function Invitations() {
                 <article className="admin-record" key={invitation.id}>
                   <div>
                     <h2>{invitation.email}</h2>
-                    <p>Role: Member</p>
-                    <p>Created: Not reported</p>
+                    <p>{translate("roleMember")}</p>
+                    <p>{translate("createdNotReported")}</p>
                     <span className="admin-badge">{status}</span>
-                    <p>Expires {date(invitation.expiresAt)}</p>
-                    {status === "Delivery failed" && (
+                    <p>
+                      {translate("expires_8c3e7e", {
+                        value0: date(invitation.expiresAt),
+                      })}
+                    </p>
+                    {status === translate("deliveryFailed") && (
                       <p className="admin-danger-text">
-                        The link is invalid. Resend to create a new invitation.
+                        {translate("theLinkIsInvalidResendToCreate")}
                       </p>
                     )}
                     {invitation.nextAttemptAt && (
                       <p>
-                        Next delivery attempt: {date(invitation.nextAttemptAt)}.
-                        Delivery can be deferred by the hourly limit.
+                        {translate("nextDeliveryAttemptDeliveryCanBeDeferred", {
+                          value0: date(invitation.nextAttemptAt),
+                        })}
                       </p>
                     )}
-                    <p>Send attempts: {invitation.deliveryAttempts}</p>
+                    <p>
+                      {translate("sendAttempts", {
+                        value0: invitation.deliveryAttempts,
+                      })}
+                    </p>
                     {!available && (
-                      <p>
-                        Resend timing is not reported. The server still enforces
-                        the one-minute cooldown.
-                      </p>
+                      <p>{translate("resendTimingIsNotReportedTheServer")}</p>
                     )}
                     {waiting && (
                       <p id={`cooldown-${invitation.id}`}>
-                        Resend available at{" "}
-                        {new Date(available).toLocaleTimeString()}. Wait{" "}
-                        {Math.ceil((available - now) / 1000)} seconds.
+                        {translate("resendAvailableAtWaitSeconds", {
+                          value0: new Date(available).toLocaleTimeString(
+                            getLocale(),
+                          ),
+                          value1: Math.ceil((available - now) / 1000),
+                        })}
                       </p>
                     )}
                   </div>
@@ -337,18 +358,19 @@ export function Invitations() {
                               }));
                             },
                             {
-                              success:
-                                "New invitation created. The previous link is invalid.",
+                              success: translate(
+                                "newInvitationCreatedThePreviousLinkIs",
+                              ),
                             },
                           )
                         }
                       >
-                        Resend
+                        {translate("resend")}
                       </button>
                       {invitation.state === LifecycleState.PENDING &&
-                        status !== "Expired" && (
+                        status !== translate("expired") && (
                           <button onClick={() => setCancel(invitation)}>
-                            Cancel invitation
+                            {translate("cancelInvitation")}
                           </button>
                         )}
                     </div>
@@ -365,7 +387,10 @@ export function Invitations() {
         </Card>
       )}
       {open && (
-        <Dialog title="Invite member" onClose={() => setOpen(false)}>
+        <Dialog
+          title={translate("inviteMember")}
+          onClose={() => setOpen(false)}
+        >
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -382,13 +407,13 @@ export function Invitations() {
                     setOpen(false);
                     setEmail("");
                   },
-                  success: "Invitation created. Delivery is pending.",
+                  success: translate("invitationCreatedDeliveryIsPending"),
                 },
               );
             }}
           >
             <label>
-              Email address
+              {translate("emailAddress")}
               <input
                 type="email"
                 required
@@ -396,17 +421,14 @@ export function Invitations() {
                 onChange={(e) => setEmail(e.target.value)}
               />
             </label>
-            <p>
-              The invited person joins as a member. They must sign in with this
-              verified email address.
-            </p>
+            <p>{translate("theInvitedPersonJoinsAsAMember")}</p>
             <ErrorNotice error={action.error} />
             <div className="admin-actions">
               <button type="button" data-cancel onClick={() => setOpen(false)}>
-                Cancel
+                {translate("cancel")}
               </button>
               <button className="admin-primary" disabled={action.pending}>
-                Send invitation
+                {translate("sendInvitation")}
               </button>
             </div>
           </form>
@@ -414,7 +436,7 @@ export function Invitations() {
       )}
       {cancel && (
         <Confirm
-          title="Cancel invitation"
+          title={translate("cancelInvitation")}
           name={cancel.email}
           pending={action.pending}
           onClose={() => setCancel(undefined)}
@@ -424,12 +446,16 @@ export function Invitations() {
                 remove.mutateAsync({ organizationId, invitationId: cancel.id }),
               {
                 done: () => setCancel(undefined),
-                success: "Invitation canceled.",
+                success: translate("invitationCanceled"),
               },
             )
           }
         >
-          <p>The invitation link for {cancel.email} will stop working.</p>
+          <p>
+            {translate("theInvitationLinkForWillStopWorking", {
+              value0: cancel.email,
+            })}
+          </p>
           <ErrorNotice error={action.error} />
         </Confirm>
       )}
@@ -438,6 +464,7 @@ export function Invitations() {
 }
 
 export function Settings({ organization }: { organization: Organization }) {
+  useLocale();
   const { organizationId, role } = useContext(AdminAuthority);
   const [name, setName] = useState(organization.name);
   const [deleting, setDeleting] = useState(false);
@@ -452,12 +479,12 @@ export function Settings({ organization }: { organization: Organization }) {
   return (
     <>
       <PageHeader
-        title="Organization settings"
-        description={`Manage ${organization.name}.`}
+        title={translate("organizationSettings")}
+        description={translate("manage", { value0: organization.name })}
       />
       {action.feedback}
       <Card>
-        <h2>Organization name</h2>
+        <h2>{translate("organizationName")}</h2>
         <form
           onSubmit={(e) => {
             e.preventDefault();
@@ -465,7 +492,7 @@ export function Settings({ organization }: { organization: Organization }) {
           }}
         >
           <label>
-            Name
+            {translate("name")}
             <input
               autoFocus
               required
@@ -479,7 +506,7 @@ export function Settings({ organization }: { organization: Organization }) {
               action.pending || !name.trim() || name === organization.name
             }
           >
-            Save name
+            {translate("saveName")}
           </button>
         </form>
       </Card>
@@ -487,23 +514,20 @@ export function Settings({ organization }: { organization: Organization }) {
         <>
           <Ownership />
           <Card>
-            <h2>Delete organization</h2>
-            <p>
-              As the sole owner, transfer ownership or delete this organization
-              before leaving.
-            </p>
+            <h2>{translate("deleteOrganization")}</h2>
+            <p>{translate("asTheSoleOwnerTransferOwnershipOr")}</p>
             <button
               className="admin-danger-outline"
               onClick={() => setDeleting(true)}
             >
-              Delete organization
+              {translate("deleteOrganization")}
             </button>
           </Card>
         </>
       )}
       {deleting && role === Role.OWNER && (
         <Confirm
-          title="Delete organization"
+          title={translate("deleteOrganization")}
           name={organization.name}
           pending={action.pending}
           onClose={() => setDeleting(false)}
@@ -511,18 +535,16 @@ export function Settings({ organization }: { organization: Organization }) {
             void action.run(() => remove.mutateAsync({ organizationId }), {
               owner: true,
               done: () => setDeleting(false),
-              success: "Organization deleted.",
+              success: translate("organizationDeleted"),
             })
           }
         >
           <p>
-            This permanently deletes {organization.name}’s credentials,
-            settings, temporary state, usage and organization audit records.
+            {translate("thisPermanentlyDeletesSCredentialsSettingsTemporary", {
+              value0: organization.name,
+            })}
           </p>
-          <p>
-            New requests stop immediately. Responses already sent to a provider
-            may finish. Existing backups expire under operator policy.
-          </p>
+          <p>{translate("newRequestsStopImmediatelyResponsesAlreadySent")}</p>
           <ErrorNotice error={action.error} />
         </Confirm>
       )}
@@ -530,6 +552,7 @@ export function Settings({ organization }: { organization: Organization }) {
   );
 }
 function Ownership() {
+  useLocale();
   const { organizationId } = useContext(AdminAuthority);
   const [nominee, setNominee] = useState("");
   const [token, setToken] = useState("");
@@ -560,7 +583,7 @@ function Ownership() {
   const selected = members.data?.members.find((m) => m.userId === nominee);
   return (
     <Card>
-      <h2>Ownership transfer</h2>
+      <h2>{translate("ownershipTransfer")}</h2>
       {action.feedback}
       {query.isPending ? (
         <Loading />
@@ -569,31 +592,36 @@ function Ownership() {
         <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       ) : transfer ? (
         <div>
-          <p>Nominee: {person?.displayName || transfer.toUserId}</p>
           <p>
-            {expired
-              ? "Transfer expired"
-              : pending
-                ? "Awaiting acceptance"
-                : label(LifecycleState[transfer.state])}{" "}
-            · Expires {date(transfer.expiresAt)}
+            {translate("nominee", {
+              value0: person?.displayName || transfer.toUserId,
+            })}
+          </p>
+          <p>
+            {translate("expires_5f50e1", {
+              value0: expired
+                ? translate("message_fa90c49b8b")
+                : pending
+                  ? translate("message_1dc7bfd9c5")
+                  : label(LifecycleState[transfer.state]),
+              value1: date(transfer.expiresAt),
+            })}
           </p>
           {pending && !expired && (
-            <button onClick={() => setCancel(true)}>Cancel transfer</button>
+            <button onClick={() => setCancel(true)}>
+              {translate("cancelTransfer")}
+            </button>
           )}
         </div>
       ) : (
-        <p>No pending transfer.</p>
+        <p>{translate("noPendingTransfer")}</p>
       )}
-      <p>
-        You remain owner until the nominee accepts. They become owner and you
-        become an administrator. A nomination expires after seven days.
-      </p>
+      <p>{translate("youRemainOwnerUntilTheNomineeAccepts")}</p>
       <ErrorNotice error={members.error} />
       <label>
-        Nominate an existing member
+        {translate("nominateAnExistingMember")}
         <select value={nominee} onChange={(e) => setNominee(e.target.value)}>
-          <option value="">Choose a member</option>
+          <option value="">{translate("chooseAMember")}</option>
           {members.data?.members
             .filter((m) => m.role !== Role.OWNER)
             .map((m) => (
@@ -621,11 +649,13 @@ function Ownership() {
         }
         onClick={() => setConfirm(true)}
       >
-        {pending && !expired ? "Replace nomination" : "Nominate owner"}
+        {pending && !expired
+          ? translate("replaceNomination")
+          : translate("nominateOwner")}
       </button>
       {confirm && selected && (
         <Confirm
-          title="Nominate owner"
+          title={translate("nominateOwner")}
           pending={action.pending}
           onClose={() => setConfirm(false)}
           action={() =>
@@ -634,21 +664,22 @@ function Ownership() {
               {
                 owner: true,
                 done: () => setConfirm(false),
-                success: "Ownership nomination sent.",
+                success: translate("ownershipNominationSent"),
               },
             )
           }
         >
           <p>
-            Nominate {selected.displayName || selected.email}? Any previous
-            request becomes invalid. Ownership changes only after acceptance.
+            {translate("nominateAnyPreviousRequestBecomesInvalidOwnership", {
+              value0: selected.displayName || selected.email,
+            })}
           </p>
           <ErrorNotice error={action.error} />
         </Confirm>
       )}
       {cancel && transfer && (
         <Confirm
-          title="Cancel transfer"
+          title={translate("cancelTransfer")}
           pending={action.pending}
           onClose={() => setCancel(false)}
           action={() =>
@@ -658,12 +689,12 @@ function Ownership() {
               {
                 owner: true,
                 done: () => setCancel(false),
-                success: "Ownership transfer canceled.",
+                success: translate("ownershipTransferCanceled"),
               },
             )
           }
         >
-          <p>The nominee will no longer be able to accept this transfer.</p>
+          <p>{translate("theNomineeWillNoLongerBeAble")}</p>
           <ErrorNotice error={action.error} />
         </Confirm>
       )}
