@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale, formatNumber } from "./i18n";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import {
@@ -550,7 +555,20 @@ export function UsageTrend({
   modelId,
   providerId,
   outcome,
+  title = translate("requestsOverTime"),
+  description = translate("dailyRecordedRequestsInUtcMissingRecords"),
+  action,
+  emptyHint,
+  className = "",
 }: {
+  /** Section heading. */
+  title?: string;
+  description?: ReactNode;
+  /** Extra control rendered beside the heading, such as a link. */
+  action?: ReactNode;
+  /** Appended to the empty state to point at an existing setup action. */
+  emptyHint?: ReactNode;
+  className?: string;
   organizationId: string;
   userId: string;
   timeRange: {
@@ -582,9 +600,12 @@ export function UsageTrend({
   const hasData = query.data !== undefined;
   const failedWithoutData = query.isError && !hasData;
   return (
-    <Card>
-      <h2>{translate("requestsOverTime")}</h2>
-      <p>{translate("dailyRecordedRequestsInUtcMissingRecords")}</p>
+    <Card className={className}>
+      <div className="trend-heading">
+        <h2>{title}</h2>
+        {action}
+      </div>
+      <p>{description}</p>
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       <RefreshStatus
         updating={hasData && query.isFetching && !query.isError}
@@ -593,7 +614,10 @@ export function UsageTrend({
       {query.isPending ? (
         <Loading label={translate("loadingDailyUsage")} />
       ) : failedWithoutData ? null : days.length === 0 ? (
-        <p>{translate("noDailyRecordsAvailableForThisRange")}</p>
+        <p>
+          {translate("noDailyRecordsAvailableForThisRange")}
+          {emptyHint && <> {emptyHint}</>}
+        </p>
       ) : (
         <>
           <div className="usage-bars-viewport">
