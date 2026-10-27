@@ -30,8 +30,6 @@
 
 ## Owning contracts
 
-- [typeopt Rust CLI foundation](../docs/crates-typeopt-foundation.md)
-
 - [clibox public documentation foundation](../docs/apps-clibox-docs-foundation.md)
 - [crates-binpm-foundation](../docs/crates-binpm-foundation.md)
 - [crates-cargo-mono-foundation](../docs/crates-cargo-mono-foundation.md)

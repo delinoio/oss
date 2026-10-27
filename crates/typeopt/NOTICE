@@ -1,5 +1,0 @@
-Copyright 2026 Delino
-
-Repository-owned source is licensed under Apache License 2.0. Vendored source and bundled fonts retain their own license and copyright notices in their respective directories.
-
-The compiler integration uses tsrs, Copyright 2026 Max Schwenk and the tsrs contributors, derived from TypeScript, Copyright Microsoft Corporation. See licenses/tsrs-LICENSE and licenses/tsrs-NOTICE. The private compiler adapter adapts tsrs checker predicates; these adaptations retain Apache-2.0 attribution.

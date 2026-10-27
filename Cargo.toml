@@ -1,7 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/typeopt",
     "crates/binpm",
     "crates/cargo-mono",
     "crates/clibox",
@@ -43,37 +42,6 @@ members = [
 
 [workspace.metadata.cargo-mono.publish.tag]
 packages = ["binpm", "nodeup", "with-watch", "cargo-mono", "rustia-rs", "rustia-macros", "rustia-llm", "jsonllm-shared", "jsonllm-derive", "jsonllm"]
-
-# The typeopt tests run the tsrs TypeScript compiler on every fixture.
-# Unoptimized, those crates dominate the workspace test time, so build them
-# optimized in the dev and test profiles. Only these dependencies change;
-# workspace crates keep debug builds and debug assertions.
-[profile.dev.package.tsrs_core]
-opt-level = 3
-
-[profile.dev.package.tsrs_ast]
-opt-level = 3
-
-[profile.dev.package.tsrs_checker]
-opt-level = 3
-
-[profile.dev.package.tsrs_compiler]
-opt-level = 3
-
-[profile.dev.package.tsrs_tsoptions]
-opt-level = 3
-
-[profile.dev.package.tsrs_vfs]
-opt-level = 3
-
-[profile.dev.package.tsrs_api]
-opt-level = 3
-
-[profile.dev.package.tsrs_scanner]
-opt-level = 3
-
-[profile.dev.package.tsrs_diagnostics]
-opt-level = 3
 
 # Release profile optimizations
 [profile.release]

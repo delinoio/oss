@@ -60,11 +60,6 @@ Record new implementation status, validation results and unresolved limits in pu
 
 ## Project Catalog
 
-### typeopt
-
-- [Project index](project-typeopt.md)
-- [Rust CLI foundation](crates-typeopt-foundation.md)
-
 ### binpm
 
 - [project-binpm.md](project-binpm.md)
@@ -148,3 +143,5 @@ Record new implementation status, validation results and unresolved limits in pu
 Delcore, DeliDev, and DeliTools, including their contracts and historical DeliDev validation records, are maintained in [delino-apps](https://github.com/delinoio/delino-apps). This repository no longer owns their runtime paths or CI jobs.
 
 Bundlewhy, including its Rust CLI, web UI, adapters, protocol and public guides, is maintained in [delinoio/bundlewhy](https://github.com/delinoio/bundlewhy).
+
+Typeopt, including its Rust CLI, fixtures, Vite example, benchmark tools and contracts, is maintained in [delinoio/typeopt](https://github.com/delinoio/typeopt).
