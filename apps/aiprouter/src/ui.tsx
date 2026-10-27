@@ -180,12 +180,14 @@ export function Dialog({
   onClose,
   initialFocus,
   wide = false,
+  className = "",
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   initialFocus?: string;
   wide?: boolean;
+  className?: string;
 }) {
   useLocale();
   const ref = useRef<HTMLDialogElement>(null);
@@ -213,7 +215,7 @@ export function Dialog({
     <dialog
       ref={ref}
       aria-labelledby={titleId}
-      className={wide ? "wide" : ""}
+      className={[wide ? "wide" : "", className].filter(Boolean).join(" ")}
       onKeyDown={(event) => {
         if (event.key !== "Tab") return;
         const items = Array.from(
@@ -317,15 +319,23 @@ export function Pagination({
 export function CopyButton({
   value,
   label = translate("copy"),
+  statusId,
+  className,
 }: {
   value: string;
   label?: string;
+  /** Optional id for the status region; the button is described by it. */
+  statusId?: string;
+  /** Optional extra class for the button. */
+  className?: string;
 }) {
   useLocale();
   const [message, setMessage] = useState("");
   return (
     <>
       <Button
+        className={className}
+        aria-describedby={statusId}
         onClick={() => {
           void navigator.clipboard.writeText(value).then(
             () => setMessage(translate("copied")),
@@ -335,7 +345,9 @@ export function CopyButton({
       >
         {label}
       </Button>
-      <span role="status">{message}</span>
+      <span role="status" id={statusId} className="copy-status">
+        {message}
+      </span>
     </>
   );
 }

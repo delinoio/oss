@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale, enumLabel } from "./i18n";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import {
@@ -128,18 +128,11 @@ export function KeysPage({ organization }: PageProps) {
         />
       )}
       {raw && (
-        <Dialog title={translate("yourNewApiKey")} onClose={() => setRaw("")}>
-          <Notice tone="warning">{translate("thisKeyIsShownOnlyOnce")}</Notice>
-          <Field label={translate("apiKey")}>
-            <input readOnly value={raw} autoFocus />
-          </Field>
-          <CopyButton value={raw} label={translate("copyApiKey")} />
-          <div className="actions">
-            <Button variant="primary" onClick={() => setRaw("")}>
-              {translate("done")}
-            </Button>
-          </div>
-        </Dialog>
+        <ApiKeyResult
+          organizationName={organization.name}
+          rawKey={raw}
+          onClose={() => setRaw("")}
+        />
       )}
       {revoke && (
         <ConfirmDialog
@@ -166,6 +159,70 @@ export function KeysPage({ organization }: PageProps) {
         </ConfirmDialog>
       )}
     </>
+  );
+}
+// One-time result of ordinary key issuance. The raw value lives only in the
+// owning page state and is never rendered into a live region.
+function ApiKeyResult({
+  organizationName,
+  rawKey,
+  onClose,
+}: {
+  organizationName: string;
+  rawKey: string;
+  onClose: () => void;
+}) {
+  useLocale();
+  const id = useId();
+  const warningId = `${id}-warning`;
+  const helperId = `${id}-helper`;
+  const statusId = `${id}-status`;
+  return (
+    <Dialog
+      title={translate("yourNewApiKey")}
+      onClose={onClose}
+      className="key-result"
+    >
+      <p className="key-result-context">
+        {translate("yourKeyIn", { value0: organizationName })}
+      </p>
+      <div className="key-result-warning" id={warningId}>
+        <span aria-hidden="true" className="key-result-icon">
+          !
+        </span>
+        <p>
+          <strong>{translate("thisKeyIsShownOnlyOnce")}</strong>{" "}
+          {translate("storeItSecurelyBeforeClosingThisDialog")}
+        </p>
+      </div>
+      <Field label={translate("apiKey")}>
+        <input
+          type="text"
+          readOnly
+          autoFocus
+          spellCheck={false}
+          autoComplete="off"
+          className="key-result-input"
+          value={rawKey}
+          aria-describedby={`${warningId} ${helperId}`}
+        />
+      </Field>
+      <div className="key-result-copy">
+        <CopyButton
+          value={rawKey}
+          label={translate("copyApiKey")}
+          statusId={statusId}
+        />
+      </div>
+      <p className="key-result-helper" id={helperId}>
+        {translate("youCannotViewThisKeyAgainAfterClosing")}
+      </p>
+      <div className="actions key-result-footer">
+        <Button variant="primary" onClick={onClose}>
+          {translate("done")}
+        </Button>
+      </div>
+    </Dialog>
   );
 }
 function CreateKey({
