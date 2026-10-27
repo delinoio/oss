@@ -33,6 +33,10 @@ Self-hosting operators, release maintainers, and validation authors.
 - **Before starting after a backup restore, invalidate all API keys, web sessions, invitations, and device authorizations.** Users must log in again, issue keys again, and reconnect CLIs.
 - Do not promise fixed performance/SLOs. Publish repeatable load-test conditions, resource consumption, latency, and error rates.
 
+### Local evaluation
+
+The stable root `pnpm dev:aiprouter` interface uses the separate `packaging/aiprouter/compose.local.yml` stack and `scripts/aiprouter/local.mjs` lifecycle wrapper. The [environment contract](repository-environment-contract.md#local-development) owns generated configuration, prerequisites, loopback bindings, state preservation, source-development selection and shutdown. Reuse the synthetic identity/SMTP fixture without changing production authentication or accepting fixture credentials in production. Wait for PostgreSQL and OIDC readiness and complete migration before API admission. No external account is required to open and sign in to the console. Generated media remains unavailable until R2 is configured; local evaluation does not establish provider or production acceptance.
+
 ### Observability and alert examples
 
 Provide:
@@ -163,4 +167,4 @@ Update this contract, the project index, and affected producer/consumer contract
 
 ## Monorepo integration
 
-Use `pnpm dev:aiprouter` for development and `.github/workflows/aiprouter.yml` for affected fixture validation. These replace the standalone repository root commands and CI workflow. Public docs are built through `apps/public-docs`, including all existing AIPRouter guides. Stage future release assets under the `aiprouter@v<version>` tag namespace; staging does not publish artifacts.
+Use `pnpm dev:aiprouter` for local Compose evaluation and `pnpm dev:aiprouter:source` for configured source development and `.github/workflows/aiprouter.yml` for affected fixture validation. These replace the standalone repository root commands and CI workflow. Public docs are built through `apps/public-docs`, including all existing AIPRouter guides. Stage future release assets under the `aiprouter@v<version>` tag namespace; staging does not publish artifacts.
