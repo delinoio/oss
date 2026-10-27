@@ -147,11 +147,11 @@ export function ErrorNotice({
     </Notice>
   );
 }
-export function Loading() {
+export function Loading({ label }: { label?: string } = {}) {
   useLocale();
   return (
     <div className="loading-state" role="status" aria-busy="true">
-      <p>{translate("loading")}</p>
+      <p>{label ?? translate("loading")}</p>
       <div className="skeleton" aria-hidden="true" />
     </div>
   );

@@ -35,7 +35,7 @@ export function HostedHelpers({ organizationId }: { organizationId: string }) {
   useLocale();
   const [open, setOpen] = useState(false);
   return (
-    <Card>
+    <Card className="entry-card">
       <h2>{translate("hostedHelpers")}</h2>
       <p>{translate("chooseYourOwnAccountsForWebSearch")}</p>
       <Button onClick={() => setOpen(true)}>
