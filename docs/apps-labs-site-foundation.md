@@ -23,6 +23,10 @@ Visitors access the public marketing site. Maintainers author content and build 
 - Attach `labs.delino.io` through Pages custom-domain configuration and complete its DNS validation. Do not treat the canonical URL or Wrangler file as proof of domain ownership or deployment.
 - No automatic publisher is introduced. Production activation and account acceptance remain operator work.
 
+## Localization
+
+Follow the [shared Labs localization contract](apps-labs-localization-contract.md) for catalogs, localized routes, ChatGPT plan generation, credential ownership and offline validation.
+
 ## Storage
 
 No persistent data, cookies, uploads, or browser storage. `dist/` is ignored generated output and must be removed from the final worktree.
