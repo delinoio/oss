@@ -3,7 +3,7 @@ import { t as translate, useLocale } from "../i18n";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import { OperatorService, type PriceOverride } from "@aiprouter/client";
-import { Card, PageHeader } from "../ui";
+import { Card, Notice, PageHeader } from "../ui";
 import { useDirtyForm } from "../api";
 import {
   Confirm,
@@ -19,6 +19,12 @@ import { DestinationPolicyForm, DestinationPolicyNotice } from "./destinations";
 import { RequestLimitsForm } from "./limits";
 import { RetentionForm } from "./retention";
 import { usePriceRevision, type PriceSnapshot } from "./price-revision";
+import {
+  PriceRates,
+  priceRateFields,
+  priceRecordName,
+  tierLabel,
+} from "./price-display";
 
 export { Health } from "./instance-health";
 
@@ -94,15 +100,6 @@ function Unavailable({ retry }: { retry: () => void }) {
     </>
   );
 }
-const rateFields = () =>
-  [
-    ["input", translate("input")],
-    ["output", translate("output")],
-    ["cacheRead", translate("cacheRead")],
-    ["cacheWrite", translate("cacheWrite")],
-    ["cacheWriteShort", translate("shortCacheWrite")],
-    ["cacheWriteLong", translate("longCacheWrite")],
-  ] as const;
 export function Prices() {
   useLocale();
   const [token, setToken] = useState("");
@@ -136,6 +133,9 @@ export function Prices() {
           </button>
         }
       />
+      <p className="admin-price-note">
+        {translate("appliesToNewRequestsOnlyHistoricalEstimates")}
+      </p>
       {action.feedback}
       {query.isPending ? (
         <Loading />
@@ -149,6 +149,16 @@ export function Prices() {
         />
       ) : (
         <Card>
+          {!query.data?.revision && (
+            <Notice tone="warning">
+              {translate("priceChangesAreUnavailableBecauseTheServer")}
+              <div className="admin-actions">
+                <button onClick={() => void query.refetch()}>
+                  {translate("tryAgain")}
+                </button>
+              </div>
+            </Notice>
+          )}
           {!query.data?.overrides.length && (
             <Empty>
               {translate("noPriceOverridesBundledPricesApplyWhere")}
@@ -156,33 +166,33 @@ export function Prices() {
           )}
           <div className="admin-records">
             {query.data?.overrides.map((price) => (
-              <article key={price.id} className="admin-record">
+              <article
+                key={price.id}
+                className="admin-record admin-price-record"
+                aria-labelledby={`price-${price.id}`}
+              >
                 <div>
-                  <h2>
-                    {price.providerId} / {price.modelId}
-                  </h2>
+                  <h2 id={`price-${price.id}`}>{price.modelId}</h2>
                   <p>
-                    {translate("tierProvenanceInstanceOperatorOverride", {
-                      value0: price.serviceTier || translate("default"),
+                    {translate("providerIdValue", { value0: price.providerId })}
+                  </p>
+                  <p>{tierLabel(price.serviceTier)}</p>
+                  <p>
+                    {translate("currency_633895", {
+                      value0: price.rates?.currency || translate("unknown"),
                     })}
                   </p>
+                  <p>{translate("provenanceInstanceOperatorOverride")}</p>
                   <p>
                     {translate("updated", { value0: date(price.updatedAt) })}
                   </p>
-                  {rateFields().map(([field, name]) => (
-                    <p key={field}>
-                      {name}:{" "}
-                      {price.rates?.[field] === undefined
-                        ? translate("unknown")
-                        : translate("perMillionTokens", {
-                            value0: price.rates.currency,
-                            value1: price.rates[field],
-                          })}
-                    </p>
-                  ))}
+                  <PriceRates rates={price.rates} />
                 </div>
                 <div className="admin-actions">
                   <button
+                    aria-label={translate("editOverrideFor", {
+                      value0: priceRecordName(price),
+                    })}
                     disabled={!query.data?.revision || action.pending}
                     onClick={() => {
                       action.clearError();
@@ -192,6 +202,9 @@ export function Prices() {
                     {translate("editOverride")}
                   </button>
                   <button
+                    aria-label={translate("deleteOverrideFor", {
+                      value0: priceRecordName(price),
+                    })}
                     disabled={!query.data?.revision || action.pending}
                     onClick={() => {
                       action.clearError();
@@ -248,7 +261,7 @@ function PriceEditor({
   const [currency, setCurrency] = useState(price?.rates?.currency ?? "USD");
   const [rates, setRates] = useState<Record<string, string>>(() =>
     Object.fromEntries(
-      rateFields().map(([field]) => [field, price?.rates?.[field] ?? ""]),
+      priceRateFields().map(([field]) => [field, price?.rates?.[field] ?? ""]),
     ),
   );
   const snapshot = usePriceRevision(
@@ -332,7 +345,7 @@ function PriceEditor({
         </label>
         <p>{translate("ratesPerMillionTokensBlankMeansUnknown")}</p>
         <div className="admin-form-grid">
-          {rateFields().map(([field, name]) => (
+          {priceRateFields().map(([field, name]) => (
             <label key={field}>
               {name}
               <input
