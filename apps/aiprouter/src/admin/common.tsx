@@ -167,7 +167,14 @@ export function useAction(operator = false) {
   }, []);
   async function run(
     action: () => Promise<unknown>,
-    options: { owner?: boolean; success?: string; done?: () => void } = {},
+    options: {
+      owner?: boolean;
+      success?: string;
+      done?: () => void;
+      // Opt-in: refetch server state after a lost race so the page never keeps
+      // showing a record that another actor already changed.
+      refetchOnConflict?: boolean;
+    } = {},
   ) {
     if (busy.current) return;
     busy.current = true;
@@ -213,6 +220,13 @@ export function useAction(operator = false) {
         ) {
           authority.onDenied();
           await cache.invalidateQueries();
+        } else if (
+          options.refetchOnConflict &&
+          [Code.FailedPrecondition, Code.Aborted, Code.NotFound].includes(
+            ConnectError.from(cause).code,
+          )
+        ) {
+          await cache.invalidateQueries();
         }
       }
     } finally {
@@ -236,16 +250,24 @@ export function useAction(operator = false) {
   };
 }
 
+// Dialog widths. Standard keeps the original 560px maximum; Wide is the 600px
+// maximum used by consequence-heavy confirmations. Both keep a 16px gutter.
+export enum DialogSize {
+  Standard = "standard",
+  Wide = "wide",
+}
 export function Dialog({
   title,
   children,
   onClose,
   initial = "input",
+  size = DialogSize.Standard,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   initial?: "input" | "cancel";
+  size?: DialogSize;
 }) {
   useLocale();
   const ref = useRef<HTMLDialogElement>(null);
@@ -270,7 +292,11 @@ export function Dialog({
     <dialog
       ref={ref}
       aria-labelledby={id}
-      className="admin-dialog"
+      className={
+        size === DialogSize.Wide
+          ? "admin-dialog admin-dialog-wide"
+          : "admin-dialog"
+      }
       onCancel={(e) => {
         e.preventDefault();
         onClose();
@@ -312,6 +338,13 @@ export enum ConfirmTone {
   Danger = "danger",
   Primary = "primary",
 }
+export enum ConfirmFocus {
+  Cancel = "cancel",
+  Input = "input",
+}
+// Confirm defaults reproduce the original dialog: Cancel receives initial focus,
+// the final action is red and is labeled with the title. Every other prop is an
+// opt-in variation used by the organization settings dialogs.
 export function Confirm({
   title,
   name,
@@ -320,7 +353,13 @@ export function Confirm({
   pending,
   pendingLabel,
   onClose,
+  initialFocus = ConfirmFocus.Cancel,
+  cancelLabel,
+  confirmLabel,
   tone = ConfirmTone.Danger,
+  helper,
+  size,
+  pendingStatus = false,
   footerNote,
 }: {
   title: string;
@@ -331,15 +370,27 @@ export function Confirm({
   // Optional action label shown while the submitted change is pending.
   pendingLabel?: string;
   onClose: () => void;
+  initialFocus?: ConfirmFocus;
+  cancelLabel?: string;
+  confirmLabel?: string;
   // Optional tone of the primary action (defaults to danger).
   tone?: ConfirmTone;
+  helper?: string;
+  size?: DialogSize;
+  pendingStatus?: boolean;
   // Optional note shown directly above the dialog actions.
   footerNote?: ReactNode;
 }) {
   useLocale();
   const [typed, setTyped] = useState("");
+  const helperId = useId();
   return (
-    <Dialog title={title} onClose={onClose} initial="cancel">
+    <Dialog
+      title={title}
+      onClose={onClose}
+      initial={initialFocus === ConfirmFocus.Input ? "input" : "cancel"}
+      size={size}
+    >
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -348,19 +399,32 @@ export function Confirm({
       >
         <div>{children}</div>
         {name && (
-          <label>
-            {translate("typeToConfirm", { value0: name })}
-            <input
-              required
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-            />
-          </label>
+          <>
+            <label>
+              {translate("typeToConfirm", { value0: name })}
+              <input
+                required
+                value={typed}
+                aria-describedby={helper ? helperId : undefined}
+                onChange={(e) => setTyped(e.target.value)}
+              />
+            </label>
+            {helper && (
+              <p id={helperId} className="admin-helper">
+                {helper}
+              </p>
+            )}
+          </>
+        )}
+        {pendingStatus && (
+          <p role="status" className="admin-dialog-status">
+            {pending ? translate("message_238b2274b1") : ""}
+          </p>
         )}
         {footerNote && <p className="admin-confirm-note">{footerNote}</p>}
         <div className="admin-actions">
           <button type="button" data-cancel onClick={onClose}>
-            {translate("cancel")}
+            {cancelLabel ?? translate("cancel")}
           </button>
           <button
             className={
@@ -368,7 +432,7 @@ export function Confirm({
             }
             disabled={pending || (!!name && typed !== name)}
           >
-            {pending && pendingLabel ? pendingLabel : title}
+            {pending && pendingLabel ? pendingLabel : (confirmLabel ?? title)}
           </button>
         </div>
       </form>
