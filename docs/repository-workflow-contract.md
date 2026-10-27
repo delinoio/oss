@@ -196,7 +196,9 @@ flags. This preserves package selection without preparing unrelated desktop
 inputs. The published CLI selection fixture also runs as an uncached Turbo task
 in `changes`, after the pinned binary is prepared and before final planning.
 
-Those same jobs build each selected desktop frontend. The generic test job builds pnport and its injection companion only when `pnport` is selected. Go setup remains required for pnport static-child fixtures and uses the pinned `go.mod` version.
+The generic Rust test job installs `liblzma-dev` before Cargo when `binpm` or `nodeup` is selected. Their `xz2` dependency links liblzma; a restored Cargo cache may retain dynamic-link metadata even when a fresh dependency build could choose a bundled library. Keep this dependency explicit so selected CLI tests do not depend on desktop application prerequisites.
+
+The generic test job builds pnport and its injection companion only when `pnport` is selected. Go setup remains required for pnport static-child fixtures and uses the pinned `go.mod` version.
 
 CI never builds a signed private candidate and never publishes.
 

@@ -531,6 +531,12 @@ jobs:
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
+      - name: Install XZ development library
+        if: ${{ contains(fromJSON(needs.changes.outputs.rust_packages), 'binpm') || contains(fromJSON(needs.changes.outputs.rust_packages), 'nodeup') }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y liblzma-dev
+
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2
         with:

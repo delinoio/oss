@@ -877,3 +877,26 @@ test("Rstack formatting uses the exact comparison and never caches results", () 
   assert.ok(leaf.task.passThroughEnv.includes("TURBO_SCM_HEAD"));
   assert.equal(packages["package.json"].devDependencies.rstack, "0.8.3");
 });
+
+test("Rust tests prepare the XZ linker dependency for every selected consumer", () => {
+  const job = workflow.jobs["rust-test"];
+  const preparation = namedStep(job, "Install XZ development library");
+  const selected = (packages) =>
+    runInNewContext(preparation.if.slice(3, -2), {
+      needs: {
+        changes: { outputs: { rust_packages: JSON.stringify(packages) } },
+      },
+      fromJSON: JSON.parse,
+      contains: (list, value) => list.includes(value),
+    });
+  for (const packages of [["binpm"], ["nodeup"], ["binpm", "nodeup"]])
+    assert.equal(selected(packages), true);
+  for (const packages of [[], ["cargo-mono"], ["pnport"]])
+    assert.equal(selected(packages), false);
+  assert.match(preparation.run, /sudo apt-get update/u);
+  assert.match(preparation.run, /sudo apt-get install -y liblzma-dev/u);
+  assert.ok(
+    job.steps.indexOf(preparation) <
+      job.steps.indexOf(namedStep(job, "Run cargo test")),
+  );
+});
