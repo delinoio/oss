@@ -2,14 +2,9 @@
 import { t as translate, useLocale } from "../i18n";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
-import { create } from "@bufbuild/protobuf";
-import { Code, ConnectError } from "@connectrpc/connect";
 import {
-  AllowedDestinationSchema,
   HealthState,
-  InstanceSettingsSchema,
   OperatorService,
-  type InstanceSettings,
   type PriceOverride,
 } from "@aiprouter/client";
 import { Card, PageHeader } from "../ui";
@@ -26,6 +21,7 @@ import {
   useAction,
 } from "./common";
 import { Summary, timeRange } from "./reporting";
+import { DestinationPolicyForm, DestinationPolicyNotice } from "./destinations";
 import { RequestLimitsForm } from "./limits";
 import { RetentionForm } from "./retention";
 import { usePriceRevision, type PriceSnapshot } from "./price-revision";
@@ -159,14 +155,21 @@ export function InstanceConfiguration({
             ? translate("appliedPerUserWithinEachOrganization")
             : section === "retention"
               ? translate("setHowLongInstanceRecordsRemainAvailable")
-              : translate("manageInstancePolicy")
+              : translate("controlAdditionalOriginsForTheWholeInstance")
         }
       />
-      {section === "retention" && (
+      {section !== "limits" && (
         <p className="admin-scope">{translate("instancePolicy")}</p>
       )}
+      {section === "destinations" && <DestinationPolicyNotice />}
       {query.isPending ? (
-        <Loading />
+        <Loading
+          label={
+            section === "destinations"
+              ? translate("loadingDestinationPolicy")
+              : undefined
+          }
+        />
       ) : query.error ? (
         <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       ) : query.data?.settings ? (
@@ -179,11 +182,7 @@ export function InstanceConfiguration({
             <Unavailable retry={() => void query.refetch()} />
           )
         ) : (
-          <ConfigurationForm
-            key={section}
-            settings={query.data.settings}
-            section={section}
-          />
+          <DestinationPolicyForm key={section} settings={query.data.settings} />
         )
       ) : section === "retention" ? (
         <Unavailable retry={() => void query.refetch()} />
@@ -205,272 +204,6 @@ function Unavailable({ retry }: { retry: () => void }) {
       </div>
     </>
   );
-}
-function ConfigurationForm({
-  settings: initialSettings,
-  section,
-}: {
-  settings: InstanceSettings;
-  section: "destinations";
-}) {
-  useLocale();
-  // Keep the reviewed snapshot across background refetches. A new revision
-  // must not silently replace safe edits or authorize overwriting newer policy.
-  const [settings, setSettings] = useState(initialSettings);
-  const [draft, setDraft] = useState(() =>
-    create(InstanceSettingsSchema, initialSettings),
-  );
-  const [review, setReview] = useState(false);
-  const [origin, setOrigin] = useState("");
-  const [networks, setNetworks] = useState("");
-  const [editingDestination, setEditingDestination] = useState<number>();
-  const destinationInputDirty =
-    !!origin || !!networks || editingDestination !== undefined;
-  const dirty = useDirtyForm();
-  const [changed, setChanged] = useState(false);
-  useEffect(() => {
-    dirty(changed || destinationInputDirty);
-    return () => dirty(false);
-  }, [dirty, changed, destinationInputDirty]);
-  const action = useAction(true);
-  const update = useMutation(OperatorService.method.updateInstanceSettings);
-  function save() {
-    void action.run(
-      async () => {
-        const response = await update.mutateAsync({
-          settings: draft,
-          expectedRevision: settings.revision,
-        });
-        if (response.settings) {
-          setSettings(response.settings);
-          setDraft(create(InstanceSettingsSchema, response.settings));
-        }
-      },
-      {
-        done: () => {
-          setReview(false);
-          setChanged(false);
-        },
-      },
-    );
-  }
-  function submit() {
-    setReview(true);
-  }
-  return (
-    <Card>
-      {action.feedback}
-      <form
-        onSubmit={(e) => {
-          e.preventDefault();
-          submit();
-        }}
-      >
-        {section === "destinations" && (
-          <>
-            <p>{translate("publicHttpsDestinationsAreAllowedByDefault")}</p>
-            <div className="admin-records">
-              {draft.allowedDestinations.map((destination, index) => (
-                <article
-                  className="admin-record"
-                  key={`${destination.origin}:${index}`}
-                >
-                  <div>
-                    <h3>{destination.origin}</h3>
-                    <p>
-                      {destination.allowedCidrs.length > 0
-                        ? translate("restrictedNetworks", {
-                            value0: destination.allowedCidrs.join(", "),
-                          })
-                        : translate("message_4d358e5232")}
-                    </p>
-                  </div>
-                  <div className="admin-actions">
-                    <button
-                      type="button"
-                      disabled={destinationInputDirty}
-                      onClick={() => {
-                        setEditingDestination(index);
-                        setOrigin(destination.origin);
-                        setNetworks(destination.allowedCidrs.join("\n"));
-                      }}
-                    >
-                      {translate("editApproval")}
-                    </button>
-                    <button
-                      type="button"
-                      disabled={destinationInputDirty}
-                      onClick={() => {
-                        setDraft({
-                          ...draft,
-                          allowedDestinations: draft.allowedDestinations.filter(
-                            (_, i) => i !== index,
-                          ),
-                        });
-                        setChanged(true);
-                      }}
-                    >
-                      {translate("removeApproval")}
-                    </button>
-                  </div>
-                </article>
-              ))}
-            </div>
-            {!draft.allowedDestinations.length && (
-              <Empty>{translate("noAdditionalDestinationsApproved")}</Empty>
-            )}
-            <label>
-              {translate("exactOrigin")}
-              <input
-                type="url"
-                value={origin}
-                placeholder="http://localhost:8080"
-                onChange={(e) => setOrigin(e.target.value)}
-              />
-            </label>
-            <label>
-              {translate("allowedNetworksOptional")}
-              <textarea
-                rows={3}
-                value={networks}
-                placeholder="10.0.0.0/8&#10;2001:db8::/32"
-                onChange={(e) => setNetworks(e.target.value)}
-                aria-describedby="destination-networks-help"
-              />
-            </label>
-            <p id="destination-networks-help">
-              {translate("enterCidrRangesOnePerLineOr")}
-            </p>
-            <div className="admin-actions">
-              <button
-                type="button"
-                disabled={
-                  !validOrigin(origin) ||
-                  draft.allowedDestinations.some(
-                    (d, index) =>
-                      index !== editingDestination && d.origin === origin,
-                  )
-                }
-                onClick={() => {
-                  if (!validOrigin(origin)) return;
-                  // Preserve the stable rule ID and any future fields when editing.
-                  // Prefix canonicalization, duplicates and mapped addresses are validated by the server.
-                  const destination = {
-                    ...create(
-                      AllowedDestinationSchema,
-                      editingDestination === undefined
-                        ? undefined
-                        : draft.allowedDestinations[editingDestination],
-                    ),
-                    origin,
-                    allowedCidrs: networks.split(/[\s,]+/u).filter(Boolean),
-                  };
-                  setDraft({
-                    ...draft,
-                    allowedDestinations:
-                      editingDestination === undefined
-                        ? [...draft.allowedDestinations, destination]
-                        : draft.allowedDestinations.map((d, index) =>
-                            index === editingDestination ? destination : d,
-                          ),
-                  });
-                  setOrigin("");
-                  setNetworks("");
-                  setEditingDestination(undefined);
-                  setChanged(true);
-                }}
-              >
-                {editingDestination === undefined
-                  ? translate("addToReview")
-                  : translate("updateReview")}
-              </button>
-              {destinationInputDirty && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOrigin("");
-                    setNetworks("");
-                    setEditingDestination(undefined);
-                  }}
-                >
-                  {translate("cancelDestinationEdit")}
-                </button>
-              )}
-            </div>
-          </>
-        )}
-        <div className="admin-actions">
-          <button
-            className="admin-primary"
-            disabled={
-              action.pending ||
-              !changed ||
-              destinationInputDirty ||
-              !draft.requestLimits ||
-              !draft.retention
-            }
-          >
-            {translate("reviewAndSaveChanges")}
-          </button>
-        </div>
-      </form>
-      {review && (
-        <Confirm
-          title={translate("saveDestinationPolicy")}
-          pending={action.pending}
-          onClose={() => setReview(false)}
-          action={save}
-        >
-          <>
-            <p>
-              {translate("onlyTheseAdditionalDestinationsWillRemainApproved")}
-            </p>
-            <ul>
-              {draft.allowedDestinations.map((d, i) => (
-                <li key={d.id || i}>
-                  <strong>{d.origin}</strong> —{" "}
-                  {d.allowedCidrs.length
-                    ? translate(
-                        "restrictedToAddressesOutsideTheseNetworksAre",
-                        {
-                          value0: d.allowedCidrs.join(", "),
-                        },
-                      )
-                    : translate("message_c6474071b6")}
-                </li>
-              ))}
-            </ul>
-            <p>
-              {translate("removingApprovalBlocksFutureConnectionsThatRequire")}
-            </p>
-          </>
-          <ErrorNotice error={action.error} />
-          {!!action.error &&
-            section === "destinations" &&
-            ConnectError.from(action.error).code === Code.InvalidArgument && (
-              <p>{translate("checkTheExactOriginsAndCidrPrefixes")}</p>
-            )}
-          {!!action.error &&
-            ConnectError.from(action.error).code === Code.Aborted && (
-              <p>{translate("yourDraftAndNetworkEntriesArePreserved")}</p>
-            )}
-        </Confirm>
-      )}
-    </Card>
-  );
-}
-export function validOrigin(value: string) {
-  try {
-    const u = new URL(value);
-    return (
-      ["http:", "https:"].includes(u.protocol) &&
-      !u.username &&
-      !u.password &&
-      u.origin === value
-    );
-  } catch {
-    return false;
-  }
 }
 const rateFields = () =>
   [
