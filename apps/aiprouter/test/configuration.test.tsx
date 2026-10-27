@@ -919,3 +919,207 @@ describe("hosted helpers dialog shell", () => {
     expect(screen.queryByText("Hosted helper settings saved.")).toBeNull();
   });
 });
+describe("hosted helpers sections", () => {
+  const stored = create(HostedSettingsSchema, {
+    search: {
+      enabled: false,
+      maxSearchesPerTurn: 0,
+      target: {
+        selection: { case: "connectionId", value: "connection" },
+        modelId: "grok",
+      },
+    },
+    images: {
+      bridgeEnabled: false,
+      videoBridgeEnabled: true,
+      bridgeModel: "image-override",
+    },
+  });
+  function sectionRoutes(
+    r: ConnectRouter,
+    update: (request: unknown) => object,
+    settings: object | null = stored,
+  ) {
+    r.service(HostedSettingsService, {
+      getHostedSettings: () => (settings ? { settings } : {}),
+      updateHostedSettings: update,
+    });
+    r.service(ProviderService, {
+      listProviderConnections: () => ({ connections: [connection] }),
+    });
+    r.service(PoolService, { listPools: () => ({ pools: [] }) });
+    r.service(RoutingService, { listRoutes: () => ({}) });
+  }
+  async function open(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(
+      screen.getByRole("button", { name: "Configure hosted helpers" }),
+    );
+    return within(
+      await screen.findByRole("dialog", { name: "Hosted helpers" }),
+    );
+  }
+  const titles = [
+    "Web search",
+    "Image understanding",
+    "Image and video generation",
+  ];
+
+  it("shows three expanded section cards in order with collapsed Advanced disclosures", async () => {
+    const user = userEvent.setup();
+    mount(<HostedHelpers organizationId="org" />, (r) =>
+      sectionRoutes(r, () => ({}), null),
+    );
+    const dialog = await open(user);
+    await dialog.findByLabelText("Configure web search");
+    const toggles = titles.map((name) =>
+      dialog.getByRole("button", { name, expanded: true }),
+    );
+    for (let i = 1; i < toggles.length; i += 1) {
+      expect(
+        toggles[i - 1]!.compareDocumentPosition(toggles[i]!) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    }
+    for (const toggle of toggles) {
+      const body = document.getElementById(
+        toggle.getAttribute("aria-controls") ?? "",
+      );
+      expect(body?.hidden).toBe(false);
+    }
+    for (const label of [
+      "Configure web search",
+      "Configure image understanding",
+      "Configure image and video generation",
+    ]) {
+      expect((dialog.getByLabelText(label) as HTMLInputElement).checked).toBe(
+        false,
+      );
+    }
+    expect(dialog.getAllByText("No saved configuration")).toHaveLength(3);
+    expect(dialog.queryByText("Configured")).toBeNull();
+    expect(dialog.queryAllByRole("switch")).toHaveLength(0);
+  });
+
+  it("creates and removes draft objects with the presence checkboxes and restarts empty", async () => {
+    const user = userEvent.setup(),
+      update = rs.fn((_request: unknown) => ({}));
+    mount(<HostedHelpers organizationId="org" />, (r) =>
+      sectionRoutes(r, update, null),
+    );
+    const dialog = await open(user);
+    const presence = await dialog.findByLabelText("Configure web search");
+    await user.click(presence);
+    expect(dialog.getAllByText("No saved configuration")).toHaveLength(2);
+    await user.selectOptions(dialog.getByLabelText("Search backend"), "6");
+    await user.click(presence);
+    expect(dialog.queryByLabelText("Search backend")).toBeNull();
+    expect(dialog.getAllByText("No saved configuration")).toHaveLength(3);
+    await user.click(presence);
+    expect(
+      (dialog.getByLabelText("Search backend") as HTMLSelectElement).value,
+    ).toBe("");
+    await user.click(dialog.getByLabelText("Configure image understanding"));
+    await user.click(
+      dialog.getByLabelText("Configure image and video generation"),
+    );
+    await user.click(
+      dialog.getByRole("button", { name: "Save helper settings" }),
+    );
+    expect(update).toHaveBeenCalledTimes(1);
+    const sent = (
+      update.mock.calls[0]?.[0] as {
+        settings: {
+          search?: { backend?: number; enabled?: boolean };
+          vision?: object;
+          images?: { bridgeEnabled?: boolean };
+        };
+      }
+    ).settings;
+    expect(sent.search?.backend).toBeUndefined();
+    expect(sent.search?.enabled).toBeUndefined();
+    expect(sent.vision).toBeTruthy();
+    expect(sent.images?.bridgeEnabled).toBe(false);
+  });
+
+  it("summarizes collapsed sections by presence only and keeps every value", async () => {
+    const user = userEvent.setup(),
+      update = rs.fn((_request: unknown) => ({}));
+    mount(<HostedHelpers organizationId="org" />, (r) =>
+      sectionRoutes(r, update),
+    );
+    const dialog = await open(user);
+    await dialog.findByLabelText("Search backend");
+    await user.click(dialog.getByText("Advanced search settings"));
+    await user.click(dialog.getByText("Advanced media settings"));
+    for (const name of titles) {
+      await user.click(dialog.getByRole("button", { name, expanded: true }));
+    }
+    for (const name of titles) {
+      expect(
+        dialog.getByRole("button", { name, expanded: false }),
+      ).toBeTruthy();
+    }
+    expect(dialog.getAllByText("Configured")).toHaveLength(2);
+    expect(dialog.getAllByText("No saved configuration")).toHaveLength(1);
+    // The compact notice only applies to expanded sections.
+    expect(
+      dialog.queryByText(
+        "Save replaces all helper settings. Removing a configuration does not always disable the provider default.",
+      ),
+    ).toBeNull();
+    await user.click(
+      dialog.getByRole("button", { name: "Web search", expanded: false }),
+    );
+    await user.type(dialog.getByLabelText("Search model ID"), "-x");
+    await user.click(
+      dialog.getByRole("button", { name: "Save helper settings" }),
+    );
+    expect(update.mock.calls[0]?.[0]).toMatchObject({
+      settings: {
+        search: {
+          enabled: false,
+          maxSearchesPerTurn: 0,
+          target: { modelId: "grok-x" },
+        },
+        images: {
+          bridgeEnabled: false,
+          videoBridgeEnabled: true,
+          bridgeModel: "image-override",
+        },
+      },
+    });
+    expect(
+      (update.mock.calls[0]?.[0] as { settings: { vision?: unknown } }).settings
+        .vision,
+    ).toBeUndefined();
+  });
+
+  it("reveals a collapsed section that holds an invalid control", async () => {
+    const user = userEvent.setup(),
+      update = rs.fn((_request: unknown) => ({}));
+    mount(<HostedHelpers organizationId="org" />, (r) =>
+      sectionRoutes(r, update, null),
+    );
+    const dialog = await open(user);
+    await user.click(
+      await dialog.findByLabelText("Configure image understanding"),
+    );
+    await user.selectOptions(dialog.getByLabelText("Vision backend"), "3");
+    await user.click(
+      dialog.getByRole("button", {
+        name: "Image understanding",
+        expanded: true,
+      }),
+    );
+    await user.click(
+      dialog.getByRole("button", { name: "Save helper settings" }),
+    );
+    expect(update).not.toHaveBeenCalled();
+    expect(
+      dialog.getByRole("button", {
+        name: "Image understanding",
+        expanded: true,
+      }),
+    ).toBeTruthy();
+  });
+});

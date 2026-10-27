@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale, enumLabel } from "./i18n";
-import { useRef, useState, type ReactNode, type SyntheticEvent } from "react";
+import {
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+  type SyntheticEvent,
+} from "react";
+import { flushSync } from "react-dom";
 import { create } from "@bufbuild/protobuf";
 import { useQuery } from "@connectrpc/connect-query";
 import {
@@ -38,7 +45,77 @@ enum HostedAdvanced {
   Vision = "vision",
   Media = "media",
 }
+/** Outer helper sections; each has its own disclosure and presence summary. */
+enum HostedSectionId {
+  Search = "search",
+  Vision = "vision",
+  Media = "media",
+}
 type HostedAction = UseActionResult;
+/**
+ * Outlined helper section with an independent disclosure. Collapsing only
+ * hides the body (it stays mounted), so the draft is never changed by it.
+ */
+function HostedSection({
+  id,
+  title,
+  configured,
+  open,
+  onToggle,
+  children,
+}: {
+  id: HostedSectionId;
+  title: string;
+  configured: boolean;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  useLocale();
+  const headingId = useId();
+  const bodyId = useId();
+  return (
+    <section
+      className="hosted-section"
+      data-hosted-section={id}
+      aria-labelledby={headingId}
+    >
+      <div className="hosted-section-header">
+        <h3 id={headingId}>
+          <button
+            type="button"
+            className="hosted-section-toggle"
+            aria-expanded={open}
+            aria-controls={bodyId}
+            onClick={onToggle}
+          >
+            <span className="hosted-section-chevron" aria-hidden="true">
+              {open ? "\u25BE" : "\u25B8"}
+            </span>
+            {title}
+          </button>
+        </h3>
+        {!open && (
+          <p className="hosted-section-summary">
+            {configured
+              ? translate("hostedSectionConfigured")
+              : translate("noSavedConfiguration")}
+          </p>
+        )}
+      </div>
+      <div id={bodyId} className="hosted-section-body" hidden={!open}>
+        {children}
+      </div>
+    </section>
+  );
+}
+/** Shown inside an expanded section that has no draft object. */
+function HostedAbsent() {
+  useLocale();
+  return (
+    <p className="hosted-section-absent">{translate("noSavedConfiguration")}</p>
+  );
+}
 export function HostedHelpers({
   organizationId,
   organizationName,
@@ -400,6 +477,15 @@ function HostedEditor({
     [HostedAdvanced.Vision]: false,
     [HostedAdvanced.Media]: false,
   });
+  const [sectionOpen, setSectionOpen] = useState<
+    Record<HostedSectionId, boolean>
+  >({
+    [HostedSectionId.Search]: true,
+    [HostedSectionId.Vision]: true,
+    [HostedSectionId.Media]: true,
+  });
+  const toggleSection = (id: HostedSectionId) =>
+    setSectionOpen((current) => ({ ...current, [id]: !current[id] }));
   const search = draft.search,
     vision = draft.vision,
     images = draft.images;
@@ -407,9 +493,15 @@ function HostedEditor({
   // Removed sections unmount their disclosure without a toggle event, so only
   // count areas whose section still exists in the draft.
   const advancedExpanded =
-    (!!search && advancedOpen[HostedAdvanced.Search]) ||
-    (!!vision && advancedOpen[HostedAdvanced.Vision]) ||
-    (!!images && advancedOpen[HostedAdvanced.Media]);
+    (!!search &&
+      sectionOpen[HostedSectionId.Search] &&
+      advancedOpen[HostedAdvanced.Search]) ||
+    (!!vision &&
+      sectionOpen[HostedSectionId.Vision] &&
+      advancedOpen[HostedAdvanced.Vision]) ||
+    (!!images &&
+      sectionOpen[HostedSectionId.Media] &&
+      advancedOpen[HostedAdvanced.Media]);
   const trackAdvanced = (area: HostedAdvanced) => ({
     onToggle: (e: SyntheticEvent<HTMLDetailsElement>) => {
       const expanded = e.currentTarget.open;
@@ -418,6 +510,20 @@ function HostedEditor({
       );
     },
   });
+  // A control the browser refuses to submit must not stay inside a collapsed
+  // section or Advanced disclosure, where it cannot take focus.
+  function revealInvalid(e: SyntheticEvent<HTMLFormElement>) {
+    const target = e.target as HTMLElement;
+    const details = target.closest("details");
+    if (details && !details.open) details.open = true;
+    const owner = target.closest<HTMLElement>("[data-hosted-section]");
+    const id = owner?.dataset.hostedSection as HostedSectionId | undefined;
+    if (id && !sectionOpen[id]) {
+      flushSync(() =>
+        setSectionOpen((current) => ({ ...current, [id]: true })),
+      );
+    }
+  }
   const noResources =
     !resourcesPending &&
     !resourcesError &&
@@ -453,6 +559,7 @@ function HostedEditor({
         </p>
       )}
       <form
+        onInvalidCapture={revealInvalid}
         onSubmit={(e) => {
           e.preventDefault();
           if (
@@ -465,8 +572,13 @@ function HostedEditor({
           onSave(draft);
         }}
       >
-        <fieldset>
-          <legend>{translate("webSearch")}</legend>
+        <HostedSection
+          id={HostedSectionId.Search}
+          title={translate("webSearch")}
+          configured={!!search}
+          open={sectionOpen[HostedSectionId.Search]}
+          onToggle={() => toggleSection(HostedSectionId.Search)}
+        >
           <label className="check">
             <input
               type="checkbox"
@@ -482,23 +594,26 @@ function HostedEditor({
             />
             {translate("configureWebSearch")}
           </label>
+          {!search && sectionOpen[HostedSectionId.Search] && <HostedAbsent />}
           {search && (
             <>
-              <OptionalBoolean
-                label={translate("webSearchAvailability")}
-                value={search.enabled}
-                onChange={(enabled) =>
-                  setDraft({ ...draft, search: { ...search, enabled } })
-                }
-              />
-              <EnumField
-                label={translate("searchBackend")}
-                value={search.backend}
-                values={HostedSearchBackend}
-                onChange={(backend) =>
-                  setDraft({ ...draft, search: { ...search, backend } })
-                }
-              />
+              <div className="hosted-grid">
+                <OptionalBoolean
+                  label={translate("webSearchAvailability")}
+                  value={search.enabled}
+                  onChange={(enabled) =>
+                    setDraft({ ...draft, search: { ...search, enabled } })
+                  }
+                />
+                <EnumField
+                  label={translate("searchBackend")}
+                  value={search.backend}
+                  values={HostedSearchBackend}
+                  onChange={(backend) =>
+                    setDraft({ ...draft, search: { ...search, backend } })
+                  }
+                />
+              </div>
               <TargetFields
                 label={translate("search")}
                 {...targetProps}
@@ -509,36 +624,38 @@ function HostedEditor({
               />
               <details {...trackAdvanced(HostedAdvanced.Search)}>
                 <summary>{translate("advancedSearchSettings")}</summary>
-                <EnumField
-                  label={translate("searchReasoningEffort")}
-                  value={search.reasoning}
-                  values={ReasoningEffort}
-                  onChange={(reasoning) =>
-                    setDraft({ ...draft, search: { ...search, reasoning } })
-                  }
-                />
-                <OptionalNumber
-                  label={translate("maximumSearchesPerTurn")}
-                  value={search.maxSearchesPerTurn}
-                  max={32}
-                  hint={translate("default3ZeroDisablesSearches")}
-                  onChange={(maxSearchesPerTurn) =>
-                    setDraft({
-                      ...draft,
-                      search: { ...search, maxSearchesPerTurn },
-                    })
-                  }
-                />
-                <OptionalNumber
-                  label={translate("searchTimeoutMs")}
-                  value={search.timeoutMs}
-                  min={1}
-                  max={600000}
-                  hint={translate("default60000")}
-                  onChange={(timeoutMs) =>
-                    setDraft({ ...draft, search: { ...search, timeoutMs } })
-                  }
-                />
+                <div className="hosted-grid">
+                  <EnumField
+                    label={translate("searchReasoningEffort")}
+                    value={search.reasoning}
+                    values={ReasoningEffort}
+                    onChange={(reasoning) =>
+                      setDraft({ ...draft, search: { ...search, reasoning } })
+                    }
+                  />
+                  <OptionalNumber
+                    label={translate("maximumSearchesPerTurn")}
+                    value={search.maxSearchesPerTurn}
+                    max={32}
+                    hint={translate("default3ZeroDisablesSearches")}
+                    onChange={(maxSearchesPerTurn) =>
+                      setDraft({
+                        ...draft,
+                        search: { ...search, maxSearchesPerTurn },
+                      })
+                    }
+                  />
+                  <OptionalNumber
+                    label={translate("searchTimeoutMs")}
+                    value={search.timeoutMs}
+                    min={1}
+                    max={600000}
+                    hint={translate("default60000")}
+                    onChange={(timeoutMs) =>
+                      setDraft({ ...draft, search: { ...search, timeoutMs } })
+                    }
+                  />
+                </div>
                 {(search.backend === HostedSearchBackend.XAI ||
                   search.xSearch) && (
                   <>
@@ -665,9 +782,14 @@ function HostedEditor({
               </details>
             </>
           )}
-        </fieldset>
-        <fieldset>
-          <legend>{translate("imageUnderstanding")}</legend>
+        </HostedSection>
+        <HostedSection
+          id={HostedSectionId.Vision}
+          title={translate("imageUnderstanding")}
+          configured={!!vision}
+          open={sectionOpen[HostedSectionId.Vision]}
+          onToggle={() => toggleSection(HostedSectionId.Vision)}
+        >
           <label className="check">
             <input
               type="checkbox"
@@ -683,30 +805,33 @@ function HostedEditor({
             />
             {translate("configureImageUnderstanding")}
           </label>
+          {!vision && sectionOpen[HostedSectionId.Vision] && <HostedAbsent />}
           {vision && (
             <>
-              <OptionalBoolean
-                label={translate("imageUnderstandingAvailability")}
-                value={vision.enabled}
-                onChange={(enabled) =>
-                  setDraft({ ...draft, vision: { ...vision, enabled } })
-                }
-              />
-              <EnumField
-                label={translate("visionBackend")}
-                value={vision.backend}
-                values={HostedVisionBackend}
-                onChange={(backend) =>
-                  setDraft({
-                    ...draft,
-                    vision: {
-                      ...vision,
-                      backend,
-                      selection: { case: undefined },
-                    },
-                  })
-                }
-              />
+              <div className="hosted-grid">
+                <OptionalBoolean
+                  label={translate("imageUnderstandingAvailability")}
+                  value={vision.enabled}
+                  onChange={(enabled) =>
+                    setDraft({ ...draft, vision: { ...vision, enabled } })
+                  }
+                />
+                <EnumField
+                  label={translate("visionBackend")}
+                  value={vision.backend}
+                  values={HostedVisionBackend}
+                  onChange={(backend) =>
+                    setDraft({
+                      ...draft,
+                      vision: {
+                        ...vision,
+                        backend,
+                        selection: { case: undefined },
+                      },
+                    })
+                  }
+                />
+              </div>
               {vision.backend === HostedVisionBackend.ROUTED ? (
                 <Field
                   label={translate("visionRouteModel")}
@@ -757,34 +882,41 @@ function HostedEditor({
               )}
               <details {...trackAdvanced(HostedAdvanced.Vision)}>
                 <summary>{translate("advancedVisionSettings")}</summary>
-                <OptionalNumber
-                  label={translate("maximumDescriptionsPerTurn")}
-                  value={vision.maxDescriptionsPerTurn}
-                  max={16}
-                  hint={translate("default8ZeroDisablesDescriptions")}
-                  onChange={(maxDescriptionsPerTurn) =>
-                    setDraft({
-                      ...draft,
-                      vision: { ...vision, maxDescriptionsPerTurn },
-                    })
-                  }
-                />
-                <OptionalNumber
-                  label={translate("visionTimeoutMs")}
-                  value={vision.timeoutMs}
-                  min={1}
-                  max={2147483647}
-                  hint={translate("default45000")}
-                  onChange={(timeoutMs) =>
-                    setDraft({ ...draft, vision: { ...vision, timeoutMs } })
-                  }
-                />
+                <div className="hosted-grid">
+                  <OptionalNumber
+                    label={translate("maximumDescriptionsPerTurn")}
+                    value={vision.maxDescriptionsPerTurn}
+                    max={16}
+                    hint={translate("default8ZeroDisablesDescriptions")}
+                    onChange={(maxDescriptionsPerTurn) =>
+                      setDraft({
+                        ...draft,
+                        vision: { ...vision, maxDescriptionsPerTurn },
+                      })
+                    }
+                  />
+                  <OptionalNumber
+                    label={translate("visionTimeoutMs")}
+                    value={vision.timeoutMs}
+                    min={1}
+                    max={2147483647}
+                    hint={translate("default45000")}
+                    onChange={(timeoutMs) =>
+                      setDraft({ ...draft, vision: { ...vision, timeoutMs } })
+                    }
+                  />
+                </div>
               </details>
             </>
           )}
-        </fieldset>
-        <fieldset>
-          <legend>{translate("imageAndVideoGeneration")}</legend>
+        </HostedSection>
+        <HostedSection
+          id={HostedSectionId.Media}
+          title={translate("imageAndVideoGeneration")}
+          configured={!!images}
+          open={sectionOpen[HostedSectionId.Media]}
+          onToggle={() => toggleSection(HostedSectionId.Media)}
+        >
           <label className="check">
             <input
               type="checkbox"
@@ -800,6 +932,7 @@ function HostedEditor({
             />
             {translate("configureImageAndVideoGeneration")}
           </label>
+          {!images && sectionOpen[HostedSectionId.Media] && <HostedAbsent />}
           {images && (
             <>
               <p>{translate("requiresAnXaiApiKeyConnectionOr")}</p>
@@ -842,68 +975,70 @@ function HostedEditor({
               </label>
               <details {...trackAdvanced(HostedAdvanced.Media)}>
                 <summary>{translate("advancedMediaSettings")}</summary>
-                <Field
-                  label={translate("imageModelOverride")}
-                  hint={translate("defaultGrokImagineImageQuality")}
-                >
-                  <input
-                    maxLength={512}
-                    value={images.bridgeModel ?? ""}
-                    onChange={(e) =>
+                <div className="hosted-grid">
+                  <Field
+                    label={translate("imageModelOverride")}
+                    hint={translate("defaultGrokImagineImageQuality")}
+                  >
+                    <input
+                      maxLength={512}
+                      value={images.bridgeModel ?? ""}
+                      onChange={(e) =>
+                        setDraft({
+                          ...draft,
+                          images: {
+                            ...images,
+                            bridgeModel: e.target.value || undefined,
+                          },
+                        })
+                      }
+                    />
+                  </Field>
+                  <OptionalNumber
+                    label={translate("imageTimeoutMs")}
+                    value={images.timeoutMs}
+                    min={1}
+                    max={300000}
+                    onChange={(timeoutMs) =>
+                      setDraft({ ...draft, images: { ...images, timeoutMs } })
+                    }
+                  />
+                  <Field
+                    label={translate("videoModelOverride")}
+                    hint={translate("defaultGrokImagineVideo")}
+                  >
+                    <input
+                      maxLength={512}
+                      value={images.videoBridgeModel ?? ""}
+                      onChange={(e) =>
+                        setDraft({
+                          ...draft,
+                          images: {
+                            ...images,
+                            videoBridgeModel: e.target.value || undefined,
+                          },
+                        })
+                      }
+                    />
+                  </Field>
+                  <OptionalNumber
+                    label={translate("videoTimeoutMs")}
+                    value={images.videoTimeoutMs}
+                    min={1}
+                    max={300000}
+                    hint={translate("default300000IncludingPolling")}
+                    onChange={(videoTimeoutMs) =>
                       setDraft({
                         ...draft,
-                        images: {
-                          ...images,
-                          bridgeModel: e.target.value || undefined,
-                        },
+                        images: { ...images, videoTimeoutMs },
                       })
                     }
                   />
-                </Field>
-                <OptionalNumber
-                  label={translate("imageTimeoutMs")}
-                  value={images.timeoutMs}
-                  min={1}
-                  max={300000}
-                  onChange={(timeoutMs) =>
-                    setDraft({ ...draft, images: { ...images, timeoutMs } })
-                  }
-                />
-                <Field
-                  label={translate("videoModelOverride")}
-                  hint={translate("defaultGrokImagineVideo")}
-                >
-                  <input
-                    maxLength={512}
-                    value={images.videoBridgeModel ?? ""}
-                    onChange={(e) =>
-                      setDraft({
-                        ...draft,
-                        images: {
-                          ...images,
-                          videoBridgeModel: e.target.value || undefined,
-                        },
-                      })
-                    }
-                  />
-                </Field>
-                <OptionalNumber
-                  label={translate("videoTimeoutMs")}
-                  value={images.videoTimeoutMs}
-                  min={1}
-                  max={300000}
-                  hint={translate("default300000IncludingPolling")}
-                  onChange={(videoTimeoutMs) =>
-                    setDraft({
-                      ...draft,
-                      images: { ...images, videoTimeoutMs },
-                    })
-                  }
-                />
+                </div>
               </details>
             </>
           )}
-        </fieldset>
+        </HostedSection>
         <div className="notice hosted-notice">
           <h3>{translate("saveReplacesAllHelperSettings")}</h3>
           <p>{translate("uncheckingAConfigurationRemovesItsSavedSettings")}</p>
