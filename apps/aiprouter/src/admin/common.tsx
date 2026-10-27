@@ -14,6 +14,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { Code, ConnectError, createClient } from "@connectrpc/connect";
 import { useTransport } from "@connectrpc/connect-query";
@@ -298,6 +299,8 @@ export function Dialog({
   size = DialogSize.Standard,
   headingFallback = false,
   closeLabel,
+  describedBy,
+  returnFocusFallback,
 }: {
   title: string;
   children: ReactNode;
@@ -309,9 +312,16 @@ export function Dialog({
   // Opt-in: when the trigger no longer exists on close (for example polling
   // removed it), focus the page heading instead of dropping focus to the body.
   headingFallback?: boolean;
+  // Id of an element inside the dialog that describes it, for aria-describedby.
+  describedBy?: string;
+  // Focus target used on close when the element that opened the dialog is gone,
+  // for example a table row that re-rendered as a card. It must be focusable.
+  returnFocusFallback?: RefObject<HTMLElement | null>;
 }) {
   useLocale();
   const ref = useRef<HTMLDialogElement>(null);
+  const fallbackRef = useRef(returnFocusFallback);
+  fallbackRef.current = returnFocusFallback;
   const id = useId();
   useEffect(() => {
     const previous = document.activeElement as HTMLElement | null;
@@ -329,6 +339,8 @@ export function Dialog({
     return () => {
       element.close();
       if (previous?.isConnected) previous.focus();
+      else if (fallbackRef.current?.current)
+        fallbackRef.current.current.focus();
       else if (headingFallback) {
         const heading = document.querySelector<HTMLElement>("h1");
         if (heading) {
@@ -343,6 +355,7 @@ export function Dialog({
     <dialog
       ref={ref}
       aria-labelledby={id}
+      aria-describedby={describedBy}
       className={dialogClassNames[size]}
       onCancel={(e) => {
         e.preventDefault();
