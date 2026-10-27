@@ -2,11 +2,7 @@
 import { t as translate, useLocale } from "../i18n";
 import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
-import {
-  HealthState,
-  OperatorService,
-  type PriceOverride,
-} from "@aiprouter/client";
+import { OperatorService, type PriceOverride } from "@aiprouter/client";
 import { Card, PageHeader } from "../ui";
 import { useDirtyForm } from "../api";
 import {
@@ -17,122 +13,15 @@ import {
   Loading,
   Pager,
   date,
-  label,
   useAction,
 } from "./common";
-import { Summary, timeRange } from "./reporting";
 import { DestinationPolicyForm, DestinationPolicyNotice } from "./destinations";
 import { RequestLimitsForm } from "./limits";
 import { RetentionForm } from "./retention";
 import { usePriceRevision, type PriceSnapshot } from "./price-revision";
 
-export function Health() {
-  useLocale();
-  const health = useQuery(
-    OperatorService.method.getInstanceHealth,
-    {},
-    { refetchInterval: 30000 },
-  );
-  const [dates, setDates] = useState(() => ({
-    start: new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10),
-    end: new Date().toISOString().slice(0, 10),
-  }));
-  const valid = !!dates.start && !!dates.end && dates.start <= dates.end;
-  const usage = useQuery(
-    OperatorService.method.getInstanceUsage,
-    { timeRange: valid ? timeRange(dates.start, dates.end) : undefined },
-    { enabled: valid },
-  );
-  return (
-    <>
-      <PageHeader
-        title={translate("instanceHealth")}
-        description={translate("wholeInstanceAvailabilityAndRequestAggregates")}
-      />
-      {health.isPending ? (
-        <Loading />
-      ) : health.error ? (
-        <ErrorNotice error={health.error} retry={() => void health.refetch()} />
-      ) : (
-        <Card>
-          <h2>{translate("availability")}</h2>
-          <div className="admin-metrics">
-            <div>
-              <span>{translate("service")}</span>
-              <strong>
-                {health.data?.health?.service
-                  ? label(HealthState[health.data.health.service])
-                  : translate("unknown")}
-              </strong>
-            </div>
-            <div>
-              <span>{translate("database")}</span>
-              <strong>
-                {health.data?.health?.database
-                  ? label(HealthState[health.data.health.database])
-                  : translate("unknown")}
-              </strong>
-            </div>
-          </div>
-          <p>
-            {translate("lastSuccessfulCleanup", {
-              value0: date(health.data?.health?.lastCleanupSuccessAt),
-            })}
-          </p>
-          <p>
-            {translate("consecutiveCleanupFailures", {
-              value0: health.data?.health?.lastCleanupSuccessAt
-                ? health.data.health.consecutiveCleanupFailures
-                : translate("unknown"),
-            })}
-          </p>
-          <p>
-            {translate("usageRecordingHealthRecordingFailuresCanLeave", {
-              value0: health.data?.health?.usageRecording
-                ? label(HealthState[health.data.health.usageRecording])
-                : translate("unknown"),
-            })}
-          </p>
-          <button onClick={() => void health.refetch()}>
-            {translate("refreshHealth")}
-          </button>
-        </Card>
-      )}
-      <Card>
-        <h2>{translate("aggregatePeriod")}</h2>
-        <div className="admin-form-grid">
-          <label>
-            {translate("fromUtc")}
-            <input
-              type="date"
-              value={dates.start}
-              onChange={(e) => setDates({ ...dates, start: e.target.value })}
-            />
-          </label>
-          <label>
-            {translate("throughUtc")}
-            <input
-              type="date"
-              value={dates.end}
-              onChange={(e) => setDates({ ...dates, end: e.target.value })}
-            />
-          </label>
-        </div>
-        {!valid && (
-          <p role="alert">{translate("chooseAValidStartAndEndDate")}</p>
-        )}
-      </Card>
-      {valid &&
-        (usage.isPending ? (
-          <Loading />
-        ) : usage.error ? (
-          <ErrorNotice error={usage.error} retry={() => void usage.refetch()} />
-        ) : (
-          <Summary summary={usage.data?.summary} />
-        ))}
-    </>
-  );
-}
+export { Health } from "./instance-health";
+
 export function InstanceConfiguration({
   section,
 }: {
