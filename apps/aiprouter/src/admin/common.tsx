@@ -109,11 +109,11 @@ export function ErrorNotice({
     </div>
   );
 }
-export function Loading() {
+export function Loading({ label }: { label?: string }) {
   useLocale();
   return (
     <div className="admin-card admin-skeleton" role="status" aria-busy="true">
-      {translate("loading")}
+      {label ?? translate("loading")}
     </div>
   );
 }
@@ -306,20 +306,35 @@ export function Dialog({
     </dialog>
   );
 }
+// Visual tone of the primary Confirm action. Danger is the default so existing
+// destructive confirmations are unchanged.
+export enum ConfirmTone {
+  Danger = "danger",
+  Primary = "primary",
+}
 export function Confirm({
   title,
   name,
   children,
   action,
   pending,
+  pendingLabel,
   onClose,
+  tone = ConfirmTone.Danger,
+  footerNote,
 }: {
   title: string;
   name?: string;
   children: ReactNode;
   action: () => void;
   pending: boolean;
+  // Optional action label shown while the submitted change is pending.
+  pendingLabel?: string;
   onClose: () => void;
+  // Optional tone of the primary action (defaults to danger).
+  tone?: ConfirmTone;
+  // Optional note shown directly above the dialog actions.
+  footerNote?: ReactNode;
 }) {
   useLocale();
   const [typed, setTyped] = useState("");
@@ -342,15 +357,18 @@ export function Confirm({
             />
           </label>
         )}
+        {footerNote && <p className="admin-confirm-note">{footerNote}</p>}
         <div className="admin-actions">
           <button type="button" data-cancel onClick={onClose}>
             {translate("cancel")}
           </button>
           <button
-            className="admin-danger"
+            className={
+              tone === ConfirmTone.Primary ? "admin-primary" : "admin-danger"
+            }
             disabled={pending || (!!name && typed !== name)}
           >
-            {title}
+            {pending && pendingLabel ? pendingLabel : title}
           </button>
         </div>
       </form>
