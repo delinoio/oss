@@ -187,7 +187,9 @@ describe("server-side reporting filters", () => {
         });
       });
       const user = userEvent.setup();
-      await screen.findByText(/No audit records match/);
+      await screen.findByText(
+        operator ? /No audit records match/ : "No audit events available.",
+      );
       await user.type(
         screen.getByRole("textbox", { name: "Actor ID" }),
         "actor-a",
@@ -233,10 +235,17 @@ describe("server-side reporting filters", () => {
       });
     },
   );
-  it("renders reported audit outcomes without treating unknown as success", async () => {
-    mount(<Audit />, (router) =>
+  it("keeps instance audit rows unchanged", async () => {
+    const org = rs.fn();
+    mount(<Audit operator />, (router) => {
       router.service(AuditService, {
-        listOrganizationAudit: () => ({
+        listOrganizationAudit: () => {
+          org();
+          return {};
+        },
+      });
+      router.service(OperatorService, {
+        listInstanceAudit: () => ({
           records: [
             AuditOutcome.UNSPECIFIED,
             AuditOutcome.SUCCEEDED,
@@ -244,10 +253,15 @@ describe("server-side reporting filters", () => {
             AuditOutcome.DENIED,
           ].map((outcome, index) => ({ id: String(index), outcome })),
         }),
-      }),
-    );
+      });
+    });
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Instance audit" }),
+    ).toBeTruthy();
     for (const outcome of ["Unknown", "Succeeded", "Failed", "Denied"])
       expect(await screen.findByText(`Outcome: ${outcome}`)).toBeTruthy();
+    expect(screen.queryByRole("table")).toBeNull();
+    expect(org).not.toHaveBeenCalled();
   });
   it.each([
     [HealthState.DEGRADED, "Degraded"],

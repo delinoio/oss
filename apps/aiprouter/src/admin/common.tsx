@@ -279,12 +279,15 @@ export function Dialog({
   initial = "input",
   size = DialogSize.Standard,
   headingFallback = false,
+  closeLabel,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
-  initial?: "input" | "cancel";
+  // "heading" focuses the dialog title, which suits sheets with several controls.
+  initial?: "input" | "cancel" | "heading";
   size?: DialogSize;
+  closeLabel?: string;
   // Opt-in: when the trigger no longer exists on close (for example polling
   // removed it), focus the page heading instead of dropping focus to the body.
   headingFallback?: boolean;
@@ -298,9 +301,11 @@ export function Dialog({
     element.showModal();
     element
       .querySelector<HTMLElement>(
-        initial === "cancel"
-          ? "[data-cancel]"
-          : "input,select,textarea,[data-cancel]",
+        initial === "heading"
+          ? "[data-dialog-heading]"
+          : initial === "cancel"
+            ? "[data-cancel]"
+            : "input,select,textarea,[data-cancel]",
       )
       ?.focus();
     return () => {
@@ -336,7 +341,13 @@ export function Dialog({
         );
         const first = nodes?.[0],
           last = nodes?.[nodes.length - 1];
-        if (e.shiftKey && document.activeElement === first) {
+        // The heading is focusable but outside the tab sequence, so Shift+Tab from it
+        // must wrap to the last control instead of leaving the dialog.
+        if (
+          e.shiftKey &&
+          (document.activeElement === first ||
+            document.activeElement?.hasAttribute("data-dialog-heading"))
+        ) {
           e.preventDefault();
           last?.focus();
         }
@@ -347,8 +358,17 @@ export function Dialog({
       }}
     >
       <div className="admin-dialog-heading">
-        <h2 id={id}>{title}</h2>
-        <button aria-label={translate("closeDialog")} onClick={onClose}>
+        <h2
+          id={id}
+          data-dialog-heading=""
+          tabIndex={initial === "heading" ? -1 : undefined}
+        >
+          {title}
+        </h2>
+        <button
+          aria-label={closeLabel ?? translate("closeDialog")}
+          onClick={onClose}
+        >
           ×
         </button>
       </div>
@@ -464,5 +484,97 @@ export function Confirm({
         </div>
       </form>
     </Dialog>
+  );
+}
+
+// Tracks a CSS media query so layouts can swap DOM structure without duplicating content.
+export function useMediaQuery(query: string) {
+  const read = () =>
+    typeof window.matchMedia === "function" && window.matchMedia(query).matches;
+  const [matches, setMatches] = useState(read);
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const list = window.matchMedia(query);
+    const update = () => setMatches(list.matches);
+    update();
+    list.addEventListener("change", update);
+    return () => list.removeEventListener("change", update);
+  }, [query]);
+  return matches;
+}
+
+// Reusable compact-viewport filter entry: a trigger with an active count and a
+// modal sheet. Filter state stays with the caller; the sheet only presents it, so
+// Done, X and Escape close without applying or reverting anything.
+export function FilterSheet({
+  activeCount,
+  summary,
+  description,
+  notice,
+  onClear,
+  onUnmountWhileOpen,
+  children,
+}: {
+  activeCount: number;
+  summary: string[];
+  description: ReactNode;
+  notice?: ReactNode;
+  onClear: () => void;
+  // Called when the sheet disappears while open, for example when the viewport grows.
+  onUnmountWhileOpen?: () => void;
+  children: ReactNode;
+}) {
+  useLocale();
+  const heading = translate("filters_546ebb");
+  const [open, setOpen] = useState(false);
+  const openRef = useRef(open);
+  openRef.current = open;
+  const unmountRef = useRef(onUnmountWhileOpen);
+  unmountRef.current = onUnmountWhileOpen;
+  useEffect(
+    () => () => {
+      if (openRef.current) unmountRef.current?.();
+    },
+    [],
+  );
+  return (
+    <div className="admin-filter-sheet">
+      <button
+        type="button"
+        aria-haspopup="dialog"
+        onClick={() => setOpen(true)}
+      >
+        {activeCount > 0
+          ? translate("filters", { value0: activeCount })
+          : heading}
+      </button>
+      {summary.length > 0 && (
+        <p className="admin-filter-summary">{summary.join(" · ")}</p>
+      )}
+      {open && (
+        <Dialog
+          title={heading}
+          initial="heading"
+          closeLabel={translate("closeFilters")}
+          onClose={() => setOpen(false)}
+        >
+          <p className="admin-filter-sheet-description">{description}</p>
+          <div className="admin-filter-sheet-fields">{children}</div>
+          {notice}
+          <div className="admin-actions">
+            <button type="button" onClick={onClear}>
+              {translate("clearFilters")}
+            </button>
+            <button
+              type="button"
+              className="admin-primary"
+              onClick={() => setOpen(false)}
+            >
+              {translate("done")}
+            </button>
+          </div>
+        </Dialog>
+      )}
+    </div>
   );
 }
