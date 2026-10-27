@@ -977,3 +977,383 @@ it("preserves existing pool affinity and explicitly sends opt-out updates", asyn
     affinityEnabled: false,
   });
 });
+
+describe("provider OAuth setup dialog", () => {
+  type SetupOptions = {
+    methods?: number[];
+    begin?: (request: unknown) => unknown;
+    reconnect?: boolean;
+  };
+  async function openSetup(options: SetupOptions = {}) {
+    const { ProviderOAuthMethod: Method, OAuthState } =
+      await import("@aiprouter/client");
+    const user = userEvent.setup();
+    const begin = rs.fn(
+      options.begin ??
+        ((_request: unknown) => ({
+          authorization: {
+            id: "auth",
+            state: OAuthState.PENDING,
+            authorizationUrl: "https://provider.example.test/login",
+            callbackState: "safe-state",
+          },
+        })),
+    );
+    const ui = mount(<ProvidersPage {...props} />, (r) => {
+      r.service(ProviderService, {
+        listProviderConnections: () => ({
+          connections: options.reconnect
+            ? [
+                {
+                  id: "conn-1",
+                  providerId: "catalog-provider",
+                  name: "Saved login",
+                  authKind: ProviderAuthKind.OAUTH,
+                },
+              ]
+            : [],
+        }),
+        listProviderCatalog: () => ({
+          providers: [
+            {
+              id: "catalog-provider",
+              displayName: "Catalog provider",
+              authKinds: [ProviderAuthKind.OAUTH],
+              oauthMethods: options.methods ?? [],
+            },
+          ],
+        }),
+        beginProviderOAuth: begin as never,
+        getProviderOAuth: () => ({
+          authorization: { id: "auth", state: OAuthState.PENDING },
+        }),
+      });
+      r.service(PoolService, { listPools: () => ({ pools: [] }) });
+      r.service(RoutingService, { listRoutes: () => ({ routes: [] }) });
+    });
+    if (options.reconnect) {
+      await user.click(
+        await screen.findByRole("button", { name: "Reconnect" }),
+      );
+    } else {
+      await user.click(
+        screen.getByRole("button", { name: "Connect provider" }),
+      );
+      await user.selectOptions(
+        await screen.findByLabelText("Provider"),
+        "catalog-provider",
+      );
+      await user.type(screen.getByLabelText("Account label"), "Personal login");
+      await user.click(
+        screen.getByRole("button", { name: "Continue with OAuth" }),
+      );
+    }
+    const dialog = await screen.findByRole("dialog", {
+      name: "Authorize Catalog provider",
+    });
+    return { user, begin, dialog, Method, ...ui };
+  }
+
+  it("shows the approved hierarchy, copy and initial focus", async () => {
+    const { dialog } = await openSetup({ methods: [1] });
+    const view = within(dialog);
+    expect(view.getByRole("button", { name: "Close dialog" })).toBeTruthy();
+    expect(
+      view.getByText(
+        "Use the callback and regional settings required by your provider.",
+      ),
+    ).toBeTruthy();
+    expect(
+      view.getByText(
+        "Leave optional settings empty to use the provider defaults.",
+      ),
+    ).toBeTruthy();
+    expect(view.getByRole("group", { name: "Authorization" })).toBeTruthy();
+    const callback = view.getByLabelText("Callback URI") as HTMLInputElement;
+    expect(callback.type).toBe("url");
+    expect(callback.autocomplete).toBe("off");
+    expect(callback.required).toBe(false);
+    expect(document.activeElement).toBe(callback);
+    const helper = document.getElementById(
+      callback.getAttribute("aria-describedby")!.split(" ")[0],
+    )!;
+    expect(helper.textContent).toContain("exact registered callback URI");
+    expect(helper.textContent).toContain("does not start a local listener");
+    expect(helper.textContent).toContain(
+      "Paste the resulting callback in the next step",
+    );
+    const before = view.getByRole("region", { name: "Before you continue" });
+    expect(before.textContent).toContain(
+      "Starting authorization does not mean the connection is complete.",
+    );
+    expect(dialog.className).toContain("oauth-setup");
+    const advanced = dialog.querySelector("details")!;
+    expect(advanced.open).toBe(false);
+    expect(advanced.textContent).toContain(
+      "Regional and advanced provider settings",
+    );
+    const footer = dialog.querySelector(".oauth-footer")!;
+    expect(within(footer as HTMLElement).getAllByRole("button")).toHaveLength(
+      2,
+    );
+  });
+
+  it("offers Provider default plus only advertised non-unspecified methods", async () => {
+    const { ProviderOAuthMethod: Method } = await import("@aiprouter/client");
+    const { user, begin, dialog } = await openSetup({
+      methods: [Method.UNSPECIFIED, Method.PKCE, Method.DEVICE],
+    });
+    const select = within(dialog).getByLabelText("Authorization method");
+    expect(
+      within(select)
+        .getAllByRole("option")
+        .map((o) => o.textContent),
+    ).toEqual(["Provider default", "Browser sign-in (PKCE)", "Device code"]);
+    await user.click(
+      within(dialog).getByRole("button", { name: "Start authorization" }),
+    );
+    await screen.findByRole("dialog", { name: "Provider authorization" });
+    expect(begin.mock.calls[0][0]).not.toHaveProperty("method", Method.PKCE);
+    expect(
+      (begin.mock.calls[0][0] as { method?: number }).method,
+    ).toBeUndefined();
+  });
+
+  it("serializes the selected method exactly and omits the group select when none are advertised", async () => {
+    const { ProviderOAuthMethod: Method } = await import("@aiprouter/client");
+    const first = await openSetup({ methods: [Method.PKCE, Method.DEVICE] });
+    await first.user.selectOptions(
+      within(first.dialog).getByLabelText("Authorization method"),
+      String(Method.DEVICE),
+    );
+    await first.user.click(
+      within(first.dialog).getByRole("button", { name: "Start authorization" }),
+    );
+    await screen.findByRole("dialog", { name: "Provider authorization" });
+    expect(first.begin.mock.calls[0][0]).toMatchObject({
+      method: Method.DEVICE,
+    });
+    first.unmount();
+    const second = await openSetup({ methods: [] });
+    expect(
+      within(second.dialog).queryByLabelText("Authorization method"),
+    ).toBeNull();
+    expect(
+      within(second.dialog).getByRole("group", { name: "Authorization" }),
+    ).toBeTruthy();
+  });
+
+  it("sends all nine trimmed optional fields and omits blank values", async () => {
+    const { user, begin, dialog } = await openSetup();
+    const view = within(dialog);
+    await user.click(view.getByText("Regional and advanced provider settings"));
+    const filled: Record<string, string> = {
+      "Login provider": "  github  ",
+      "SSO region": " us-east-1 ",
+      "API region": " eu-west-1 ",
+      "Start URL": " https://start.example.test/ ",
+      "API base URL": " https://api.example.test ",
+      "Authentication base URL": " https://auth.example.test ",
+      "Portal URL": " https://portal.example.test ",
+      "Registration URL": " https://register.example.test ",
+      "Client ID": " client-1 ",
+    };
+    for (const [label, value] of Object.entries(filled))
+      await user.type(view.getByLabelText(label), value);
+    await user.type(view.getByLabelText("Callback URI"), "   ");
+    await user.click(view.getByRole("button", { name: "Start authorization" }));
+    await screen.findByRole("dialog", { name: "Provider authorization" });
+    expect(begin).toHaveBeenCalledOnce();
+    const request = begin.mock.calls[0][0] as Record<string, unknown>;
+    expect(request).toMatchObject({
+      loginProvider: "github",
+      ssoRegion: "us-east-1",
+      apiRegion: "eu-west-1",
+      startUrl: "https://start.example.test/",
+      baseUrl: "https://api.example.test",
+      authBaseUrl: "https://auth.example.test",
+      portalUrl: "https://portal.example.test",
+      registerUrl: "https://register.example.test",
+      clientId: "client-1",
+    });
+    expect(request.redirectUri ?? "").toBe("");
+  });
+
+  it("keeps the disclosure from submitting and blocks invalid URLs without a request", async () => {
+    const { user, begin, dialog } = await openSetup();
+    const view = within(dialog);
+    const advanced = dialog.querySelector("details")!;
+    await user.click(view.getByText("Regional and advanced provider settings"));
+    expect(advanced.open).toBe(true);
+    await user.click(view.getByText("Regional and advanced provider settings"));
+    expect(advanced.open).toBe(false);
+    expect(begin).not.toHaveBeenCalled();
+    await user.click(view.getByText("Regional and advanced provider settings"));
+    await user.type(view.getByLabelText("Portal URL"), "not a url");
+    await user.type(view.getByLabelText("Callback URI"), "also bad");
+    await user.click(view.getByRole("button", { name: "Start authorization" }));
+    expect(begin).not.toHaveBeenCalled();
+    expect(view.getAllByText("Enter a valid URL.")).toHaveLength(2);
+    expect(
+      view.getByLabelText("Callback URI").getAttribute("aria-invalid"),
+    ).toBe("true");
+    expect(view.getByLabelText("Portal URL").getAttribute("aria-invalid")).toBe(
+      "true",
+    );
+    expect(document.activeElement).toBe(view.getByLabelText("Callback URI"));
+  });
+
+  it("opens the collapsed disclosure and focuses an invalid advanced URL", async () => {
+    const { user, begin, dialog } = await openSetup();
+    const view = within(dialog);
+    const advanced = dialog.querySelector("details")!;
+    await user.click(view.getByText("Regional and advanced provider settings"));
+    await user.type(view.getByLabelText("Start URL"), "nope");
+    await user.click(view.getByText("Regional and advanced provider settings"));
+    expect(advanced.open).toBe(false);
+    await user.click(view.getByRole("button", { name: "Start authorization" }));
+    expect(begin).not.toHaveBeenCalled();
+    await waitFor(() => expect(advanced.open).toBe(true));
+    expect(document.activeElement).toBe(view.getByLabelText("Start URL"));
+  });
+
+  it("hands new-account and reconnect identity unchanged to beginProviderOAuth", async () => {
+    const created = await openSetup();
+    await created.user.click(
+      within(created.dialog).getByRole("button", {
+        name: "Start authorization",
+      }),
+    );
+    await screen.findByRole("dialog", { name: "Provider authorization" });
+    expect(created.begin).toHaveBeenCalledOnce();
+    expect(created.begin.mock.calls[0][0]).toMatchObject({
+      organizationId: "one",
+      providerId: "catalog-provider",
+      name: "Personal login",
+    });
+    expect(created.begin.mock.calls[0][0]).not.toHaveProperty(
+      "connectionId",
+      "conn-1",
+    );
+    expect(screen.queryByText("Connected")).toBeNull();
+    created.unmount();
+    const reconnect = await openSetup({ reconnect: true });
+    await reconnect.user.click(
+      within(reconnect.dialog).getByRole("button", {
+        name: "Start authorization",
+      }),
+    );
+    await screen.findByRole("dialog", { name: "Provider authorization" });
+    expect(reconnect.begin.mock.calls[0][0]).toMatchObject({
+      organizationId: "one",
+      providerId: "catalog-provider",
+      name: "Saved login",
+      connectionId: "conn-1",
+    });
+    expect(
+      screen.getAllByText("Authorization started.").length,
+    ).toBeGreaterThan(0);
+  });
+
+  it("blocks duplicate submits while pending and shows Starting", async () => {
+    const pending = deferred();
+    const { user, begin, dialog } = await openSetup({
+      begin: async () => {
+        await pending.promise;
+        return { authorization: { id: "auth", state: 1 } };
+      },
+    });
+    const submit = within(dialog).getByRole("button", {
+      name: "Start authorization",
+    });
+    await user.click(submit);
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "Starting…" }),
+      ).toHaveProperty("disabled", true),
+    );
+    fireEvent.submit(dialog.querySelector("form")!);
+    fireEvent.submit(dialog.querySelector("form")!);
+    expect(begin).toHaveBeenCalledOnce();
+    pending.resolve();
+    await screen.findByRole("dialog", { name: "Provider authorization" });
+    expect(begin).toHaveBeenCalledOnce();
+  });
+
+  it("keeps entered options after a recoverable failure and shows the safe request ID", async () => {
+    const { ErrorDetailSchema } = await import("@aiprouter/client");
+    let attempts = 0;
+    const { user, begin, dialog } = await openSetup({
+      begin: () => {
+        attempts += 1;
+        if (attempts === 1)
+          throw new ConnectError(
+            "Provider unavailable",
+            Code.Unavailable,
+            undefined,
+            [
+              {
+                desc: ErrorDetailSchema,
+                value: create(ErrorDetailSchema, { requestId: "req-123" }),
+              },
+            ],
+          );
+        return { authorization: { id: "auth", state: 1 } };
+      },
+    });
+    const view = within(dialog);
+    await user.type(
+      view.getByLabelText("Callback URI"),
+      "https://app.example.test/cb",
+    );
+    await user.click(view.getByRole("button", { name: "Start authorization" }));
+    const alert = await view.findByRole("alert");
+    expect(alert.textContent).toContain("The server is unavailable");
+    expect(alert.textContent).toContain("req-123");
+    const callback = view.getByLabelText("Callback URI") as HTMLInputElement;
+    expect(callback.value).toBe("https://app.example.test/cb");
+    expect(callback.getAttribute("aria-describedby")).toContain(
+      alert.parentElement!.id,
+    );
+    await user.click(view.getByRole("button", { name: "Start authorization" }));
+    await screen.findByRole("dialog", { name: "Provider authorization" });
+    expect(begin).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    [
+      "Cancel",
+      (view: ReturnType<typeof within>) =>
+        userEvent.setup().click(view.getByRole("button", { name: "Cancel" })),
+    ],
+    [
+      "Close",
+      (view: ReturnType<typeof within>) =>
+        userEvent
+          .setup()
+          .click(view.getByRole("button", { name: "Close dialog" })),
+    ],
+    [
+      "Escape",
+      (view: ReturnType<typeof within>) =>
+        fireEvent(
+          view.getByLabelText("Callback URI").closest("dialog")!,
+          new Event("cancel", { cancelable: true }),
+        ),
+    ],
+  ])("%s before submit issues no request", async (_name, dismiss) => {
+    const { begin, dialog } = await openSetup();
+    await dismiss(within(dialog));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(begin).not.toHaveBeenCalled();
+  });
+
+  it("drops scoped setup state when the page unmounts and never replays the request", async () => {
+    const { begin, dialog, unmount } = await openSetup();
+    expect(dialog).toBeTruthy();
+    unmount();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(begin).not.toHaveBeenCalled();
+  });
+});

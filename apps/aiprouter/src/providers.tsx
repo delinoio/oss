@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale, formatNumber, enumLabel } from "./i18n";
 import { pageHref } from "./routes";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { HostedHelpers } from "./hosted";
 import {
   ConfigurationFields,
@@ -277,6 +277,7 @@ export function ProvidersPage({ organization }: PageProps) {
       )}
       {oauthSetup && (
         <OAuthSetup
+          providerId={oauthSetup.providerId}
           provider={catalog.data?.providers.find(
             (p) => p.id === oauthSetup.providerId,
           )}
@@ -829,24 +830,60 @@ const oauthMethodLabels: Record<number, string> = {
     return translate("nativeCallback");
   },
 };
+const oauthUrlFieldKeys = new Set([
+  "redirectUri",
+  "startUrl",
+  "baseUrl",
+  "authBaseUrl",
+  "portalUrl",
+  "registerUrl",
+]);
+function isValidUrl(value: string) {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
 function OAuthSetup({
   provider,
+  providerId,
   pending,
   error,
   onClose,
   onSave,
 }: {
   provider?: ProviderDefinition;
+  providerId: string;
   pending: boolean;
   error: unknown;
   onClose: () => void;
   onSave: (options: OAuthOptions) => void;
 }) {
   useLocale();
+  const formRef = useRef<HTMLFormElement>(null);
+  const errorId = useId();
+  const beforeId = useId();
   const [method, setMethod] = useState<ProviderOAuthMethod | undefined>();
   const [values, setValues] = useState<Record<string, string>>({});
-  const update = (key: string, value: string) =>
+  const [invalid, setInvalid] = useState<Record<string, boolean>>({});
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // The shared page action may still hold an unrelated earlier failure when the
+  // dialog opens; only show failures produced by this dialog's own submission.
+  const initialError = useRef(error);
+  const visibleError = error === initialError.current ? undefined : error;
+  const update = (key: string, value: string) => {
     setValues((old) => ({ ...old, [key]: value }));
+    setInvalid((old) => (old[key] ? { ...old, [key]: false } : old));
+  };
+  useEffect(() => {
+    // Move focus to the first field that failed validation, opening the
+    // advanced disclosure first so the control is reachable.
+    formRef.current
+      ?.querySelector<HTMLElement>('[aria-invalid="true"]')
+      ?.focus();
+  }, [invalid]);
   const fields = [
     ["loginProvider", translate("loginProvider")],
     ["ssoRegion", translate("ssoRegion")],
@@ -858,72 +895,132 @@ function OAuthSetup({
     ["registerUrl", translate("registrationUrl")],
     ["clientId", translate("clientId")],
   ] as const;
+  const invalidHint = (key: string) =>
+    invalid[key] ? (
+      <span className="oauth-field-error">{translate("enterAValidUrl")}</span>
+    ) : undefined;
+  const describedBy = visibleError ? errorId : undefined;
   return (
     <Dialog
       title={translate("authorize", {
-        value0: provider?.displayName ?? "provider",
+        value0: provider?.displayName ?? providerId,
       })}
       onClose={onClose}
+      className="oauth-setup"
+      initialFocus="[data-initial-focus]"
     >
+      <p className="oauth-intro">
+        {translate("useTheCallbackAndRegionalSettingsRequired")}
+        <br />
+        <small>{translate("leaveOptionalSettingsEmptyToUseThe")}</small>
+      </p>
       <form
+        ref={formRef}
+        noValidate
+        aria-describedby={describedBy}
         onSubmit={(e) => {
           e.preventDefault();
+          if (pending) return;
           const options: OAuthOptions = { method };
+          const failed: Record<string, boolean> = {};
           for (const [key, value] of Object.entries(values)) {
-            if (value.trim()) Object.assign(options, { [key]: value.trim() });
+            const trimmed = value.trim();
+            if (!trimmed) continue;
+            if (oauthUrlFieldKeys.has(key) && !isValidUrl(trimmed))
+              failed[key] = true;
+            Object.assign(options, { [key]: trimmed });
           }
+          if (Object.keys(failed).length) {
+            if (Object.keys(failed).some((key) => key !== "redirectUri"))
+              setAdvancedOpen(true);
+            setInvalid(failed);
+            return;
+          }
+          setInvalid({});
           onSave(options);
         }}
       >
-        <Notice>
-          {translate("useTheCallbackAndRegionalSettingsRequired")}
-        </Notice>
-        {!!provider?.oauthMethods.length && (
-          <Field label={translate("authorizationMethod")}>
-            <select
-              value={method ?? ""}
-              onChange={(e) =>
-                setMethod(e.target.value ? Number(e.target.value) : undefined)
+        <fieldset className="oauth-group">
+          <legend>{translate("authorization")}</legend>
+          {!!provider?.oauthMethods.length && (
+            <Field
+              label={translate("authorizationMethod")}
+              hint={translate("availableMethodsDependOnTheSelectedProvider")}
+            >
+              <select
+                aria-describedby={describedBy}
+                value={method ?? ""}
+                onChange={(e) =>
+                  setMethod(e.target.value ? Number(e.target.value) : undefined)
+                }
+              >
+                <option value="">{translate("providerDefault")}</option>
+                {provider.oauthMethods
+                  .filter((m) => m !== ProviderOAuthMethod.UNSPECIFIED)
+                  .map((m) => (
+                    <option key={m} value={m}>
+                      {oauthMethodLabels[m] ?? translate("providerMethod")}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+          )}
+          <div className="oauth-callback">
+            <Field
+              label={translate("callbackUri")}
+              hint={
+                <>
+                  {translate("requiredForNativeCallbacksAndMostPkce")}{" "}
+                  {translate("theServerDoesNotStartALocalListener")}
+                  {invalidHint("redirectUri")}
+                </>
               }
             >
-              <option value="">{translate("providerDefault")}</option>
-              {provider.oauthMethods
-                .filter((m) => m !== ProviderOAuthMethod.UNSPECIFIED)
-                .map((m) => (
-                  <option key={m} value={m}>
-                    {oauthMethodLabels[m] ?? translate("providerMethod")}
-                  </option>
-                ))}
-            </select>
-          </Field>
-        )}
-        <Field
-          label={translate("callbackUri")}
-          hint={translate("requiredForNativeCallbacksAndMostPkce")}
-        >
-          <input
-            autoFocus
-            type="url"
-            autoComplete="off"
-            value={values.redirectUri ?? ""}
-            onChange={(e) => update("redirectUri", e.target.value)}
-          />
-        </Field>
-        <details>
-          <summary>{translate("regionalAndAdvancedProviderSettings")}</summary>
-          {fields.map(([key, label]) => (
-            <Field key={key} label={label}>
               <input
-                type={key.toLowerCase().endsWith("url") ? "url" : "text"}
+                data-initial-focus
+                type="url"
                 autoComplete="off"
+                aria-describedby={describedBy}
+                aria-invalid={invalid.redirectUri ? true : undefined}
+                value={values.redirectUri ?? ""}
+                onChange={(e) => update("redirectUri", e.target.value)}
+              />
+            </Field>
+          </div>
+        </fieldset>
+        <section className="oauth-before" aria-labelledby={beforeId}>
+          <strong id={beforeId}>{translate("beforeYouContinue")}</strong>
+          <p>{translate("useTheCallbackUriRegisteredWithYour")}</p>
+        </section>
+        <details
+          className="oauth-advanced"
+          open={advancedOpen}
+          onToggle={(e) => setAdvancedOpen(e.currentTarget.open)}
+        >
+          <summary>
+            <span>{translate("regionalAndAdvancedProviderSettings")}</span>
+            <small>{translate("loginProviderRegionsUrlsAndClientId")}</small>
+          </summary>
+          {fields.map(([key, label]) => (
+            <Field key={key} label={label} hint={invalidHint(key)}>
+              <input
+                type={oauthUrlFieldKeys.has(key) ? "url" : "text"}
+                autoComplete="off"
+                aria-describedby={describedBy}
+                aria-invalid={invalid[key] ? true : undefined}
                 value={values[key] ?? ""}
                 onChange={(e) => update(key, e.target.value)}
               />
             </Field>
           ))}
         </details>
-        <ErrorNotice error={error} />
-        <div className="actions">
+        <div id={errorId}>
+          <ErrorNotice error={visibleError} />
+        </div>
+        <p className="visually-hidden" role="status">
+          {pending ? translate("message_bbe5fc3b9e") : ""}
+        </p>
+        <div className="actions oauth-footer">
           <Button onClick={onClose}>{translate("cancel")}</Button>
           <Button type="submit" variant="primary" disabled={pending}>
             {pending

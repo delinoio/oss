@@ -94,9 +94,12 @@ export function Field({
       {child
         ? cloneElement(child, {
             id: inputId,
-            "aria-describedby": hint
-              ? `${id}-hint`
-              : child.props["aria-describedby"],
+            // Keep the field hint and any caller-supplied description (for
+            // example a form-level error summary) together.
+            "aria-describedby":
+              [hint ? `${id}-hint` : undefined, child.props["aria-describedby"]]
+                .filter(Boolean)
+                .join(" ") || undefined,
           })
         : children}
       {hint && <small id={`${id}-hint`}>{hint}</small>}
