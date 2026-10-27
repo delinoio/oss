@@ -530,6 +530,10 @@ dialog.large {
   width: min(880px, calc(100% - 32px));
   padding: 32px;
 }
+dialog.editor {
+  width: min(760px, calc(100% - 32px));
+  padding: 24px;
+}
 dialog::backdrop {
   background: #16233f66;
 }
@@ -800,6 +804,10 @@ li {
   }
 }
 @media (max-width: 767px) {
+  dialog.editor {
+    width: calc(100% - 16px);
+    padding: 16px;
+  }
   dialog.large {
     width: calc(100% - 16px);
     padding: 16px;
@@ -1792,4 +1800,14 @@ dialog.connection-editor {
   .field-grid.tier-grid {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.member-card .field {
+  max-width: 240px;
+}
+.member-card > legend {
+  overflow-wrap: anywhere;
+}
+.member-card .actions {
+  justify-content: flex-start;
 }

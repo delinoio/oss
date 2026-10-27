@@ -129,13 +129,20 @@ export function PoolsPage({ organization }: PageProps) {
       />
       {edit && (
         <PoolEditor
+          organizationName={organization.name}
           pool={edit === true ? undefined : edit}
           existingNames={(pools.data ?? [])
             .filter((p) => edit === true || p.id !== edit.id)
             .map((p) => p.name)}
           accounts={accounts.data ?? []}
           partial={false}
-          error={action.error ?? accounts.error}
+          loading={accounts.isPending || pools.isPending}
+          loadError={accounts.error ?? pools.error}
+          onRetry={() => {
+            void accounts.refetch();
+            void pools.refetch();
+          }}
+          error={action.error}
           pending={action.pending}
           onClose={() => setEdit(undefined)}
           onSave={(v) => {
@@ -192,20 +199,51 @@ type PoolValues = {
   members: NativeMember[];
   nativeOptions?: NativePoolOptions;
 };
+/** Service-enforced pool limits mirrored by the editor. */
+enum PoolLimit {
+  NameBytes = 200,
+  MinMembers = 1,
+  MaxMembers = 100,
+  MinWeight = 1,
+  MaxWeight = 1000,
+}
+const poolMessage = {
+  nameRequired: () => translate("poolNameIsRequired"),
+  nameBytes: () =>
+    translate("poolNameMustBeUtf8Bytes", { value0: PoolLimit.NameBytes }),
+  nameTaken: () => translate("thisNameIsAlreadyInUseChoose"),
+  noMembers: () => translate("addAtLeastOneConnection"),
+  tooManyMembers: () =>
+    translate("aPoolCanContainAtMostConnections", {
+      value0: PoolLimit.MaxMembers,
+    }),
+  weight: () => translate("weightMustBeAWholeNumberFrom"),
+  unavailable: () => translate("thisConnectionIsUnavailableRemoveItThen"),
+};
 function PoolEditor({
+  organizationName,
   existingNames,
   pool,
   accounts,
   partial,
+  loading,
+  loadError,
+  onRetry,
   onClose,
   onSave,
   pending,
   error,
 }: {
+  organizationName: string;
   existingNames: string[];
   pool?: Pool;
   accounts: ProviderConnection[];
   partial: boolean;
+  /** True while connections or existing pool names are still loading. */
+  loading: boolean;
+  /** Error from loading connections or existing pool names. */
+  loadError?: unknown;
+  onRetry?: () => void;
   onClose: () => void;
   onSave: (v: PoolValues) => void;
   pending: boolean;
@@ -228,16 +266,134 @@ function PoolEditor({
       weight: m.weight,
     })) ?? [],
   );
+  // Required-field errors stay quiet until the user interacts with the form.
+  const [touched, setTouched] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
+  const focusRequest = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (focusRequest.current) {
+      document.getElementById(focusRequest.current)?.focus();
+      focusRequest.current = undefined;
+    }
+  });
+  const trimmedName = name.trim();
+  const nameError = !trimmedName
+    ? { message: poolMessage.nameRequired(), required: true }
+    : utf8ByteLength(trimmedName) > PoolLimit.NameBytes
+      ? { message: poolMessage.nameBytes(), required: false }
+      : existingNames.includes(trimmedName)
+        ? { message: poolMessage.nameTaken(), required: false }
+        : undefined;
+  const shown = (message: string | undefined, required: boolean) =>
+    message && (touched || !required) ? message : undefined;
+  const dependenciesReady = !loading && !loadError;
+  const memberLabel = (m: NativeMember) =>
+    accounts.find((a) => a.id === m.connectionId)?.name ??
+    (loading
+      ? translate("loadingConnection")
+      : translate("unavailableConnection"));
+  const memberErrors = members.map((m) => ({
+    unavailable:
+      dependenciesReady && !accounts.some((a) => a.id === m.connectionId),
+    weight:
+      Number.isInteger(m.weight) &&
+      m.weight >= PoolLimit.MinWeight &&
+      m.weight <= PoolLimit.MaxWeight
+        ? undefined
+        : poolMessage.weight(),
+  }));
+  const countError =
+    members.length < PoolLimit.MinMembers
+      ? poolMessage.noMembers()
+      : members.length > PoolLimit.MaxMembers
+        ? poolMessage.tooManyMembers()
+        : undefined;
+  const nativeError = nativePoolError(
+    nativeOptions,
+    members,
+    nativeProvider(members, accounts),
+  );
+  const readyConnections = accounts.filter(
+    (a) => a.state === ConnectionState.READY,
+  );
+  const addable = readyConnections.filter(
+    (a) => !members.some((m) => m.connectionId === a.id),
+  );
+  const addHint = loading
+    ? translate("loadingYourConnections")
+    : addable.length > 0
+      ? undefined
+      : readyConnections.length === 0
+        ? translate("noAvailableConnectionsToAdd")
+        : translate("allAvailableConnectionsAreInThisPool");
+  const summary: ErrorSummaryItem[] = [];
+  if (nameError && shown(nameError.message, nameError.required))
+    summary.push({
+      key: "name",
+      message: nameError.message,
+      fieldId: "pool-name",
+    });
+  if (shown(countError, true))
+    summary.push({
+      key: "member-count",
+      message: countError!,
+      fieldId: "pool-add-connection",
+    });
+  members.forEach((m, i) => {
+    const e = memberErrors[i]!;
+    const label = translate("connection_aeeb37", {
+      value0: i + 1,
+      value1: memberLabel(m),
+    });
+    if (e.unavailable)
+      summary.push({
+        key: `${m.connectionId}-unavailable`,
+        message: translate("message_6a776812d7", {
+          value0: label,
+          value1: poolMessage.unavailable(),
+        }),
+        fieldId: `pool-member-${m.connectionId}-remove`,
+      });
+    if (e.weight)
+      summary.push({
+        key: `${m.connectionId}-weight`,
+        message: translate("message_6a776812d7", {
+          value0: label,
+          value1: e.weight,
+        }),
+        fieldId: `pool-member-${m.connectionId}-weight`,
+      });
+  });
+  // Native validation is listed by the native settings disclosure itself and
+  // only gates Save here, so its message is never duplicated in the summary.
+  const canSave =
+    !pending &&
+    dependenciesReady &&
+    !nameError &&
+    !countError &&
+    memberErrors.every((e) => !e.unavailable && !e.weight) &&
+    !nativeError;
+  const updateMember = (connectionId: string, patch: Partial<NativeMember>) =>
+    setMembers((old) =>
+      old.map((x) =>
+        x.connectionId === connectionId ? { ...x, ...patch } : x,
+      ),
+    );
   return (
     <Dialog
       title={pool ? translate("editPool") : translate("createPool")}
+      subtitle={translate("onlyYoursIn", { value0: organizationName })}
       onClose={onClose}
+      size={DialogSize.Editor}
     >
       <form
+        aria-busy={pending}
+        onChange={() => setTouched(true)}
         onSubmit={(e) => {
           e.preventDefault();
+          if (!canSave) return;
           onSave({
-            name: name.trim(),
+            name: trimmedName,
             strategy,
             affinityEnabled,
             nativeOptions,
@@ -245,115 +401,213 @@ function PoolEditor({
           });
         }}
       >
-        <Field label={translate("poolName")}>
-          <input
-            required
-            autoFocus
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </Field>
-        <Field label={translate("strategy")}>
-          <select
-            value={strategy}
-            onChange={(e) => setStrategy(Number(e.target.value))}
-          >
-            {[
-              PoolStrategy.PRIORITY,
-              PoolStrategy.ROUND_ROBIN,
-              PoolStrategy.LEAST_RECENTLY_USED,
-            ].map((s) => (
-              <option key={s} value={s}>
-                {enumLabel(PoolStrategy[s])}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={affinityEnabled}
-            onChange={(event) => setAffinityEnabled(event.target.checked)}
-          />
-          {translate("keepGenericOauthSessionsOnTheSame")}
-        </label>
-        <p className="muted">
-          {translate("optInForProvidersThatSupportGeneric")}
-        </p>
-        <fieldset>
-          <legend>{translate("yourConnectionsInPriorityOrder")}</legend>
-          {members.map((m, i) => (
-            <div key={m.connectionId} className="target-row">
-              <strong>
-                {accounts.find((a) => a.id === m.connectionId)?.name ??
-                  translate("unavailableConnection")}
-              </strong>
-              <Field label={translate("weight_81d27e")}>
-                <input
-                  type="number"
-                  min={1}
-                  max={1000}
-                  value={m.weight}
-                  onChange={(e) =>
-                    setMembers((old) =>
-                      old.map((x, j) =>
-                        j === i ? { ...x, weight: Number(e.target.value) } : x,
-                      ),
-                    )
-                  }
-                />
-              </Field>
-              <Button
-                disabled={i === 0}
-                onClick={() =>
-                  setMembers((old) => {
-                    const next = [...old];
-                    [next[i - 1], next[i]] = [next[i], next[i - 1]];
-                    return next;
-                  })
-                }
+        <section className="route-section" aria-labelledby="pool-details">
+          <h3 id="pool-details">{translate("poolDetails")}</h3>
+          <div className="field-grid">
+            <Field
+              label={translate("poolName")}
+              hint={translate("caseSensitiveUpToUtf8Bytes", {
+                value0: PoolLimit.NameBytes,
+              })}
+              error={shown(nameError?.message, nameError?.required ?? false)}
+            >
+              <input
+                id="pool-name"
+                required
+                autoFocus
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </Field>
+            <Field label={translate("strategy")}>
+              <select
+                value={strategy}
+                onChange={(e) => setStrategy(Number(e.target.value))}
               >
-                {translate("moveUp")}
-              </Button>
-              <Button
-                onClick={() =>
-                  setMembers((old) => old.filter((_, j) => j !== i))
-                }
-              >
-                {translate("remove")}
-              </Button>
+                {[
+                  PoolStrategy.PRIORITY,
+                  PoolStrategy.ROUND_ROBIN,
+                  PoolStrategy.LEAST_RECENTLY_USED,
+                ].map((s) => (
+                  <option key={s} value={s}>
+                    {enumLabel(PoolStrategy[s])}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+        </section>
+        <section className="route-section" aria-labelledby="pool-affinity">
+          <h3 id="pool-affinity">{translate("sessionAffinity")}</h3>
+          <label className="check">
+            <input
+              type="checkbox"
+              aria-describedby="pool-affinity-help"
+              checked={affinityEnabled}
+              onChange={(event) => setAffinityEnabled(event.target.checked)}
+            />
+            {translate("keepGenericOauthSessionsOnTheSame")}
+          </label>
+          <p id="pool-affinity-help" className="section-hint">
+            {translate("optInForProvidersThatSupportGeneric")}
+          </p>
+        </section>
+        <section
+          className="route-section"
+          role="group"
+          aria-labelledby="pool-connections-heading"
+          aria-describedby={
+            shown(countError, true) ? "pool-connections-error" : undefined
+          }
+        >
+          <h3 id="pool-connections-heading">
+            {translate("yourConnectionsInPriorityOrder")}
+          </h3>
+          <p className="section-hint">
+            {translate("topConnectionHasFirstPriority")}
+          </p>
+          <ErrorNotice error={loadError} retry={onRetry} />
+          {loading && (
+            <div role="status" className="section-hint">
+              {translate("loadingYourConnections")}
             </div>
-          ))}
-          <Field label={translate("addAConnection")}>
+          )}
+          {members.map((m, i) => {
+            const rowId = `pool-member-${m.connectionId}`;
+            const label = memberLabel(m);
+            const e = memberErrors[i]!;
+            return (
+              <fieldset
+                className="target-card member-card"
+                key={m.connectionId}
+              >
+                <legend>
+                  {translate("disconnectScopeLine", {
+                    value0: i + 1,
+                    value1: label,
+                  })}
+                </legend>
+                <Field
+                  label={translate("weight_81d27e")}
+                  hint={translate("wholeNumberFrom1To1000")}
+                  error={e.weight}
+                >
+                  <input
+                    id={`${rowId}-weight`}
+                    type="number"
+                    min={PoolLimit.MinWeight}
+                    max={PoolLimit.MaxWeight}
+                    step={1}
+                    value={m.weight}
+                    onChange={(ev) =>
+                      updateMember(m.connectionId, {
+                        weight: Number(ev.target.value),
+                      })
+                    }
+                  />
+                </Field>
+                {e.unavailable && (
+                  <p className="group-error">{poolMessage.unavailable()}</p>
+                )}
+                <div className="actions">
+                  <Button
+                    id={`${rowId}-up`}
+                    aria-label={translate("moveUp_a90393", { value0: label })}
+                    disabled={i === 0}
+                    onClick={() => {
+                      setTouched(true);
+                      setMembers((old) => {
+                        const next = [...old];
+                        [next[i - 1], next[i]] = [next[i]!, next[i - 1]!];
+                        return next;
+                      });
+                      focusRequest.current =
+                        i - 1 === 0 ? `${rowId}-remove` : `${rowId}-up`;
+                      setAnnouncement(
+                        translate("movedUpToPosition", {
+                          value0: label,
+                          value1: i,
+                        }),
+                      );
+                    }}
+                  >
+                    {translate("moveUp")}
+                  </Button>
+                  <Button
+                    id={`${rowId}-remove`}
+                    variant="danger"
+                    aria-label={translate("remove_3028bf", { value0: label })}
+                    onClick={() => {
+                      setTouched(true);
+                      const neighbor = members[i + 1] ?? members[i - 1];
+                      focusRequest.current = neighbor
+                        ? `pool-member-${neighbor.connectionId}-remove`
+                        : "pool-add-connection";
+                      setMembers((old) =>
+                        old.filter((x) => x.connectionId !== m.connectionId),
+                      );
+                      const left = members.length - 1;
+                      setAnnouncement(
+                        translate(
+                          left === 1
+                            ? "removedConnectionRemaining"
+                            : "removedConnectionsRemaining",
+                          { value0: label, value1: left },
+                        ),
+                      );
+                    }}
+                  >
+                    {translate("remove")}
+                  </Button>
+                </div>
+              </fieldset>
+            );
+          })}
+          <Field label={translate("addAConnection")} hint={addHint}>
             <select
+              id="pool-add-connection"
+              aria-describedby={
+                shown(countError, true) ? "pool-connections-error" : undefined
+              }
               value=""
+              disabled={loading}
               onChange={(e) => {
-                if (e.target.value)
-                  setMembers((old) => [
-                    ...old,
+                const connectionId = e.target.value;
+                if (!connectionId) return;
+                setTouched(true);
+                setMembers((old) => [
+                  ...old,
+                  { connectionId, priority: old.length, weight: 1 },
+                ]);
+                setAnnouncement(
+                  translate(
+                    members.length + 1 === 1
+                      ? "addedConnectionInThisPool"
+                      : "addedConnectionsInThisPool",
                     {
-                      connectionId: e.target.value,
-                      priority: old.length,
-                      weight: 1,
+                      value0:
+                        accounts.find((a) => a.id === connectionId)?.name ??
+                        translate("connection_b38d9d"),
+                      value1: members.length + 1,
                     },
-                  ]);
+                  ),
+                );
               }}
             >
               <option value="">{translate("chooseYourConnection")}</option>
-              {accounts
-                .filter(
-                  (a) =>
-                    a.state === ConnectionState.READY &&
-                    !members.some((m) => m.connectionId === a.id),
-                )
-                .map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
+              {addable.map((a) => (
+                <option key={a.id} value={a.id}>
+                  {a.name}
+                </option>
+              ))}
             </select>
           </Field>
-        </fieldset>
+          {shown(countError, true) && (
+            <p id="pool-connections-error" className="group-error">
+              {countError}
+            </p>
+          )}
+        </section>
         <NativePoolFields
           options={nativeOptions}
           onChange={setNativeOptions}
@@ -362,6 +616,7 @@ function PoolEditor({
           accounts={accounts}
           isNew={!pool}
         />
+        <ErrorSummary errors={summary} />
         {partial && (
           <Notice tone="warning">
             {translate("onlyTheFirstConnectionsAreAvailableIn", {
@@ -370,32 +625,18 @@ function PoolEditor({
           </Notice>
         )}
         <ErrorNotice error={error} />
-        {existingNames.includes(name.trim()) && (
-          <Notice tone="danger">
-            {translate("thisNameIsAlreadyInUseChoose")}
-          </Notice>
-        )}
+        <div
+          className="visually-hidden"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {pending ? translate("savingPool") : announcement}
+        </div>
         <div className="actions">
           <Button onClick={onClose}>{translate("cancel")}</Button>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={
-              pending ||
-              existingNames.includes(name.trim()) ||
-              !name.trim() ||
-              !members.length ||
-              !!nativePoolError(
-                nativeOptions,
-                members,
-                nativeProvider(members, accounts),
-              ) ||
-              members.some(
-                (m) => !accounts.some((a) => a.id === m.connectionId),
-              )
-            }
-          >
-            {translate("savePool")}
+          <Button type="submit" variant="primary" disabled={!canSave}>
+            {pending ? translate("message_23e39291d6") : translate("savePool")}
           </Button>
         </div>
       </form>
