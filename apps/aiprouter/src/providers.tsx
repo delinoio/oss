@@ -998,6 +998,9 @@ function OAuthSetup({
   const [values, setValues] = useState<Record<string, string>>({});
   const [invalid, setInvalid] = useState<Record<string, boolean>>({});
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  // Incremented once per failed submission so autofocus runs only after a
+  // failed submit, never when editing clears a field's invalid flag.
+  const [focusAttempt, setFocusAttempt] = useState(0);
   // The shared page action may still hold an unrelated earlier failure when the
   // dialog opens; only show failures produced by this dialog's own submission.
   const initialError = useRef(error);
@@ -1007,12 +1010,13 @@ function OAuthSetup({
     setInvalid((old) => (old[key] ? { ...old, [key]: false } : old));
   };
   useEffect(() => {
+    if (focusAttempt === 0) return;
     // Move focus to the first field that failed validation, opening the
     // advanced disclosure first so the control is reachable.
     formRef.current
       ?.querySelector<HTMLElement>('[aria-invalid="true"]')
       ?.focus();
-  }, [invalid]);
+  }, [focusAttempt]);
   const fields = [
     ["loginProvider", translate("loginProvider")],
     ["ssoRegion", translate("ssoRegion")],
@@ -1063,6 +1067,7 @@ function OAuthSetup({
             if (Object.keys(failed).some((key) => key !== "redirectUri"))
               setAdvancedOpen(true);
             setInvalid(failed);
+            setFocusAttempt((attempt) => attempt + 1);
             return;
           }
           setInvalid({});

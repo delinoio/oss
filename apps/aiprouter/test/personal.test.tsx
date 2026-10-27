@@ -1203,6 +1203,37 @@ describe("provider OAuth setup dialog", () => {
     expect(document.activeElement).toBe(view.getByLabelText("Callback URI"));
   });
 
+  it("keeps focus on the field being corrected while another URL stays invalid", async () => {
+    const { user, begin, dialog } = await openSetup();
+    const view = within(dialog);
+    await user.click(view.getByText("Regional and advanced provider settings"));
+    await user.type(view.getByLabelText("Portal URL"), "not a url");
+    await user.type(view.getByLabelText("Callback URI"), "also bad");
+    await user.click(view.getByRole("button", { name: "Start authorization" }));
+    const callback = view.getByLabelText("Callback URI");
+    expect(document.activeElement).toBe(callback);
+    // Keystrokes go to the focused element, so a focus jump mid-edit would
+    // send the remaining characters to Portal URL instead of Callback URI.
+    await user.keyboard(
+      "{Control>}a{/Control}https://app.example.test/callback",
+    );
+    expect(callback.getAttribute("aria-invalid")).toBeNull();
+    expect(view.getByLabelText("Portal URL").getAttribute("aria-invalid")).toBe(
+      "true",
+    );
+    expect((callback as HTMLInputElement).value).toBe(
+      "https://app.example.test/callback",
+    );
+    expect((view.getByLabelText("Portal URL") as HTMLInputElement).value).toBe(
+      "not a url",
+    );
+    expect(document.activeElement).toBe(callback);
+    expect(begin).not.toHaveBeenCalled();
+    await user.click(view.getByRole("button", { name: "Start authorization" }));
+    expect(begin).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(view.getByLabelText("Portal URL"));
+  });
+
   it("opens the collapsed disclosure and focuses an invalid advanced URL", async () => {
     const { user, begin, dialog } = await openSetup();
     const view = within(dialog);
