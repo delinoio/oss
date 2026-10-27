@@ -19,6 +19,8 @@
   "invitations": "Invitations",
   "organizationUsage": "Organization usage",
   "audit": "Audit",
+  "closeUsageFilters": "Close usage filters",
+  "usageSheetDescription": "UTC dates · Changes update the report immediately.",
   "usageDateUtc": "Date (UTC)",
   "usageCoverage": "Coverage",
   "usageTimeLocal": "Time (local)",

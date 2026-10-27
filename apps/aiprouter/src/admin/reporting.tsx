@@ -372,11 +372,115 @@ function RequestCard({
     </article>
   );
 }
+// Below this width the filters collapse into a Filters button and a modal sheet.
+const usageSheetQuery = "(max-width: 767.98px)";
+interface UsageFilterState {
+  start: string;
+  end: string;
+  userId: string;
+  modelId: string;
+  providerId: string;
+  outcome: string;
+}
+// Member ID, Model, Provider and Outcome count individually (an explicit Unknown
+// outcome counts); the date pair counts once when either date differs from the
+// default pair the page was mounted or last cleared with, including invalid dates.
+function usageActiveFilterCount(
+  filters: UsageFilterState,
+  defaults: { start: string; end: string },
+) {
+  return (
+    (filters.userId ? 1 : 0) +
+    (filters.modelId ? 1 : 0) +
+    (filters.providerId ? 1 : 0) +
+    (filters.outcome !== "" ? 1 : 0) +
+    (filters.start !== defaults.start || filters.end !== defaults.end ? 1 : 0)
+  );
+}
+function UsageFilterFields({
+  filters,
+  onChange,
+  dateProps,
+}: {
+  filters: UsageFilterState;
+  onChange: (patch: Partial<UsageFilterState>) => void;
+  dateProps: { "aria-invalid"?: boolean; "aria-describedby"?: string };
+}) {
+  useLocale();
+  return (
+    <>
+      <label>
+        {translate("fromUtc")}
+        <input
+          type="date"
+          value={filters.start}
+          onChange={(e) => onChange({ start: e.target.value })}
+          {...dateProps}
+        />
+      </label>
+      <label>
+        {translate("throughUtc")}
+        <input
+          type="date"
+          value={filters.end}
+          onChange={(e) => onChange({ end: e.target.value })}
+          {...dateProps}
+        />
+      </label>
+      <label>
+        {translate("memberId")}
+        <input
+          value={filters.userId}
+          onChange={(e) => onChange({ userId: e.target.value })}
+          placeholder={translate("allMembers")}
+        />
+      </label>
+      <label>
+        {translate("model")}
+        <input
+          value={filters.modelId}
+          onChange={(e) => onChange({ modelId: e.target.value })}
+          placeholder={translate("allModels")}
+        />
+      </label>
+      <label>
+        {translate("provider")}
+        <input
+          value={filters.providerId}
+          placeholder={translate("allProviders")}
+          onChange={(e) => onChange({ providerId: e.target.value })}
+        />
+      </label>
+      <label>
+        {translate("outcome")}
+        <select
+          value={filters.outcome}
+          onChange={(e) => onChange({ outcome: e.target.value })}
+        >
+          <option value="">{translate("allOutcomes")}</option>
+          {Object.values(RequestOutcome)
+            .filter((v) => typeof v === "number")
+            .map((v) => (
+              <option value={v} key={v}>
+                {v === RequestOutcome.UNSPECIFIED
+                  ? translate("unknown")
+                  : label(RequestOutcome[v as number])}
+              </option>
+            ))}
+        </select>
+      </label>
+    </>
+  );
+}
 export function OrganizationUsage() {
   useLocale();
   const { organizationId } = useContext(AdminAuthority);
   const rangeErrorId = useId();
-  const [dates, setDates] = useState(initialDates);
+  const sheetErrorId = useId();
+  // The default pair is the reference for the date part of the active-filter
+  // count; Clear filters supplies a fresh pair so clearing returns the count to zero.
+  const [defaults, setDefaults] = useState(initialDates);
+  const [dates, setDates] = useState(defaults);
   const [userId, setUserId] = useState("");
   const [modelId, setModelId] = useState("");
   const [providerId, setProviderId] = useState("");
@@ -410,6 +514,24 @@ export function OrganizationUsage() {
     { enabled: valid },
   );
   const table = useMediaQuery(usageTableQuery);
+  const compact = useMediaQuery(usageSheetQuery);
+  const filterSummaryRef = useRef<HTMLElement>(null);
+  const refocusFilters = useRef(false);
+  // After the viewport grows, the closed sheet hands focus to the inline Filters disclosure.
+  useEffect(() => {
+    if (!compact && refocusFilters.current) {
+      refocusFilters.current = false;
+      filterSummaryRef.current?.focus();
+    }
+  }, [compact]);
+  const filterState: UsageFilterState = {
+    ...dates,
+    userId,
+    modelId,
+    providerId,
+    outcome,
+  };
+  const activeCount = usageActiveFilterCount(filterState, defaults);
   const filtersActive = !!userId || !!modelId || !!providerId || outcome !== "";
   // A successful report with no data at all is an expected first-use state.
   const reportEmpty =
@@ -429,14 +551,27 @@ export function OrganizationUsage() {
     setToken("");
     setDailyToken("");
   }
+  function changeFilters(patch: Partial<UsageFilterState>) {
+    if (patch.start !== undefined || patch.end !== undefined)
+      setDates((current) => ({
+        start: patch.start ?? current.start,
+        end: patch.end ?? current.end,
+      }));
+    if (patch.userId !== undefined) setUserId(patch.userId);
+    if (patch.modelId !== undefined) setModelId(patch.modelId);
+    if (patch.providerId !== undefined) setProviderId(patch.providerId);
+    if (patch.outcome !== undefined) setOutcome(patch.outcome);
+    resetCursors();
+  }
   function reset() {
-    setDates(initialDates());
+    const fresh = initialDates();
+    setDefaults(fresh);
+    setDates(fresh);
     setUserId("");
     setModelId("");
     setProviderId("");
     setOutcome("");
-    setToken("");
-    setDailyToken("");
+    resetCursors();
   }
   return (
     <>
@@ -444,109 +579,87 @@ export function OrganizationUsage() {
         title={translate("organizationUsage")}
         description={translate("perMemberRequestMetadataNoCredentialsPrompts")}
       />
-      {dates.start && dates.end && (
-        <p className="admin-usage-range">
-          {translate("usageRangeUtc", {
-            value0: dates.start,
-            value1: dates.end,
-          })}
-        </p>
+      {compact ? (
+        <>
+          <FilterSheet
+            activeCount={activeCount}
+            dialogTitle={translate("usageFilters")}
+            closeLabel={translate("closeUsageFilters")}
+            summary={
+              dates.start && dates.end
+                ? [
+                    translate("usageRangeUtc", {
+                      value0: dates.start,
+                      value1: dates.end,
+                    }),
+                  ]
+                : []
+            }
+            description={translate("usageSheetDescription")}
+            onClear={reset}
+            onUnmountWhileOpen={() => {
+              refocusFilters.current = true;
+            }}
+            notice={
+              !valid && (
+                <p role="alert" id={sheetErrorId} className="admin-danger-text">
+                  {translate("chooseAnEndDateOnOrAfter")}
+                </p>
+              )
+            }
+          >
+            <UsageFilterFields
+              filters={filterState}
+              onChange={changeFilters}
+              dateProps={
+                valid
+                  ? {}
+                  : { "aria-invalid": true, "aria-describedby": sheetErrorId }
+              }
+            />
+          </FilterSheet>
+          {!valid && (
+            <p className="admin-danger-text">
+              {translate("chooseAnEndDateOnOrAfter")}
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          {dates.start && dates.end && (
+            <p className="admin-usage-range">
+              {translate("usageRangeUtc", {
+                value0: dates.start,
+                value1: dates.end,
+              })}
+            </p>
+          )}
+          <Card className="admin-usage-filters">
+            <details className="admin-filters" open>
+              <summary ref={filterSummaryRef}>
+                {translate("filters_546ebb")}
+              </summary>
+              <div className="admin-usage-filter-grid">
+                <UsageFilterFields
+                  filters={filterState}
+                  onChange={changeFilters}
+                  dateProps={dateProps}
+                />
+              </div>
+              <div className="admin-actions">
+                <button type="button" onClick={reset}>
+                  {translate("clearFilters")}
+                </button>
+              </div>
+            </details>
+            {!valid && (
+              <p role="alert" id={rangeErrorId} className="admin-danger-text">
+                {translate("chooseAnEndDateOnOrAfter")}
+              </p>
+            )}
+          </Card>
+        </>
       )}
-      <Card className="admin-usage-filters">
-        <details className="admin-filters" open>
-          <summary>{translate("filters_546ebb")}</summary>
-          <div className="admin-usage-filter-grid">
-            <label>
-              {translate("fromUtc")}
-              <input
-                type="date"
-                value={dates.start}
-                onChange={(e) => {
-                  setDates({ ...dates, start: e.target.value });
-                  resetCursors();
-                }}
-                {...dateProps}
-              />
-            </label>
-            <label>
-              {translate("throughUtc")}
-              <input
-                type="date"
-                value={dates.end}
-                onChange={(e) => {
-                  setDates({ ...dates, end: e.target.value });
-                  resetCursors();
-                }}
-                {...dateProps}
-              />
-            </label>
-            <label>
-              {translate("memberId")}
-              <input
-                value={userId}
-                onChange={(e) => {
-                  setUserId(e.target.value);
-                  resetCursors();
-                }}
-                placeholder={translate("allMembers")}
-              />
-            </label>
-            <label>
-              {translate("model")}
-              <input
-                value={modelId}
-                onChange={(e) => {
-                  setModelId(e.target.value);
-                  resetCursors();
-                }}
-                placeholder={translate("allModels")}
-              />
-            </label>
-            <label>
-              {translate("provider")}
-              <input
-                value={providerId}
-                placeholder={translate("allProviders")}
-                onChange={(e) => {
-                  setProviderId(e.target.value);
-                  resetCursors();
-                }}
-              />
-            </label>
-            <label>
-              {translate("outcome")}
-              <select
-                value={outcome}
-                onChange={(e) => {
-                  setOutcome(e.target.value);
-                  resetCursors();
-                }}
-              >
-                <option value="">{translate("allOutcomes")}</option>
-                {Object.values(RequestOutcome)
-                  .filter((v) => typeof v === "number")
-                  .map((v) => (
-                    <option value={v} key={v}>
-                      {v === RequestOutcome.UNSPECIFIED
-                        ? translate("unknown")
-                        : label(RequestOutcome[v as number])}
-                    </option>
-                  ))}
-              </select>
-            </label>
-          </div>
-          <div className="admin-actions">
-            <button type="button" onClick={reset}>
-              {translate("clearFilters")}
-            </button>
-          </div>
-        </details>
-        {!valid && (
-          <p role="alert" id={rangeErrorId} className="admin-danger-text">
-            {translate("chooseAnEndDateOnOrAfter")}
-          </p>
-        )}
-      </Card>
       {valid && (
         <>
           <UsageRegion

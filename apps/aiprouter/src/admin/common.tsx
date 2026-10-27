@@ -525,6 +525,8 @@ export function useMediaQuery(query: string) {
 // modal sheet. Filter state stays with the caller; the sheet only presents it, so
 // Done, X and Escape close without applying or reverting anything.
 export function FilterSheet({
+  dialogTitle,
+  closeLabel,
   activeCount,
   summary,
   description,
@@ -533,6 +535,9 @@ export function FilterSheet({
   onUnmountWhileOpen,
   children,
 }: {
+  // Sheet heading when it differs from the trigger label, for example "Usage filters".
+  dialogTitle?: string;
+  closeLabel?: string;
   activeCount: number;
   summary: string[];
   description: ReactNode;
@@ -571,9 +576,9 @@ export function FilterSheet({
       )}
       {open && (
         <Dialog
-          title={heading}
+          title={dialogTitle ?? heading}
           initial="heading"
-          closeLabel={translate("closeFilters")}
+          closeLabel={closeLabel ?? translate("closeFilters")}
           onClose={() => setOpen(false)}
         >
           <p className="admin-filter-sheet-description">{description}</p>
