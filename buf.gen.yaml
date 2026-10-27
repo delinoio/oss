@@ -1,18 +1,19 @@
 version: v2
-clean: true
+# Go output shares directories with schema sources; never delete output roots.
+clean: false
 plugins:
   - local:
       - go
       - run
       - google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
-    out: protos/gen/go
+    out: protos
     opt:
       - paths=source_relative
   - local:
       - go
       - run
       - connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.20.0
-    out: protos/gen/go
+    out: protos
     opt:
       - paths=source_relative
   - local:

@@ -2772,7 +2772,7 @@ const file_async_commit_hook_v1_ach_proto_rawDesc = "" +
 	"\aCompare\x12$.async_commit_hook.v1.CompareRequest\x1a%.async_commit_hook.v1.CompareResponse\x12b\n" +
 	"\vAcknowledge\x12(.async_commit_hook.v1.AcknowledgeRequest\x1a).async_commit_hook.v1.AcknowledgeResponse\x12P\n" +
 	"\x05Rerun\x12\".async_commit_hook.v1.RerunRequest\x1a#.async_commit_hook.v1.RerunResponse\x12S\n" +
-	"\x06Cancel\x12#.async_commit_hook.v1.CancelRequest\x1a$.async_commit_hook.v1.CancelResponseBBZ@github.com/delinoio/oss/protos/gen/go/async_commit_hook/v1;achv1b\x06proto3"
+	"\x06Cancel\x12#.async_commit_hook.v1.CancelRequest\x1a$.async_commit_hook.v1.CancelResponseB;Z9github.com/delinoio/oss/protos/async_commit_hook/v1;achv1b\x06proto3"
 
 var (
 	file_async_commit_hook_v1_ach_proto_rawDescOnce sync.Once

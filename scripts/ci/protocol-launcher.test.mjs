@@ -15,6 +15,7 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import test from "node:test";
+import { load } from "js-yaml";
 import { resolveBufEntry } from "./buf-entry.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -22,7 +23,7 @@ const manifest = JSON.parse(
   readFileSync(join(root, "scripts/ci/package.json"), "utf8"),
 );
 const generatedPaths = [
-  "protos/gen",
+  "protos",
   "packages/async-commit-hook-api-client/src/gen",
 ];
 
@@ -371,10 +372,12 @@ test("installed Buf generation retains failure status and tracked/untracked fres
     "buf.gen.yaml",
     JSON.stringify({
       version: "v2",
+      // Exercise production cleaning policy where output shares schema sources.
+      clean: load(readFileSync(join(root, "buf.gen.yaml"), "utf8")).clean,
       plugins: [
         {
           local: [process.execPath, join(f.cwd, "plugin.cjs")],
-          out: "protos/gen",
+          out: "protos",
         },
       ],
     }),
@@ -383,6 +386,11 @@ test("installed Buf generation retains failure status and tracked/untracked fres
   let result = f.leaf("fresh");
   assert.notEqual(result.status, 0, "New generated files must be rejected");
   assert.match(result.stderr, /Generated protocol files are untracked/u);
+  assert.equal(
+    readFileSync(join(f.cwd, "protos/fixture/v1/fixture.proto"), "utf8"),
+    f.schema,
+    "Generation must preserve colocated schema sources",
+  );
 
   git("add", "--all");
   git("commit", "-m", "clean protocol fixture");

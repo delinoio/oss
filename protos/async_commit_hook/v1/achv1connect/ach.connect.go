@@ -8,7 +8,7 @@ import (
 	connect "connectrpc.com/connect"
 	context "context"
 	errors "errors"
-	v1 "github.com/delinoio/oss/protos/gen/go/async_commit_hook/v1"
+	v1 "github.com/delinoio/oss/protos/async_commit_hook/v1"
 	http "net/http"
 	strings "strings"
 )
