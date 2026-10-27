@@ -621,3 +621,7 @@ The shared release planner exports `cargo_publish` from the central project poli
 The coordinator resolves it before configuration validation and version commits,
 then uses it to select Cargo registry credentials, Rust setup, caching and
 publication. Non-Cargo projects still validate their immutable source and tag.
+
+## AIPRouter integration
+
+AIPRouter uses the root `github.com/delinoio/oss` Go module. The module selects toolchain `go1.26.10`, retaining the imported patched toolchain for local commands and CI setup. Root `pnpm dev:aiprouter` selects the API, console and consolidated docs development tasks. The existing affected Go checks include its shared libraries and validation fixtures. `.github/workflows/aiprouter.yml` retains PostgreSQL, race, generated-binding, Compose recovery, distribution and synthetic-load validation on affected PR, main push and manual runs, without publication or macOS runners. Its manual comparison uses the same main/branch baseline rules as the shared workflow. The shared docs workflow builds `/aiprouter`; no separate docs publisher is added. Release staging remains explicit through `scripts/aiprouter/build-release.py`; the npm installer uses the `aiprouter@v<version>` tag namespace in this repository. No release automation or publication authority is added. Record actual results and unperformed checks in PR/CI records.

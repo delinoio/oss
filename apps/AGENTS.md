@@ -33,3 +33,6 @@
 - [Linux Package Repository Contract](../docs/repository-linux-packages-contract.md)
 - [Prebuilt dependency distribution](../docs/repository-prebuilt-dependencies-contract.md)
 - [Repository Workflow Contract](../docs/repository-workflow-contract.md)
+
+- [AIPRouter](../docs/project-aiprouter.md)
+- [AIPRouter domain contract](../docs/apps-aiprouter-console-contract.md)

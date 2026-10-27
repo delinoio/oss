@@ -13,3 +13,6 @@
 ## Owning contracts
 
 - [Repository Environment Contract](../docs/repository-environment-contract.md)
+
+- [AIPRouter](../docs/project-aiprouter.md)
+- [AIPRouter domain contract](../docs/servers-aiprouter-service-contract.md)

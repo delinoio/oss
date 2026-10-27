@@ -1294,3 +1294,16 @@ test("CI Result requires every selected formatting job to succeed", () => {
     }
   }
 });
+
+test("AIPRouter shared Go libraries and fixtures select Go validation", () => {
+  for (const event of Object.values(Event)) {
+    for (const path of [
+      "packages/aiprouter/core/ids.go",
+      "scripts/aiprouter/fixture/main.go",
+    ]) {
+      const plan = planJobs(event, [path]);
+      assert.equal(plan.jobs["go-test"], true, `${event}: ${path}`);
+      assert.equal(plan.jobs["go-quality"], true, `${event}: ${path}`);
+    }
+  }
+});

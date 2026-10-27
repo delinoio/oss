@@ -39,6 +39,7 @@ Treat project IDs as stable enum-style values:
 
 ```ts
 enum ProjectId {
+  Aiprouter = "aiprouter",
   Binpm = "binpm",
   CargoMono = "cargo-mono",
   Clibox = "clibox",

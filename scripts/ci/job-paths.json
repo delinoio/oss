@@ -46,7 +46,9 @@
       "scripts/ci/go-quality*",
       "scripts/ci/go-test.mjs",
       "scripts/ci/go-test.test.mjs",
-      "scripts/ci/check-go-format.mjs"
+      "scripts/ci/check-go-format.mjs",
+      "packages/aiprouter/**",
+      "scripts/aiprouter/**"
     ]
   },
   "go-test": {
@@ -70,7 +72,9 @@
       "packages/async-commit-hook-api-client/**",
       "scripts/ci/go-affected*",
       "scripts/ci/go-quality*",
-      "scripts/ci/check-go-format.mjs"
+      "scripts/ci/check-go-format.mjs",
+      "packages/aiprouter/**",
+      "scripts/aiprouter/**"
     ]
   },
   "rust-fmt": {

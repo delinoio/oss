@@ -1,0 +1,416 @@
+[
+  {
+    "input": {
+      "provider": "kimi",
+      "model": "k3",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "kimi",
+        "modelId": "k3",
+        "jawcodeProvider": "moonshot",
+        "cost4": {
+          "input": 3,
+          "output": 15,
+          "cacheRead": 0.3,
+          "cacheWrite": 3
+        },
+        "source": "expected",
+        "sourceRef": "https://platform.kimi.ai/docs/pricing/chat (API reference estimate; default 5-minute cache-write rate, not Code Plan billing/quota); https://www.kimi.com/code/docs/en/kimi-code/models.html",
+        "verifiedAt": "2026-10-24",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.00255,
+        "output": 0.003,
+        "cacheRead": 0.00003,
+        "cacheWrite": 0.000186,
+        "total": 0.005766
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "kimi",
+      "model": "k3[1m]",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "kimi",
+        "modelId": "k3[1m]",
+        "jawcodeProvider": "moonshot",
+        "cost4": {
+          "input": 3,
+          "output": 15,
+          "cacheRead": 0.3,
+          "cacheWrite": 3
+        },
+        "source": "expected",
+        "sourceRef": "derived: local alias sent as k3; https://platform.kimi.ai/docs/pricing/chat (API reference estimate; default 5-minute cache-write rate, not Code Plan billing/quota); https://www.kimi.com/code/docs/en/kimi-code/models.html",
+        "verifiedAt": "2026-10-24",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.00255,
+        "output": 0.003,
+        "cacheRead": 0.00003,
+        "cacheWrite": 0.000186,
+        "total": 0.005766
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "kimi",
+      "model": "k3-256k",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "kimi",
+        "modelId": "k3-256k",
+        "jawcodeProvider": "moonshot",
+        "cost4": {
+          "input": 3,
+          "output": 15,
+          "cacheRead": 0.3,
+          "cacheWrite": 3
+        },
+        "source": "expected",
+        "sourceRef": "derived: K3 with a fixed 256K ceiling; https://platform.kimi.ai/docs/pricing/chat (API reference estimate; default 5-minute cache-write rate, not Code Plan billing/quota); https://www.kimi.com/code/docs/en/kimi-code/models.html",
+        "verifiedAt": "2026-10-24",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.00255,
+        "output": 0.003,
+        "cacheRead": 0.00003,
+        "cacheWrite": 0.000186,
+        "total": 0.005766
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "kimi",
+      "model": "k3.1-pro",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "kimi",
+        "modelId": "k3.1-pro",
+        "jawcodeProvider": "moonshot",
+        "cost4": {
+          "input": 2,
+          "output": 10,
+          "cacheRead": 0.2,
+          "cacheWrite": 2
+        },
+        "source": "expected",
+        "sourceRef": "https://platform.kimi.ai/docs/pricing/chat (API reference estimate; default 5-minute cache-write rate, not Code Plan billing/quota); https://www.kimi.com/code/docs/en/kimi-code/models.html",
+        "verifiedAt": "2026-10-24",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.0017,
+        "output": 0.002,
+        "cacheRead": 0.00002,
+        "cacheWrite": 0.000124,
+        "total": 0.003844
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "kimi",
+      "model": "k3.1-pro-highspeed",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "kimi",
+        "modelId": "k3.1-pro-highspeed",
+        "jawcodeProvider": "moonshot",
+        "cost4": {
+          "input": 4,
+          "output": 20,
+          "cacheRead": 0.2,
+          "cacheWrite": 4
+        },
+        "source": "expected",
+        "sourceRef": "https://platform.kimi.ai/docs/pricing/chat (API reference estimate; default 5-minute cache-write rate, not Code Plan billing/quota); https://www.kimi.com/code/docs/en/kimi-code/models.html",
+        "verifiedAt": "2026-10-24",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.0034,
+        "output": 0.004,
+        "cacheRead": 0.00002,
+        "cacheWrite": 0.000248,
+        "total": 0.007668
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "kimi",
+      "model": "kimi-k2.7-code",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "kimi",
+        "modelId": "kimi-k2.7-code",
+        "jawcodeProvider": "moonshot",
+        "cost4": {
+          "input": 0.95,
+          "output": 4,
+          "cacheRead": 0.19,
+          "cacheWrite": 0.95
+        },
+        "source": "expected",
+        "sourceRef": "https://platform.kimi.ai/docs/pricing/chat (official K2 series table; cacheWrite derived from cache-miss input)",
+        "verifiedAt": "2026-10-24",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.0008075,
+        "output": 0.0008,
+        "cacheRead": 0.000019,
+        "cacheWrite": 0.0000589,
+        "total": 0.0016853999999999999
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "kimi",
+      "model": "kimi-k2.7-code-highspeed",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "kimi",
+        "modelId": "kimi-k2.7-code-highspeed",
+        "jawcodeProvider": "moonshot",
+        "cost4": {
+          "input": 1.9,
+          "output": 8,
+          "cacheRead": 0.38,
+          "cacheWrite": 1.9
+        },
+        "source": "expected",
+        "sourceRef": "https://platform.kimi.ai/docs/pricing/chat (official K2 series table; cacheWrite derived from cache-miss input)",
+        "verifiedAt": "2026-10-24",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.001615,
+        "output": 0.0016,
+        "cacheRead": 0.000038,
+        "cacheWrite": 0.0001178,
+        "total": 0.0033707999999999998
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "kimi",
+      "model": "kimi-k2.6",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "kimi",
+        "modelId": "kimi-k2.6",
+        "jawcodeProvider": "moonshot",
+        "cost4": {
+          "input": 0.95,
+          "output": 4,
+          "cacheRead": 0.16,
+          "cacheWrite": 0.95
+        },
+        "source": "expected",
+        "sourceRef": "https://platform.kimi.ai/docs/pricing/chat (official K2 series table; cacheWrite derived from cache-miss input)",
+        "verifiedAt": "2026-10-24",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.0008075,
+        "output": 0.0008,
+        "cacheRead": 0.000016,
+        "cacheWrite": 0.0000589,
+        "total": 0.0016824
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "kimi",
+      "model": "kimi-k2.5",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "kimi",
+        "modelId": "kimi-k2.5",
+        "jawcodeProvider": "moonshot",
+        "cost4": {
+          "input": 0.6,
+          "output": 3,
+          "cacheRead": 0.1,
+          "cacheWrite": 0.6
+        },
+        "source": "expected",
+        "sourceRef": "https://platform.kimi.ai/docs/pricing (historical official table, 2026-07-20; kimi-k2.5 discontinued 2026-08-31 per https://platform.kimi.ai/docs/models; cacheWrite derived from cache-miss input)",
+        "verifiedAt": "2026-07-20",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.00051,
+        "output": 0.0006,
+        "cacheRead": 0.00001,
+        "cacheWrite": 0.0000372,
+        "total": 0.0011572
+      },
+      "estimated": true
+    }
+  }
+]

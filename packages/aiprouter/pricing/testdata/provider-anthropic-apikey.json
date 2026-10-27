@@ -1,0 +1,178 @@
+[
+  {
+    "input": {
+      "provider": "anthropic-apikey",
+      "model": "claude-fable-5-1",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "anthropic-apikey",
+        "modelId": "claude-fable-5-1",
+        "jawcodeProvider": "anthropic",
+        "cost4": {
+          "input": 10,
+          "output": 50,
+          "cacheRead": 0.25,
+          "cacheWrite": 12.5
+        },
+        "source": "jawcode",
+        "status": "verified"
+      },
+      "cost": {
+        "input": 0.0085,
+        "output": 0.01,
+        "cacheRead": 0.000025,
+        "cacheWrite": 0.000775,
+        "total": 0.019300000000000005
+      },
+      "estimated": false
+    }
+  },
+  {
+    "input": {
+      "provider": "anthropic-apikey",
+      "model": "claude-opus-5-5",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "anthropic-apikey",
+        "modelId": "claude-opus-5-5",
+        "jawcodeProvider": "anthropic",
+        "cost4": {
+          "input": 4,
+          "output": 20,
+          "cacheRead": 0.2,
+          "cacheWrite": 5
+        },
+        "source": "jawcode",
+        "status": "verified"
+      },
+      "cost": {
+        "input": 0.0034,
+        "output": 0.004,
+        "cacheRead": 0.00002,
+        "cacheWrite": 0.00031,
+        "total": 0.007730000000000001
+      },
+      "estimated": false
+    }
+  },
+  {
+    "input": {
+      "provider": "anthropic-apikey",
+      "model": "claude-haiku-5-5",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "anthropic-apikey",
+        "modelId": "claude-haiku-5-5",
+        "jawcodeProvider": "anthropic",
+        "cost4": {
+          "input": 0.1,
+          "output": 0.5,
+          "cacheRead": 0.01,
+          "cacheWrite": 0.125
+        },
+        "source": "jawcode",
+        "status": "verified"
+      },
+      "cost": {
+        "input": 0.000085,
+        "output": 0.0001,
+        "cacheRead": 0.000001,
+        "cacheWrite": 0.00000775,
+        "total": 0.00019375
+      },
+      "estimated": false
+    }
+  },
+  {
+    "input": {
+      "provider": "anthropic-apikey",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "anthropic-apikey",
+        "modelId": "claude-sonnet-5-5",
+        "jawcodeProvider": "anthropic",
+        "cost4": {
+          "input": 2,
+          "output": 10,
+          "cacheRead": 0.1,
+          "cacheWrite": 2.5
+        },
+        "source": "jawcode",
+        "status": "verified"
+      },
+      "cost": {
+        "input": 0.0017,
+        "output": 0.002,
+        "cacheRead": 0.00001,
+        "cacheWrite": 0.000155,
+        "total": 0.0038650000000000004
+      },
+      "estimated": false
+    }
+  }
+]

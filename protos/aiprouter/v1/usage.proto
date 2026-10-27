@@ -1,0 +1,154 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package aiprouter.v1;
+
+import "aiprouter/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/aiprouter/v1;aiprouterv1";
+
+// Optional counts preserve unknown separately from a confirmed zero.
+message TokenUsage {
+  optional uint64 input_tokens = 1;
+  optional uint64 output_tokens = 2;
+  optional uint64 cache_read_tokens = 3;
+  optional uint64 cache_write_tokens = 4;
+  optional uint64 reasoning_tokens = 5;
+  optional uint64 cache_write_short_tokens = 6;
+  optional uint64 cache_write_long_tokens = 7;
+}
+
+// Prices are per million tokens. Optional decimal rates preserve unknown pricing.
+message PriceRates {
+  string currency = 1;
+  optional string input = 2;
+  optional string output = 3;
+  optional string cache_read = 4;
+  optional string cache_write = 5;
+  optional string cache_write_short = 6;
+  optional string cache_write_long = 7;
+}
+
+// This snapshot and estimated cost are immutable after request processing.
+message AppliedPrice {
+  PriceRates rates = 1;
+  PriceSource source = 2;
+  string source_revision = 3;
+  string provider_id = 4;
+  string model_id = 5;
+  string service_tier = 6;
+  google.protobuf.Timestamp applied_at = 7;
+}
+message UsageRecord {
+  string id = 1;
+  string organization_id = 2;
+  optional string user_id = 3;
+  string model_id = 4;
+  string provider_id = 5;
+  google.protobuf.Timestamp occurred_at = 6;
+  RequestOutcome outcome = 7;
+  TokenUsage usage = 8;
+  Money estimated_cost = 9;
+  AppliedPrice applied_price = 10;
+  optional string error_code = 11;
+  string request_id = 12;
+}
+message UsageSummary {
+  uint64 request_count = 1;
+  TokenUsage known_usage = 2;
+  repeated Money known_costs = 3;
+  uint64 missing_usage_count = 4;
+  uint64 missing_price_count = 5;
+  uint64 missing_cost_count = 6;
+  uint64 failed_request_count = 7;
+}
+message DailyUsage {
+  string date = 1;
+  optional string user_id = 2;
+  string model_id = 3;
+  UsageSummary summary = 4;
+}
+message AuditRecord {
+  string id = 1;
+  google.protobuf.Timestamp occurred_at = 2;
+  optional string actor_user_id = 3;
+  AuditAction action = 4;
+  string resource_id = 5;
+  string request_id = 6;
+  AuditOutcome outcome = 7;
+}
+
+// user_id filtering requires current administrator/owner authority unless it is the caller.
+service UsageService {
+  rpc ListUsage(ListUsageRequest) returns (ListUsageResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc GetUsageSummary(GetUsageSummaryRequest) returns (GetUsageSummaryResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc ListDailyUsage(ListDailyUsageRequest) returns (ListDailyUsageResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+}
+message ListUsageRequest {
+  string organization_id = 1;
+  TimeRange time_range = 2;
+  optional string user_id = 3;
+  optional string model_id = 4;
+  PageRequest page = 5;
+  // Filters are conjunctive within the authorized organization/user scope.
+  // Absence means no filter; explicit UNSPECIFIED selects unknown outcomes.
+  optional string provider_id = 6;
+  optional RequestOutcome outcome = 7;
+}
+message ListUsageResponse {
+  repeated UsageRecord records = 1;
+  PageResponse page = 2;
+}
+message GetUsageSummaryRequest {
+  string organization_id = 1;
+  TimeRange time_range = 2;
+  optional string user_id = 3;
+  optional string model_id = 4;
+  // Filters are conjunctive within the authorized organization/user scope.
+  // Absence means no filter; explicit UNSPECIFIED selects unknown outcomes.
+  optional string provider_id = 5;
+  optional RequestOutcome outcome = 6;
+}
+message GetUsageSummaryResponse {
+  UsageSummary summary = 1;
+}
+message ListDailyUsageRequest {
+  string organization_id = 1;
+  TimeRange time_range = 2;
+  optional string user_id = 3;
+  optional string model_id = 4;
+  PageRequest page = 5;
+  // Filters are conjunctive within the authorized organization/user scope.
+  // Absence means no filter; explicit UNSPECIFIED selects unknown outcomes.
+  optional string provider_id = 6;
+  optional RequestOutcome outcome = 7;
+}
+message ListDailyUsageResponse {
+  repeated DailyUsage days = 1;
+  PageResponse page = 2;
+}
+service AuditService {
+  rpc ListOrganizationAudit(ListOrganizationAuditRequest) returns (ListOrganizationAuditResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_ADMINISTRATOR;
+  }
+}
+message ListOrganizationAuditRequest {
+  string organization_id = 1;
+  TimeRange time_range = 2;
+  PageRequest page = 3;
+  // Conjunctive filters never widen the existing audit visibility scope.
+  // Absent outcome means all; explicit UNSPECIFIED selects unknown outcomes.
+  optional AuditAction action = 4;
+  optional string actor_user_id = 5;
+  optional AuditOutcome outcome = 6;
+}
+message ListOrganizationAuditResponse {
+  repeated AuditRecord records = 1;
+  PageResponse page = 2;
+}

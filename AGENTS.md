@@ -72,6 +72,7 @@
 - `docs/project-<id>.md`: Canonical project index docs (ownership + domain-doc index + cross-domain invariants).
 - `docs/<domain>-<project-or-component>-<contract>.md`: Canonical domain contract docs (`apps`, `cmds`, `servers`, `crates`, `protos`, `packages`).
 - `docs/repository-<topic>-contract.md`: Canonical repository-level contract docs for cross-project workflow and policy contracts.
+- `docs/project-aiprouter.md`: AIPRouter server, CLI, console, protocol and deployment project index.
 - `docs/project-binpm.md`: binpm binary package manager project index.
 - `docs/apps-binpm-docs-foundation.md`: binpm Rspress documentation app, route, validation, canonical production URL, and Cloudflare Pages deployment contract.
 - `docs/project-cargo-mono.md`: Cargo subcommand project index.
