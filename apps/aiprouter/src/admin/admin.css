@@ -259,3 +259,111 @@
   background: white;
   font: inherit;
 }
+
+/* Request limits: paired field rows, unit suffix and in-flow save footer. */
+.admin-workspace .admin-limits-card {
+  padding: 32px;
+  max-width: 960px;
+}
+.admin-limits-description {
+  margin: 0 0 24px;
+  color: #4e5968;
+}
+.admin-limit-rows {
+  display: grid;
+  border-top: 1px solid #d8dde5;
+}
+.admin-limit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
+  gap: 24px;
+  align-items: start;
+  padding: 24px 0;
+  border-bottom: 1px solid #d8dde5;
+}
+.admin-workspace .admin-limit-copy label {
+  margin-bottom: 4px;
+  font-size: 16px;
+}
+.admin-limit-copy p,
+.admin-limit-control p {
+  margin: 0;
+  color: #4e5968;
+  font-size: 14px;
+}
+.admin-limit-input {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.admin-limit-unit {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: #4e5968;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.admin-workspace .admin-limit-input input {
+  flex: 1 1 96px;
+}
+.admin-workspace .admin-limit-control .admin-field-error {
+  margin-top: 8px;
+  color: #b42318;
+  font-weight: 600;
+}
+.admin-limits-summary ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.admin-limits-summary a {
+  color: inherit;
+  font-weight: 600;
+}
+.admin-limits-panel {
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid #d8dde5;
+  border-radius: 8px;
+  background: #f7f8fa;
+}
+.admin-workspace .admin-limits-panel h3 {
+  font-size: 16px;
+  margin: 0 0 4px;
+}
+.admin-limits-panel p {
+  margin: 0;
+  color: #4e5968;
+}
+.admin-limits-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 24px;
+}
+.admin-limits-status {
+  margin: 0;
+  color: #4e5968;
+}
+@media (max-width: 768px) {
+  .admin-workspace .admin-limits-card {
+    padding: 24px;
+  }
+}
+@media (max-width: 600px) {
+  .admin-workspace .admin-limits-card {
+    padding: 16px;
+  }
+  .admin-limit-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .admin-limits-footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .admin-limits-footer button {
+    width: 100%;
+  }
+}

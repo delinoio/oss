@@ -385,9 +385,7 @@ describe("operator boundary and unknown values", () => {
     await user.clear(input);
     await user.type(input, "200");
     f.setOperator(false);
-    await user.click(
-      screen.getByRole("button", { name: "Review and save changes" }),
-    );
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     await screen.findByText(
       "Your permissions changed. This action is no longer available.",
     );

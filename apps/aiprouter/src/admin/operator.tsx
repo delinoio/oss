@@ -26,6 +26,7 @@ import {
   useAction,
 } from "./common";
 import { Summary, timeRange } from "./reporting";
+import { RequestLimitsForm } from "./limits";
 import { usePriceRevision, type PriceSnapshot } from "./price-revision";
 
 export function Health() {
@@ -163,11 +164,15 @@ export function InstanceConfiguration({
       ) : query.error ? (
         <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       ) : query.data?.settings ? (
-        <ConfigurationForm
-          key={section}
-          settings={query.data.settings}
-          section={section}
-        />
+        section === "limits" ? (
+          <RequestLimitsForm key={section} settings={query.data.settings} />
+        ) : (
+          <ConfigurationForm
+            key={section}
+            settings={query.data.settings}
+            section={section}
+          />
+        )
       ) : (
         <Empty>{translate("instanceSettingsAreUnavailable")}</Empty>
       )}
@@ -179,7 +184,7 @@ function ConfigurationForm({
   section,
 }: {
   settings: InstanceSettings;
-  section: "limits" | "retention" | "destinations";
+  section: "retention" | "destinations";
 }) {
   useLocale();
   // Keep the reviewed snapshot across background refetches. A new revision
@@ -241,54 +246,6 @@ function ConfigurationForm({
           submit();
         }}
       >
-        {section === "limits" && draft.requestLimits && (
-          <>
-            <label>
-              {translate("requestsPerMinute")}
-              <input
-                type="number"
-                required
-                min={1}
-                max={6000}
-                step={1}
-                value={draft.requestLimits.requestsPerMinute}
-                onChange={(e) => {
-                  setDraft({
-                    ...draft,
-                    requestLimits: {
-                      ...draft.requestLimits!,
-                      requestsPerMinute: Number(e.target.value),
-                    },
-                  });
-                  setChanged(true);
-                }}
-              />
-            </label>
-            <p>{translate("message16000RequestsPerMinuteDefault")}</p>
-            <label>
-              {translate("concurrentRequests")}
-              <input
-                type="number"
-                required
-                min={1}
-                max={100}
-                step={1}
-                value={draft.requestLimits.concurrentRequests}
-                onChange={(e) => {
-                  setDraft({
-                    ...draft,
-                    requestLimits: {
-                      ...draft.requestLimits!,
-                      concurrentRequests: Number(e.target.value),
-                    },
-                  });
-                  setChanged(true);
-                }}
-              />
-            </label>
-            <p>{translate("message1100ConcurrentRequestsDefault10These")}</p>
-          </>
-        )}
         {section === "retention" && draft.retention && (
           <>
             {(
