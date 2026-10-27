@@ -456,3 +456,134 @@
     transition: none;
   }
 }
+
+/* Approved destinations: policy notice, staged rules and inline editor. */
+.admin-destination-notice {
+  padding: 16px 24px;
+  border: 1px solid #d8dde5;
+  border-radius: 12px;
+  background: #f2f6ff;
+}
+.admin-workspace .admin-destination-notice h2 {
+  font-size: 16px;
+  margin: 0 0 4px;
+}
+.admin-destination-notice p {
+  margin: 0 0 8px;
+  color: #4e5968;
+}
+.admin-destination-notice p:last-child {
+  margin-bottom: 0;
+}
+.admin-workspace .admin-destinations-card {
+  padding: 24px;
+}
+.admin-policy-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.admin-policy-heading h2 {
+  margin: 0;
+}
+.admin-policy-state {
+  display: inline-block;
+  padding: 4px 12px;
+  border: 1px solid #8b95a1;
+  border-radius: 999px;
+  color: #191f28;
+  font-size: 14px;
+}
+.admin-policy-state[data-state="unsaved"] {
+  border-color: #1d4ed8;
+  color: #1d4ed8;
+}
+.admin-policy-helper {
+  margin: 8px 0 0;
+  color: #4e5968;
+}
+.admin-destination-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+}
+.admin-destination-list > .admin-record {
+  align-items: flex-start;
+}
+.admin-destination-list h3 {
+  overflow-wrap: anywhere;
+}
+.admin-destination-list h3:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 2px;
+}
+.admin-workspace .admin-destination-list .admin-destination-scope {
+  margin: 4px 0;
+  font-weight: 600;
+  color: #191f28;
+}
+.admin-cidr-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  color: #191f28;
+}
+.admin-cidr-list li {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.admin-destination-editor {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #d8dde5;
+}
+.admin-destination-editor p {
+  margin: 4px 0;
+  color: #4e5968;
+}
+.admin-destination-field {
+  margin-top: 16px;
+}
+.admin-destination-field label {
+  display: block;
+  margin-bottom: 4px;
+}
+.admin-workspace .admin-destination-editor .admin-destination-error {
+  color: #b42318;
+  font-weight: 600;
+}
+.admin-destination-note {
+  font-size: 14px;
+}
+.admin-destination-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #d8dde5;
+}
+.admin-destination-footer p {
+  margin: 0;
+  color: #4e5968;
+}
+@media (max-width: 600px) {
+  .admin-workspace .admin-destinations-card {
+    padding: 16px;
+  }
+  .admin-destination-list .admin-actions {
+    width: 100%;
+  }
+  .admin-destination-footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .admin-destination-footer button {
+    width: 100%;
+  }
+}

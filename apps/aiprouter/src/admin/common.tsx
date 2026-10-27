@@ -109,11 +109,11 @@ export function ErrorNotice({
     </div>
   );
 }
-export function Loading() {
+export function Loading({ label }: { label?: string }) {
   useLocale();
   return (
     <div className="admin-card admin-skeleton" role="status" aria-busy="true">
-      {translate("loading")}
+      {label ?? translate("loading")}
     </div>
   );
 }
