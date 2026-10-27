@@ -234,6 +234,7 @@ export function Members() {
           title={translate("removeMember")}
           name={selected.displayName || selected.email}
           helper={translate("theNameMustMatchExactly")}
+          initialFocus={ConfirmFocus.Input}
           size={DialogSize.Large}
           pendingStatus
           headingFallback

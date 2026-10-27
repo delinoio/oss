@@ -351,7 +351,7 @@ describe("current organization authority", () => {
       screen.queryByRole("button", { name: "Delete organization" }),
     ).toBeNull();
   });
-  it("focuses Cancel, traps focus, closes on Escape, and returns focus", async () => {
+  it("focuses the typed input, traps focus, closes on Escape, and returns focus", async () => {
     fixture();
     const user = userEvent.setup();
     const trigger = await screen.findByRole("button", {
@@ -359,9 +359,9 @@ describe("current organization authority", () => {
     });
     await user.click(trigger);
     const dialog = screen.getByRole("dialog");
-    const cancel = within(dialog).getByRole("button", { name: "Cancel" });
-    expect(document.activeElement).toBe(cancel);
-    await user.type(within(dialog).getByRole("textbox"), "Member person");
+    const input = within(dialog).getByRole("textbox");
+    expect(document.activeElement).toBe(input);
+    await user.type(input, "Member person");
     const submit = within(dialog).getByRole("button", {
       name: "Remove member",
     });
@@ -1008,12 +1008,28 @@ describe("cancel invitation dialog", () => {
     );
   });
   it("leaves other Confirm consumers on Cancel-first focus", async () => {
-    fixture();
+    const f = fixture({ section: "settings" });
+    f.state.memberPages = [
+      [
+        memberFixture("owner", "Owner person", Role.OWNER),
+        memberFixture("taylor", "Taylor Chen", Role.MEMBER),
+      ],
+    ];
+    await f.client.invalidateQueries();
     const user = userEvent.setup();
-    await user.click(
-      await screen.findByRole("button", { name: "Remove Member person" }),
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("combobox", {
+            name: "Nominate an existing member",
+          }) as HTMLSelectElement
+        ).disabled,
+      ).toBe(false),
     );
+    await chooseMember(user, "taylor");
+    await user.click(screen.getByRole("button", { name: "Nominate owner" }));
     const dialog = screen.getByRole("dialog");
+    expect(within(dialog).queryByRole("textbox")).toBeNull();
     expect(document.activeElement).toBe(
       within(dialog).getByRole("button", { name: "Cancel" }),
     );
@@ -1698,7 +1714,7 @@ describe("remove member dialog", () => {
     within(dialog).getByRole("button", {
       name: "Remove member",
     }) as HTMLButtonElement;
-  it("shows the specified copy at 640px with Cancel focused", async () => {
+  it("shows the specified copy at 640px with the typed input focused", async () => {
     const f = membersFixture([[morgan, alex]]);
     const { dialog } = await open(f);
     const view = within(dialog);
@@ -1721,9 +1737,7 @@ describe("remove member dialog", () => {
     });
     expect(input.getAttribute("aria-describedby")).toBeTruthy();
     expect(view.getByText("The name must match exactly.")).toBeTruthy();
-    expect(document.activeElement).toBe(
-      view.getByRole("button", { name: "Cancel" }),
-    );
+    expect(document.activeElement).toBe(input);
     expect(submit(dialog).disabled).toBe(true);
     expect(submit(dialog).className).toContain("admin-danger");
   });
