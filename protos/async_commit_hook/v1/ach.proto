@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package async_commit_hook.v1;
 
-option go_package = "github.com/delinoio/oss/protos/gen/go/async_commit_hook/v1;achv1";
+option go_package = "github.com/delinoio/oss/protos/async_commit_hook/v1;achv1";
 
 // This service accepts only existing local identities, never shell commands or file paths.
 service LocalService {

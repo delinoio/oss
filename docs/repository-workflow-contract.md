@@ -71,6 +71,7 @@ validation, including the manually dispatched async-commit-hook release
 workflow. The release workflow uses `HEAD^`; all of these jobs fetch full
 history, and the breaking leaf retains its existing environment pass-through.
 A revision without prior Buf configuration establishes the initial baseline. Retired and transferred schemas, including `bundlewhy.v1`, are excluded from the baseline projection; checks remain active for owned packages.
+The baseline projection also permits only the forward Go package migration for `async_commit_hook/v1/ach.proto` from `github.com/delinoio/oss/protos/gen/go/async_commit_hook/v1;achv1` to `github.com/delinoio/oss/protos/async_commit_hook/v1;achv1`. It applies only when the baseline and current descriptors match those exact paths and the `async_commit_hook.v1` package. Field, service and other Go package compatibility checks remain enabled. Remove this migration projection when supported baselines no longer contain the old Go path.
 Workflow graph assertions and a temporary Git fixture cover the event rules,
 compatible additions, deleted fields and multi-commit pushes without
 downloading unrelated LFS assets.

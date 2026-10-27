@@ -7,7 +7,7 @@
         "buf.yaml",
         "package.json",
         "pnpm-lock.yaml",
-        "protos/async_commit_hook/v1/**",
+        "protos/**/*.proto",
         "$TURBO_ROOT$/.nvmrc",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/pnpm-lock.yaml",
@@ -16,7 +16,7 @@
         "$TURBO_ROOT$/go.sum"
       ],
       "outputs": [
-        "protos/gen/**",
+        "protos/**/*.go",
         "packages/async-commit-hook-api-client/src/gen/**"
       ],
       "env": ["CI_CACHE_CONTEXT", "CI_PROTO_CACHE_CONTEXT"]

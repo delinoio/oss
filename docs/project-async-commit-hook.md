@@ -13,7 +13,7 @@ Run trusted repository checks asynchronously against committed source, with dura
 - `cmds/async-commit-hook`: Go core, CLI, workers, local API, stdio MCP, installation and update lifecycle.
 - `apps/async-commit-hook`: React/Rsbuild UI embedded in ach.
 - `apps/public-docs/docs/async-commit-hook`: Rspress documentation content published at `https://oss.delino.io/async-commit-hook`; installer assets remain in `scripts/install`.
-- `protos/async_commit_hook/v1`: versioned Connect protocol.
+- `protos/async_commit_hook/v1`: versioned Connect protocol and generated Go bindings, with Connect bindings in `achv1connect/`.
 - `packages/async-commit-hook-api-client`: generated TypeScript/Connect Query client.
 - `packaging/async-commit-hook`: supported release metadata and compatibility evidence.
 

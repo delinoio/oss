@@ -11,7 +11,7 @@ const fixtures = {
     `${root}/cmds/async-commit-hook/internal/core`,
     `${root}/cmds/runmoor/internal/runmoor`,
     `${root}/servers/example-api/internal/server`,
-    `${root}/protos/gen/go/example/v1`,
+    `${root}/protos/example/v1`,
     `${root}/new-windows-only-package`,
   ],
 };

@@ -15,7 +15,7 @@ function run(command, args) {
 // Freshness must regenerate on every invocation, even when generation is cached.
 // Invoke the pinned JS bin through Node because Windows exposes it as a .cmd shim.
 run("node", [resolveBufEntry(cwd), "generate"]);
-const paths = ["protos/gen", "packages/async-commit-hook-api-client/src/gen"];
+const paths = ["protos", "packages/async-commit-hook-api-client/src/gen"];
 run("git", ["diff", "--exit-code", "--", ...paths]);
 const untracked = spawnSync(
   "git",
