@@ -43,7 +43,6 @@ test("rustfmt configuration selects only formatting on PRs and main pushes", () 
       "crates/binpm/",
       "crates/binpm/src/",
       "crates/binpm/src/.hidden/",
-
       "apps/delidev/src-tauri/src/",
       "packages/example/",
       ".cargo/",
@@ -860,7 +859,6 @@ test("deleted and renamed paths retain both owners, including unusual filenames"
   const { paths } = changedFiles(Event.Push, { before: base }, head, f.cwd);
   assert.deepEqual(paths, [
     "README.md",
-
     "apps/bundlewhy-web/new\nname.ts",
     "apps/public-docs/old name.ts",
   ]);
@@ -962,16 +960,28 @@ test("aggregate requires Linux package skips on PRs/manual CI and success when s
 
 test("aggregate accepts only success and skips explicitly authorized by the plan", () => {
   for (const event of Object.values(Event))
-    assert.equal(validateResults(results(event, [])), true);
+    assert.equal(
+      validateResults(results(event, ["apps/public-docs/docs/index.md"])),
+      true,
+    );
   assert.equal(validateResults(results(Event.PullRequest, [])), true);
   for (const result of ["failure", "cancelled", "skipped", undefined]) {
-    for (const id of ["changes", "ci-contracts"]) {
-      const needs = results(Event.PullRequest, []);
+    for (const id of ["changes", "ci-contracts", "node-public-docs-test"]) {
+      const needs = results(Event.PullRequest, [
+        "apps/public-docs/docs/index.md",
+      ]);
       needs[id].result = result;
       assert.throws(() => validateResults(needs), new RegExp(id, "u"));
     }
   }
 
+  for (const id of ["node-public-docs-test", "pnport-native"]) {
+    const needs = results(Event.PullRequest, [
+      "apps/public-docs/docs/index.md",
+    ]);
+    delete needs[id];
+    assert.throws(() => validateResults(needs), /inventory/u);
+  }
   for (const value of [
     "",
     "{}",
@@ -1273,12 +1283,7 @@ test("CI Result rejects missing modes, native execution on affected manual CI, a
     needs.changes.outputs.mode = mode;
     assert.throws(() => validateResults(needs));
   }
-  for (const output of [
-    "forge_matrix",
-    "clibox_matrix",
-    "pnport_matrix",
-    "pnport_matrix",
-  ]) {
+  for (const output of ["forge_matrix", "clibox_matrix", "pnport_matrix"]) {
     for (const value of [undefined, "{", "{}", "null", "[]"]) {
       const needs = results(Event.Manual, []);
       needs.changes.outputs[output] = value;
