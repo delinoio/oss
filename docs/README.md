@@ -73,11 +73,6 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Project index](project-typeopt.md)
 - [Rust CLI foundation](crates-typeopt-foundation.md)
 
-### Forge
-
-- [Project index](project-forge.md)
-- [Rust DSL, PPTX, CLI and MCP foundation](crates-forge-foundation.md)
-
 ### binpm
 
 - [project-binpm.md](project-binpm.md)
