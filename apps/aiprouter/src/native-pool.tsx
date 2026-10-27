@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale } from "./i18n";
+import { useEffect, useState } from "react";
 import { create } from "@bufbuild/protobuf";
 import {
   NativePoolOptionsSchema,
@@ -127,6 +128,13 @@ export function nativePoolError(
       return translate("eachModelRuleNeedsASafeUnique");
   }
 }
+/** DOM id of the native settings disclosure summary; error summary target. */
+export const NATIVE_SETTINGS_SUMMARY_ID = "pool-native-settings";
+/** End notes that stay visible whether or not pool-level settings exist. */
+const nativePoolNote = {
+  create: "clearingRemovesDraftNativeSettingsCreatingAn",
+  edit: "savingReplacesAllNativePoolAndMember",
+} as const;
 function OptionalNumber({
   label,
   value,
@@ -143,8 +151,19 @@ function OptionalNumber({
   hint: string;
 }) {
   useLocale();
+  const invalid =
+    value !== undefined &&
+    !(Number.isInteger(value) && value >= min && value <= max);
   return (
-    <Field label={label} hint={hint}>
+    <Field
+      label={label}
+      hint={hint}
+      error={
+        invalid
+          ? translate("enterAWholeNumberFromTo", { value0: min, value1: max })
+          : undefined
+      }
+    >
       <input
         type="number"
         min={min}
@@ -209,496 +228,530 @@ export function NativePoolFields({
   const name = (id: string) =>
     accounts.find((a) => a.id === id)?.name ??
     translate("unavailableConnection");
+  // The disclosure stays closed by default but opens itself when it holds a
+  // blocking error, so the message and the controls that fix it are visible.
+  const [open, setOpen] = useState(false);
+  const blocked = Boolean(error);
+  useEffect(() => {
+    if (blocked) setOpen(true);
+  }, [blocked]);
+  const hasNative = !!options || members.some((m) => m.nativeOptions);
   return (
-    <details>
-      <summary>{translate("nativeOauthPoolSettings")}</summary>
-      <p>{translate("appliesToPoolsContainingOauthConnectionsFrom")}</p>
-      {!provider && (
-        <Notice>
-          {translate("addConnectionsFromOneSupportedOauthProvider")}
-        </Notice>
-      )}
-      <label className="check">
-        <input
-          type="checkbox"
-          disabled={!provider && !options}
-          checked={!!options}
-          onChange={(e) =>
-            onChange(
-              e.target.checked ? create(NativePoolOptionsSchema) : undefined,
-            )
-          }
-        />
-        {translate("configurePoolLevelNativeSettings")}
-      </label>
-      {options && provider && (
-        <>
-          <OptionalBoolean
-            label={translate("nativePooling")}
-            value={options.enabled}
-            hint={
-              isNew
-                ? translate("defaultEnablesNativePoolingWhenThisPool")
-                : translate("anUnspecifiedSavedValueIsDisabledChoose")
+    <>
+      <details
+        className="route-disclosure"
+        open={open}
+        onToggle={(event) => setOpen(event.currentTarget.open)}
+      >
+        <summary id={NATIVE_SETTINGS_SUMMARY_ID}>
+          {translate("nativeOauthPoolSettings")}
+        </summary>
+        <p>{translate("appliesToPoolsContainingOauthConnectionsFrom")}</p>
+        {!provider && (
+          <Notice>
+            {translate("addConnectionsFromOneSupportedOauthProvider")}
+          </Notice>
+        )}
+        <label className="check">
+          <input
+            type="checkbox"
+            aria-describedby="native-pool-config-help"
+            disabled={!provider && !options}
+            checked={!!options}
+            onChange={(e) =>
+              onChange(
+                e.target.checked ? create(NativePoolOptionsSchema) : undefined,
+              )
             }
-            onChange={(enabled) => onChange({ ...options, enabled })}
           />
-          <Field label={translate("nativeSelectionStrategy")}>
-            <select
-              value={options.strategy}
-              onChange={(e) =>
-                onChange({ ...options, strategy: Number(e.target.value) })
+          {translate("configurePoolLevelNativeSettings")}
+        </label>
+        <p id="native-pool-config-help" className="section-hint">
+          {translate("uncheckedMeansNoPoolLevelNativeSettings")}
+        </p>
+        {options && provider && (
+          <>
+            <OptionalBoolean
+              label={translate("nativePooling")}
+              value={options.enabled}
+              hint={
+                isNew
+                  ? translate("eligibleOauthPoolsEnableNativePoolingOn")
+                  : translate("anUnspecifiedSavedValueIsDisabledChoose")
               }
-            >
-              <option value={NativePoolStrategy.UNSPECIFIED}>
-                {translate("defaultQuota")}
-              </option>
-              {[
-                NativePoolStrategy.QUOTA,
-                NativePoolStrategy.ROUND_ROBIN,
-                NativePoolStrategy.FILL_FIRST,
-                ...(codex ? [NativePoolStrategy.RESET_FIRST] : []),
-              ].map((s) => (
-                <option key={s} value={s}>
-                  {enumLabel(NativePoolStrategy[s])}
+              onChange={(enabled) => onChange({ ...options, enabled })}
+            />
+            <Field label={translate("nativeSelectionStrategy")}>
+              <select
+                value={options.strategy}
+                onChange={(e) =>
+                  onChange({ ...options, strategy: Number(e.target.value) })
+                }
+              >
+                <option value={NativePoolStrategy.UNSPECIFIED}>
+                  {translate("defaultQuota")}
                 </option>
-              ))}
-            </select>
-          </Field>
-          <OptionalNumber
-            label={translate("stickyAccountLimit")}
-            value={options.stickyLimit}
-            min={1}
-            max={100}
-            hint={translate("emptyUses1")}
-            onChange={(stickyLimit) => onChange({ ...options, stickyLimit })}
-          />
-          <OptionalNumber
-            label={translate("poolSwitchingThreshold")}
-            value={options.autoSwitchThreshold}
-            min={0}
-            max={100}
-            hint={translate("emptyUses80ZeroDisablesVoluntaryQuota")}
-            onChange={(autoSwitchThreshold) =>
-              onChange({ ...options, autoSwitchThreshold })
-            }
-          />
-          {codex ? (
-            <>
-              <OptionalNumber
-                label={translate("upstreamFailoverThreshold")}
-                value={options.upstreamFailoverThreshold}
-                min={0}
-                max={20}
-                hint={translate("emptyUses3ZeroDisablesUpstreamFailure")}
-                onChange={(upstreamFailoverThreshold) =>
-                  onChange({ ...options, upstreamFailoverThreshold })
-                }
-              />
-              <OptionalBoolean
-                label={translate("failureWindow")}
-                value={options.failureWindow}
-                hint={translate("defaultEnabledUsesASliding60Second")}
-                onChange={(failureWindow) =>
-                  onChange({ ...options, failureWindow })
-                }
-              />
-              <Field
-                label={translate("pinnedTransientPolicy")}
-                hint={translate("emptyUsesKeepDetourAppliesOnlyTo")}
-              >
-                <select
-                  value={options.pinnedTransientPolicy ?? ""}
-                  onChange={(e) =>
-                    onChange({
-                      ...options,
-                      pinnedTransientPolicy:
-                        e.target.value === ""
-                          ? undefined
-                          : Number(e.target.value),
-                    })
-                  }
-                >
-                  <option value="">{translate("defaultKeep")}</option>
-                  {options.pinnedTransientPolicy ===
-                    NativePinnedTransientPolicy.UNSPECIFIED && (
-                    <option value={NativePinnedTransientPolicy.UNSPECIFIED}>
-                      {translate("unspecifiedKeep")}
-                    </option>
-                  )}
-                  <option value={NativePinnedTransientPolicy.KEEP}>
-                    {translate("keep")}
+                {[
+                  NativePoolStrategy.QUOTA,
+                  NativePoolStrategy.ROUND_ROBIN,
+                  NativePoolStrategy.FILL_FIRST,
+                  ...(codex ? [NativePoolStrategy.RESET_FIRST] : []),
+                ].map((s) => (
+                  <option key={s} value={s}>
+                    {enumLabel(NativePoolStrategy[s])}
                   </option>
-                  <option
-                    value={NativePinnedTransientPolicy.DETOUR_NEW_THREADS}
-                  >
-                    {translate("detourNewThreads")}
-                  </option>
-                </select>
-              </Field>
-              <OptionalBoolean
-                label={translate("cacheAffinity")}
-                value={options.cacheAffinity}
-                hint={translate("defaultEnabledForCodex")}
-                onChange={(cacheAffinity) =>
-                  onChange({ ...options, cacheAffinity })
-                }
-              />
-              <Field
-                label={translate("excludedPlans")}
-                hint={translate("onePlanPerLineUpTo100")}
-              >
-                <textarea
-                  value={options.excludedPlans.join("\n")}
-                  onChange={(e) =>
-                    onChange({
-                      ...options,
-                      excludedPlans: e.target.value
-                        ? e.target.value.split("\n")
-                        : [],
-                    })
+                ))}
+              </select>
+            </Field>
+            <OptionalNumber
+              label={translate("stickyAccountLimit")}
+              value={options.stickyLimit}
+              min={1}
+              max={100}
+              hint={translate("emptyUses1")}
+              onChange={(stickyLimit) => onChange({ ...options, stickyLimit })}
+            />
+            <OptionalNumber
+              label={translate("poolSwitchingThreshold")}
+              value={options.autoSwitchThreshold}
+              min={0}
+              max={100}
+              hint={translate("emptyUses80ZeroDisablesVoluntaryQuota")}
+              onChange={(autoSwitchThreshold) =>
+                onChange({ ...options, autoSwitchThreshold })
+              }
+            />
+            {codex ? (
+              <>
+                <OptionalNumber
+                  label={translate("upstreamFailoverThreshold")}
+                  value={options.upstreamFailoverThreshold}
+                  min={0}
+                  max={20}
+                  hint={translate("emptyUses3ZeroDisablesUpstreamFailure")}
+                  onChange={(upstreamFailoverThreshold) =>
+                    onChange({ ...options, upstreamFailoverThreshold })
                   }
                 />
-              </Field>
-            </>
-          ) : (
-            <>
-              <Field label={translate("nativeQuotaWindow")}>
-                <select
-                  value={options.quotaWindow}
-                  onChange={(e) =>
-                    onChange({
-                      ...options,
-                      quotaWindow: Number(e.target.value),
-                    })
+                <OptionalBoolean
+                  label={translate("failureWindow")}
+                  value={options.failureWindow}
+                  hint={translate("defaultEnabledUsesASliding60Second")}
+                  onChange={(failureWindow) =>
+                    onChange({ ...options, failureWindow })
                   }
+                />
+                <Field
+                  label={translate("pinnedTransientPolicy")}
+                  hint={translate("emptyUsesKeepDetourAppliesOnlyTo")}
                 >
-                  <option value={NativeQuotaWindow.UNSPECIFIED}>
-                    {translate("defaultFiveHour")}
-                  </option>
-                  {[
-                    NativeQuotaWindow.FIVE_HOUR,
-                    NativeQuotaWindow.WEEKLY,
-                    NativeQuotaWindow.MAX_UTILIZATION,
-                  ].map((w) => (
-                    <option key={w} value={w}>
-                      {enumLabel(NativeQuotaWindow[w])}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <OptionalBoolean
-                label={translate("nativeMessages")}
-                value={options.nativeMessages}
-                hint={translate("defaultEnabledDisabledUsesLegacyTranslation")}
-                onChange={(nativeMessages) =>
-                  onChange({ ...options, nativeMessages })
-                }
-              />
-              <h3>{translate("orderedModelRules")}</h3>
-              <p>{translate("theFirstMatchingRuleSelectsAnOrdered")}</p>
-              {options.routes.map((route, index) => (
-                <fieldset key={index}>
-                  <legend>
-                    {translate("modelRule", { value0: index + 1 })}
-                  </legend>
-                  <Field
-                    label={translate("ruleName", { value0: index + 1 })}
-                    hint={translate(
-                      "lettersDigitsUnderscoresOrHyphensStartWith",
+                  <select
+                    value={options.pinnedTransientPolicy ?? ""}
+                    onChange={(e) =>
+                      onChange({
+                        ...options,
+                        pinnedTransientPolicy:
+                          e.target.value === ""
+                            ? undefined
+                            : Number(e.target.value),
+                      })
+                    }
+                  >
+                    <option value="">{translate("defaultKeep")}</option>
+                    {options.pinnedTransientPolicy ===
+                      NativePinnedTransientPolicy.UNSPECIFIED && (
+                      <option value={NativePinnedTransientPolicy.UNSPECIFIED}>
+                        {translate("unspecifiedKeep")}
+                      </option>
                     )}
+                    <option value={NativePinnedTransientPolicy.KEEP}>
+                      {translate("keep")}
+                    </option>
+                    <option
+                      value={NativePinnedTransientPolicy.DETOUR_NEW_THREADS}
+                    >
+                      {translate("detourNewThreads")}
+                    </option>
+                  </select>
+                </Field>
+                <OptionalBoolean
+                  label={translate("cacheAffinity")}
+                  value={options.cacheAffinity}
+                  hint={translate("defaultEnabledForCodex")}
+                  onChange={(cacheAffinity) =>
+                    onChange({ ...options, cacheAffinity })
+                  }
+                />
+                <Field
+                  label={translate("excludedPlans")}
+                  hint={translate("onePlanPerLineUpTo100")}
+                >
+                  <textarea
+                    value={options.excludedPlans.join("\n")}
+                    onChange={(e) =>
+                      onChange({
+                        ...options,
+                        excludedPlans: e.target.value
+                          ? e.target.value.split("\n")
+                          : [],
+                      })
+                    }
+                  />
+                </Field>
+              </>
+            ) : (
+              <>
+                <Field label={translate("nativeQuotaWindow")}>
+                  <select
+                    value={options.quotaWindow}
+                    onChange={(e) =>
+                      onChange({
+                        ...options,
+                        quotaWindow: Number(e.target.value),
+                      })
+                    }
                   >
-                    <input
-                      required
-                      maxLength={64}
-                      pattern="[A-Za-z0-9][A-Za-z0-9_-]*"
-                      value={route.name}
-                      onChange={(e) =>
-                        onChange({
-                          ...options,
-                          routes: options.routes.map((r, i) =>
-                            i === index ? { ...r, name: e.target.value } : r,
-                          ),
-                        })
-                      }
-                    />
-                  </Field>
-                  <Field
-                    label={translate("modelPattern", { value0: index + 1 })}
-                    hint={translate("useAndAsWildcardsMaximum128Characters")}
-                  >
-                    <input
-                      required
-                      maxLength={128}
-                      value={route.match}
-                      onChange={(e) =>
-                        onChange({
-                          ...options,
-                          routes: options.routes.map((r, i) =>
-                            i === index ? { ...r, match: e.target.value } : r,
-                          ),
-                        })
-                      }
-                    />
-                  </Field>
-                  <ol>
-                    {route.connectionIds.map((id, j) => (
-                      <li key={id}>
-                        {name(id)}
-                        <div className="actions">
-                          <Button
-                            disabled={j === 0}
-                            onClick={() => {
-                              const ids = [...route.connectionIds];
-                              [ids[j - 1], ids[j]] = [ids[j], ids[j - 1]];
-                              onChange({
-                                ...options,
-                                routes: options.routes.map((r, i) =>
-                                  i === index
-                                    ? { ...r, connectionIds: ids }
-                                    : r,
-                                ),
-                              });
-                            }}
-                          >
-                            {translate("moveConnectionUp")}
-                          </Button>
-                          <Button
-                            onClick={() =>
-                              onChange({
-                                ...options,
-                                routes: options.routes.map((r, i) =>
-                                  i === index
-                                    ? {
-                                        ...r,
-                                        connectionIds: r.connectionIds.filter(
-                                          (_, k) => k !== j,
-                                        ),
-                                      }
-                                    : r,
-                                ),
-                              })
-                            }
-                          >
-                            {translate("removeRuleConnection")}
-                          </Button>
-                        </div>
-                      </li>
+                    <option value={NativeQuotaWindow.UNSPECIFIED}>
+                      {translate("defaultFiveHour")}
+                    </option>
+                    {[
+                      NativeQuotaWindow.FIVE_HOUR,
+                      NativeQuotaWindow.WEEKLY,
+                      NativeQuotaWindow.MAX_UTILIZATION,
+                    ].map((w) => (
+                      <option key={w} value={w}>
+                        {enumLabel(NativeQuotaWindow[w])}
+                      </option>
                     ))}
-                  </ol>
-                  <Field
-                    label={translate("addRuleConnection", {
-                      value0: index + 1,
-                    })}
-                  >
-                    <select
-                      value=""
-                      disabled={route.connectionIds.length >= 32}
-                      onChange={(e) => {
-                        if (e.target.value)
+                  </select>
+                </Field>
+                <OptionalBoolean
+                  label={translate("nativeMessages")}
+                  value={options.nativeMessages}
+                  hint={translate(
+                    "defaultEnabledDisabledUsesLegacyTranslation",
+                  )}
+                  onChange={(nativeMessages) =>
+                    onChange({ ...options, nativeMessages })
+                  }
+                />
+                <h3>{translate("orderedModelRules")}</h3>
+                <p>{translate("theFirstMatchingRuleSelectsAnOrdered")}</p>
+                {options.routes.map((route, index) => (
+                  <fieldset key={index}>
+                    <legend>
+                      {translate("modelRule", { value0: index + 1 })}
+                    </legend>
+                    <Field
+                      label={translate("ruleName", { value0: index + 1 })}
+                      hint={translate(
+                        "lettersDigitsUnderscoresOrHyphensStartWith",
+                      )}
+                    >
+                      <input
+                        required
+                        maxLength={64}
+                        pattern="[A-Za-z0-9][A-Za-z0-9_-]*"
+                        value={route.name}
+                        onChange={(e) =>
+                          onChange({
+                            ...options,
+                            routes: options.routes.map((r, i) =>
+                              i === index ? { ...r, name: e.target.value } : r,
+                            ),
+                          })
+                        }
+                      />
+                    </Field>
+                    <Field
+                      label={translate("modelPattern", { value0: index + 1 })}
+                      hint={translate("useAndAsWildcardsMaximum128Characters")}
+                    >
+                      <input
+                        required
+                        maxLength={128}
+                        value={route.match}
+                        onChange={(e) =>
+                          onChange({
+                            ...options,
+                            routes: options.routes.map((r, i) =>
+                              i === index ? { ...r, match: e.target.value } : r,
+                            ),
+                          })
+                        }
+                      />
+                    </Field>
+                    <ol>
+                      {route.connectionIds.map((id, j) => (
+                        <li key={id}>
+                          {name(id)}
+                          <div className="actions">
+                            <Button
+                              disabled={j === 0}
+                              onClick={() => {
+                                const ids = [...route.connectionIds];
+                                [ids[j - 1], ids[j]] = [ids[j], ids[j - 1]];
+                                onChange({
+                                  ...options,
+                                  routes: options.routes.map((r, i) =>
+                                    i === index
+                                      ? { ...r, connectionIds: ids }
+                                      : r,
+                                  ),
+                                });
+                              }}
+                            >
+                              {translate("moveConnectionUp")}
+                            </Button>
+                            <Button
+                              onClick={() =>
+                                onChange({
+                                  ...options,
+                                  routes: options.routes.map((r, i) =>
+                                    i === index
+                                      ? {
+                                          ...r,
+                                          connectionIds: r.connectionIds.filter(
+                                            (_, k) => k !== j,
+                                          ),
+                                        }
+                                      : r,
+                                  ),
+                                })
+                              }
+                            >
+                              {translate("removeRuleConnection")}
+                            </Button>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                    <Field
+                      label={translate("addRuleConnection", {
+                        value0: index + 1,
+                      })}
+                    >
+                      <select
+                        value=""
+                        disabled={route.connectionIds.length >= 32}
+                        onChange={(e) => {
+                          if (e.target.value)
+                            onChange({
+                              ...options,
+                              routes: options.routes.map((r, i) =>
+                                i === index
+                                  ? {
+                                      ...r,
+                                      connectionIds: [
+                                        ...r.connectionIds,
+                                        e.target.value,
+                                      ],
+                                    }
+                                  : r,
+                              ),
+                            });
+                        }}
+                      >
+                        <option value="">
+                          {translate("chooseAPoolConnection")}
+                        </option>
+                        {members
+                          .filter(
+                            (m) =>
+                              !route.connectionIds.includes(m.connectionId),
+                          )
+                          .map((m) => (
+                            <option key={m.connectionId} value={m.connectionId}>
+                              {name(m.connectionId)}
+                            </option>
+                          ))}
+                      </select>
+                    </Field>
+                    <label className="check">
+                      <input
+                        type="checkbox"
+                        checked={route.fallback}
+                        onChange={(e) =>
                           onChange({
                             ...options,
                             routes: options.routes.map((r, i) =>
                               i === index
-                                ? {
-                                    ...r,
-                                    connectionIds: [
-                                      ...r.connectionIds,
-                                      e.target.value,
-                                    ],
-                                  }
+                                ? { ...r, fallback: e.target.checked }
                                 : r,
                             ),
-                          });
-                      }}
-                    >
-                      <option value="">
-                        {translate("chooseAPoolConnection")}
-                      </option>
-                      {members
-                        .filter(
-                          (m) => !route.connectionIds.includes(m.connectionId),
-                        )
-                        .map((m) => (
-                          <option key={m.connectionId} value={m.connectionId}>
-                            {name(m.connectionId)}
-                          </option>
-                        ))}
-                    </select>
-                  </Field>
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={route.fallback}
-                      onChange={(e) =>
-                        onChange({
-                          ...options,
-                          routes: options.routes.map((r, i) =>
-                            i === index
-                              ? { ...r, fallback: e.target.checked }
-                              : r,
-                          ),
-                        })
-                      }
-                    />
-                    {translate("useTheFullPoolOnlyWhenNo")}
-                  </label>
-                  <div className="actions">
-                    <Button
-                      disabled={index === 0}
-                      onClick={() => {
-                        const routes = [...options.routes];
-                        [routes[index - 1], routes[index]] = [
-                          routes[index],
-                          routes[index - 1],
-                        ];
-                        onChange({ ...options, routes });
-                      }}
-                    >
-                      {translate("moveRuleUp")}
-                    </Button>
-                    <Button
-                      onClick={() =>
-                        onChange({
-                          ...options,
-                          routes: options.routes.filter((_, i) => i !== index),
-                        })
-                      }
-                    >
-                      {translate("removeModelRule", { value0: index + 1 })}
-                    </Button>
-                  </div>
-                </fieldset>
-              ))}
-              <Button
-                disabled={options.routes.length >= 32}
-                onClick={() =>
-                  onChange({
-                    ...options,
-                    routes: [...options.routes, create(NativeModelRouteSchema)],
-                  })
-                }
-              >
-                {translate("addModelRule")}
-              </Button>
-            </>
-          )}
-        </>
-      )}
-      {provider && (
-        <>
-          <h3>{translate("memberNativeOptions")}</h3>
-          {members.map((member, index) => {
-            const current = member.nativeOptions;
-            const update = (
-              nativeOptions: NativePoolMemberOptions | undefined,
-            ) =>
-              onMembers(
-                members.map((m, i) =>
-                  i === index ? { ...m, nativeOptions } : m,
-                ),
-              );
-            return (
-              <fieldset key={member.connectionId}>
-                <legend>{name(member.connectionId)}</legend>
-                <label className="check">
-                  <input
-                    type="checkbox"
-                    checked={!!current}
-                    onChange={(e) =>
-                      update(
-                        e.target.checked
-                          ? create(NativePoolMemberOptionsSchema)
-                          : undefined,
-                      )
-                    }
-                  />
-                  {translate("overrideNativeOptionsFor", {
-                    value0: name(member.connectionId),
-                  })}
-                </label>
-                {current && (
-                  <>
-                    <OptionalNumber
-                      label={translate("switchingThresholdFor", {
-                        value0: name(member.connectionId),
-                      })}
-                      value={current.autoSwitchThreshold}
-                      min={0}
-                      max={100}
-                      hint={translate(
-                        "emptyInheritsThePoolThresholdZeroDisables",
-                      )}
-                      onChange={(autoSwitchThreshold) =>
-                        update({ ...current, autoSwitchThreshold })
-                      }
-                    />
-                    <OptionalNumber
-                      label={translate("nativePriorityFor", {
-                        value0: name(member.connectionId),
-                      })}
-                      value={current.priority}
-                      min={-100}
-                      max={100}
-                      hint={translate("higherValuesComeFirstSeparateFromThe")}
-                      onChange={(priority) => update({ ...current, priority })}
-                    />
-                    <label className="check">
-                      <input
-                        type="checkbox"
-                        checked={current.useRemainingQuota}
-                        onChange={(e) =>
-                          update({
-                            ...current,
-                            useRemainingQuota: e.target.checked,
                           })
                         }
                       />
-                      {translate("useRemainingQuotaFor", {
-                        value0: name(member.connectionId),
-                      })}
+                      {translate("useTheFullPoolOnlyWhenNo")}
                     </label>
-                    <p>
-                      {translate(
-                        "usingRemainingQuotaMakesTheEffectiveSwitching",
-                      )}
-                    </p>
-                    {codex && (
+                    <div className="actions">
+                      <Button
+                        disabled={index === 0}
+                        onClick={() => {
+                          const routes = [...options.routes];
+                          [routes[index - 1], routes[index]] = [
+                            routes[index],
+                            routes[index - 1],
+                          ];
+                          onChange({ ...options, routes });
+                        }}
+                      >
+                        {translate("moveRuleUp")}
+                      </Button>
+                      <Button
+                        onClick={() =>
+                          onChange({
+                            ...options,
+                            routes: options.routes.filter(
+                              (_, i) => i !== index,
+                            ),
+                          })
+                        }
+                      >
+                        {translate("removeModelRule", { value0: index + 1 })}
+                      </Button>
+                    </div>
+                  </fieldset>
+                ))}
+                <Button
+                  disabled={options.routes.length >= 32}
+                  onClick={() =>
+                    onChange({
+                      ...options,
+                      routes: [
+                        ...options.routes,
+                        create(NativeModelRouteSchema),
+                      ],
+                    })
+                  }
+                >
+                  {translate("addModelRule")}
+                </Button>
+              </>
+            )}
+          </>
+        )}
+        {provider && (
+          <>
+            <h3>{translate("memberNativeOptions")}</h3>
+            {members.map((member, index) => {
+              const current = member.nativeOptions;
+              const update = (
+                nativeOptions: NativePoolMemberOptions | undefined,
+              ) =>
+                onMembers(
+                  members.map((m, i) =>
+                    i === index ? { ...m, nativeOptions } : m,
+                  ),
+                );
+              return (
+                <fieldset key={member.connectionId}>
+                  <legend>{name(member.connectionId)}</legend>
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={!!current}
+                      onChange={(e) =>
+                        update(
+                          e.target.checked
+                            ? create(NativePoolMemberOptionsSchema)
+                            : undefined,
+                        )
+                      }
+                    />
+                    {translate("overrideNativeOptionsFor", {
+                      value0: name(member.connectionId),
+                    })}
+                  </label>
+                  {current && (
+                    <>
+                      <OptionalNumber
+                        label={translate("switchingThresholdFor", {
+                          value0: name(member.connectionId),
+                        })}
+                        value={current.autoSwitchThreshold}
+                        min={0}
+                        max={100}
+                        hint={translate(
+                          "emptyInheritsThePoolThresholdZeroDisables",
+                        )}
+                        onChange={(autoSwitchThreshold) =>
+                          update({ ...current, autoSwitchThreshold })
+                        }
+                      />
+                      <OptionalNumber
+                        label={translate("nativePriorityFor", {
+                          value0: name(member.connectionId),
+                        })}
+                        value={current.priority}
+                        min={-100}
+                        max={100}
+                        hint={translate("higherValuesComeFirstSeparateFromThe")}
+                        onChange={(priority) =>
+                          update({ ...current, priority })
+                        }
+                      />
                       <label className="check">
                         <input
                           type="checkbox"
-                          checked={current.allowCredits}
+                          checked={current.useRemainingQuota}
                           onChange={(e) =>
                             update({
                               ...current,
-                              allowCredits: e.target.checked,
+                              useRemainingQuota: e.target.checked,
                             })
                           }
                         />
-                        {translate("allowCreditsFor", {
+                        {translate("useRemainingQuotaFor", {
                           value0: name(member.connectionId),
                         })}
                       </label>
-                    )}
-                  </>
-                )}
-              </fieldset>
-            );
-          })}
-        </>
-      )}
-      {error && <Notice tone="warning">{error}</Notice>}
-      <p>{translate("savingReplacesAllNativePoolAndMember")}</p>
-      {(options || members.some((m) => m.nativeOptions)) && (
-        <Button
-          onClick={() => {
-            onChange(undefined);
-            onMembers(members.map((m) => ({ ...m, nativeOptions: undefined })));
-          }}
-        >
-          {translate("clearAllNativeSettings")}
-        </Button>
-      )}
-    </details>
+                      <p>
+                        {translate(
+                          "usingRemainingQuotaMakesTheEffectiveSwitching",
+                        )}
+                      </p>
+                      {codex && (
+                        <label className="check">
+                          <input
+                            type="checkbox"
+                            checked={current.allowCredits}
+                            onChange={(e) =>
+                              update({
+                                ...current,
+                                allowCredits: e.target.checked,
+                              })
+                            }
+                          />
+                          {translate("allowCreditsFor", {
+                            value0: name(member.connectionId),
+                          })}
+                        </label>
+                      )}
+                    </>
+                  )}
+                </fieldset>
+              );
+            })}
+          </>
+        )}
+        {error && <Notice tone="warning">{error}</Notice>}
+        {hasNative && (
+          <Button
+            onClick={() => {
+              onChange(undefined);
+              onMembers(
+                members.map((m) => ({ ...m, nativeOptions: undefined })),
+              );
+            }}
+          >
+            {translate("clearAllNativeSettings")}
+          </Button>
+        )}
+      </details>
+      <p id="native-pool-note" className="section-hint">
+        {translate(isNew ? nativePoolNote.create : nativePoolNote.edit)}
+      </p>
+    </>
   );
 }
