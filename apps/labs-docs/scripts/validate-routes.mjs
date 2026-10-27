@@ -4,25 +4,35 @@ import { readFile } from "node:fs/promises";
 import { decodeHTML } from "entities";
 
 const origin = "https://docs.labs.delino.io";
-const routes = [
-  {
-    path: "/",
-    file: "index.html",
-    heading: "Delino Labs",
-    next: "/getting-started",
-  },
-  {
-    path: "/getting-started",
-    file: "getting-started.html",
-    heading: "Getting Started",
-    next: "/",
-  },
-];
+const registry = JSON.parse(
+  await readFile(new URL("../i18n/locales.json", import.meta.url), "utf8"),
+);
+const routes = [];
+for (const { lang } of registry.locales) {
+  const prefix = lang === registry.sourceLang ? "" : `/${lang}`;
+  for (const page of ["index", "getting-started"]) {
+    const markdown = await readFile(
+      new URL(`../docs/${lang}/${page}.md`, import.meta.url),
+      "utf8",
+    );
+    routes.push({
+      path: page === "index" ? `${prefix}/` : `${prefix}/getting-started`,
+      file: `${prefix.slice(1)}${prefix ? "/" : ""}${page}.html`,
+      heading: markdown.match(/^# (.+)$/m)[1],
+      lang,
+      next: page === "index" ? `${prefix}/getting-started` : `${prefix}/`,
+    });
+  }
+}
 
 for (const route of routes) {
   const html = await readFile(
     new URL(`../doc_build/${route.file}`, import.meta.url),
     "utf8",
+  );
+  assert.ok(
+    html.includes(`lang="${route.lang}"`),
+    `${route.path}: incorrect language`,
   );
   assert.match(html, /<main[\s>]/, `${route.path}: missing main landmark`);
   const heading = html.match(/<h1\b[^>]*>([\s\S]*?)<\/h1>/)?.[1] ?? "";
@@ -71,3 +81,13 @@ console.log(
     notFound: true,
   }),
 );
+
+for (const name of ["NOTICE", "RSPRESS-LICENSE"]) {
+  assert.equal(
+    await readFile(
+      new URL(`../doc_build/i18n-${name}`, import.meta.url),
+      "utf8",
+    ),
+    await readFile(new URL(`../i18n/${name}`, import.meta.url), "utf8"),
+  );
+}

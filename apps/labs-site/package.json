@@ -6,11 +6,17 @@
   "type": "module",
   "scripts": {
     "dev": "node ../../scripts/run-rsbuild-dev.mjs labs-site 46312",
-    "build": "rsbuild build",
+    "build": "pnpm i18n:check && rsbuild build",
     "preview": "rsbuild preview --host 127.0.0.1 --port 46313 --strict-port",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm typecheck",
-    "test": "pnpm typecheck && pnpm build"
+    "test": "pnpm i18n:check && node --test ../../scripts/localization/*.test.mjs && pnpm typecheck && pnpm build && node scripts/validate-routes.mjs",
+    "i18n:check": "node ../../scripts/localization/cli.mjs check",
+    "i18n:translate": "node ../../scripts/localization/cli.mjs translate",
+    "i18n:login": "node ../../scripts/localization/cli.mjs login",
+    "i18n:logout": "node ../../scripts/localization/cli.mjs logout",
+    "i18n:models": "node ../../scripts/localization/cli.mjs models",
+    "i18n:profiles": "node ../../scripts/localization/cli.mjs profiles"
   },
   "devDependencies": {
     "@rsbuild/core": "2.1.10",

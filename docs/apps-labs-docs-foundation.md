@@ -23,9 +23,13 @@ Readers browse Labs documentation. Maintainers edit public pages and operate a d
 - Cloudflare Pages target settings: project `labs-docs`, repository `delinoio/oss`, production branch `main`, repository-root build command `pnpm --filter labs-docs build`, output `apps/labs-docs/doc_build`, `NODE_VERSION=24`, `PNPM_VERSION=10.26.2`, custom domain `docs.labs.delino.io`.
 - These are deployment settings for operators, not evidence of provisioned hosting or DNS. CI validates only and must not deploy.
 
+## Localization
+
+Follow the [shared Labs localization contract](apps-labs-localization-contract.md) for catalogs, localized routes, ChatGPT plan generation, credential ownership and offline validation.
+
 ## Storage
 
-Source pages are versioned under `apps/labs-docs/docs`. Generated `doc_build` output and Rspress cache directories are ignored. No runtime storage is required.
+English source pages are versioned under `apps/labs-docs/docs/en`; translated pages use sibling language directories. Generated `doc_build` output and Rspress cache directories are ignored. No runtime storage is required.
 
 ## Security
 
@@ -40,7 +44,7 @@ Retain Rspress build diagnostics. Route validation reports structured route and 
 - Development: `pnpm dev:labs-docs` from the root, or `pnpm dev` from the app.
 - Build: `pnpm --filter labs-docs build`.
 - Preview: `pnpm --filter labs-docs preview`.
-- Validation: `pnpm test` from `apps/labs-docs` builds the site and checks both route artifacts, page titles, cross-page navigation, canonical links and the 404 artifact.
+- Validation: `pnpm test` from `apps/labs-docs` builds the site and checks all registered language route artifacts, page titles, cross-page navigation, canonical links and the 404 artifact.
 - CI: `node-labs-docs-test` uses the central affected planner and exact Turbo comparison. Its uncached `ci:check` depends on the cacheable build and route checks. Source/config, shared development wrapper, toolchain and owning contracts select the job; inputs outside the workspace force it.
 - Manually inspect desktop/mobile navigation, search, theme toggle, focus and 404 behavior when changing the theme. Local validation does not establish Cloudflare account, DNS or production acceptance.
 
