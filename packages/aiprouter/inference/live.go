@@ -121,7 +121,12 @@ func (h *Handler) liveCall(ctx context.Context, w http.ResponseWriter, r *http.R
 	if e != nil {
 		return e
 	}
-	t.Model = model
+	// Route selectors are public names; only the resolved target model is sent
+	// upstream or saved for subsequent sockets.
+	if session == nil {
+		session = object{}
+	}
+	session["model"] = t.Model
 	var data []byte
 	headers := http.Header{}
 	for _, k := range liveHeaders {
@@ -270,9 +275,9 @@ func (h *Handler) ServeRealtimeSocket(ctx context.Context, token, path string, q
 			t.BaseURL = u.String()
 			suffix = "/dictation/stream"
 		case "/v1/live":
-			suffix = "/live?model=" + url.QueryEscape(model)
+			suffix = "/live?model=" + url.QueryEscape(t.Model)
 		default:
-			suffix = "/realtime?model=" + url.QueryEscape(model)
+			suffix = "/realtime?model=" + url.QueryEscape(t.Model)
 			if intent := query.Get("intent"); intent != "" {
 				if intent != "quicksilver" {
 					return &Error{400, "invalid_live_query", 0}

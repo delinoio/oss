@@ -177,6 +177,13 @@ func TestLiveCallBindingRewritesLocation(t *testing.T) {
 		if r.URL.Path != "/realtime/calls" || r.URL.Query().Get("architecture") != "avas" {
 			t.Error(r.URL.String())
 		}
+		if e := r.ParseMultipartForm(1 << 20); e != nil {
+			t.Fatal(e)
+		}
+		var session object
+		if json.Unmarshal([]byte(r.FormValue("session")), &session) != nil || str(session["model"]) != "upstream-model" || str(session["instructions"]) != "kept" {
+			t.Fatal("public selector escaped upstream projection")
+		}
 		w.Header().Set("Location", "https://provider.example/v1/realtime/calls/call_original")
 		w.Header().Set("Content-Type", "application/sdp")
 		w.WriteHeader(201)
@@ -184,12 +191,12 @@ func TestLiveCallBindingRewritesLocation(t *testing.T) {
 	}, Responses)
 	store := &liveStoreFixture{}
 	h.c.LiveBindings = store
-	req := httptest.NewRequest("POST", "/v1/realtime/calls", strings.NewReader(`{"sdp":"offer","session":{"model":"realtime"}}`))
+	req := httptest.NewRequest("POST", "/v1/realtime/calls", strings.NewReader(`{"sdp":"offer","session":{"model":"voice","instructions":"kept"}}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer client-secret")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
-	if w.Code != 201 || w.Header().Get("Location") != "/v1/realtime/calls/"+store.id || store.binding.UpstreamCallID != "call_original" || store.binding.ExpiresAt.After(time.Now().Add(5*time.Minute)) {
+	if w.Code != 201 || w.Header().Get("Location") != "/v1/realtime/calls/"+store.id || store.binding.Target.Model != "upstream-model" || store.binding.UpstreamCallID != "call_original" || store.binding.ExpiresAt.After(time.Now().Add(5*time.Minute)) {
 		t.Fatalf("%d %v %+v", w.Code, w.Header(), store.binding)
 	}
 }
