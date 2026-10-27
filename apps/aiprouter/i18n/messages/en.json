@@ -1202,5 +1202,11 @@
   "resendsAreAtLeastOneMinute": "Resends are at least one minute apart. Up to 100 send attempts per organization per hour. Manual resend invalidates the old link and starts a new seven-day invitation.",
   "message_230b931bd9": "Created: {value0}",
   "storedAttemptTimeThisTimestampDoes": "Stored attempt time: {value0}. This timestamp does not confirm a scheduled delivery.",
-  "sentMeansTheEmailWasSubmitted": "Sent means the email was submitted to the SMTP server; recipient delivery and invitation acceptance are not confirmed."
+  "sentMeansTheEmailWasSubmitted": "Sent means the email was submitted to the SMTP server; recipient delivery and invitation acceptance are not confirmed.",
+  "inviteSomeoneToThisOrganizationAs": "Invite someone to this organization as a member.",
+  "nameExampleTest": "name@example.test",
+  "theyMustSignInWithThis": "They must sign in with this verified email address.",
+  "message_f2ebd8cccf": "Role: Member.",
+  "promotionToAdministratorIsManagedSeparately": "Promotion to administrator is managed separately by an owner.",
+  "invitationLinksExpireAfterSevenDays": "Invitation links expire after seven days. Creating an invitation starts delivery; it does not confirm that an email was sent."
 }

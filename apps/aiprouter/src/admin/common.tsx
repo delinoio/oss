@@ -251,11 +251,18 @@ export function useAction(operator = false) {
 }
 
 // Dialog widths. Standard keeps the original 560px maximum; Wide is the 600px
-// maximum used by consequence-heavy confirmations. Both keep a 16px gutter.
+// maximum used by consequence-heavy confirmations; Compact is the 520px maximum
+// used by single-field dialogs. All keep a 16px gutter.
 export enum DialogSize {
   Standard = "standard",
   Wide = "wide",
+  Compact = "compact",
 }
+const dialogClassNames: Record<DialogSize, string> = {
+  [DialogSize.Standard]: "admin-dialog",
+  [DialogSize.Wide]: "admin-dialog admin-dialog-wide",
+  [DialogSize.Compact]: "admin-dialog admin-dialog-compact",
+};
 export function Dialog({
   title,
   children,
@@ -292,11 +299,7 @@ export function Dialog({
     <dialog
       ref={ref}
       aria-labelledby={id}
-      className={
-        size === DialogSize.Wide
-          ? "admin-dialog admin-dialog-wide"
-          : "admin-dialog"
-      }
+      className={dialogClassNames[size]}
       onCancel={(e) => {
         e.preventDefault();
         onClose();

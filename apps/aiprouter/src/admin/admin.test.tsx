@@ -80,6 +80,8 @@ function fixture(
       | { userId: string; displayName: string; email: string; role: Role }[][]
       | undefined;
     invitations: Invitation[] | undefined;
+    inviteError: Code | undefined;
+    inviteGate: Promise<void> | undefined;
   } = {
     name: organization.name,
     transfer: {
@@ -94,6 +96,8 @@ function fixture(
     cancelError: undefined,
     memberPages: undefined,
     invitations: undefined,
+    inviteError: undefined,
+    inviteGate: undefined,
   };
   const mutations = {
     remove: rs.fn(),
@@ -190,8 +194,11 @@ function fixture(
           },
         ],
       }),
-      createInvitation: () => {
-        mutations.invite();
+      createInvitation: async (req) => {
+        mutations.invite(req);
+        await state.inviteGate;
+        if (state.inviteError !== undefined)
+          throw new ConnectError("invite failed", state.inviteError);
         return {};
       },
       resendInvitation: () => {
@@ -505,6 +512,145 @@ describe("invitation timing gate", () => {
     expect(timing(overrides, FIXED_NOW + 1000)).toBe(
       InvitationTiming.StoredAttempt,
     );
+  });
+});
+describe("invite member dialog", () => {
+  const open = async (f: ReturnType<typeof fixture>) => {
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: "Invite member" }),
+    );
+    return { user, dialog: await screen.findByRole("dialog") };
+  };
+  it("shows the specified copy, a compact width and a focused email field", async () => {
+    const f = fixture({ section: "invitations" });
+    const { dialog } = await open(f);
+    const view = within(dialog);
+    expect(dialog.className).toContain("admin-dialog-compact");
+    expect(view.getByRole("heading", { name: "Invite member" })).toBeTruthy();
+    expect(view.getByRole("button", { name: "Close dialog" })).toBeTruthy();
+    expect(
+      view.getByText("Invite someone to this organization as a member."),
+    ).toBeTruthy();
+    const input = view.getByRole("textbox", {
+      name: "Email address",
+    }) as HTMLInputElement;
+    expect(input.type).toBe("email");
+    expect(input.required).toBe(true);
+    expect(input.placeholder).toBe("name@example.test");
+    expect(document.activeElement).toBe(input);
+    const helper = view.getByText(
+      "They must sign in with this verified email address.",
+    );
+    expect(input.getAttribute("aria-describedby")).toBe(helper.id);
+    expect(view.getByText("Role: Member.")).toBeTruthy();
+    expect(
+      view.getByText(
+        "Promotion to administrator is managed separately by an owner.",
+      ),
+    ).toBeTruthy();
+    expect(
+      view.getByText(
+        "Invitation links expire after seven days. Creating an invitation starts delivery; it does not confirm that an email was sent.",
+      ),
+    ).toBeTruthy();
+    expect(view.getByRole("button", { name: "Cancel" })).toBeTruthy();
+    expect(view.getByRole("button", { name: "Send invitation" })).toBeTruthy();
+    expect(view.queryByRole("combobox")).toBeNull();
+  });
+  it("does not submit a blank or invalid email and calls nothing on cancel", async () => {
+    const f = fixture({ section: "invitations" });
+    const { user, dialog } = await open(f);
+    await user.click(
+      within(dialog).getByRole("button", { name: "Send invitation" }),
+    );
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Email address" }),
+      "not-an-email",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Send invitation" }),
+    );
+    expect(f.mutations.invite).not.toHaveBeenCalled();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(f.mutations.invite).not.toHaveBeenCalled();
+  });
+  it("sends one unchanged request, closes, clears and announces pending delivery", async () => {
+    const f = fixture({ section: "invitations" });
+    let release!: () => void;
+    f.state.inviteGate = new Promise<void>((resolve) => (release = resolve));
+    const { user, dialog } = await open(f);
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Email address" }),
+      "new@example.test",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Send invitation" }),
+    );
+    await screen.findAllByText(
+      "Saving… Closing a dialog does not cancel a submitted change.",
+    );
+    const send = within(dialog).getByRole("button", {
+      name: "Send invitation",
+    }) as HTMLButtonElement;
+    expect(send.disabled).toBe(true);
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Email address" }),
+      "{Enter}",
+    );
+    release();
+    await screen.findByText("Invitation created. Delivery is pending.");
+    expect(f.mutations.invite).toHaveBeenCalledTimes(1);
+    expect(f.mutations.invite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: "org-a",
+        email: "new@example.test",
+      }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Invite member" }));
+    expect(
+      (
+        screen.getByRole("textbox", {
+          name: "Email address",
+        }) as HTMLInputElement
+      ).value,
+    ).toBe("");
+  });
+  it("retains the email after a recoverable failure", async () => {
+    const f = fixture({ section: "invitations" });
+    f.state.inviteError = Code.Unavailable;
+    const { user, dialog } = await open(f);
+    const input = within(dialog).getByRole("textbox", {
+      name: "Email address",
+    }) as HTMLInputElement;
+    await user.type(input, "new@example.test");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Send invitation" }),
+    );
+    await waitFor(() => expect(f.mutations.invite).toHaveBeenCalledTimes(1));
+    await waitFor(() =>
+      expect(
+        (
+          within(dialog).getByRole("button", {
+            name: "Send invitation",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false),
+    );
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(input.value).toBe("new@example.test");
+  });
+  it("closes on Escape and returns focus to the trigger", async () => {
+    const f = fixture({ section: "invitations" });
+    const { user } = await open(f);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: "Invite member" }),
+    );
+    expect(f.mutations.invite).not.toHaveBeenCalled();
   });
 });
 describe("invitation list rendering", () => {

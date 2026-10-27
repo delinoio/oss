@@ -23,7 +23,7 @@ Open `/overview` to choose an organization and `/invitation` to accept an invita
 
 ## Invite and accept
 
-1. An authorized owner or administrator invites the intended email address.
+1. An authorized owner or administrator chooses Invite member, enters the intended email address and selects Send invitation. Invitees join as members, and promotion to administrator is managed separately by an owner. Creating an invitation starts delivery; it does not confirm that an email was sent.
 2. The recipient opens the invitation and signs in through OIDC.
 3. The account's verified email must match the invitation email.
 4. The recipient accepts within seven days. Each link can be used once.
