@@ -75,6 +75,9 @@ var migration10 string
 //go:embed migrations/011.sql
 var migration11 string
 
+//go:embed migrations/012.sql
+var migration12 string
+
 func Open(ctx context.Context, dsn string, o Options) (*Store, error) {
 	if o.Schema == "" {
 		o.Schema = "aiprouter"
@@ -106,7 +109,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 		if _, e := tx.ExecContext(ctx, "SELECT pg_advisory_xact_lock(hashtextextended($1,0))", s.schema+":migration"); e != nil {
 			return e
 		}
-		_, e := tx.ExecContext(ctx, strings.NewReplacer("{{schema}}", s.schema, "{{temp}}", s.temp).Replace(migration+"\n"+migration2+"\n"+migration3+"\n"+migration4+"\n"+migration5+"\n"+migration6+"\n"+migration7+"\n"+migration8+"\n"+migration9+"\n"+migration10+"\n"+migration11))
+		_, e := tx.ExecContext(ctx, strings.NewReplacer("{{schema}}", s.schema, "{{temp}}", s.temp).Replace(migration+"\n"+migration2+"\n"+migration3+"\n"+migration4+"\n"+migration5+"\n"+migration6+"\n"+migration7+"\n"+migration8+"\n"+migration9+"\n"+migration10+"\n"+migration11+"\n"+migration12))
 		return e
 	})
 }

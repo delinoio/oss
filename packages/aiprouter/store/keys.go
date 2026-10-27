@@ -132,6 +132,16 @@ func (s *Store) RevokeCurrentKey(ctx context.Context, raw string) error {
 		return s.audit(ctx, tx, p.Scope.OrganizationID, p.Scope.UserID, "key.revoked", p.KeyID)
 	})
 }
+
+// Keep historical admission IDs for idempotency without scanning released history
+// while holding the organization lock. statement_timestamp is an indexable bound
+// captured after lock acquisition, unlike transaction time or volatile clock time.
+const admissionCountsQuery = `SELECT recent.requests,
+ (SELECT count(*) FROM admissions WHERE org_id=$1 AND user_id=$2 AND NOT released),
+ COALESCE(EXTRACT(EPOCH FROM recent.first_at+interval '1 minute'-statement_timestamp()),1)
+ FROM (SELECT count(*) AS requests,min(created_at) AS first_at FROM admissions
+ WHERE org_id=$1 AND user_id=$2 AND created_at>statement_timestamp()-interval '1 minute') recent`
+
 func (s *Store) Admit(ctx context.Context, raw string) (l Lease, e error) {
 	e = s.tx(ctx, func(tx *sql.Tx) error {
 		p, e := s.keyPrincipal(ctx, tx, raw)
@@ -147,7 +157,7 @@ func (s *Store) Admit(ctx context.Context, raw string) (l Lease, e error) {
 		if e != nil {
 			return e
 		}
-		e = tx.QueryRowContext(ctx, `SELECT count(*) FILTER(WHERE created_at>clock_timestamp()-interval '1 minute'),count(*) FILTER(WHERE NOT released),COALESCE(EXTRACT(EPOCH FROM min(created_at) FILTER(WHERE created_at>clock_timestamp()-interval '1 minute')+interval '1 minute'-clock_timestamp()),1) FROM admissions WHERE org_id=$1 AND user_id=$2`, p.Scope.OrganizationID, p.Scope.UserID).Scan(&n, &active, &retry)
+		e = tx.QueryRowContext(ctx, admissionCountsQuery, p.Scope.OrganizationID, p.Scope.UserID).Scan(&n, &active, &retry)
 		if e != nil {
 			return e
 		}
