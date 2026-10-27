@@ -51,7 +51,7 @@ Rsbuild owns build and development diagnostics. The affected CI runner records t
 
 ## Dependencies and Integrations
 
-Use the workspace's pinned `@rsbuild/core` and TypeScript versions. The pnpm workspace glob discovers the app. Package-local Turbo configuration declares the test's generated `dist/**` output. Cloudflare Pages serves the build; no other project depends on this app.
+Use the workspace's pinned `@rsbuild/core` and TypeScript versions. Declare Node.js 24 types directly for the Node APIs used by the build configuration; do not rely on another workspace's test runner to supply them. The pnpm workspace glob discovers the app. Package-local Turbo configuration declares the test's generated `dist/**` output. Cloudflare Pages serves the build; no other project depends on this app.
 
 ## Change Triggers
 
