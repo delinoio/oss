@@ -75,12 +75,19 @@ func (s *server) handler() http.Handler {
 	path, h = rpc.NewClientServiceHandler(m, options...)
 	mux.Handle(path, m.clientOnly(h))
 	mux.HandleFunc("/v1/", s.serveInference)
+	mux.HandleFunc("/backend-api/codex/", s.serveInference)
 	if s.console != nil {
 		mux.Handle("/", s.console)
 	}
 	return s.telemetry.middleware(mux)
 }
 func (s *server) serveInference(w http.ResponseWriter, r *http.Request) {
+	// Normalize before HTTP and WebSocket dispatch so the deployed mux exposes
+	// the same compatibility alias as the shared inference handler.
+	if strings.HasPrefix(r.URL.Path, "/backend-api/codex/") {
+		r = r.Clone(r.Context())
+		r.URL.Path = "/v1/" + strings.TrimPrefix(r.URL.Path, "/backend-api/codex/")
+	}
 	// Settings are read for every admission; a DB outage cannot use old destination policy.
 	settings, e := s.store.Settings(r.Context())
 	if e != nil {
