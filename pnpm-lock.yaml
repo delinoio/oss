@@ -50,6 +50,9 @@ importers:
       clibox-prebuilt:
         specifier: npm:@delino/clibox@0.1.6
         version: '@delino/clibox@0.1.6'
+      jose:
+        specifier: 6.2.12
+        version: 6.2.12
       js-yaml:
         specifier: 4.3.2
         version: 4.3.2
@@ -118,15 +121,6 @@ importers:
         specifier: 4.1.11
         version: 4.1.11(@types/node@25.5.0)(jsdom@20.0.3)(vite@8.3.4(@types/node@25.5.0)(esbuild@0.28.2)(jiti@2.6.1)(terser@5.46.1)(tsx@4.20.6))
 
-  apps/labs-site:
-    devDependencies:
-      '@rsbuild/core':
-        specifier: 2.1.10
-        version: 2.1.10
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-
   apps/labs-docs:
     devDependencies:
       '@rspress/core':
@@ -135,6 +129,15 @@ importers:
       entities:
         specifier: 6.0.1
         version: 6.0.1
+
+  apps/labs-site:
+    devDependencies:
+      '@rsbuild/core':
+        specifier: 2.1.10
+        version: 2.1.10
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
 
   apps/public-docs:
     devDependencies:
@@ -1867,6 +1870,9 @@ packages:
   jiti@2.6.1:
     resolution: {integrity: sha512-ekilCSN1jwRvIbgeg/57YFh8qQDNbwDb9xT/qu2DAHbFFZUicIl4ygVaAvzveMhMVr3LnpSKTNnwt8PoOfmKhQ==}
     hasBin: true
+
+  jose@6.2.12:
+    resolution: {integrity: sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==}
 
   js-tokens@4.0.0:
     resolution: {integrity: sha512-RdJUflcE3cUzKiMqQgsCu06FPu9UdIJO0beYbPhHN4k6apgJtifcoCtT9bcxOpYBtpD2kCM6Sbzg4CausW/PKQ==}
@@ -4434,6 +4440,8 @@ snapshots:
 
   jiti@2.6.1:
     optional: true
+
+  jose@6.2.12: {}
 
   js-tokens@4.0.0: {}
 

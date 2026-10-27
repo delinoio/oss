@@ -12,9 +12,13 @@ Provide a standalone static marketing site for Delino Labs at `https://labs.deli
 
 - `apps/labs-site`: static HTML, optional browser TypeScript, build configuration, and Cloudflare Pages configuration.
 
+- `scripts/localization`: shared local translation generation and offline validation.
+
 ## Domain Contract Documents
 
 - [Marketing site foundation](apps-labs-site-foundation.md)
+
+- [Shared Labs localization](apps-labs-localization-contract.md)
 
 ## Cross-Domain Invariants
 
