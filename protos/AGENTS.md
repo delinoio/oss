@@ -9,6 +9,7 @@
 - Follow root `AGENTS.md` and the owning project/domain contracts.
 
 - Write schemas and comments in English.
+- Generate Go bindings beside their schemas as defined in the [protocol contract](../docs/protos-async-commit-hook-v1-contract.md). Do not enable output-directory cleaning for the shared source tree.
 
 ## Owning contracts
 

@@ -30,6 +30,28 @@ try {
     original,
   );
   const baseline = JSON.parse(readFileSync(original, "utf8"));
+  // Go bindings moved beside the ach schema. Accept only that exact forward
+  // migration, leaving FILE checks active for fields, other files and future
+  // Go package changes. Remove this projection once supported baselines no
+  // longer contain the old generated-tree import path.
+  const achFile = "async_commit_hook/v1/ach.proto";
+  const achPackage = "async_commit_hook.v1";
+  const previousGoPackage =
+    "github.com/delinoio/oss/protos/gen/go/async_commit_hook/v1;achv1";
+  const colocatedGoPackage =
+    "github.com/delinoio/oss/protos/async_commit_hook/v1;achv1";
+  const previousAch = baseline.file.find(
+    (file) => file.name === achFile && file.package === achPackage,
+  );
+  if (previousAch?.options?.goPackage === previousGoPackage) {
+    const current = join(temporary, "current.json");
+    run("build", "--as-file-descriptor-set", "--output", current);
+    const currentAch = JSON.parse(readFileSync(current, "utf8")).file.find(
+      (file) => file.name === achFile && file.package === achPackage,
+    );
+    if (currentAch?.options?.goPackage === colocatedGoPackage)
+      previousAch.options.goPackage = colocatedGoPackage;
+  }
   // DevHud and DeliDev retired their APIs; Delcore and bundlewhy moved repositories. Keep FILE
   // checks for owned packages. Remove this projection once all baselines
   // omit the retired and transferred schemas.

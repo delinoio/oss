@@ -14,8 +14,8 @@ import (
 
 	"connectrpc.com/connect"
 	"github.com/delinoio/oss/cmds/async-commit-hook/internal/webassets"
-	pb "github.com/delinoio/oss/protos/gen/go/async_commit_hook/v1"
-	"github.com/delinoio/oss/protos/gen/go/async_commit_hook/v1/achv1connect"
+	pb "github.com/delinoio/oss/protos/async_commit_hook/v1"
+	"github.com/delinoio/oss/protos/async_commit_hook/v1/achv1connect"
 )
 
 type API struct{ s *Service }

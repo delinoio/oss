@@ -13,7 +13,6 @@ define.fmt({
     "**/third-party/**",
     "**/testdata/**",
     "**/fixtures/**",
-    "protos/gen/**",
     "packages/*/src/gen/**",
     "**/*.generated.*",
     "**/pnpm-lock.yaml",

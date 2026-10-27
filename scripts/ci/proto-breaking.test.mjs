@@ -84,6 +84,17 @@ test("schema baseline comparison ignores unavailable LFS assets but still reject
     "protos/devhud/v1/retired.proto",
     'syntax = "proto3";\npackage devhud.v1;\nimport "google/protobuf/timestamp.proto";\nimport "google/protobuf/duration.proto";\nmessage Retired { google.protobuf.Timestamp at = 1; google.protobuf.Duration delay = 2; }\n',
   );
+  const oldGoPackage =
+    "github.com/delinoio/oss/protos/gen/go/async_commit_hook/v1;achv1";
+  const newGoPackage =
+    "github.com/delinoio/oss/protos/async_commit_hook/v1;achv1";
+  const achPath = "protos/async_commit_hook/v1/ach.proto";
+  const achSchema = `syntax = "proto3";
+package async_commit_hook.v1;
+option go_package = "${oldGoPackage}";
+message Fixture { string value = 1; }
+`;
+  write(achPath, achSchema);
   git("add", "--all");
   git("commit", "-m", "schema baseline with unavailable LFS asset");
   write(
@@ -122,6 +133,38 @@ test("schema baseline comparison ignores unavailable LFS assets but still reject
   let result = run(baseline);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(existsSync(join(cwd, ".git/lfs/objects/aa/aa", oid)), false);
+  const colocatedSchema = achSchema.replace(oldGoPackage, newGoPackage);
+  write(achPath, colocatedSchema);
+  result = run(baseline);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  // The path migration must not hide field deletion or arbitrary Go paths.
+  write(achPath, colocatedSchema.replace("string value = 1;", ""));
+  result = run(baseline);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(
+    result.stdout + result.stderr,
+    /Previously present field.*value/u,
+  );
+  write(
+    achPath,
+    colocatedSchema.replace(newGoPackage, "example.invalid/other;achv1"),
+  );
+  result = run(baseline);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /go_package/u);
+  write(achPath, colocatedSchema);
+  write(
+    "protos/example/v1/common.proto",
+    schema.replace(
+      "message Fixture",
+      'option go_package = "example.invalid/other";\nmessage Fixture',
+    ),
+  );
+  result = run(baseline);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /go_package/u);
+  write("protos/example/v1/common.proto", schema);
+
   write(
     "protos/example/v1/common.proto",
     schema.replace("string value = 1;", "string value = 1; string added = 2;"),
