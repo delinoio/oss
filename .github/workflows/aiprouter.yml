@@ -150,6 +150,8 @@ jobs:
           RESULT: ${{ job.status }}
           AFFECTED: ${{ steps.affected.outputs.run }}
         run: |
-          echo "Affected: ${AFFECTED:-false}; result: $RESULT" >> "$GITHUB_STEP_SUMMARY"
-          echo 'Commands: pnpm install; generate:check; client typecheck/test; available apps test/build; go test -race ./servers/aiprouter/... ./cmds/aiprouter/... ./packages/aiprouter/... ./protos/aiprouter/... ./scripts/aiprouter/...; validate.sh; promtool test rules; compose-smoke.py; build-release.py; router-load.py' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Linux fixture/build checks only. No npm publication, deployment, real provider/account or native macOS/Windows acceptance. Router load uses seeded authentication and synthetic upstream responses; no live-provider capacity or SLO claim.' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo "Affected: ${AFFECTED:-false}; result: $RESULT"
+            echo 'Commands: pnpm install; generate:check; client typecheck/test; available apps test/build; go test -race ./servers/aiprouter/... ./cmds/aiprouter/... ./packages/aiprouter/... ./protos/aiprouter/... ./scripts/aiprouter/...; validate.sh; promtool test rules; compose-smoke.py; build-release.py; router-load.py'
+            echo 'Linux fixture/build checks only. No npm publication, deployment, real provider/account or native macOS/Windows acceptance. Router load uses seeded authentication and synthetic upstream responses; no live-provider capacity or SLO claim.'
+          } >> "$GITHUB_STEP_SUMMARY"
