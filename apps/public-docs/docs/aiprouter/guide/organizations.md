@@ -30,7 +30,7 @@ Open `/overview` to choose an organization and `/invitation` to accept an invita
 
 Cancel an invitation that is no longer needed. Wait at least one minute between resends to the same email. A manual resend invalidates the old link and pending delivery jobs, then starts a new seven-day lifetime. Use the newest email.
 
-SMTP delivery allows at most three attempts: the initial send, a retry after one minute, then a retry five minutes after the next failure. Only transient errors retry. Permanent errors fail immediately. Each attempt counts toward 100 attempts per organization per hour. Limited attempts wait for capacity but never send after expiry.
+SMTP delivery allows at most three attempts: the initial send, a retry after one minute, then a retry five minutes after the next failure. Only transient errors retry. Permanent errors fail immediately. Each attempt counts toward 100 attempts per organization per hour. Limited attempts wait for capacity but never send after expiry. In the invitation list, Sent means the email was submitted to the SMTP server; it does not confirm recipient delivery or acceptance, and a stored attempt time does not confirm a scheduled delivery.
 
 Automatic retries reuse the link; ambiguous SMTP completion can produce duplicate emails. Acceptance remains single-use. Final delivery failure invalidates the link. Recover by requesting a manual resend rather than reusing that link.
 
