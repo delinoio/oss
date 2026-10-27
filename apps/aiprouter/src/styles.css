@@ -1541,3 +1541,104 @@ dialog.hosted-dialog {
     grid-template-columns: 1fr;
   }
 }
+/* Connect provider / Edit connection editor. Scoped so other dialogs are unchanged. */
+.field-error {
+  color: var(--danger);
+  font-weight: 600;
+}
+.field [aria-invalid="true"] {
+  border-color: var(--danger);
+}
+dialog.connection-editor {
+  width: min(720px, calc(100% - 32px));
+  padding: 24px;
+  border-radius: 12px;
+}
+.connection-editor .dialog-heading {
+  margin-bottom: 4px;
+}
+.connection-editor-subtitle {
+  margin: 0 0 16px;
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.connection-group {
+  margin: 0 0 24px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--border);
+}
+.connection-group > h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+.connection-identity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  margin: 0 0 8px;
+}
+.connection-identity dt {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--secondary);
+}
+.connection-identity dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.connection-helper {
+  margin: 0 0 16px;
+  color: var(--secondary);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.connection-secret {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.connection-secret .field {
+  align-self: stretch;
+  margin-bottom: 0;
+}
+.form-error-summary ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.form-error-summary a {
+  color: inherit;
+  display: inline-block;
+  min-height: 24px;
+}
+.connection-editor-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-top: 8px;
+}
+.connection-editor-privacy {
+  margin: 0;
+  color: var(--secondary);
+  font-size: 14px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.connection-editor-footer .actions {
+  margin: 0;
+}
+@media (max-width: 767px) {
+  dialog.connection-editor {
+    width: calc(100% - 32px);
+    padding: 16px;
+  }
+  .connection-secret > .button {
+    width: 100%;
+  }
+  .connection-editor-footer .actions {
+    width: 100%;
+  }
+}
