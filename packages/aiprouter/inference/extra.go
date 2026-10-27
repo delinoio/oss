@@ -165,6 +165,7 @@ func boundedUpload(r *http.Request, max int64) ([]byte, error) {
 	return b, nil
 }
 func (h *Handler) contextRelay(ctx context.Context, w http.ResponseWriter, r *http.Request, p Principal, path string, rec *UsageRecord) error {
+	ctx = context.WithValue(ctx, inboundWireKey{}, Responses)
 	if h.c.Contexts == nil {
 		return &Error{409, "context_account_unavailable", 0}
 	}

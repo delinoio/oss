@@ -120,3 +120,5 @@ Update this contract, the project index, and affected producer/consumer contract
 - [Environment](repository-environment-contract.md)
 - [Licensing](repository-license-contract.md)
 - [Dependency security](repository-dependency-security-contract.md)
+
+The context command enables or disables the current profile key capability with explicit confirmation and binds a previously observed session. It never takes a provider secret or account ID. Codex configuration may opt into features.context_management through the existing preview, protected backup and restoration workflow; server capability activation is a separate explicit action.

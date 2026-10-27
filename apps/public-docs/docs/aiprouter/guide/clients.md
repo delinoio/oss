@@ -153,3 +153,14 @@ The pinned Private Inference build uses the gateway's model list instead of the 
 - To undo the manual setup, restore or clear the gateway values inside Cursor and revoke the dedicated AIPRouter key. For the relay option, stop/remove the relay and disconnect its profile when no longer needed. AIPRouter has no Cursor settings backup to restore automatically.
 
 No live Cursor sign-in, installed-app, platform, or provider acceptance is claimed. Cursor platform/build availability is separate from AIPRouter's CLI targets; in particular, the AIPRouter CLI does not target Windows ARM64.
+
+## Codex context management
+
+Context history and notes require explicit opt-in for your connected profile. They use your personal OpenAI OAuth account; API keys for other providers cannot substitute.
+
+1. Run `aiprouter context --profile default --action enable` and confirm the external-storage notice.
+2. Run `aiprouter configure --profile default --client codex --context-management`. Review and confirm the settings preview. Existing backup, consent and restoration rules still apply.
+3. Make a successful Responses request with the same session ID that the client sends in `session-id` or `thread-id`. The router records that session's exact account; it never picks a new account for existing history.
+4. Run `aiprouter context --profile default --action bind --session YOUR_SESSION_ID` and confirm registration. Unobserved or ambiguous sessions are refused.
+
+Bindings expire after 24 hours and are restricted to the original organization, user and profile key. Credential replacement requires a new observed session. `aiprouter context --profile default --action disable` removes the key's bindings. Provider history and notes may remain stored at the external provider; disabling the router capability does not delete them. These source workflows do not establish live provider or native-client acceptance.

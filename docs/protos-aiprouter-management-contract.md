@@ -85,3 +85,5 @@ Update this contract, the project index, and affected producer/consumer contract
 - [Environment](repository-environment-contract.md)
 - [Licensing](repository-license-contract.md)
 - [Dependency security](repository-dependency-security-contract.md)
+
+ClientService.ConfigureClientContext and BindClientContextSession are narrow, explicit inference-key client permissions. They affect only the authenticated key in its current organization/user scope; they confer no general management authority. Configuration requires explicit enable/disable. Binding confirms only a server-observed successful Responses request carrying the same session header, never a caller-supplied account or fresh pool selection.

@@ -1,0 +1,5 @@
+-- SPDX-License-Identifier: Apache-2.0
+CREATE TABLE IF NOT EXISTS {{schema}}.client_context_capabilities(org_id text NOT NULL,user_id text NOT NULL,key_id text PRIMARY KEY REFERENCES {{schema}}.api_keys ON DELETE CASCADE,version text NOT NULL,FOREIGN KEY(org_id,user_id) REFERENCES {{schema}}.memberships ON DELETE CASCADE);
+CREATE TABLE IF NOT EXISTS {{temp}}.client_context_bindings(org_id text NOT NULL,user_id text NOT NULL,key_id text NOT NULL REFERENCES {{schema}}.client_context_capabilities(key_id) ON DELETE CASCADE,session_hash text NOT NULL,account_id text NOT NULL,credential_version text NOT NULL,capability_version text NOT NULL,receipt text NOT NULL,value bytea NOT NULL,confirmed boolean NOT NULL DEFAULT false,ambiguous boolean NOT NULL DEFAULT false,expires_at timestamptz NOT NULL,PRIMARY KEY(key_id,session_hash),FOREIGN KEY(org_id,user_id) REFERENCES {{schema}}.memberships ON DELETE CASCADE);
+CREATE INDEX IF NOT EXISTS client_context_expiry ON {{temp}}.client_context_bindings(expires_at);
+INSERT INTO {{schema}}.schema_versions VALUES(13) ON CONFLICT DO NOTHING;

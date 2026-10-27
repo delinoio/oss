@@ -146,6 +146,14 @@ message DenyDeviceAuthorizationResponse {}
 
 // These inference-key scopes confer no management authority. Self-revoke must match the authenticated key.
 service ClientService {
+  // Explicit opt-in for this key only; never grants general management authority.
+  rpc ConfigureClientContext(ConfigureClientContextRequest) returns (ConfigureClientContextResponse) {
+    option (auth_scope) = AUTH_SCOPE_INFERENCE_KEY;
+  }
+  // Confirms an already observed session/account candidate; cannot choose an account.
+  rpc BindClientContextSession(BindClientContextSessionRequest) returns (BindClientContextSessionResponse) {
+    option (auth_scope) = AUTH_SCOPE_INFERENCE_KEY;
+  }
   rpc ListClientModels(ListClientModelsRequest) returns (ListClientModelsResponse) {
     option (auth_scope) = AUTH_SCOPE_INFERENCE_KEY;
   }
@@ -161,3 +169,14 @@ message RevokeCLIKeyRequest {
   string key_id = 1;
 }
 message RevokeCLIKeyResponse {}
+
+message ConfigureClientContextRequest {
+  bool enabled = 1;
+}
+message ConfigureClientContextResponse {}
+message BindClientContextSessionRequest {
+  string session_id = 1;
+}
+message BindClientContextSessionResponse {
+  google.protobuf.Timestamp expires_at = 1;
+}

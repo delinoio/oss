@@ -69,6 +69,12 @@ const (
 	// DeviceApprovalServiceDenyDeviceAuthorizationProcedure is the fully-qualified name of the
 	// DeviceApprovalService's DenyDeviceAuthorization RPC.
 	DeviceApprovalServiceDenyDeviceAuthorizationProcedure = "/aiprouter.v1.DeviceApprovalService/DenyDeviceAuthorization"
+	// ClientServiceConfigureClientContextProcedure is the fully-qualified name of the ClientService's
+	// ConfigureClientContext RPC.
+	ClientServiceConfigureClientContextProcedure = "/aiprouter.v1.ClientService/ConfigureClientContext"
+	// ClientServiceBindClientContextSessionProcedure is the fully-qualified name of the ClientService's
+	// BindClientContextSession RPC.
+	ClientServiceBindClientContextSessionProcedure = "/aiprouter.v1.ClientService/BindClientContextSession"
 	// ClientServiceListClientModelsProcedure is the fully-qualified name of the ClientService's
 	// ListClientModels RPC.
 	ClientServiceListClientModelsProcedure = "/aiprouter.v1.ClientService/ListClientModels"
@@ -474,6 +480,10 @@ func (UnimplementedDeviceApprovalServiceHandler) DenyDeviceAuthorization(context
 
 // ClientServiceClient is a client for the aiprouter.v1.ClientService service.
 type ClientServiceClient interface {
+	// Explicit opt-in for this key only; never grants general management authority.
+	ConfigureClientContext(context.Context, *connect.Request[v1.ConfigureClientContextRequest]) (*connect.Response[v1.ConfigureClientContextResponse], error)
+	// Confirms an already observed session/account candidate; cannot choose an account.
+	BindClientContextSession(context.Context, *connect.Request[v1.BindClientContextSessionRequest]) (*connect.Response[v1.BindClientContextSessionResponse], error)
 	ListClientModels(context.Context, *connect.Request[v1.ListClientModelsRequest]) (*connect.Response[v1.ListClientModelsResponse], error)
 	RevokeCLIKey(context.Context, *connect.Request[v1.RevokeCLIKeyRequest]) (*connect.Response[v1.RevokeCLIKeyResponse], error)
 }
@@ -489,6 +499,18 @@ func NewClientServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 	baseURL = strings.TrimRight(baseURL, "/")
 	clientServiceMethods := v1.File_aiprouter_v1_device_proto.Services().ByName("ClientService").Methods()
 	return &clientServiceClient{
+		configureClientContext: connect.NewClient[v1.ConfigureClientContextRequest, v1.ConfigureClientContextResponse](
+			httpClient,
+			baseURL+ClientServiceConfigureClientContextProcedure,
+			connect.WithSchema(clientServiceMethods.ByName("ConfigureClientContext")),
+			connect.WithClientOptions(opts...),
+		),
+		bindClientContextSession: connect.NewClient[v1.BindClientContextSessionRequest, v1.BindClientContextSessionResponse](
+			httpClient,
+			baseURL+ClientServiceBindClientContextSessionProcedure,
+			connect.WithSchema(clientServiceMethods.ByName("BindClientContextSession")),
+			connect.WithClientOptions(opts...),
+		),
 		listClientModels: connect.NewClient[v1.ListClientModelsRequest, v1.ListClientModelsResponse](
 			httpClient,
 			baseURL+ClientServiceListClientModelsProcedure,
@@ -506,8 +528,20 @@ func NewClientServiceClient(httpClient connect.HTTPClient, baseURL string, opts 
 
 // clientServiceClient implements ClientServiceClient.
 type clientServiceClient struct {
-	listClientModels *connect.Client[v1.ListClientModelsRequest, v1.ListClientModelsResponse]
-	revokeCLIKey     *connect.Client[v1.RevokeCLIKeyRequest, v1.RevokeCLIKeyResponse]
+	configureClientContext   *connect.Client[v1.ConfigureClientContextRequest, v1.ConfigureClientContextResponse]
+	bindClientContextSession *connect.Client[v1.BindClientContextSessionRequest, v1.BindClientContextSessionResponse]
+	listClientModels         *connect.Client[v1.ListClientModelsRequest, v1.ListClientModelsResponse]
+	revokeCLIKey             *connect.Client[v1.RevokeCLIKeyRequest, v1.RevokeCLIKeyResponse]
+}
+
+// ConfigureClientContext calls aiprouter.v1.ClientService.ConfigureClientContext.
+func (c *clientServiceClient) ConfigureClientContext(ctx context.Context, req *connect.Request[v1.ConfigureClientContextRequest]) (*connect.Response[v1.ConfigureClientContextResponse], error) {
+	return c.configureClientContext.CallUnary(ctx, req)
+}
+
+// BindClientContextSession calls aiprouter.v1.ClientService.BindClientContextSession.
+func (c *clientServiceClient) BindClientContextSession(ctx context.Context, req *connect.Request[v1.BindClientContextSessionRequest]) (*connect.Response[v1.BindClientContextSessionResponse], error) {
+	return c.bindClientContextSession.CallUnary(ctx, req)
 }
 
 // ListClientModels calls aiprouter.v1.ClientService.ListClientModels.
@@ -522,6 +556,10 @@ func (c *clientServiceClient) RevokeCLIKey(ctx context.Context, req *connect.Req
 
 // ClientServiceHandler is an implementation of the aiprouter.v1.ClientService service.
 type ClientServiceHandler interface {
+	// Explicit opt-in for this key only; never grants general management authority.
+	ConfigureClientContext(context.Context, *connect.Request[v1.ConfigureClientContextRequest]) (*connect.Response[v1.ConfigureClientContextResponse], error)
+	// Confirms an already observed session/account candidate; cannot choose an account.
+	BindClientContextSession(context.Context, *connect.Request[v1.BindClientContextSessionRequest]) (*connect.Response[v1.BindClientContextSessionResponse], error)
 	ListClientModels(context.Context, *connect.Request[v1.ListClientModelsRequest]) (*connect.Response[v1.ListClientModelsResponse], error)
 	RevokeCLIKey(context.Context, *connect.Request[v1.RevokeCLIKeyRequest]) (*connect.Response[v1.RevokeCLIKeyResponse], error)
 }
@@ -533,6 +571,18 @@ type ClientServiceHandler interface {
 // and JSON codecs. They also support gzip compression.
 func NewClientServiceHandler(svc ClientServiceHandler, opts ...connect.HandlerOption) (string, http.Handler) {
 	clientServiceMethods := v1.File_aiprouter_v1_device_proto.Services().ByName("ClientService").Methods()
+	clientServiceConfigureClientContextHandler := connect.NewUnaryHandler(
+		ClientServiceConfigureClientContextProcedure,
+		svc.ConfigureClientContext,
+		connect.WithSchema(clientServiceMethods.ByName("ConfigureClientContext")),
+		connect.WithHandlerOptions(opts...),
+	)
+	clientServiceBindClientContextSessionHandler := connect.NewUnaryHandler(
+		ClientServiceBindClientContextSessionProcedure,
+		svc.BindClientContextSession,
+		connect.WithSchema(clientServiceMethods.ByName("BindClientContextSession")),
+		connect.WithHandlerOptions(opts...),
+	)
 	clientServiceListClientModelsHandler := connect.NewUnaryHandler(
 		ClientServiceListClientModelsProcedure,
 		svc.ListClientModels,
@@ -547,6 +597,10 @@ func NewClientServiceHandler(svc ClientServiceHandler, opts ...connect.HandlerOp
 	)
 	return "/aiprouter.v1.ClientService/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
+		case ClientServiceConfigureClientContextProcedure:
+			clientServiceConfigureClientContextHandler.ServeHTTP(w, r)
+		case ClientServiceBindClientContextSessionProcedure:
+			clientServiceBindClientContextSessionHandler.ServeHTTP(w, r)
 		case ClientServiceListClientModelsProcedure:
 			clientServiceListClientModelsHandler.ServeHTTP(w, r)
 		case ClientServiceRevokeCLIKeyProcedure:
@@ -559,6 +613,14 @@ func NewClientServiceHandler(svc ClientServiceHandler, opts ...connect.HandlerOp
 
 // UnimplementedClientServiceHandler returns CodeUnimplemented from all methods.
 type UnimplementedClientServiceHandler struct{}
+
+func (UnimplementedClientServiceHandler) ConfigureClientContext(context.Context, *connect.Request[v1.ConfigureClientContextRequest]) (*connect.Response[v1.ConfigureClientContextResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aiprouter.v1.ClientService.ConfigureClientContext is not implemented"))
+}
+
+func (UnimplementedClientServiceHandler) BindClientContextSession(context.Context, *connect.Request[v1.BindClientContextSessionRequest]) (*connect.Response[v1.BindClientContextSessionResponse], error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aiprouter.v1.ClientService.BindClientContextSession is not implemented"))
+}
 
 func (UnimplementedClientServiceHandler) ListClientModels(context.Context, *connect.Request[v1.ListClientModelsRequest]) (*connect.Response[v1.ListClientModelsResponse], error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, errors.New("aiprouter.v1.ClientService.ListClientModels is not implemented"))

@@ -18,22 +18,23 @@ import (
 // An adapter is allocated per HTTP request or WebSocket. It never caches authorization.
 // WebSocket execution admits one active turn at a time; each turn replaces its lease.
 type inferenceAdapter struct {
-	compactionHandoff            *compactionHandoffDispatch
-	native                       map[string]nativeSelectionState
-	jev                          *jevRequestPin
-	s                            *store.Store
-	telemetry                    *telemetry
-	mu                           sync.Mutex
-	lease                        store.Lease
-	connections                  map[string]providerData
-	prices                       *pricing.Snapshot
-	selections                   map[string]routeSelection
-	versions                     map[string]string
-	activeAccount, activeVersion string
-	activeTarget                 inference.Target
-	mistral                      map[string]mistralWait
-	releaseCompleted             func(store.Lease, func(context.Context))
-	attempted                    map[string]map[string]bool
+	contextSession, contextReceipt string
+	compactionHandoff              *compactionHandoffDispatch
+	native                         map[string]nativeSelectionState
+	jev                            *jevRequestPin
+	s                              *store.Store
+	telemetry                      *telemetry
+	mu                             sync.Mutex
+	lease                          store.Lease
+	connections                    map[string]providerData
+	prices                         *pricing.Snapshot
+	selections                     map[string]routeSelection
+	versions                       map[string]string
+	activeAccount, activeVersion   string
+	activeTarget                   inference.Target
+	mistral                        map[string]mistralWait
+	releaseCompleted               func(store.Lease, func(context.Context))
+	attempted                      map[string]map[string]bool
 }
 
 func inferenceError(e error) error {
@@ -124,6 +125,16 @@ func (a *inferenceAdapter) BeforeSend(ctx context.Context, p inference.Principal
 // Dispatch is called by the transport around its first bounded plaintext write.
 // DNS/TCP/TLS and response headers are outside the organization transaction gate.
 func (a *inferenceAdapter) Dispatch(ctx context.Context, p inference.Principal, start func(context.Context) error) error {
+	a.mu.Lock()
+	session, receipt := a.contextSession, a.contextReceipt
+	a.mu.Unlock()
+	if session != "" {
+		l, e := a.current(p)
+		if e != nil {
+			return e
+		}
+		return contextError(a.s.WithClientContextDispatch(ctx, l, session, receipt, start))
+	}
 	if e := a.awaitMistral(ctx, p); e != nil {
 		return e
 	}

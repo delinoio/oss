@@ -102,7 +102,7 @@ func openBrowser(url string) error {
 }
 func (a *Application) Run(ctx context.Context, args []string) error {
 	if len(args) == 0 || args[0] == "help" || args[0] == "--help" {
-		fmt.Fprintln(a.Out, "aiprouter connect|profiles|configure|disconnect|restore|port|service|relay|clients|client-profiles|recover|native\nFlags: --profile NAME --server HTTPS_ORIGIN --client CLIENT --port PORT --state-dir ABSOLUTE_PATH\nservice: --action install|status|stop|remove\nnative: --action plan|enable|status|stop|disable|serve|launch --mode MODE --build BUILD --native-port PORT\nconfigure: --mode MODE selects an enabled, trusted native runtime; omit for gateway settings.\nDisconnect: offers settings restoration; preserves conflicts and reports incomplete revocation.\nConfiguration previews always require interactive confirmation; remote-key storage requires separate consent.\nSet NO_COLOR=1 to disable ANSI log colors.")
+		fmt.Fprintln(a.Out, "aiprouter connect|profiles|configure|disconnect|restore|port|service|relay|clients|client-profiles|recover|native|context\nFlags: --profile NAME --server HTTPS_ORIGIN --client CLIENT --port PORT --state-dir ABSOLUTE_PATH\ncontext: --action enable|disable|bind --session SESSION_ID; configure --client codex --context-management previews local opt-in.\nservice: --action install|status|stop|remove\nnative: --action plan|enable|status|stop|disable|serve|launch --mode MODE --build BUILD --native-port PORT\nconfigure: --mode MODE selects an enabled, trusted native runtime; omit for gateway settings.\nDisconnect: offers settings restoration; preserves conflicts and reports incomplete revocation.\nConfiguration previews always require interactive confirmation; remote-key storage requires separate consent.\nSet NO_COLOR=1 to disable ANSI log colors.")
 		return nil
 	}
 	command := args[0]
@@ -115,6 +115,8 @@ func (a *Application) Run(ctx context.Context, args []string) error {
 	stateDir := flags.String("state-dir", a.Disk.Root, "")
 	action := flags.String("action", "status", "")
 	deviceName := flags.String("device-name", "", "")
+	contextSession := flags.String("session", "", "")
+	contextManagement := flags.Bool("context-management", false, "")
 	nativeMode := flags.String("mode", "", "")
 	nativeBuild := flags.String("build", "", "")
 	nativePort := flags.Int("native-port", DefaultNativePort, "")
@@ -269,6 +271,8 @@ func (a *Application) Run(ctx context.Context, args []string) error {
 		return errors.New("profile is disconnected; revoke the outstanding key in the web console")
 	}
 	switch command {
+	case "context":
+		return a.configureContext(ctx, p, *action, *contextSession)
 	case "service":
 		switch *action {
 		case "install":
@@ -309,6 +313,15 @@ func (a *Application) Run(ctx context.Context, args []string) error {
 		changes, e := a.planConfiguration(ctx, s, *client, p, key, models, NativeCompatibilityMode(*nativeMode))
 		if e != nil {
 			return e
+		}
+		if *contextManagement {
+			if *client != "codex" || *nativeMode != "" {
+				return errors.New("context management requires Codex gateway configuration")
+			}
+			changes, e = withContextManagement(changes)
+			if e != nil {
+				return e
+			}
 		}
 		Preview(a.Out, changes)
 		if spec.Loopback {

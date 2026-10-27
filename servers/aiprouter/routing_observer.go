@@ -16,6 +16,9 @@ func (a *inferenceAdapter) ObserveResponse(ctx context.Context, p inference.Prin
 	if err := a.observeNativeResponse(ctx, p, t, c, status, headers); err != nil {
 		return err
 	}
+	if err := a.captureContext(ctx, p, t, c, status); err != nil {
+		return err
+	}
 	return a.collectNormalQuota(ctx, p, t, c)
 }
 

@@ -1350,6 +1350,174 @@ func (*RevokeCLIKeyResponse) Descriptor() ([]byte, []int) {
 	return file_aiprouter_v1_device_proto_rawDescGZIP(), []int{25}
 }
 
+type ConfigureClientContextRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Enabled       bool                   `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfigureClientContextRequest) Reset() {
+	*x = ConfigureClientContextRequest{}
+	mi := &file_aiprouter_v1_device_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfigureClientContextRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfigureClientContextRequest) ProtoMessage() {}
+
+func (x *ConfigureClientContextRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aiprouter_v1_device_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfigureClientContextRequest.ProtoReflect.Descriptor instead.
+func (*ConfigureClientContextRequest) Descriptor() ([]byte, []int) {
+	return file_aiprouter_v1_device_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ConfigureClientContextRequest) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+type ConfigureClientContextResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ConfigureClientContextResponse) Reset() {
+	*x = ConfigureClientContextResponse{}
+	mi := &file_aiprouter_v1_device_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ConfigureClientContextResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ConfigureClientContextResponse) ProtoMessage() {}
+
+func (x *ConfigureClientContextResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aiprouter_v1_device_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ConfigureClientContextResponse.ProtoReflect.Descriptor instead.
+func (*ConfigureClientContextResponse) Descriptor() ([]byte, []int) {
+	return file_aiprouter_v1_device_proto_rawDescGZIP(), []int{27}
+}
+
+type BindClientContextSessionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BindClientContextSessionRequest) Reset() {
+	*x = BindClientContextSessionRequest{}
+	mi := &file_aiprouter_v1_device_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BindClientContextSessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BindClientContextSessionRequest) ProtoMessage() {}
+
+func (x *BindClientContextSessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_aiprouter_v1_device_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BindClientContextSessionRequest.ProtoReflect.Descriptor instead.
+func (*BindClientContextSessionRequest) Descriptor() ([]byte, []int) {
+	return file_aiprouter_v1_device_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *BindClientContextSessionRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type BindClientContextSessionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,1,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BindClientContextSessionResponse) Reset() {
+	*x = BindClientContextSessionResponse{}
+	mi := &file_aiprouter_v1_device_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BindClientContextSessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BindClientContextSessionResponse) ProtoMessage() {}
+
+func (x *BindClientContextSessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_aiprouter_v1_device_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BindClientContextSessionResponse.ProtoReflect.Descriptor instead.
+func (*BindClientContextSessionResponse) Descriptor() ([]byte, []int) {
+	return file_aiprouter_v1_device_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *BindClientContextSessionResponse) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
 var File_aiprouter_v1_device_proto protoreflect.FileDescriptor
 
 const file_aiprouter_v1_device_proto_rawDesc = "" +
@@ -1433,7 +1601,16 @@ const file_aiprouter_v1_device_proto_rawDesc = "" +
 	"\x06models\x18\x01 \x03(\v2\x13.aiprouter.v1.ModelR\x06models\",\n" +
 	"\x13RevokeCLIKeyRequest\x12\x15\n" +
 	"\x06key_id\x18\x01 \x01(\tR\x05keyId\"\x16\n" +
-	"\x14RevokeCLIKeyResponse2\x85\x02\n" +
+	"\x14RevokeCLIKeyResponse\"9\n" +
+	"\x1dConfigureClientContextRequest\x12\x18\n" +
+	"\aenabled\x18\x01 \x01(\bR\aenabled\" \n" +
+	"\x1eConfigureClientContextResponse\"@\n" +
+	"\x1fBindClientContextSessionRequest\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tR\tsessionId\"]\n" +
+	" BindClientContextSessionResponse\x129\n" +
+	"\n" +
+	"expires_at\x18\x01 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt2\x85\x02\n" +
 	"\n" +
 	"KeyService\x12R\n" +
 	"\tCreateKey\x12\x1e.aiprouter.v1.CreateKeyRequest\x1a\x1f.aiprouter.v1.CreateKeyResponse\"\x04\xc8\xf3\x18\x03\x12O\n" +
@@ -1447,8 +1624,10 @@ const file_aiprouter_v1_device_proto_rawDesc = "" +
 	"\x15DeviceApprovalService\x12y\n" +
 	"\x16GetDeviceAuthorization\x12+.aiprouter.v1.GetDeviceAuthorizationRequest\x1a,.aiprouter.v1.GetDeviceAuthorizationResponse\"\x04\xc8\xf3\x18\x02\x12\x85\x01\n" +
 	"\x1aApproveDeviceAuthorization\x12/.aiprouter.v1.ApproveDeviceAuthorizationRequest\x1a0.aiprouter.v1.ApproveDeviceAuthorizationResponse\"\x04\xc8\xf3\x18\x03\x12|\n" +
-	"\x17DenyDeviceAuthorization\x12,.aiprouter.v1.DenyDeviceAuthorizationRequest\x1a-.aiprouter.v1.DenyDeviceAuthorizationResponse\"\x04\xc8\xf3\x18\x022\xd5\x01\n" +
-	"\rClientService\x12g\n" +
+	"\x17DenyDeviceAuthorization\x12,.aiprouter.v1.DenyDeviceAuthorizationRequest\x1a-.aiprouter.v1.DenyDeviceAuthorizationResponse\"\x04\xc8\xf3\x18\x022\xd1\x03\n" +
+	"\rClientService\x12y\n" +
+	"\x16ConfigureClientContext\x12+.aiprouter.v1.ConfigureClientContextRequest\x1a,.aiprouter.v1.ConfigureClientContextResponse\"\x04\xc8\xf3\x18\b\x12\x7f\n" +
+	"\x18BindClientContextSession\x12-.aiprouter.v1.BindClientContextSessionRequest\x1a..aiprouter.v1.BindClientContextSessionResponse\"\x04\xc8\xf3\x18\b\x12g\n" +
 	"\x10ListClientModels\x12%.aiprouter.v1.ListClientModelsRequest\x1a&.aiprouter.v1.ListClientModelsResponse\"\x04\xc8\xf3\x18\b\x12[\n" +
 	"\fRevokeCLIKey\x12!.aiprouter.v1.RevokeCLIKeyRequest\x1a\".aiprouter.v1.RevokeCLIKeyResponse\"\x04\xc8\xf3\x18\bB9Z7github.com/delinoio/oss/protos/aiprouter/v1;aiprouterv1b\x06proto3"
 
@@ -1464,7 +1643,7 @@ func file_aiprouter_v1_device_proto_rawDescGZIP() []byte {
 	return file_aiprouter_v1_device_proto_rawDescData
 }
 
-var file_aiprouter_v1_device_proto_msgTypes = make([]protoimpl.MessageInfo, 26)
+var file_aiprouter_v1_device_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_aiprouter_v1_device_proto_goTypes = []any{
 	(*DeviceKeyResult)(nil),                    // 0: aiprouter.v1.DeviceKeyResult
 	(*DeviceAuthorization)(nil),                // 1: aiprouter.v1.DeviceAuthorization
@@ -1492,59 +1671,68 @@ var file_aiprouter_v1_device_proto_goTypes = []any{
 	(*ListClientModelsResponse)(nil),           // 23: aiprouter.v1.ListClientModelsResponse
 	(*RevokeCLIKeyRequest)(nil),                // 24: aiprouter.v1.RevokeCLIKeyRequest
 	(*RevokeCLIKeyResponse)(nil),               // 25: aiprouter.v1.RevokeCLIKeyResponse
-	(*timestamppb.Timestamp)(nil),              // 26: google.protobuf.Timestamp
-	(DeviceAuthorizationState)(0),              // 27: aiprouter.v1.DeviceAuthorizationState
-	(*InferenceKey)(nil),                       // 28: aiprouter.v1.InferenceKey
-	(*PageRequest)(nil),                        // 29: aiprouter.v1.PageRequest
-	(*PageResponse)(nil),                       // 30: aiprouter.v1.PageResponse
-	(*Model)(nil),                              // 31: aiprouter.v1.Model
+	(*ConfigureClientContextRequest)(nil),      // 26: aiprouter.v1.ConfigureClientContextRequest
+	(*ConfigureClientContextResponse)(nil),     // 27: aiprouter.v1.ConfigureClientContextResponse
+	(*BindClientContextSessionRequest)(nil),    // 28: aiprouter.v1.BindClientContextSessionRequest
+	(*BindClientContextSessionResponse)(nil),   // 29: aiprouter.v1.BindClientContextSessionResponse
+	(*timestamppb.Timestamp)(nil),              // 30: google.protobuf.Timestamp
+	(DeviceAuthorizationState)(0),              // 31: aiprouter.v1.DeviceAuthorizationState
+	(*InferenceKey)(nil),                       // 32: aiprouter.v1.InferenceKey
+	(*PageRequest)(nil),                        // 33: aiprouter.v1.PageRequest
+	(*PageResponse)(nil),                       // 34: aiprouter.v1.PageResponse
+	(*Model)(nil),                              // 35: aiprouter.v1.Model
 }
 var file_aiprouter_v1_device_proto_depIdxs = []int32{
-	26, // 0: aiprouter.v1.DeviceKeyResult.key_expires_at:type_name -> google.protobuf.Timestamp
-	27, // 1: aiprouter.v1.DeviceAuthorization.state:type_name -> aiprouter.v1.DeviceAuthorizationState
-	26, // 2: aiprouter.v1.DeviceAuthorization.expires_at:type_name -> google.protobuf.Timestamp
-	26, // 3: aiprouter.v1.DeviceAuthorization.key_expires_at:type_name -> google.protobuf.Timestamp
-	26, // 4: aiprouter.v1.CreateKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
-	28, // 5: aiprouter.v1.CreateKeyResponse.key:type_name -> aiprouter.v1.InferenceKey
-	29, // 6: aiprouter.v1.ListKeysRequest.page:type_name -> aiprouter.v1.PageRequest
-	28, // 7: aiprouter.v1.ListKeysResponse.keys:type_name -> aiprouter.v1.InferenceKey
-	30, // 8: aiprouter.v1.ListKeysResponse.page:type_name -> aiprouter.v1.PageResponse
-	26, // 9: aiprouter.v1.BeginDeviceAuthorizationResponse.expires_at:type_name -> google.protobuf.Timestamp
-	27, // 10: aiprouter.v1.PollDeviceAuthorizationResponse.state:type_name -> aiprouter.v1.DeviceAuthorizationState
+	30, // 0: aiprouter.v1.DeviceKeyResult.key_expires_at:type_name -> google.protobuf.Timestamp
+	31, // 1: aiprouter.v1.DeviceAuthorization.state:type_name -> aiprouter.v1.DeviceAuthorizationState
+	30, // 2: aiprouter.v1.DeviceAuthorization.expires_at:type_name -> google.protobuf.Timestamp
+	30, // 3: aiprouter.v1.DeviceAuthorization.key_expires_at:type_name -> google.protobuf.Timestamp
+	30, // 4: aiprouter.v1.CreateKeyRequest.expires_at:type_name -> google.protobuf.Timestamp
+	32, // 5: aiprouter.v1.CreateKeyResponse.key:type_name -> aiprouter.v1.InferenceKey
+	33, // 6: aiprouter.v1.ListKeysRequest.page:type_name -> aiprouter.v1.PageRequest
+	32, // 7: aiprouter.v1.ListKeysResponse.keys:type_name -> aiprouter.v1.InferenceKey
+	34, // 8: aiprouter.v1.ListKeysResponse.page:type_name -> aiprouter.v1.PageResponse
+	30, // 9: aiprouter.v1.BeginDeviceAuthorizationResponse.expires_at:type_name -> google.protobuf.Timestamp
+	31, // 10: aiprouter.v1.PollDeviceAuthorizationResponse.state:type_name -> aiprouter.v1.DeviceAuthorizationState
 	0,  // 11: aiprouter.v1.PollDeviceAuthorizationResponse.result:type_name -> aiprouter.v1.DeviceKeyResult
 	1,  // 12: aiprouter.v1.GetDeviceAuthorizationResponse.authorization:type_name -> aiprouter.v1.DeviceAuthorization
-	26, // 13: aiprouter.v1.ApproveDeviceAuthorizationRequest.key_expires_at:type_name -> google.protobuf.Timestamp
+	30, // 13: aiprouter.v1.ApproveDeviceAuthorizationRequest.key_expires_at:type_name -> google.protobuf.Timestamp
 	1,  // 14: aiprouter.v1.ApproveDeviceAuthorizationResponse.authorization:type_name -> aiprouter.v1.DeviceAuthorization
-	31, // 15: aiprouter.v1.ListClientModelsResponse.models:type_name -> aiprouter.v1.Model
-	2,  // 16: aiprouter.v1.KeyService.CreateKey:input_type -> aiprouter.v1.CreateKeyRequest
-	4,  // 17: aiprouter.v1.KeyService.ListKeys:input_type -> aiprouter.v1.ListKeysRequest
-	6,  // 18: aiprouter.v1.KeyService.RevokeKey:input_type -> aiprouter.v1.RevokeKeyRequest
-	8,  // 19: aiprouter.v1.DeviceAuthorizationService.BeginDeviceAuthorization:input_type -> aiprouter.v1.BeginDeviceAuthorizationRequest
-	10, // 20: aiprouter.v1.DeviceAuthorizationService.PollDeviceAuthorization:input_type -> aiprouter.v1.PollDeviceAuthorizationRequest
-	12, // 21: aiprouter.v1.DeviceAuthorizationService.ConfirmDeviceStorage:input_type -> aiprouter.v1.ConfirmDeviceStorageRequest
-	14, // 22: aiprouter.v1.DeviceAuthorizationService.RevokeDeviceKey:input_type -> aiprouter.v1.RevokeDeviceKeyRequest
-	16, // 23: aiprouter.v1.DeviceApprovalService.GetDeviceAuthorization:input_type -> aiprouter.v1.GetDeviceAuthorizationRequest
-	18, // 24: aiprouter.v1.DeviceApprovalService.ApproveDeviceAuthorization:input_type -> aiprouter.v1.ApproveDeviceAuthorizationRequest
-	20, // 25: aiprouter.v1.DeviceApprovalService.DenyDeviceAuthorization:input_type -> aiprouter.v1.DenyDeviceAuthorizationRequest
-	22, // 26: aiprouter.v1.ClientService.ListClientModels:input_type -> aiprouter.v1.ListClientModelsRequest
-	24, // 27: aiprouter.v1.ClientService.RevokeCLIKey:input_type -> aiprouter.v1.RevokeCLIKeyRequest
-	3,  // 28: aiprouter.v1.KeyService.CreateKey:output_type -> aiprouter.v1.CreateKeyResponse
-	5,  // 29: aiprouter.v1.KeyService.ListKeys:output_type -> aiprouter.v1.ListKeysResponse
-	7,  // 30: aiprouter.v1.KeyService.RevokeKey:output_type -> aiprouter.v1.RevokeKeyResponse
-	9,  // 31: aiprouter.v1.DeviceAuthorizationService.BeginDeviceAuthorization:output_type -> aiprouter.v1.BeginDeviceAuthorizationResponse
-	11, // 32: aiprouter.v1.DeviceAuthorizationService.PollDeviceAuthorization:output_type -> aiprouter.v1.PollDeviceAuthorizationResponse
-	13, // 33: aiprouter.v1.DeviceAuthorizationService.ConfirmDeviceStorage:output_type -> aiprouter.v1.ConfirmDeviceStorageResponse
-	15, // 34: aiprouter.v1.DeviceAuthorizationService.RevokeDeviceKey:output_type -> aiprouter.v1.RevokeDeviceKeyResponse
-	17, // 35: aiprouter.v1.DeviceApprovalService.GetDeviceAuthorization:output_type -> aiprouter.v1.GetDeviceAuthorizationResponse
-	19, // 36: aiprouter.v1.DeviceApprovalService.ApproveDeviceAuthorization:output_type -> aiprouter.v1.ApproveDeviceAuthorizationResponse
-	21, // 37: aiprouter.v1.DeviceApprovalService.DenyDeviceAuthorization:output_type -> aiprouter.v1.DenyDeviceAuthorizationResponse
-	23, // 38: aiprouter.v1.ClientService.ListClientModels:output_type -> aiprouter.v1.ListClientModelsResponse
-	25, // 39: aiprouter.v1.ClientService.RevokeCLIKey:output_type -> aiprouter.v1.RevokeCLIKeyResponse
-	28, // [28:40] is the sub-list for method output_type
-	16, // [16:28] is the sub-list for method input_type
-	16, // [16:16] is the sub-list for extension type_name
-	16, // [16:16] is the sub-list for extension extendee
-	0,  // [0:16] is the sub-list for field type_name
+	35, // 15: aiprouter.v1.ListClientModelsResponse.models:type_name -> aiprouter.v1.Model
+	30, // 16: aiprouter.v1.BindClientContextSessionResponse.expires_at:type_name -> google.protobuf.Timestamp
+	2,  // 17: aiprouter.v1.KeyService.CreateKey:input_type -> aiprouter.v1.CreateKeyRequest
+	4,  // 18: aiprouter.v1.KeyService.ListKeys:input_type -> aiprouter.v1.ListKeysRequest
+	6,  // 19: aiprouter.v1.KeyService.RevokeKey:input_type -> aiprouter.v1.RevokeKeyRequest
+	8,  // 20: aiprouter.v1.DeviceAuthorizationService.BeginDeviceAuthorization:input_type -> aiprouter.v1.BeginDeviceAuthorizationRequest
+	10, // 21: aiprouter.v1.DeviceAuthorizationService.PollDeviceAuthorization:input_type -> aiprouter.v1.PollDeviceAuthorizationRequest
+	12, // 22: aiprouter.v1.DeviceAuthorizationService.ConfirmDeviceStorage:input_type -> aiprouter.v1.ConfirmDeviceStorageRequest
+	14, // 23: aiprouter.v1.DeviceAuthorizationService.RevokeDeviceKey:input_type -> aiprouter.v1.RevokeDeviceKeyRequest
+	16, // 24: aiprouter.v1.DeviceApprovalService.GetDeviceAuthorization:input_type -> aiprouter.v1.GetDeviceAuthorizationRequest
+	18, // 25: aiprouter.v1.DeviceApprovalService.ApproveDeviceAuthorization:input_type -> aiprouter.v1.ApproveDeviceAuthorizationRequest
+	20, // 26: aiprouter.v1.DeviceApprovalService.DenyDeviceAuthorization:input_type -> aiprouter.v1.DenyDeviceAuthorizationRequest
+	26, // 27: aiprouter.v1.ClientService.ConfigureClientContext:input_type -> aiprouter.v1.ConfigureClientContextRequest
+	28, // 28: aiprouter.v1.ClientService.BindClientContextSession:input_type -> aiprouter.v1.BindClientContextSessionRequest
+	22, // 29: aiprouter.v1.ClientService.ListClientModels:input_type -> aiprouter.v1.ListClientModelsRequest
+	24, // 30: aiprouter.v1.ClientService.RevokeCLIKey:input_type -> aiprouter.v1.RevokeCLIKeyRequest
+	3,  // 31: aiprouter.v1.KeyService.CreateKey:output_type -> aiprouter.v1.CreateKeyResponse
+	5,  // 32: aiprouter.v1.KeyService.ListKeys:output_type -> aiprouter.v1.ListKeysResponse
+	7,  // 33: aiprouter.v1.KeyService.RevokeKey:output_type -> aiprouter.v1.RevokeKeyResponse
+	9,  // 34: aiprouter.v1.DeviceAuthorizationService.BeginDeviceAuthorization:output_type -> aiprouter.v1.BeginDeviceAuthorizationResponse
+	11, // 35: aiprouter.v1.DeviceAuthorizationService.PollDeviceAuthorization:output_type -> aiprouter.v1.PollDeviceAuthorizationResponse
+	13, // 36: aiprouter.v1.DeviceAuthorizationService.ConfirmDeviceStorage:output_type -> aiprouter.v1.ConfirmDeviceStorageResponse
+	15, // 37: aiprouter.v1.DeviceAuthorizationService.RevokeDeviceKey:output_type -> aiprouter.v1.RevokeDeviceKeyResponse
+	17, // 38: aiprouter.v1.DeviceApprovalService.GetDeviceAuthorization:output_type -> aiprouter.v1.GetDeviceAuthorizationResponse
+	19, // 39: aiprouter.v1.DeviceApprovalService.ApproveDeviceAuthorization:output_type -> aiprouter.v1.ApproveDeviceAuthorizationResponse
+	21, // 40: aiprouter.v1.DeviceApprovalService.DenyDeviceAuthorization:output_type -> aiprouter.v1.DenyDeviceAuthorizationResponse
+	27, // 41: aiprouter.v1.ClientService.ConfigureClientContext:output_type -> aiprouter.v1.ConfigureClientContextResponse
+	29, // 42: aiprouter.v1.ClientService.BindClientContextSession:output_type -> aiprouter.v1.BindClientContextSessionResponse
+	23, // 43: aiprouter.v1.ClientService.ListClientModels:output_type -> aiprouter.v1.ListClientModelsResponse
+	25, // 44: aiprouter.v1.ClientService.RevokeCLIKey:output_type -> aiprouter.v1.RevokeCLIKeyResponse
+	31, // [31:45] is the sub-list for method output_type
+	17, // [17:31] is the sub-list for method input_type
+	17, // [17:17] is the sub-list for extension type_name
+	17, // [17:17] is the sub-list for extension extendee
+	0,  // [0:17] is the sub-list for field type_name
 }
 
 func init() { file_aiprouter_v1_device_proto_init() }
@@ -1559,7 +1747,7 @@ func file_aiprouter_v1_device_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_aiprouter_v1_device_proto_rawDesc), len(file_aiprouter_v1_device_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   26,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   4,
 		},

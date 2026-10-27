@@ -119,7 +119,7 @@ func (s *server) serveInference(w http.ResponseWriter, r *http.Request) {
 	adapters[cursor.Wire] = cursor.NewWithVision(hostedVisionPrepare(adapter, s.artifacts, originals))
 	recovery := providerRecoveryPolicies(adapters)
 	adapters = hostedProviderAdapters(adapters, adapter, s.artifacts)
-	h, e := inference.New(inference.Config{Adapters: adapters, RecoveryPolicies: adapter.recoveryPolicies(recovery), RecoveryDestinations: adapter, Authorizer: adapter, Router: adapter, Negotiator: adapter, ResponseObserver: adapter, Views: adapter, Credentials: adapter, Continuations: adapter, CompactionHandoffs: compactionHandoffs{a: adapter}, ProviderStates: adapter, LiveBindings: adapter, SocketDialer: outboundSocketDialer{}, Usage: adapter, Artifacts: artifactAdapter{service: s.artifacts, auth: adapter}, Observer: s.telemetry, Logger: s.telemetry.logger, Destinations: destinations, MaxRequestBytes: 100 << 20})
+	h, e := inference.New(inference.Config{Adapters: adapters, RecoveryPolicies: adapter.recoveryPolicies(recovery), RecoveryDestinations: adapter, Authorizer: adapter, Router: adapter, Negotiator: adapter, ResponseObserver: adapter, Views: adapter, Contexts: adapter, Credentials: adapter, Continuations: adapter, CompactionHandoffs: compactionHandoffs{a: adapter}, ProviderStates: adapter, LiveBindings: adapter, SocketDialer: outboundSocketDialer{}, Usage: adapter, Artifacts: artifactAdapter{service: s.artifacts, auth: adapter}, Observer: s.telemetry, Logger: s.telemetry.logger, Destinations: destinations, MaxRequestBytes: 100 << 20})
 	if e != nil {
 		http.Error(w, "inference unavailable", 503)
 		return
