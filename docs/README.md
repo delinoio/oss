@@ -68,11 +68,6 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Connect protocol v1](protos-bundlewhy-v1-contract.md)
 - [Engine adapters and distribution](packages-bundlewhy-distribution-contract.md)
 
-### typeopt
-
-- [Project index](project-typeopt.md)
-- [Rust CLI foundation](crates-typeopt-foundation.md)
-
 ### Forge
 
 - [Project index](project-forge.md)
@@ -159,3 +154,5 @@ Record new implementation status, validation results and unresolved limits in pu
 ## Transferred projects
 
 Delcore, DeliDev, and DeliTools, including their contracts and historical DeliDev validation records, are maintained in [delino-apps](https://github.com/delinoio/delino-apps). This repository no longer owns their runtime paths or CI jobs.
+
+Typeopt, including its Rust CLI, fixtures, Vite example, benchmark tools and contracts, is maintained in [delinoio/typeopt](https://github.com/delinoio/typeopt).

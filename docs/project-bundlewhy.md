@@ -49,4 +49,4 @@ Update this index and the owning contract when paths, interfaces, enums, error c
 - [Repository license](repository-license-contract.md)
 - [Repository workflow](repository-workflow-contract.md)
 - [Project index template](project-template.md)
-- [typeopt](project-typeopt.md) is a separate optimizer; bundlewhy has no typeopt integration.
+- [typeopt](https://github.com/delinoio/typeopt) is a separate optimizer; bundlewhy has no typeopt integration.
