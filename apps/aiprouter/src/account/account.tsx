@@ -51,25 +51,45 @@ export function SignInPage({
   const reason = error ?? params.get("error");
   const destination = returnTo ?? params.get("return_to") ?? "/overview";
   return (
-    <AccountSurface
-      title={translate("signInToAiprouter")}
-      subtitle={translate("useYourOrganizationSIdentityProviderTo")}
-    >
-      <div className="account-card">
+    <div className="sign-in">
+      <p className="sign-in-wordmark">AIPRouter</p>
+      <AccountSurface
+        className="sign-in-card"
+        focusHeading
+        title={translate("signInToAiprouter")}
+        subtitle={translate("useYourOrganizationSIdentityProviderTo")}
+      >
         {reason && (
-          <p className="account-error" role="alert">
-            {signInErrors[reason] ?? translate("message_3590afc42f")}
+          <p className="account-error sign-in-alert" role="alert">
+            <svg
+              className="sign-in-alert-icon"
+              aria-hidden="true"
+              focusable="false"
+              viewBox="0 0 20 20"
+              width="20"
+              height="20"
+            >
+              <path
+                fill="currentColor"
+                d="M10 1.5 19 17.5H1L10 1.5Zm-1 6v5h2v-5H9Zm0 6.5v2h2v-2H9Z"
+              />
+            </svg>
+            <span>
+              {signInErrors[reason] ?? translate("message_3590afc42f")}
+            </span>
           </p>
         )}
-        <p>{translate("yourIdentityProviderMustSupplyAVerified")}</p>
+        <p className="sign-in-guidance">
+          {translate("yourIdentityProviderMustSupplyAVerified")}
+        </p>
         <a
-          className="account-action account-primary"
+          className="account-action account-primary sign-in-action"
           href={signInHref(destination)}
         >
           {translate("continueWithYourIdentityProvider")}
         </a>
-      </div>
-    </AccountSurface>
+      </AccountSurface>
+    </div>
   );
 }
 

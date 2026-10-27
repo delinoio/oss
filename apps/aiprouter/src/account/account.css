@@ -159,3 +159,89 @@
     width: 100%;
   }
 }
+
+/* Standalone sign-in identity card. All rules are scoped to .sign-in so other
+   AccountSurface consumers keep their geometry. */
+.standalone:has(> .sign-in) {
+  max-width: none;
+  margin: 136px auto 0;
+  padding: 24px;
+}
+.sign-in {
+  width: min(100%, 480px);
+  margin: 0 auto;
+}
+.sign-in-wordmark {
+  margin: 0 0 16px;
+  color: #191f28;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.account-surface.sign-in-card {
+  box-sizing: border-box;
+  width: 100%;
+  background: #fff;
+  border: 1px solid #d5dbe3;
+  border-radius: 12px;
+  padding: 32px;
+}
+.sign-in-card > header {
+  margin-bottom: 24px;
+}
+.sign-in-card h1 {
+  margin: 0 0 8px;
+}
+.sign-in-card h1:focus {
+  outline: none;
+}
+.sign-in-card p {
+  margin: 0 0 24px;
+}
+.sign-in-card > header p {
+  margin: 0;
+}
+.sign-in-card .sign-in-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 0 24px;
+}
+.sign-in-alert-icon {
+  flex: none;
+  margin-top: 2px;
+  color: #b42318;
+}
+.sign-in-card .sign-in-guidance {
+  color: #4e5968;
+}
+.account-surface .sign-in-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  text-align: center;
+  text-decoration: none;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.account-surface .sign-in-action:focus-visible {
+  outline: 3px solid #1d4ed8;
+  outline-offset: 3px;
+}
+@media (max-width: 767px) {
+  .standalone:has(> .sign-in) {
+    margin: 0 auto;
+    padding: 48px 16px 24px;
+  }
+  .account-surface.sign-in-card {
+    padding: 24px;
+  }
+}
+@media (max-width: 320px) {
+  .account-surface.sign-in-card {
+    padding: 16px;
+  }
+}
