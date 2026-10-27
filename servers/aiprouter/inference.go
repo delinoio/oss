@@ -261,7 +261,7 @@ func (a *inferenceAdapter) Record(ctx context.Context, p inference.Principal, r 
 		if r.ServiceTier != "" {
 			tier.Response = &r.ServiceTier
 		}
-		estimate := prices.Estimate(pricing.Request{Provider: provider, Model: r.Model, Tier: tier, Status: pricing.Reported, Usage: &pricing.Usage{InputTokens: r.Usage.InputTokens, OutputTokens: r.Usage.OutputTokens, CachedInputTokens: r.Usage.CacheReadTokens, CacheCreationInputTokens: r.Usage.CacheWriteTokens}}, time.Now())
+		estimate := prices.Estimate(pricing.Request{Provider: provider, Model: r.Model, Tier: tier, Status: pricing.Reported, Usage: &pricing.Usage{InputTokens: r.Usage.InputTokens, OutputTokens: r.Usage.OutputTokens, CachedInputTokens: r.Usage.CacheReadTokens, CacheCreationInputTokens: r.Usage.CacheWriteTokens, CacheCreation1hInputTokens: r.Usage.CacheWrite1hTokens}}, time.Now())
 		u.Price, _ = json.Marshal(estimate)
 		u.Provenance = estimate.SnapshotID
 		if estimate.Known && r.UnmeasuredAttempts == 0 {

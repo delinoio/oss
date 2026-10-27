@@ -124,10 +124,11 @@ type ContinuationStore interface {
 	Save(context.Context, Principal, string, Continuation) error
 }
 type Usage struct {
-	InputTokens      *int64 `json:"input_tokens,omitempty"`
-	OutputTokens     *int64 `json:"output_tokens,omitempty"`
-	CacheReadTokens  *int64 `json:"cache_read_tokens,omitempty"`
-	CacheWriteTokens *int64 `json:"cache_write_tokens,omitempty"`
+	InputTokens        *int64 `json:"input_tokens,omitempty"`
+	OutputTokens       *int64 `json:"output_tokens,omitempty"`
+	CacheReadTokens    *int64 `json:"cache_read_tokens,omitempty"`
+	CacheWriteTokens   *int64 `json:"cache_write_tokens,omitempty"`
+	CacheWrite1hTokens *int64 `json:"cache_write_1h_tokens,omitempty"`
 }
 type RequestOutcome string
 

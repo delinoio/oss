@@ -610,9 +610,9 @@ func readUsage(m object, w Wire) Usage {
 		return Usage{}
 	}
 	if w == Chat {
-		return Usage{InputTokens: token(u["prompt_tokens"]), OutputTokens: token(u["completion_tokens"]), CacheReadTokens: token(obj(u["prompt_tokens_details"])["cached_tokens"]), CacheWriteTokens: firstToken(u["cache_creation_input_tokens"], obj(u["prompt_tokens_details"])["cache_write_tokens"], obj(u["prompt_tokens_details"])["cache_creation_tokens"])}
+		return Usage{InputTokens: token(u["prompt_tokens"]), OutputTokens: token(u["completion_tokens"]), CacheReadTokens: token(obj(u["prompt_tokens_details"])["cached_tokens"]), CacheWrite1hTokens: firstToken(obj(u["cache_creation"])["ephemeral_1h_input_tokens"], u["cache_creation_1h_input_tokens"]), CacheWriteTokens: firstToken(u["cache_creation_input_tokens"], obj(u["prompt_tokens_details"])["cache_write_tokens"], obj(u["prompt_tokens_details"])["cache_creation_tokens"])}
 	}
-	v := Usage{InputTokens: token(u["input_tokens"]), OutputTokens: token(u["output_tokens"]), CacheReadTokens: token(obj(u["input_tokens_details"])["cached_tokens"]), CacheWriteTokens: firstToken(u["cache_creation_input_tokens"], obj(u["input_tokens_details"])["cache_write_tokens"])}
+	v := Usage{InputTokens: token(u["input_tokens"]), OutputTokens: token(u["output_tokens"]), CacheReadTokens: token(obj(u["input_tokens_details"])["cached_tokens"]), CacheWrite1hTokens: firstToken(obj(u["cache_creation"])["ephemeral_1h_input_tokens"], u["cache_creation_1h_input_tokens"]), CacheWriteTokens: firstToken(u["cache_creation_input_tokens"], obj(u["input_tokens_details"])["cache_write_tokens"])}
 	if w == Anthropic {
 		v.CacheReadTokens = token(u["cache_read_input_tokens"])
 		v.CacheWriteTokens = token(u["cache_creation_input_tokens"])
@@ -1273,6 +1273,9 @@ func usageObject(u Usage, w Wire) object {
 	}
 	if u.CacheWriteTokens != nil {
 		out["cache_creation_input_tokens"] = *u.CacheWriteTokens
+	}
+	if u.CacheWrite1hTokens != nil {
+		out["cache_creation"] = object{"ephemeral_1h_input_tokens": *u.CacheWrite1hTokens}
 	}
 	if w == Chat && u.InputTokens != nil && u.OutputTokens != nil && *u.InputTokens <= math.MaxInt64-*u.OutputTokens {
 		out["total_tokens"] = *u.InputTokens + *u.OutputTokens

@@ -415,7 +415,13 @@ func readUsage(m object) inference.Usage {
 		n := int64(f)
 		return &n
 	}
-	u := inference.Usage{InputTokens: number("prompt_tokens"), OutputTokens: number("completion_tokens"), CacheReadTokens: number("cache_read_input_tokens"), CacheWriteTokens: number("cache_creation_input_tokens")}
+	u := inference.Usage{InputTokens: number("prompt_tokens"), OutputTokens: number("completion_tokens"), CacheReadTokens: number("cache_read_input_tokens"), CacheWriteTokens: number("cache_creation_input_tokens"), CacheWrite1hTokens: number("cache_creation_1h_input_tokens")}
+	if u.CacheWrite1hTokens == nil {
+		if f, ok := obj(m["cache_creation"])["ephemeral_1h_input_tokens"].(float64); ok && f >= 0 {
+			n := int64(f)
+			u.CacheWrite1hTokens = &n
+		}
+	}
 	if u.CacheReadTokens == nil {
 		if f, ok := obj(m["prompt_tokens_details"])["cached_tokens"].(float64); ok && f >= 0 {
 			n := int64(f)

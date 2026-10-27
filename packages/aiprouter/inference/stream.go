@@ -88,6 +88,9 @@ func mergeUsage(a *Usage, b Usage) {
 	if b.CacheReadTokens != nil {
 		a.CacheReadTokens = b.CacheReadTokens
 	}
+	if b.CacheWrite1hTokens != nil {
+		a.CacheWrite1hTokens = b.CacheWrite1hTokens
+	}
 	if b.CacheWriteTokens != nil {
 		a.CacheWriteTokens = b.CacheWriteTokens
 	}

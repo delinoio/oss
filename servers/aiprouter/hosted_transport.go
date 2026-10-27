@@ -171,12 +171,16 @@ func hostedReportedUsage(data []byte, contentType string) inference.Usage {
 			result.CacheReadTokens = google.Cache
 		}
 		var u struct {
-			Input        *int64 `json:"input_tokens"`
-			Output       *int64 `json:"output_tokens"`
-			Prompt       *int64 `json:"prompt_tokens"`
-			Completion   *int64 `json:"completion_tokens"`
-			CacheRead    *int64 `json:"cache_read_input_tokens"`
-			CacheWrite   *int64 `json:"cache_creation_input_tokens"`
+			Input         *int64 `json:"input_tokens"`
+			Output        *int64 `json:"output_tokens"`
+			Prompt        *int64 `json:"prompt_tokens"`
+			Completion    *int64 `json:"completion_tokens"`
+			CacheRead     *int64 `json:"cache_read_input_tokens"`
+			CacheWrite    *int64 `json:"cache_creation_input_tokens"`
+			CacheWrite1h  *int64 `json:"cache_creation_1h_input_tokens"`
+			CacheCreation struct {
+				Long *int64 `json:"ephemeral_1h_input_tokens"`
+			} `json:"cache_creation"`
 			InputDetails struct {
 				Cached *int64 `json:"cached_tokens"`
 			} `json:"input_tokens_details"`
@@ -205,6 +209,12 @@ func hostedReportedUsage(data []byte, contentType string) inference.Usage {
 			}
 			if u.CacheRead != nil {
 				result.CacheReadTokens = u.CacheRead
+			}
+			if u.CacheWrite1h == nil {
+				u.CacheWrite1h = u.CacheCreation.Long
+			}
+			if u.CacheWrite1h != nil {
+				result.CacheWrite1hTokens = u.CacheWrite1h
 			}
 			if u.CacheWrite != nil {
 				result.CacheWriteTokens = u.CacheWrite

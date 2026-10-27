@@ -165,6 +165,7 @@ func (x *requestExecutor) RecordUsage(u Usage) {
 	u.OutputTokens = copyToken(u.OutputTokens)
 	u.CacheReadTokens = copyToken(u.CacheReadTokens)
 	u.CacheWriteTokens = copyToken(u.CacheWriteTokens)
+	u.CacheWrite1hTokens = copyToken(u.CacheWrite1hTokens)
 	x.record.IntermediateUsage = append(x.record.IntermediateUsage, u)
 }
 func aggregateIntermediateUsage(rec *UsageRecord) {
@@ -180,6 +181,13 @@ func aggregateIntermediateUsage(rec *UsageRecord) {
 		rec.Usage.OutputTokens = add(rec.Usage.OutputTokens, u.OutputTokens)
 		rec.Usage.CacheReadTokens = add(rec.Usage.CacheReadTokens, u.CacheReadTokens)
 		rec.Usage.CacheWriteTokens = add(rec.Usage.CacheWriteTokens, u.CacheWriteTokens)
+		// A missing duration subset means none was reported for that send. Retain
+		// subsets reported by other sends without manufacturing a total cache count.
+		if rec.Usage.CacheWrite1hTokens == nil {
+			rec.Usage.CacheWrite1hTokens = u.CacheWrite1hTokens
+		} else if u.CacheWrite1hTokens != nil {
+			rec.Usage.CacheWrite1hTokens = add(rec.Usage.CacheWrite1hTokens, u.CacheWrite1hTokens)
+		}
 	}
 }
 

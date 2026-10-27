@@ -97,7 +97,7 @@ func MetadataFor(ctx context.Context, owner inference.Principal) (Metadata, bool
 		n := *p
 		return &n
 	}
-	m.Usage = inference.Usage{InputTokens: clone(m.Usage.InputTokens), OutputTokens: clone(m.Usage.OutputTokens), CacheReadTokens: clone(m.Usage.CacheReadTokens), CacheWriteTokens: clone(m.Usage.CacheWriteTokens)}
+	m.Usage = inference.Usage{InputTokens: clone(m.Usage.InputTokens), OutputTokens: clone(m.Usage.OutputTokens), CacheReadTokens: clone(m.Usage.CacheReadTokens), CacheWriteTokens: clone(m.Usage.CacheWriteTokens), CacheWrite1hTokens: clone(m.Usage.CacheWrite1hTokens)}
 	return m, true
 }
 

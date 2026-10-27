@@ -252,7 +252,7 @@ func (r *hostedResolver) Resolve(ctx context.Context, req hosted.OperationReques
 		prices := r.auth.prices
 		r.auth.mu.Unlock()
 		if prices != nil {
-			estimate := prices.Estimate(pricing.Request{Provider: u.Provider, Model: u.Model, Status: pricing.Reported, Usage: &pricing.Usage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CachedInputTokens: usage.CacheReadTokens, CacheCreationInputTokens: usage.CacheWriteTokens}}, time.Now())
+			estimate := prices.Estimate(pricing.Request{Provider: u.Provider, Model: u.Model, Status: pricing.Reported, Usage: &pricing.Usage{InputTokens: usage.InputTokens, OutputTokens: usage.OutputTokens, CachedInputTokens: usage.CacheReadTokens, CacheCreationInputTokens: usage.CacheWriteTokens, CacheCreation1hInputTokens: usage.CacheWrite1hTokens}}, time.Now())
 			u.Price, _ = json.Marshal(estimate)
 			u.Provenance = estimate.SnapshotID
 			if estimate.Known {

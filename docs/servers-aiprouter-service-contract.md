@@ -315,3 +315,5 @@ Update this contract, the project index, and affected producer/consumer contract
 Google Antigravity OAuth login, completion and refresh require both `AIPROUTER_GOOGLE_OAUTH_CLIENT_ID` and `AIPROUTER_GOOGLE_OAUTH_CLIENT_SECRET` from the service environment. No upstream installed-application credentials are embedded. Missing values refuse these exchanges before network access; other provider paths remain available. Keep populated values outside version control. The deployment must supply an authorized OAuth application compatible with the provider, scopes and callback; source fixtures do not establish live acceptance.
 
 Admission counting uses separate bounded scans for requests in the last minute and all unreleased admissions. Released historical IDs remain available for idempotent usage recording without participating in active-admission scans.
+
+Reported one-hour cache creation is a subset of total cache writes. Preserve its presence through wire parsing, streaming, helper-send accumulation and persisted pricing estimates so long-duration premiums and operator overrides apply to the reported subset.
