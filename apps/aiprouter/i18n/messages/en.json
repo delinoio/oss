@@ -70,7 +70,6 @@
   "savedAccountUnavailable": "Saved account unavailable",
   "noAccountSelected": "No account selected",
   "selectAPersonalConnectionOrPoolThe": "Select a personal connection or pool. The server checks readiness and backend compatibility.",
-  "privateToYouInThisOrganizationHelpers": "Private to you in this organization. Helpers use their own selected accounts, not the account serving the main request.",
   "webSearchAvailability": "Web search availability",
   "searchBackend": "Search backend",
   "search": "Search",
@@ -115,7 +114,6 @@
   "default300000IncludingPolling": "Default: 300000, including polling.",
   "imageAndVideoGeneration": "Image and video generation",
   "configureImageAndVideoGeneration": " Configure image and video generation",
-  "saveReplacesAllHostedHelperSettingsUnchecking": "Save replaces all hosted helper settings. Unchecking a configuration removes its saved settings; it does not always disable the provider default. Select Disabled to explicitly disable search or image understanding.",
   "cancel": "Cancel",
   "saveHelperSettings": "Save helper settings",
   "hostedHelperSettingsSaved": "Hosted helper settings saved.",
@@ -1276,5 +1274,14 @@
   "blankMeansUnknownEnterZeroOnlyFor": "Blank means unknown. Enter 0 only for a confirmed zero price.",
   "historicalEstimatesRemainUnchanged": "Historical estimates remain unchanged.",
   "reviewedRevisionSelectedYourEntriesAre": "Reviewed revision selected. Your entries are unchanged.",
-  "reviewDoesNotDeleteThisOverrideDeletion": "Review does not delete this override. Deletion affects future requests only."
+  "reviewDoesNotDeleteThisOverrideDeletion": "Review does not delete this override. Deletion affects future requests only.",
+  "onlyYoursInThisOrganization": "Only yours in this organization.",
+  "helpersUseTheirOwnSelectedAccountsNot": "Helpers use their own selected accounts, not the account serving the main request.",
+  "loadingHostedHelperSettings": "Loading hosted helper settings…",
+  "saveReplacesAllHelperSettings": "Save replaces all helper settings",
+  "uncheckingAConfigurationRemovesItsSavedSettings": "Unchecking a configuration removes its saved settings; it does not always disable the provider default. Select Disabled to explicitly disable search or image understanding.",
+  "saveReplacesAllHelperSettingsRemovingA": "Save replaces all helper settings. Removing a configuration does not always disable the provider default.",
+  "loadingPersonalConnectionsAndPoolsSaveIs": "Loading personal connections and pools… Save is unavailable until they load.",
+  "personalConnectionsAndPoolsCouldNotBe": "Personal connections and pools could not be loaded. Save is unavailable until they load.",
+  "noPersonalConnectionsOrPoolsAvailable": "No personal connections or pools available."
 }

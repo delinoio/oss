@@ -547,3 +547,260 @@ describe("personal hosted settings", () => {
     ).toBeNull();
   });
 });
+describe("hosted helpers dialog shell", () => {
+  type Handlers = {
+    get?: () => object;
+    update?: (request: unknown) => object | Promise<object>;
+    connections?: () => object;
+    pools?: () => object;
+  };
+  function shellRoutes(r: ConnectRouter, handlers: Handlers = {}) {
+    r.service(HostedSettingsService, {
+      getHostedSettings: handlers.get ?? (() => ({})),
+      updateHostedSettings: handlers.update ?? (() => ({})),
+    });
+    r.service(ProviderService, {
+      listProviderConnections:
+        handlers.connections ?? (() => ({ connections: [connection] })),
+    });
+    r.service(PoolService, {
+      listPools: handlers.pools ?? (() => ({ pools: [] })),
+    });
+    r.service(RoutingService, { listRoutes: () => ({}) });
+  }
+  async function openDialog(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(
+      screen.getByRole("button", { name: "Configure hosted helpers" }),
+    );
+  }
+  it("names the dialog, focuses its heading and shows scope copy and the replacement notice", async () => {
+    const user = userEvent.setup();
+    mount(
+      <HostedHelpers organizationId="org" organizationName="Studio" />,
+      (r) => shellRoutes(r),
+    );
+    await openDialog(user);
+    const dialog = await screen.findByRole("dialog", {
+      name: "Hosted helpers",
+    });
+    await within(dialog).findByLabelText("Configure web search");
+    const heading = within(dialog).getByRole("heading", {
+      name: "Hosted helpers",
+      level: 2,
+    });
+    expect(document.activeElement).toBe(heading);
+    expect(within(dialog).getByText("Only yours in Studio.")).toBeTruthy();
+    expect(
+      within(dialog).getByText(
+        "Helpers use their own selected accounts, not the account serving the main request.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByRole("button", { name: "Close dialog" }),
+    ).toBeTruthy();
+    const notice = within(dialog).getByRole("heading", {
+      name: "Save replaces all helper settings",
+    });
+    const save = within(dialog).getByRole("button", {
+      name: "Save helper settings",
+    });
+    expect(
+      notice.compareDocumentPosition(save) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      within(dialog).queryByText(
+        "Save replaces all helper settings. Removing a configuration does not always disable the provider default.",
+      ),
+    ).toBeNull();
+    await user.click(within(dialog).getByLabelText("Configure web search"));
+    await user.click(within(dialog).getByText("Advanced search settings"));
+    expect(
+      within(dialog).getByText(
+        "Save replaces all helper settings. Removing a configuration does not always disable the provider default.",
+      ),
+    ).toBeTruthy();
+  });
+  it("shows the loading label and a retryable load failure without an editor", async () => {
+    const user = userEvent.setup();
+    let attempts = 0;
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    mount(<HostedHelpers organizationId="org" />, (r) =>
+      shellRoutes(r, {
+        get: async () => {
+          attempts += 1;
+          if (attempts === 1) {
+            await gate;
+            throw new ConnectError("down", Code.Unavailable);
+          }
+          return {};
+        },
+      }),
+    );
+    await openDialog(user);
+    expect(screen.getByText("Loading hosted helper settings…")).toBeTruthy();
+    release();
+    await screen.findByRole("alert");
+    expect(
+      screen.queryByRole("button", { name: "Save helper settings" }),
+    ).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByLabelText("Configure web search");
+    expect(
+      screen.getByRole("button", { name: "Save helper settings" }),
+    ).toBeTruthy();
+  });
+  it("blocks Save with a visible label while resources load and after they fail, then retries without losing the draft", async () => {
+    const user = userEvent.setup();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    let poolCalls = 0;
+    const update = rs.fn((_request: unknown) => ({}));
+    mount(<HostedHelpers organizationId="org" />, (r) =>
+      shellRoutes(r, {
+        update,
+        pools: async () => {
+          poolCalls += 1;
+          if (poolCalls === 1) {
+            await gate;
+            throw new ConnectError("pools down", Code.Unavailable);
+          }
+          return { pools: [{ id: "pool", name: "Media" }] };
+        },
+      }),
+    );
+    await openDialog(user);
+    await screen.findByLabelText("Configure web search");
+    expect(
+      screen.getByText(
+        "Loading personal connections and pools… Save is unavailable until they load.",
+      ),
+    ).toBeTruthy();
+    const save = screen.getByRole("button", { name: "Save helper settings" });
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    await user.click(screen.getByLabelText("Configure web search"));
+    release();
+    await screen.findByText(
+      "Personal connections and pools could not be loaded. Save is unavailable until they load.",
+    );
+    expect(
+      screen.queryByText("No personal connections or pools available."),
+    ).toBeNull();
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByRole("option", { name: "Pool: Media" });
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+    expect(
+      (screen.getByLabelText("Configure web search") as HTMLInputElement)
+        .checked,
+    ).toBe(true);
+    await user.click(save);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update.mock.calls[0]?.[0]).toMatchObject({
+      organizationId: "org",
+      settings: { search: {} },
+    });
+  });
+  it("distinguishes no accounts from a resource error", async () => {
+    const user = userEvent.setup();
+    mount(<HostedHelpers organizationId="org" />, (r) =>
+      shellRoutes(r, { connections: () => ({ connections: [] }) }),
+    );
+    await openDialog(user);
+    await screen.findByText("No personal connections or pools available.");
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(
+      (
+        screen.getByRole("button", {
+          name: "Save helper settings",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+  });
+  it("reports the outcome of a save in the entry region after the dialog closes mid-save", async () => {
+    const user = userEvent.setup();
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const update = rs.fn(async (_request: unknown) => {
+      await gate;
+      return {};
+    });
+    mount(<HostedHelpers organizationId="org" />, (r) =>
+      shellRoutes(r, { update }),
+    );
+    await openDialog(user);
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByLabelText("Configure web search");
+    const save = within(dialog).getByRole("button", {
+      name: "Save helper settings",
+    });
+    await user.click(save);
+    await user.click(save);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(
+      within(dialog).getByText(
+        "Saving… Closing this dialog does not cancel a submitted change.",
+      ),
+    ).toBeTruthy();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const entry = screen.getByRole("status");
+    expect(entry.textContent).toBe(
+      "Saving… Closing this dialog does not cancel a submitted change.",
+    );
+    release();
+    await screen.findByText("Hosted helper settings saved.");
+    expect(update).toHaveBeenCalledTimes(1);
+  });
+  it("reports a rejected save in the entry region after close without a success claim", async () => {
+    const user = userEvent.setup();
+    let fail: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (fail = resolve));
+    mount(<HostedHelpers organizationId="org" />, (r) =>
+      shellRoutes(r, {
+        update: async () => {
+          await gate;
+          throw new ConnectError("invalid", Code.InvalidArgument);
+        },
+      }),
+    );
+    await openDialog(user);
+    await screen.findByLabelText("Configure web search");
+    await user.click(
+      screen.getByRole("button", { name: "Save helper settings" }),
+    );
+    await user.click(screen.getByRole("button", { name: "Close dialog" }));
+    fail();
+    await screen.findByRole("alert");
+    expect(screen.queryByText("Hosted helper settings saved.")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  it("keeps the dialog and draft open with an error when a save is rejected", async () => {
+    const user = userEvent.setup();
+    mount(<HostedHelpers organizationId="org" />, (r) =>
+      shellRoutes(r, {
+        update: () => {
+          throw new ConnectError("invalid", Code.InvalidArgument);
+        },
+      }),
+    );
+    await openDialog(user);
+    await user.click(await screen.findByLabelText("Configure web search"));
+    await user.click(
+      screen.getByRole("button", { name: "Save helper settings" }),
+    );
+    const dialog = screen.getByRole("dialog");
+    await within(dialog).findByRole("alert");
+    expect(
+      within(dialog).getByRole("button", { name: "Save helper settings" }),
+    ).toBeTruthy();
+    expect(
+      (
+        within(dialog).getByLabelText(
+          "Configure web search",
+        ) as HTMLInputElement
+      ).checked,
+    ).toBe(true);
+    expect(screen.queryByText("Hosted helper settings saved.")).toBeNull();
+  });
+});

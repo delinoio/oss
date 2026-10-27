@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale, enumLabel } from "./i18n";
-import { useState } from "react";
+import { useRef, useState, type ReactNode, type SyntheticEvent } from "react";
 import { create } from "@bufbuild/protobuf";
 import { useQuery } from "@connectrpc/connect-query";
 import {
@@ -21,6 +21,7 @@ import {
 } from "@aiprouter/client";
 import { useApi } from "./api";
 import { useAction } from "./actions";
+import type { UseActionResult } from "./actions";
 import { usePersonalResources } from "./resources";
 import {
   Button,
@@ -31,30 +32,98 @@ import {
   Loading,
   Notice,
 } from "./ui";
-export function HostedHelpers({ organizationId }: { organizationId: string }) {
+/** Collapsible advanced areas whose expansion drives the compact notice. */
+enum HostedAdvanced {
+  Search = "search",
+  Vision = "vision",
+  Media = "media",
+}
+type HostedAction = UseActionResult;
+export function HostedHelpers({
+  organizationId,
+  organizationName,
+}: {
+  organizationId: string;
+  organizationName?: string;
+}) {
   useLocale();
+  const api = useApi();
+  // The action lives here, not in the dialog, so a save submitted before the
+  // dialog closes still reports its final outcome in this entry region.
+  const action = useAction();
   const [open, setOpen] = useState(false);
+  const session = useRef(0);
+  function openDialog() {
+    action.reset();
+    session.current += 1;
+    setOpen(true);
+  }
+  function save(settings: HostedSettings) {
+    const submitted = session.current;
+    void action.run(
+      () =>
+        api.hosted.updateHostedSettings({
+          organizationId,
+          settings,
+        }),
+      () => {
+        // Close only the dialog that submitted this change.
+        if (session.current === submitted) setOpen(false);
+      },
+      translate("hostedHelperSettingsSaved"),
+    );
+  }
   return (
     <Card>
       <h2>{translate("hostedHelpers")}</h2>
       <p>{translate("chooseYourOwnAccountsForWebSearch")}</p>
-      <Button onClick={() => setOpen(true)}>
+      <Button onClick={openDialog}>
         {translate("configureHostedHelpers")}
       </Button>
+      {!open && <ErrorNotice error={action.error} />}
+      <p className="mutation-status" role="status">
+        {open
+          ? ""
+          : action.pending
+            ? translate("message_c5ca36dfc7")
+            : action.notice}
+      </p>
       {open && (
         <HostedLoader
           organizationId={organizationId}
+          organizationName={organizationName}
+          action={action}
+          onSave={save}
           onClose={() => setOpen(false)}
         />
       )}
     </Card>
   );
 }
+function HostedIntro({ organizationName }: { organizationName?: string }) {
+  useLocale();
+  return (
+    <div className="hosted-intro">
+      <p>
+        {organizationName
+          ? translate("onlyYoursIn", { value0: organizationName })
+          : translate("onlyYoursInThisOrganization")}
+      </p>
+      <p>{translate("helpersUseTheirOwnSelectedAccountsNot")}</p>
+    </div>
+  );
+}
 function HostedLoader({
   organizationId,
+  organizationName,
+  action,
+  onSave,
   onClose,
 }: {
   organizationId: string;
+  organizationName?: string;
+  action: HostedAction;
+  onSave: (settings: HostedSettings) => void;
   onClose: () => void;
 }) {
   useLocale();
@@ -62,30 +131,49 @@ function HostedLoader({
     organizationId,
   });
   const resources = usePersonalResources(organizationId);
-  if (query.isPending)
-    return (
-      <Dialog title={translate("hostedHelpers")} onClose={onClose}>
-        <Loading />
-      </Dialog>
+  // One dialog for every state keeps the heading focus and size stable while
+  // the content moves from loading to the editor.
+  let content: ReactNode;
+  if (query.isPending) {
+    content = <Loading label={translate("loadingHostedHelperSettings")} />;
+  } else if (query.isError && !query.data) {
+    // A failed background refetch must not discard an open draft, so only the
+    // initial load failure replaces the editor.
+    content = (
+      <ErrorNotice error={query.error} retry={() => void query.refetch()} />
     );
-  if (query.error)
-    return (
-      <Dialog title={translate("hostedHelpers")} onClose={onClose}>
-        <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-      </Dialog>
+  } else {
+    const connectionsError = resources.connections.error;
+    const poolsError = resources.pools.error;
+    content = (
+      <HostedEditor
+        initial={query.data?.settings}
+        connections={resources.connections.data ?? []}
+        pools={resources.pools.data ?? []}
+        resourcesError={connectionsError ?? poolsError}
+        resourcesPending={
+          resources.connections.isPending || resources.pools.isPending
+        }
+        retryResources={() => {
+          if (connectionsError) void resources.connections.refetch();
+          if (poolsError) void resources.pools.refetch();
+        }}
+        action={action}
+        onSave={onSave}
+        onClose={onClose}
+      />
     );
+  }
   return (
-    <HostedEditor
-      organizationId={organizationId}
-      initial={query.data?.settings}
-      connections={resources.connections.data ?? []}
-      pools={resources.pools.data ?? []}
-      resourcesError={resources.connections.error ?? resources.pools.error}
-      resourcesPending={
-        resources.connections.isPending || resources.pools.isPending
-      }
+    <Dialog
+      title={translate("hostedHelpers")}
       onClose={onClose}
-    />
+      focusHeading
+      className="hosted-dialog"
+    >
+      <HostedIntro organizationName={organizationName} />
+      {content}
+    </Dialog>
   );
 }
 function OptionalBoolean({
@@ -262,48 +350,88 @@ function TargetFields({
   );
 }
 function HostedEditor({
-  organizationId,
   initial,
   connections,
   pools,
   resourcesError,
   resourcesPending,
+  retryResources,
+  action,
+  onSave,
   onClose,
 }: {
-  organizationId: string;
   initial?: HostedSettings;
   connections: ProviderConnection[];
   pools: Pool[];
   resourcesError: unknown;
   resourcesPending: boolean;
+  retryResources: () => void;
+  action: HostedAction;
+  onSave: (settings: HostedSettings) => void;
   onClose: () => void;
 }) {
   useLocale();
-  const api = useApi();
-  const action = useAction();
   const [draft, setDraft] = useState(() =>
     create(HostedSettingsSchema, initial),
   );
+  const [advancedOpen, setAdvancedOpen] = useState<
+    Record<HostedAdvanced, boolean>
+  >({
+    [HostedAdvanced.Search]: false,
+    [HostedAdvanced.Vision]: false,
+    [HostedAdvanced.Media]: false,
+  });
   const search = draft.search,
     vision = draft.vision,
     images = draft.images;
   const targetProps = { connections, pools };
+  // Removed sections unmount their disclosure without a toggle event, so only
+  // count areas whose section still exists in the draft.
+  const advancedExpanded =
+    (!!search && advancedOpen[HostedAdvanced.Search]) ||
+    (!!vision && advancedOpen[HostedAdvanced.Vision]) ||
+    (!!images && advancedOpen[HostedAdvanced.Media]);
+  const trackAdvanced = (area: HostedAdvanced) => ({
+    onToggle: (e: SyntheticEvent<HTMLDetailsElement>) => {
+      const expanded = e.currentTarget.open;
+      setAdvancedOpen((current) =>
+        current[area] === expanded ? current : { ...current, [area]: expanded },
+      );
+    },
+  });
+  const noResources =
+    !resourcesPending &&
+    !resourcesError &&
+    connections.length === 0 &&
+    pools.length === 0;
   return (
-    <Dialog title={translate("hostedHelpers")} onClose={onClose}>
-      <p>{translate("privateToYouInThisOrganizationHelpers")}</p>
-      <ErrorNotice error={resourcesError} />
+    <>
+      {advancedExpanded && (
+        <div className="notice hosted-compact-notice">
+          {translate("saveReplacesAllHelperSettingsRemovingA")}
+        </div>
+      )}
+      {resourcesPending && (
+        <p className="hosted-resource-status" role="status">
+          {translate("loadingPersonalConnectionsAndPoolsSaveIs")}
+        </p>
+      )}
+      {!!resourcesError && (
+        <div className="hosted-resource-error">
+          <p>{translate("personalConnectionsAndPoolsCouldNotBe")}</p>
+          <ErrorNotice error={resourcesError} retry={retryResources} />
+        </div>
+      )}
+      {noResources && (
+        <p className="hosted-resource-status">
+          {translate("noPersonalConnectionsOrPoolsAvailable")}
+        </p>
+      )}
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          void action.run(
-            () =>
-              api.hosted.updateHostedSettings({
-                organizationId,
-                settings: draft,
-              }),
-            onClose,
-            translate("hostedHelperSettingsSaved"),
-          );
+          if (action.pending || resourcesPending || resourcesError) return;
+          onSave(draft);
         }}
       >
         <fieldset>
@@ -348,7 +476,7 @@ function HostedEditor({
                   setDraft({ ...draft, search: { ...search, target } })
                 }
               />
-              <details>
+              <details {...trackAdvanced(HostedAdvanced.Search)}>
                 <summary>{translate("advancedSearchSettings")}</summary>
                 <EnumField
                   label={translate("searchReasoningEffort")}
@@ -596,7 +724,7 @@ function HostedEditor({
                   }
                 />
               )}
-              <details>
+              <details {...trackAdvanced(HostedAdvanced.Vision)}>
                 <summary>{translate("advancedVisionSettings")}</summary>
                 <OptionalNumber
                   label={translate("maximumDescriptionsPerTurn")}
@@ -681,7 +809,7 @@ function HostedEditor({
                 />
                 {translate("enableVideoGeneration")}
               </label>
-              <details>
+              <details {...trackAdvanced(HostedAdvanced.Media)}>
                 <summary>{translate("advancedMediaSettings")}</summary>
                 <Field
                   label={translate("imageModelOverride")}
@@ -745,11 +873,17 @@ function HostedEditor({
             </>
           )}
         </fieldset>
-        <Notice>
-          {translate("saveReplacesAllHostedHelperSettingsUnchecking")}
-        </Notice>
+        <div className="notice hosted-notice">
+          <h3>{translate("saveReplacesAllHelperSettings")}</h3>
+          <p>{translate("uncheckingAConfigurationRemovesItsSavedSettings")}</p>
+        </div>
         <ErrorNotice error={action.error} />
-        <div className="actions">
+        {action.pending && (
+          <p className="hosted-pending" role="status">
+            {translate("message_c5ca36dfc7")}
+          </p>
+        )}
+        <div className="actions hosted-footer">
           <Button onClick={onClose}>{translate("cancel")}</Button>
           <Button
             type="submit"
@@ -762,6 +896,6 @@ function HostedEditor({
           </Button>
         </div>
       </form>
-    </Dialog>
+    </>
   );
 }

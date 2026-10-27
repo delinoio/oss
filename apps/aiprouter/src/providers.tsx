@@ -135,7 +135,10 @@ export function ProvidersPage({ organization }: PageProps) {
           {translate("manageAccountPools")}
         </a>
       </div>
-      <HostedHelpers organizationId={organization.id} />
+      <HostedHelpers
+        organizationId={organization.id}
+        organizationName={organization.name}
+      />
       {action.feedback}
       <Field label={translate("searchYourConnections")}>
         <input

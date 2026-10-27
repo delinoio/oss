@@ -52,10 +52,18 @@ export function useAction() {
       if (mounted.current) setPending(false);
     }
   }
+  /** Clears the previous outcome; ignored while a request is in flight. */
+  function reset() {
+    if (busy.current) return;
+    setError(undefined);
+    setNotice("");
+  }
   return {
     run,
+    reset,
     pending,
     error,
+    notice,
     feedback: (
       <>
         <ErrorNotice error={error} />
@@ -66,3 +74,5 @@ export function useAction() {
     ),
   };
 }
+
+export type UseActionResult = ReturnType<typeof useAction>;
