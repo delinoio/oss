@@ -161,9 +161,7 @@
       "turbo.json"
     ],
     "workspace": "public-docs",
-    "workspacePaths": [
-      "apps/public-docs/**"
-    ]
+    "workspacePaths": ["apps/public-docs/**"]
   },
   "node-pnport-test": {
     "paths": [
@@ -275,9 +273,7 @@
       ".agents/skills/before-and-after/scripts/**"
     ],
     "workspace": "@delino/clibox",
-    "workspacePaths": [
-      "packages/clibox/**"
-    ]
+    "workspacePaths": ["packages/clibox/**"]
   },
   "source-format": {
     "paths": [
@@ -342,9 +338,7 @@
       "scripts/dev-environment/process.mjs"
     ],
     "workspace": "labs-site",
-    "workspacePaths": [
-      "apps/labs-site/**"
-    ]
+    "workspacePaths": ["apps/labs-site/**"]
   },
   "node-labs-docs-test": {
     "paths": [
@@ -362,8 +356,6 @@
       "turbo.json"
     ],
     "workspace": "labs-docs",
-    "workspacePaths": [
-      "apps/labs-docs/**"
-    ]
+    "workspacePaths": ["apps/labs-docs/**"]
   }
 }
