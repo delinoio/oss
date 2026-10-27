@@ -1,0 +1,54 @@
+name: aiprouter
+services:
+  postgres:
+    image: postgres:17.6-bookworm
+    environment:
+      POSTGRES_DB: aiprouter
+      POSTGRES_USER: aiprouter
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a database password}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U aiprouter -d aiprouter"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  aiprouter:
+    image: ${AIPROUTER_IMAGE:-aiprouter:local}
+    build:
+      context: ../..
+      dockerfile: packaging/aiprouter/Dockerfile
+    env_file: .env
+    environment:
+      AIPROUTER_LISTEN_ADDR: 0.0.0.0:8080
+      AIPROUTER_DATABASE_URL: postgres://aiprouter:${POSTGRES_PASSWORD:?Set a database password}@postgres:5432/aiprouter?sslmode=disable
+    ports:
+      - 127.0.0.1:8080:8080
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    restart: unless-stopped
+  prometheus:
+    image: prom/prometheus:v3.5.0
+    profiles: [observability]
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./observability/alerts.yml:/etc/prometheus/alerts.yml:ro
+    ports: [127.0.0.1:9090:9090]
+  grafana:
+    image: grafana/grafana:12.1.1
+    profiles: [observability]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?Set a Grafana password}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/dashboard.json:/var/lib/grafana/dashboards/aiprouter.json:ro
+    ports: [127.0.0.1:3000:3000]
+volumes:
+  postgres:

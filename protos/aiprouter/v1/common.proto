@@ -1,0 +1,307 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package aiprouter.v1;
+
+import "google/protobuf/descriptor.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/aiprouter/v1;aiprouterv1";
+
+// Authentication scope is mandatory on every RPC. Enforcement belongs to the server.
+extend google.protobuf.MethodOptions {
+  AuthScope auth_scope = 51001;
+}
+enum AuthScope {
+  AUTH_SCOPE_UNSPECIFIED = 0;
+  AUTH_SCOPE_PUBLIC = 1;
+  AUTH_SCOPE_WEB_SESSION = 2;
+  AUTH_SCOPE_ORGANIZATION_MEMBER = 3;
+  AUTH_SCOPE_ORGANIZATION_ADMINISTRATOR = 4;
+  AUTH_SCOPE_ORGANIZATION_OWNER = 5;
+  AUTH_SCOPE_INSTANCE_OPERATOR = 6;
+  AUTH_SCOPE_DEVICE_SECRET = 7;
+  AUTH_SCOPE_INFERENCE_KEY = 8;
+}
+
+enum Role {
+  ROLE_UNSPECIFIED = 0;
+  ROLE_OWNER = 1;
+  ROLE_ADMINISTRATOR = 2;
+  ROLE_MEMBER = 3;
+}
+
+enum ErrorReason {
+  ERROR_REASON_UNSPECIFIED = 0;
+  ERROR_REASON_INVALID_ARGUMENT = 1;
+  ERROR_REASON_AUTHENTICATION_REQUIRED = 2;
+  ERROR_REASON_PERMISSION_DENIED = 3;
+  ERROR_REASON_RESOURCE_NOT_FOUND = 4;
+  ERROR_REASON_EXPIRED = 5;
+  ERROR_REASON_CANCELED = 6;
+  ERROR_REASON_CONFLICT = 7;
+  ERROR_REASON_RATE_LIMITED = 8;
+  ERROR_REASON_DATABASE_UNAVAILABLE = 9;
+  ERROR_REASON_DELIVERY_INCOMPLETE = 10;
+  ERROR_REASON_OWNED_ORGANIZATIONS_REMAIN = 11;
+  ERROR_REASON_CONTINUATION_UNAVAILABLE = 12;
+  ERROR_REASON_INVITATION_EMAIL_MISMATCH = 13;
+}
+
+enum KeyKind {
+  KEY_KIND_UNSPECIFIED = 0;
+  KEY_KIND_PERSONAL = 1;
+  KEY_KIND_CLI = 2;
+}
+
+enum KeyState {
+  KEY_STATE_UNSPECIFIED = 0;
+  KEY_STATE_ACTIVE = 1;
+  KEY_STATE_REVOKED = 2;
+  KEY_STATE_EXPIRED = 3;
+}
+
+enum LifecycleState {
+  LIFECYCLE_STATE_UNSPECIFIED = 0;
+  LIFECYCLE_STATE_PENDING = 1;
+  LIFECYCLE_STATE_ACCEPTED = 2;
+  LIFECYCLE_STATE_CANCELED = 3;
+  LIFECYCLE_STATE_EXPIRED = 4;
+  LIFECYCLE_STATE_SUPERSEDED = 5;
+  LIFECYCLE_STATE_FAILED = 6;
+}
+
+enum DeliveryState {
+  DELIVERY_STATE_UNSPECIFIED = 0;
+  DELIVERY_STATE_QUEUED = 1;
+  DELIVERY_STATE_SENT = 2;
+  DELIVERY_STATE_RETRY_PENDING = 3;
+  DELIVERY_STATE_FAILED = 4;
+}
+
+enum DeviceAuthorizationState {
+  DEVICE_AUTHORIZATION_STATE_UNSPECIFIED = 0;
+  DEVICE_AUTHORIZATION_STATE_PENDING = 1;
+  DEVICE_AUTHORIZATION_STATE_DENIED = 2;
+  DEVICE_AUTHORIZATION_STATE_EXPIRED = 3;
+  DEVICE_AUTHORIZATION_STATE_APPROVED = 4;
+  DEVICE_AUTHORIZATION_STATE_DELIVERED = 5;
+  DEVICE_AUTHORIZATION_STATE_REVOKED = 6;
+}
+
+enum ApiShape {
+  API_SHAPE_UNSPECIFIED = 0;
+  API_SHAPE_RESPONSES = 1;
+  API_SHAPE_RESPONSES_WEBSOCKET = 2;
+  API_SHAPE_RESPONSES_COMPACTION = 3;
+  API_SHAPE_CHAT_COMPLETIONS = 4;
+  API_SHAPE_ANTHROPIC_MESSAGES = 5;
+  API_SHAPE_TOKEN_COUNTING = 6;
+  API_SHAPE_MODELS = 7;
+  API_SHAPE_HOSTED_SEARCH = 8;
+  API_SHAPE_IMAGE_GENERATION = 9;
+  API_SHAPE_IMAGE_EDIT = 10;
+  API_SHAPE_ARTIFACT_RETRIEVAL = 11;
+}
+
+enum ModelCapability {
+  MODEL_CAPABILITY_UNSPECIFIED = 0;
+  MODEL_CAPABILITY_TEXT = 1;
+  MODEL_CAPABILITY_IMAGE_INPUT = 2;
+  MODEL_CAPABILITY_IMAGE_OUTPUT = 3;
+  MODEL_CAPABILITY_AUDIO_INPUT = 4;
+  MODEL_CAPABILITY_AUDIO_OUTPUT = 5;
+  MODEL_CAPABILITY_VIDEO_INPUT = 6;
+  MODEL_CAPABILITY_TOOLS = 7;
+  MODEL_CAPABILITY_STREAMING = 8;
+  MODEL_CAPABILITY_REASONING = 9;
+  MODEL_CAPABILITY_SEARCH = 10;
+}
+
+enum ReasoningEffort {
+  REASONING_EFFORT_UNSPECIFIED = 0;
+  REASONING_EFFORT_NONE = 1;
+  REASONING_EFFORT_MINIMAL = 2;
+  REASONING_EFFORT_LOW = 3;
+  REASONING_EFFORT_MEDIUM = 4;
+  REASONING_EFFORT_HIGH = 5;
+  REASONING_EFFORT_XHIGH = 6;
+  REASONING_EFFORT_MAX = 7;
+  REASONING_EFFORT_ULTRA = 8;
+}
+
+enum ProviderAuthKind {
+  PROVIDER_AUTH_KIND_UNSPECIFIED = 0;
+  PROVIDER_AUTH_KIND_API_KEY = 1;
+  PROVIDER_AUTH_KIND_OAUTH = 2;
+  PROVIDER_AUTH_KIND_NO_AUTH = 3;
+}
+
+enum ConnectionState {
+  CONNECTION_STATE_UNSPECIFIED = 0;
+  CONNECTION_STATE_READY = 1;
+  CONNECTION_STATE_AUTHORIZATION_REQUIRED = 2;
+  CONNECTION_STATE_DISABLED = 3;
+  CONNECTION_STATE_COOLDOWN = 4;
+  CONNECTION_STATE_ERROR = 5;
+}
+
+enum OAuthState {
+  O_AUTH_STATE_UNSPECIFIED = 0;
+  O_AUTH_STATE_PENDING = 1;
+  O_AUTH_STATE_COMPLETED = 2;
+  O_AUTH_STATE_CANCELED = 3;
+  O_AUTH_STATE_EXPIRED = 4;
+  O_AUTH_STATE_FAILED = 5;
+}
+
+enum PoolStrategy {
+  POOL_STRATEGY_UNSPECIFIED = 0;
+  POOL_STRATEGY_PRIORITY = 1;
+  POOL_STRATEGY_ROUND_ROBIN = 2;
+  POOL_STRATEGY_LEAST_RECENTLY_USED = 3;
+}
+
+enum RoutingStrategy {
+  ROUTING_STRATEGY_UNSPECIFIED = 0;
+  ROUTING_STRATEGY_DIRECT = 1;
+  ROUTING_STRATEGY_FALLBACK = 2;
+  ROUTING_STRATEGY_WEIGHTED = 3;
+  ROUTING_STRATEGY_ROUND_ROBIN = 4;
+  ROUTING_STRATEGY_JEV = 5;
+}
+
+enum RequestOutcome {
+  REQUEST_OUTCOME_UNSPECIFIED = 0;
+  REQUEST_OUTCOME_SUCCEEDED = 1;
+  REQUEST_OUTCOME_UPSTREAM_ERROR = 2;
+  REQUEST_OUTCOME_GATEWAY_ERROR = 3;
+  REQUEST_OUTCOME_CANCELED = 4;
+  REQUEST_OUTCOME_RATE_LIMITED = 5;
+}
+
+enum PriceSource {
+  PRICE_SOURCE_UNSPECIFIED = 0;
+  PRICE_SOURCE_BUNDLED = 1;
+  PRICE_SOURCE_OPERATOR_OVERRIDE = 2;
+}
+
+enum AuditAction {
+  AUDIT_ACTION_UNSPECIFIED = 0;
+  AUDIT_ACTION_MEMBER_ROLE_CHANGED = 1;
+  AUDIT_ACTION_MEMBER_REMOVED = 2;
+  AUDIT_ACTION_MEMBER_LEFT = 3;
+  AUDIT_ACTION_INVITATION_CREATED = 4;
+  AUDIT_ACTION_INVITATION_RESENT = 5;
+  AUDIT_ACTION_INVITATION_CANCELED = 6;
+  AUDIT_ACTION_INVITATION_ACCEPTED = 7;
+  AUDIT_ACTION_OWNERSHIP_NOMINATED = 8;
+  AUDIT_ACTION_OWNERSHIP_ACCEPTED = 9;
+  AUDIT_ACTION_OWNERSHIP_CANCELED = 10;
+  AUDIT_ACTION_KEY_ISSUED = 11;
+  AUDIT_ACTION_KEY_REVOKED = 12;
+  AUDIT_ACTION_PROVIDER_CREATED = 13;
+  AUDIT_ACTION_PROVIDER_UPDATED = 14;
+  AUDIT_ACTION_PROVIDER_DELETED = 15;
+  AUDIT_ACTION_ORGANIZATION_CREATED = 16;
+  AUDIT_ACTION_ORGANIZATION_UPDATED = 17;
+  AUDIT_ACTION_INSTANCE_SETTINGS_UPDATED = 18;
+  AUDIT_ACTION_PRICE_OVERRIDE_SET = 19;
+  AUDIT_ACTION_PRICE_OVERRIDE_DELETED = 20;
+  AUDIT_ACTION_ACCOUNT_DELETED = 21;
+}
+
+enum HealthState {
+  HEALTH_STATE_UNSPECIFIED = 0;
+  HEALTH_STATE_HEALTHY = 1;
+  HEALTH_STATE_DEGRADED = 2;
+  HEALTH_STATE_UNAVAILABLE = 3;
+}
+
+message PageRequest {
+  uint32 page_size = 1;
+  string page_token = 2;
+}
+message PageResponse {
+  string next_page_token = 1;
+}
+message TimeRange {
+  google.protobuf.Timestamp start = 1;
+  google.protobuf.Timestamp end = 2;
+}
+
+// Decimal strings avoid rounding currency. Absent amounts mean unknown, not zero.
+message Money {
+  string currency = 1;
+  string decimal_amount = 2;
+}
+message ErrorDetail {
+  ErrorReason reason = 1;
+  string request_id = 2;
+  optional uint32 retry_after_seconds = 3;
+}
+
+// Explicit NONE suppresses interleaving; absence/UNSPECIFIED is unknown.
+enum ReasoningInterleaving {
+  REASONING_INTERLEAVING_UNSPECIFIED = 0;
+  REASONING_INTERLEAVING_NONE = 1;
+  REASONING_INTERLEAVING_REASONING_CONTENT = 2;
+}
+
+message Model {
+  string id = 1;
+  string display_name = 2;
+  repeated ModelCapability capabilities = 3;
+  repeated ApiShape api_shapes = 4;
+  optional uint64 context_limit = 5;
+  optional uint64 output_limit = 6;
+  repeated ReasoningEffort reasoning_efforts = 7;
+  // Authoritative routed Fast availability. Only true authorizes exporting a Fast row;
+  // never infer an alias from model names, native status, or a missing value.
+  optional bool fast_row_available = 8;
+  // Only a source-declared default within the effective ladder; never synthesize one.
+  optional ReasoningEffort default_reasoning_effort = 9;
+  optional bool supports_reasoning_effort = 10;
+  optional bool supports_thinking_toggle = 11;
+  optional bool default_thinking_enabled = 12;
+  optional bool supports_reasoning_summaries = 13;
+  // REASONING_CONTENT maps to the fixed reasoning_content client field.
+  optional ReasoningInterleaving reasoning_interleaving = 14;
+  // Authoritative input ceiling, distinct from context_limit. Never infer from it.
+  optional uint64 max_input_tokens = 15;
+  // Explicit negative evidence must survive alongside legacy positive capabilities.
+  optional bool supports_reasoning = 16;
+  optional bool supports_tools = 17;
+  // True with an empty reasoning_efforts list means a declared empty ladder.
+  // Absent/false with an empty list means unknown. A nonempty legacy list is known.
+  // Producers must not combine false with a nonempty list.
+  optional bool reasoning_efforts_known = 18;
+}
+message InferenceKey {
+  string id = 1;
+  string organization_id = 2;
+  string name = 3;
+  KeyKind kind = 4;
+  KeyState state = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp expires_at = 7;
+  google.protobuf.Timestamp last_used_at = 8;
+  string prefix = 9;
+}
+
+// UNSPECIFIED means the recorded outcome is unknown, never implicit success.
+enum AuditOutcome {
+  AUDIT_OUTCOME_UNSPECIFIED = 0;
+  AUDIT_OUTCOME_SUCCEEDED = 1;
+  AUDIT_OUTCOME_FAILED = 2;
+  AUDIT_OUTCOME_DENIED = 3;
+}
+
+// Mirrors the personal provider library authentication methods.
+enum ProviderOAuthMethod {
+  PROVIDER_O_AUTH_METHOD_UNSPECIFIED = 0;
+  PROVIDER_O_AUTH_METHOD_PKCE = 1;
+  PROVIDER_O_AUTH_METHOD_DEVICE = 2;
+  PROVIDER_O_AUTH_METHOD_BROWSER_POLL = 3;
+  PROVIDER_O_AUTH_METHOD_EXPLICIT_TOKEN = 4;
+  PROVIDER_O_AUTH_METHOD_NATIVE_CALLBACK = 5;
+}

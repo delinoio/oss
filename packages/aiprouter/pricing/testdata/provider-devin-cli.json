@@ -1,0 +1,902 @@
+[
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "claude-haiku-5-5",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "claude-haiku-5-5",
+        "cost4": {
+          "input": 0.1,
+          "output": 0.5,
+          "cacheRead": 0.01,
+          "cacheWrite": 0.125
+        },
+        "source": "expected",
+        "sourceRef": "derived (preemptive): Devin live catalog and modelCostData do not list claude-haiku-5-5 yet; Anthropic reference price https://platform.claude.com/docs/en/about-claude/pricing (official; 5m cache-write tier)",
+        "verifiedAt": "2026-10-08",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.000085,
+        "output": 0.0001,
+        "cacheRead": 0.000001,
+        "cacheWrite": 0.00000775,
+        "total": 0.00019375
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "swe-2",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "swe-2",
+        "cost4": {
+          "input": 3,
+          "output": 15,
+          "cacheRead": 0.3,
+          "cacheWrite": 0
+        },
+        "source": "expected",
+        "sourceRef": "list rate; $0 self-serve through 2026-10-08 and 75%-off enterprise through 2026-12-31 are time-boxed promos, not baked in; https://docs.devin.ai/desktop/models (official modelCostData table, 2026-09-13; list rates for self-serve overage / enterprise ACU conversion on a subscription surface)",
+        "verifiedAt": "2026-09-13",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.00255,
+        "output": 0.003,
+        "cacheRead": 0.00003,
+        "cacheWrite": 0,
+        "total": 0.00558
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "swe-1-7",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "swe-1-7",
+        "cost4": {
+          "input": 0.5,
+          "output": 2.5,
+          "cacheRead": 0.2,
+          "cacheWrite": 0
+        },
+        "source": "expected",
+        "sourceRef": "list rate; self-serve column currently shows 0 (unannounced promo); https://docs.devin.ai/desktop/models (official modelCostData table, 2026-09-13; list rates for self-serve overage / enterprise ACU conversion on a subscription surface)",
+        "verifiedAt": "2026-09-13",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.000425,
+        "output": 0.0005,
+        "cacheRead": 0.00002,
+        "cacheWrite": 0,
+        "total": 0.0009450000000000001
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "swe-1-7-lightning",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "swe-1-7-lightning",
+        "cost4": {
+          "input": 2.5,
+          "output": 12.5,
+          "cacheRead": 1,
+          "cacheWrite": 0
+        },
+        "source": "expected",
+        "sourceRef": "https://docs.devin.ai/desktop/models (official modelCostData table, 2026-09-13; list rates for self-serve overage / enterprise ACU conversion on a subscription surface)",
+        "verifiedAt": "2026-09-13",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.002125,
+        "output": 0.0025,
+        "cacheRead": 0.0001,
+        "cacheWrite": 0,
+        "total": 0.004725000000000001
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "swe-1-6",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "swe-1-6",
+        "cost4": {
+          "input": 0.5,
+          "output": 2.5,
+          "cacheRead": 0.2,
+          "cacheWrite": 0
+        },
+        "source": "expected",
+        "sourceRef": "https://docs.devin.ai/desktop/models (official modelCostData table, 2026-09-13; list rates for self-serve overage / enterprise ACU conversion on a subscription surface)",
+        "verifiedAt": "2026-09-13",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.000425,
+        "output": 0.0005,
+        "cacheRead": 0.00002,
+        "cacheWrite": 0,
+        "total": 0.0009450000000000001
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "gpt-5-6-sol",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "gpt-5-6-sol",
+        "cost4": {
+          "input": 4,
+          "output": 20,
+          "cacheRead": 0.4,
+          "cacheWrite": 5
+        },
+        "source": "expected",
+        "sourceRef": "enterprise list column (self-serve shows discounted 1.2/6); https://docs.devin.ai/desktop/models (official modelCostData table, 2026-09-13; list rates for self-serve overage / enterprise ACU conversion on a subscription surface)",
+        "verifiedAt": "2026-09-13",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.0034,
+        "output": 0.004,
+        "cacheRead": 0.00004,
+        "cacheWrite": 0.00031,
+        "total": 0.007750000000000001
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "gpt-6-astra",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "gpt-6-astra",
+        "cost4": {
+          "input": 10,
+          "output": 50,
+          "cacheRead": 1,
+          "cacheWrite": 12.5
+        },
+        "source": "expected",
+        "sourceRef": "https://docs.devin.ai/desktop/models (official modelCostData table, 2026-09-13; list rates for self-serve overage / enterprise ACU conversion on a subscription surface)",
+        "verifiedAt": "2026-09-13",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.0085,
+        "output": 0.01,
+        "cacheRead": 0.0001,
+        "cacheWrite": 0.000775,
+        "total": 0.019375000000000003
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "gpt-6-1-sol",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "gpt-6-1-sol",
+        "cost4": {
+          "input": 2,
+          "output": 10,
+          "cacheRead": 0.1,
+          "cacheWrite": 2.5
+        },
+        "source": "expected",
+        "sourceRef": "derived: GPT-6.1 Sol added 2026-09-30 ahead of Devin's modelCostData table (devin.ai/blog/gpt-6-1-sol; uid spelled like gpt-5-6-sol); OpenAI API list price https://developers.openai.com/api/docs/pricing (2026-09-30: GPT-6.1 Sol $2 / $0.10 cached / $2.50 cache write / $10; >272K $4 / $0.20 / $5 / $15)",
+        "verifiedAt": "2026-09-30",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.0017,
+        "output": 0.002,
+        "cacheRead": 0.00001,
+        "cacheWrite": 0.000155,
+        "total": 0.0038650000000000004
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "gpt-6-1-terra",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "gpt-6-1-terra",
+        "cost4": {
+          "input": 1,
+          "output": 5,
+          "cacheRead": 0.05,
+          "cacheWrite": 1.25
+        },
+        "source": "expected",
+        "sourceRef": "derived: OpenAI API list price https://developers.openai.com/api/docs/models/gpt-6.1-terra (2026-10-27: GPT-6.1 Terra $1 / $0.05 cached / $1.25 cache write / $5; >272K $2 / $0.10 / $2.50 / $7.50); Devin uid mirrors gpt-6-1-sol",
+        "verifiedAt": "2026-10-27",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.00085,
+        "output": 0.001,
+        "cacheRead": 0.000005,
+        "cacheWrite": 0.0000775,
+        "total": 0.0019325000000000002
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "gpt-6-sol",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "gpt-6-sol",
+        "cost4": {
+          "input": 2,
+          "output": 10,
+          "cacheRead": 0.2,
+          "cacheWrite": 2.5
+        },
+        "source": "expected",
+        "sourceRef": "derived: GPT-6 Sol/Luna added 2026-09-23 ahead of Devin's modelCostData table; OpenAI API list price https://developers.openai.com/api/docs/changelog (2026-09-22: GPT-6 Sol $2 / $0.20 cached / $10; GPT-6 Luna $0.10 / $0.01 cached / $0.50)",
+        "verifiedAt": "2026-09-23",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.0017,
+        "output": 0.002,
+        "cacheRead": 0.00002,
+        "cacheWrite": 0.000155,
+        "total": 0.0038750000000000004
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "gpt-6-luna",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "gpt-6-luna",
+        "cost4": {
+          "input": 0.1,
+          "output": 0.5,
+          "cacheRead": 0.01,
+          "cacheWrite": 0.125
+        },
+        "source": "expected",
+        "sourceRef": "derived: GPT-6 Sol/Luna added 2026-09-23 ahead of Devin's modelCostData table; OpenAI API list price https://developers.openai.com/api/docs/changelog (2026-09-22: GPT-6 Sol $2 / $0.20 cached / $10; GPT-6 Luna $0.10 / $0.01 cached / $0.50)",
+        "verifiedAt": "2026-09-23",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.000085,
+        "output": 0.0001,
+        "cacheRead": 0.000001,
+        "cacheWrite": 0.00000775,
+        "total": 0.00019375
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "claude-opus-5",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "claude-opus-5",
+        "cost4": {
+          "input": 5,
+          "output": 25,
+          "cacheRead": 0.5,
+          "cacheWrite": 6.25
+        },
+        "source": "expected",
+        "sourceRef": "https://docs.devin.ai/desktop/models (official modelCostData table, 2026-09-13; list rates for self-serve overage / enterprise ACU conversion on a subscription surface)",
+        "verifiedAt": "2026-09-13",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.00425,
+        "output": 0.005,
+        "cacheRead": 0.00005,
+        "cacheWrite": 0.0003875,
+        "total": 0.009687500000000002
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "claude-opus-5-5",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "claude-opus-5-5",
+        "cost4": {
+          "input": 4,
+          "output": 20,
+          "cacheRead": 0.2,
+          "cacheWrite": 5
+        },
+        "source": "expected",
+        "sourceRef": "derived: live Devin catalog lists claude-opus-5-5 but Devin's modelCostData table does not yet; Anthropic list price shown as estimate https://platform.claude.com/docs/en/about-claude/pricing (official; 5m cache-write tier)",
+        "verifiedAt": "2026-09-23",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.0034,
+        "output": 0.004,
+        "cacheRead": 0.00002,
+        "cacheWrite": 0.00031,
+        "total": 0.007730000000000001
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "claude-fable-5-1",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "claude-fable-5-1",
+        "cost4": {
+          "input": 10,
+          "output": 50,
+          "cacheRead": 0.25,
+          "cacheWrite": 12.5
+        },
+        "source": "expected",
+        "sourceRef": "https://docs.devin.ai/desktop/models (official modelCostData table, 2026-09-13; list rates for self-serve overage / enterprise ACU conversion on a subscription surface)",
+        "verifiedAt": "2026-09-13",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.0085,
+        "output": 0.01,
+        "cacheRead": 0.000025,
+        "cacheWrite": 0.000775,
+        "total": 0.019300000000000005
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "claude-sonnet-5-5",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "claude-sonnet-5-5",
+        "cost4": {
+          "input": 2,
+          "output": 10,
+          "cacheRead": 0.1,
+          "cacheWrite": 2.5
+        },
+        "source": "expected",
+        "sourceRef": "derived (preemptive): Devin's live catalog and modelCostData table do not list claude-sonnet-5-5 yet; Anthropic list price shown as estimate https://platform.claude.com/docs/en/about-claude/pricing (official; 5m cache-write tier)",
+        "verifiedAt": "2026-10-08",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.0017,
+        "output": 0.002,
+        "cacheRead": 0.00001,
+        "cacheWrite": 0.000155,
+        "total": 0.0038650000000000004
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "claude-sonnet-5",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "claude-sonnet-5",
+        "cost4": {
+          "input": 2,
+          "output": 10,
+          "cacheRead": 0.2,
+          "cacheWrite": 2.5
+        },
+        "source": "expected",
+        "sourceRef": "https://docs.devin.ai/desktop/models (official modelCostData table, 2026-09-13; list rates for self-serve overage / enterprise ACU conversion on a subscription surface)",
+        "verifiedAt": "2026-09-13",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.0017,
+        "output": 0.002,
+        "cacheRead": 0.00002,
+        "cacheWrite": 0.000155,
+        "total": 0.0038750000000000004
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "glm-5-3",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "glm-5-3",
+        "cost4": {
+          "input": 1.4,
+          "output": 4.4,
+          "cacheRead": 0.26,
+          "cacheWrite": 0
+        },
+        "source": "expected",
+        "sourceRef": "https://docs.devin.ai/desktop/models (official modelCostData table, 2026-09-13; list rates for self-serve overage / enterprise ACU conversion on a subscription surface)",
+        "verifiedAt": "2026-09-13",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.00119,
+        "output": 0.0008800000000000001,
+        "cacheRead": 0.000026,
+        "cacheWrite": 0,
+        "total": 0.002096
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "kimi-k3",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "kimi-k3",
+        "cost4": {
+          "input": 3,
+          "output": 15,
+          "cacheRead": 0.3,
+          "cacheWrite": 0
+        },
+        "source": "expected",
+        "sourceRef": "https://docs.devin.ai/desktop/models (official modelCostData table, 2026-09-13; list rates for self-serve overage / enterprise ACU conversion on a subscription surface)",
+        "verifiedAt": "2026-09-13",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.00255,
+        "output": 0.003,
+        "cacheRead": 0.00003,
+        "cacheWrite": 0,
+        "total": 0.00558
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "gemini-3-8-flash",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "gemini-3-8-flash",
+        "cost4": {
+          "input": 0.75,
+          "output": 3.75,
+          "cacheRead": 0.075,
+          "cacheWrite": 0
+        },
+        "source": "expected",
+        "sourceRef": "derived: absent from Devin's modelCostData table; Google published promotional rate through 2026-12-31 shown as estimate https://ai.google.dev/gemini-api/docs/pricing (2026-09-03); promotional rate through 2026-12-31, rises to 1.50/7.50 on 2027-01-01; cacheWrite=0: storage is billed per-hour, not per-token",
+        "verifiedAt": "2026-09-13",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.0006375,
+        "output": 0.00075,
+        "cacheRead": 0.0000075,
+        "cacheWrite": 0,
+        "total": 0.001395
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "devin-cli",
+      "model": "grok-4-6",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "devin-cli",
+        "modelId": "grok-4-6",
+        "cost4": {
+          "input": 2,
+          "output": 6,
+          "cacheRead": 0.3,
+          "cacheWrite": 0
+        },
+        "source": "expected",
+        "sourceRef": "https://docs.devin.ai/desktop/models (official modelCostData table, 2026-09-13; list rates for self-serve overage / enterprise ACU conversion on a subscription surface)",
+        "verifiedAt": "2026-09-13",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.0017,
+        "output": 0.0012,
+        "cacheRead": 0.00003,
+        "cacheWrite": 0,
+        "total": 0.00293
+      },
+      "estimated": true
+    }
+  }
+]

@@ -1,0 +1,8 @@
+# Replace with the public hostname; register https://router.example.com/auth/callback.
+router.example.com {
+    @internal path /metrics /healthz /readyz
+    respond @internal 404
+    reverse_proxy 127.0.0.1:8080 {
+        flush_interval -1
+    }
+}

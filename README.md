@@ -43,3 +43,5 @@ Delcore, DeliDev, and DeliTools are maintained in [delino-apps](https://github.c
 Bundlewhy is maintained in [delinoio/bundlewhy](https://github.com/delinoio/bundlewhy).
 
 Typeopt is maintained in [delinoio/typeopt](https://github.com/delinoio/typeopt).
+
+AIPRouter provides a self-hosted organization AI provider router, personal provider pools, a configuration CLI and a web console. Read the [project contracts](docs/project-aiprouter.md), [public guides](apps/public-docs/docs/aiprouter/index.md) and [deployment guide](packaging/aiprouter/README.md). Start configured local services with `pnpm dev:aiprouter`; this command does not provision external dependencies.

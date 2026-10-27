@@ -33,3 +33,6 @@
 - [async-commit-hook command contract](../docs/cmds-async-commit-hook-contract.md)
 - [Runmoor command foundation](../docs/cmds-runmoor-foundation.md)
 - [Linux Package Repository Contract](../docs/repository-linux-packages-contract.md)
+
+- [AIPRouter](../docs/project-aiprouter.md)
+- [AIPRouter domain contract](../docs/cmds-aiprouter-client-contract.md)

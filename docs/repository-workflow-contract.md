@@ -625,6 +625,10 @@ The coordinator resolves it before configuration validation and version commits,
 then uses it to select Cargo registry credentials, Rust setup, caching and
 publication. Non-Cargo projects still validate their immutable source and tag.
 
+## AIPRouter integration
+
+AIPRouter uses the root `github.com/delinoio/oss` Go module. The module selects toolchain `go1.26.10`, retaining the imported patched toolchain for local commands and CI setup. Root `pnpm dev:aiprouter` selects the API, console and consolidated docs development tasks. The existing affected Go checks include its shared libraries and validation fixtures. `.github/workflows/aiprouter.yml` retains PostgreSQL, race, generated-binding, Compose recovery, distribution and synthetic-load validation on affected PR, main push and manual runs, without publication or macOS runners. Its manual comparison uses the same main/branch baseline rules as the shared workflow. The shared docs workflow builds `/aiprouter`; no separate docs publisher is added. Release staging remains explicit through `scripts/aiprouter/build-release.py`; the npm installer uses the `aiprouter@v<version>` tag namespace in this repository. No release automation or publication authority is added. Record actual results and unperformed checks in PR/CI records.
+
 ## labs-site validation
 
 The central `node-labs-site-test` job owns `apps/labs-site/**` and its project/foundation contracts. It uses one frozen script-disabled workspace install and the shared affected runner with the exact planner comparison to run `labs-site test` on Ubuntu. Shared workspace and development-wrapper inputs force validation. The final CI result includes this job. PRs, main pushes, and manual dispatch retain affected selection and existing native platform restrictions. This job validates TypeScript and the static production build; it does not publish to Cloudflare Pages or establish domain, DNS, TLS, or production HTTP acceptance. See [the labs-site foundation](apps-labs-site-foundation.md).
