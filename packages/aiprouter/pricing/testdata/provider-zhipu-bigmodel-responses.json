@@ -1,0 +1,94 @@
+[
+  {
+    "input": {
+      "provider": "zhipu-bigmodel-responses",
+      "model": "glm-5.3",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "zhipu-bigmodel-responses",
+        "modelId": "glm-5.3",
+        "jawcodeProvider": "zai",
+        "cost4": {
+          "input": 1.4,
+          "output": 4.4,
+          "cacheRead": 0.26,
+          "cacheWrite": 0
+        },
+        "source": "expected",
+        "sourceRef": "z.ai list price shown as estimate; GLM Coding Plan is subscription-billed; https://docs.z.ai/guides/overview/pricing (official USD table, 2026-09-13; cacheWrite=0 — cache storage is limited-time free on both z.ai and bigmodel.cn)",
+        "verifiedAt": "2026-09-13",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.00119,
+        "output": 0.0008800000000000001,
+        "cacheRead": 0.000026,
+        "cacheWrite": 0,
+        "total": 0.002096
+      },
+      "estimated": true
+    }
+  },
+  {
+    "input": {
+      "provider": "zhipu-bigmodel-responses",
+      "model": "glm-5.3-flash",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "zhipu-bigmodel-responses",
+        "modelId": "glm-5.3-flash",
+        "jawcodeProvider": "zai",
+        "cost4": {
+          "input": 0.15,
+          "output": 0.5,
+          "cacheRead": 0.03,
+          "cacheWrite": 0
+        },
+        "source": "expected",
+        "sourceRef": "z.ai list price shown as estimate; GLM Coding Plan is subscription-billed; https://docs.z.ai/guides/overview/pricing (official USD table, 2026-09-13; cacheWrite=0 — cache storage is limited-time free on both z.ai and bigmodel.cn)",
+        "verifiedAt": "2026-09-13",
+        "status": "verified-derived"
+      },
+      "cost": {
+        "input": 0.0001275,
+        "output": 0.0001,
+        "cacheRead": 0.000003,
+        "cacheWrite": 0,
+        "total": 0.0002305
+      },
+      "estimated": true
+    }
+  }
+]

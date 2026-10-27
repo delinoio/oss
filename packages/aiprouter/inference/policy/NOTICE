@@ -1,0 +1,8 @@
+Provider policy algorithms adapted from lidge-jun/opencodex, revision
+88aaa754566d119b6b8fc898f8fb47602387d82e.
+Copyright (c) 2026 opencodex contributors. MIT license in LICENSE-MIT.
+Sources: src/providers/resolved-model-policy.ts, src/types/wire.ts,
+src/adapters/openai-chat/{reasoning-wire,reasoning-replay,tool-schema,developer-role,
+standalone-bare-tool-calls,serialized-tool-call-content}.ts,
+src/adapters/openai-responses/{reasoning,tool-output-recovery}.ts.
+Repository-owned Go implementation is Apache-2.0.

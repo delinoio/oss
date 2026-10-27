@@ -1,0 +1,182 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package aiprouter.v1;
+
+import "aiprouter/v1/common.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/aiprouter/v1;aiprouterv1";
+
+// Raw keys and device secrets are sensitive. Never log these messages or put secrets in URLs.
+// Device expiry is fixed at issuance + ten minutes. Poll every five seconds.
+message DeviceKeyResult {
+  string key_id = 1;
+  string raw_key = 2;
+  string organization_id = 3;
+  string organization_name = 4;
+  google.protobuf.Timestamp key_expires_at = 5;
+  string revocation_url = 6;
+}
+
+// Browser inspection reflects persisted lifecycle state, never a synthetic PENDING.
+// APPROVED means waiting for CLI storage; DELIVERED means confirmation was recorded.
+// DENIED, EXPIRED and REVOKED remain distinguishable. Never expose the raw key here.
+// expires_at is the original deadline; organization_id/key_expires_at reflect approval.
+message DeviceAuthorization {
+  string authorization_id = 1;
+  string device_name = 2;
+  string server_address = 3;
+  DeviceAuthorizationState state = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  string organization_id = 6;
+  google.protobuf.Timestamp key_expires_at = 7;
+}
+
+// Keys belong to the current user in the selected organization. Absent expiry means no expiry.
+// Ordinary issuance exposes the raw key once; list responses never include it.
+service KeyService {
+  rpc CreateKey(CreateKeyRequest) returns (CreateKeyResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc ListKeys(ListKeysRequest) returns (ListKeysResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc RevokeKey(RevokeKeyRequest) returns (RevokeKeyResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+}
+message CreateKeyRequest {
+  string organization_id = 1;
+  string name = 2;
+  google.protobuf.Timestamp expires_at = 3;
+}
+message CreateKeyResponse {
+  InferenceKey key = 1;
+  string raw_key = 2;
+}
+message ListKeysRequest {
+  string organization_id = 1;
+  PageRequest page = 2;
+}
+message ListKeysResponse {
+  repeated InferenceKey keys = 1;
+  PageResponse page = 2;
+}
+message RevokeKeyRequest {
+  string organization_id = 1;
+  string key_id = 2;
+}
+message RevokeKeyResponse {}
+
+// Poll redelivers the same approved key only to the bound secret until original expiry.
+// Confirmation is idempotent and destroys the temporary raw key. Expiry revokes unclaimed keys.
+// Compensation revokes only this authorization's key and is idempotent.
+service DeviceAuthorizationService {
+  rpc BeginDeviceAuthorization(BeginDeviceAuthorizationRequest) returns (BeginDeviceAuthorizationResponse) {
+    option (auth_scope) = AUTH_SCOPE_PUBLIC;
+  }
+  rpc PollDeviceAuthorization(PollDeviceAuthorizationRequest) returns (PollDeviceAuthorizationResponse) {
+    option (auth_scope) = AUTH_SCOPE_DEVICE_SECRET;
+  }
+  rpc ConfirmDeviceStorage(ConfirmDeviceStorageRequest) returns (ConfirmDeviceStorageResponse) {
+    option (auth_scope) = AUTH_SCOPE_DEVICE_SECRET;
+  }
+  rpc RevokeDeviceKey(RevokeDeviceKeyRequest) returns (RevokeDeviceKeyResponse) {
+    option (auth_scope) = AUTH_SCOPE_DEVICE_SECRET;
+  }
+}
+message BeginDeviceAuthorizationRequest {
+  string device_name = 1;
+}
+message BeginDeviceAuthorizationResponse {
+  string authorization_id = 1;
+  string device_secret = 2;
+  string user_code = 3;
+  string verification_url = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  uint32 poll_interval_seconds = 6;
+}
+message PollDeviceAuthorizationRequest {
+  string authorization_id = 1;
+  string device_secret = 2;
+}
+message PollDeviceAuthorizationResponse {
+  DeviceAuthorizationState state = 1;
+  DeviceKeyResult result = 2;
+}
+message ConfirmDeviceStorageRequest {
+  string authorization_id = 1;
+  string device_secret = 2;
+}
+message ConfirmDeviceStorageResponse {}
+message RevokeDeviceKeyRequest {
+  string authorization_id = 1;
+  string device_secret = 2;
+}
+message RevokeDeviceKeyResponse {}
+service DeviceApprovalService {
+  rpc GetDeviceAuthorization(GetDeviceAuthorizationRequest) returns (GetDeviceAuthorizationResponse) {
+    option (auth_scope) = AUTH_SCOPE_WEB_SESSION;
+  }
+  rpc ApproveDeviceAuthorization(ApproveDeviceAuthorizationRequest) returns (ApproveDeviceAuthorizationResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc DenyDeviceAuthorization(DenyDeviceAuthorizationRequest) returns (DenyDeviceAuthorizationResponse) {
+    option (auth_scope) = AUTH_SCOPE_WEB_SESSION;
+  }
+}
+message GetDeviceAuthorizationRequest {
+  string user_code = 1;
+}
+message GetDeviceAuthorizationResponse {
+  DeviceAuthorization authorization = 1;
+}
+message ApproveDeviceAuthorizationRequest {
+  string organization_id = 1;
+  string user_code = 2;
+  google.protobuf.Timestamp key_expires_at = 3;
+}
+message ApproveDeviceAuthorizationResponse {
+  DeviceAuthorization authorization = 1;
+}
+message DenyDeviceAuthorizationRequest {
+  string user_code = 1;
+}
+message DenyDeviceAuthorizationResponse {}
+
+// These inference-key scopes confer no management authority. Self-revoke must match the authenticated key.
+service ClientService {
+  // Explicit opt-in for this key only; never grants general management authority.
+  rpc ConfigureClientContext(ConfigureClientContextRequest) returns (ConfigureClientContextResponse) {
+    option (auth_scope) = AUTH_SCOPE_INFERENCE_KEY;
+  }
+  // Confirms an already observed session/account candidate; cannot choose an account.
+  rpc BindClientContextSession(BindClientContextSessionRequest) returns (BindClientContextSessionResponse) {
+    option (auth_scope) = AUTH_SCOPE_INFERENCE_KEY;
+  }
+  rpc ListClientModels(ListClientModelsRequest) returns (ListClientModelsResponse) {
+    option (auth_scope) = AUTH_SCOPE_INFERENCE_KEY;
+  }
+  rpc RevokeCLIKey(RevokeCLIKeyRequest) returns (RevokeCLIKeyResponse) {
+    option (auth_scope) = AUTH_SCOPE_INFERENCE_KEY;
+  }
+}
+message ListClientModelsRequest {}
+message ListClientModelsResponse {
+  repeated Model models = 1;
+}
+message RevokeCLIKeyRequest {
+  string key_id = 1;
+}
+message RevokeCLIKeyResponse {}
+
+message ConfigureClientContextRequest {
+  bool enabled = 1;
+}
+message ConfigureClientContextResponse {}
+message BindClientContextSessionRequest {
+  string session_id = 1;
+}
+message BindClientContextSessionResponse {
+  google.protobuf.Timestamp expires_at = 1;
+}

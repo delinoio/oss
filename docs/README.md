@@ -34,7 +34,7 @@ Record new implementation status, validation results and unresolved limits in pu
 - Do not arbitrarily omit, delete, or simplify requested or source-backed content during documentation edits unless the user explicitly asks for that outcome.
 - If documentation content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret.
 - Update or create the relevant `AGENTS.md` in the same change only when development procedures, directory ownership or repository/domain development rules change; follow the [instruction-update policy](#instruction-update-policy).
-- `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Consolidated OSS public documentation is owned and built by `apps/public-docs`; the project content roots are `apps/public-docs/docs/{runmoor,nodeup,binpm,async-commit-hook,clibox,pnport}`. Those pages must curate from these contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow. Independent Labs documentation is owned by `apps/labs-docs`; its public-content boundary is defined in [the Labs app contract](apps-labs-docs-foundation.md).
+- `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Consolidated OSS public documentation is owned and built by `apps/public-docs`; the project content roots are `apps/public-docs/docs/{runmoor,nodeup,binpm,async-commit-hook,clibox,pnport,aiprouter}`. Those pages must curate from these contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow. Independent Labs documentation is owned by `apps/labs-docs`; its public-content boundary is defined in [the Labs app contract](apps-labs-docs-foundation.md).
 
 ## Naming Rules
 
@@ -59,6 +59,20 @@ Record new implementation status, validation results and unresolved limits in pu
 - [repository-workflow-contract.md](repository-workflow-contract.md): CI selection and validation, manual CLI project/version releases, `delino-release-bot` setup, exact-commit recovery, Runmoor stable publication, and consolidated documentation publication.
 
 ## Project Catalog
+
+### aiprouter
+
+- [apps-aiprouter-console-contract.md](apps-aiprouter-console-contract.md)
+- [apps-aiprouter-console-design.md](apps-aiprouter-console-design.md)
+- [apps-aiprouter-docs-contract.md](apps-aiprouter-docs-contract.md)
+- [cmds-aiprouter-client-contract.md](cmds-aiprouter-client-contract.md)
+- [packages-aiprouter-client-contract.md](packages-aiprouter-client-contract.md)
+- [packages-aiprouter-libraries-contract.md](packages-aiprouter-libraries-contract.md)
+- [project-aiprouter.md](project-aiprouter.md)
+- [protos-aiprouter-management-contract.md](protos-aiprouter-management-contract.md)
+- [servers-aiprouter-compatibility-contract.md](servers-aiprouter-compatibility-contract.md)
+- [servers-aiprouter-operations-contract.md](servers-aiprouter-operations-contract.md)
+- [servers-aiprouter-service-contract.md](servers-aiprouter-service-contract.md)
 
 ### binpm
 

@@ -1,0 +1,48 @@
+[
+  {
+    "input": {
+      "provider": "minimax",
+      "model": "MiniMax-M2.1-highspeed",
+      "usage": {
+        "inputTokens": 1000,
+        "outputTokens": 200,
+        "cacheReadInputTokens": 100,
+        "cacheCreationInputTokens": 50,
+        "cacheCreation1hInputTokens": 20
+      },
+      "usageStatus": "reported"
+    },
+    "expected": {
+      "tokens": {
+        "input": 850,
+        "output": 200,
+        "cacheRead": 100,
+        "cacheWrite": 50,
+        "cacheWrite1h": 20
+      },
+      "price": {
+        "provider": "minimax",
+        "modelId": "MiniMax-M2.1-highspeed",
+        "jawcodeProvider": "minimax",
+        "cost4": {
+          "input": 0.6,
+          "output": 2.4,
+          "cacheRead": 0.03,
+          "cacheWrite": 0.375
+        },
+        "source": "expected",
+        "sourceRef": "https://platform.minimax.io/docs/guides/pricing-paygo",
+        "verifiedAt": "2026-07-20",
+        "status": "verified"
+      },
+      "cost": {
+        "input": 0.00051,
+        "output": 0.00048,
+        "cacheRead": 0.000003,
+        "cacheWrite": 0.00002325,
+        "total": 0.00101625
+      },
+      "estimated": false
+    }
+  }
+]

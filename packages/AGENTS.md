@@ -15,3 +15,6 @@
 - [packages-docs-site-switcher-contract](../docs/packages-docs-site-switcher-contract.md)
 - [pnport npm and native distribution](../docs/packages-pnport-distribution-contract.md)
 - [pnport](../docs/project-pnport.md)
+
+- [AIPRouter](../docs/project-aiprouter.md)
+- [AIPRouter domain contract](../docs/packages-aiprouter-libraries-contract.md)

@@ -1,0 +1,42 @@
+Protocol mappings and fixture scenarios adapted from lidge-jun/opencodex,
+revision 88aaa754566d119b6b8fc898f8fb47602387d82e:
+src/adapters/devin.ts, src/adapters/devin/cloud-direct/{chat,metadata,wire,tool-schema}.ts,
+src/oauth/devin/api-base.ts, src/web-search/{devin-executor,sources,alpha-search}.ts,
+tests/providers/devin-{adapter,hardening,chat-wire-fixes}.test.ts,
+tests/web-search/devin-web-search.test.ts.
+
+Additional adapted policy and fixtures:
+src/adapters/devin/live-models.ts, src/adapters/devin/cloud-direct/{catalog,auth}.ts,
+src/adapters/devin/trajectory.ts, tests/providers/responses-devin-401-replay.test.ts,
+src/adapters/tool-catalog-nudge.ts, src/adapters/exec-tool-result-normalize.ts,
+src/responses/parser-tools.ts,
+src/responses/tool-search-compat.ts,
+src/types/tools.ts, src/claude/devin-output-order.ts,
+tests/providers/devin-family-resolution.test.ts and devin-output-budget.test.ts.
+
+The cloud-direct implementation in opencodex is derived from
+rsvedant/opencode-windsurf-auth (src/cloud-direct/).
+New Go implementation is licensed Apache-2.0; adapted material retains these notices.
+
+MIT License
+
+Copyright (c) 2026 opencodex contributors
+Copyright (c) 2026 Vedant
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

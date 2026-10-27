@@ -1,0 +1,146 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package aiprouter.v1;
+
+import "aiprouter/v1/common.proto";
+import "aiprouter/v1/usage.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/delinoio/oss/protos/aiprouter/v1;aiprouterv1";
+
+// Defaults: 120 requests/minute, 10 concurrent. Bounds: 1..6000 and 1..100.
+message RequestLimits {
+  uint32 requests_per_minute = 1;
+  uint32 concurrent_requests = 2;
+}
+
+// Defaults: 30/365/90 days. Bounds: 1..90 / 30..730 / 30..365 days.
+message RetentionSettings {
+  uint32 request_days = 1;
+  uint32 aggregate_days = 2;
+  uint32 audit_days = 3;
+}
+
+// Approved destinations must still be validated at DNS resolution and every redirect.
+message AllowedDestination {
+  string id = 1;
+  string origin = 2;
+  repeated string allowed_cidrs = 3;
+}
+message InstanceSettings {
+  RequestLimits request_limits = 1;
+  RetentionSettings retention = 2;
+  repeated AllowedDestination allowed_destinations = 3;
+  string revision = 4;
+}
+message InstanceHealth {
+  HealthState service = 1;
+  HealthState database = 2;
+  google.protobuf.Timestamp last_cleanup_success_at = 3;
+  uint32 consecutive_cleanup_failures = 4;
+  // Whole-instance recording health. UNSPECIFIED means unknown, not healthy.
+  HealthState usage_recording = 5;
+}
+message PriceOverride {
+  string id = 1;
+  string provider_id = 2;
+  string model_id = 3;
+  string service_tier = 4;
+  PriceRates rates = 5;
+  google.protobuf.Timestamp updated_at = 6;
+}
+
+// Only whole-instance aggregates are exposed. Operators have no tenant selectors or impersonation RPC.
+service OperatorService {
+  rpc GetInstanceSettings(GetInstanceSettingsRequest) returns (GetInstanceSettingsResponse) {
+    option (auth_scope) = AUTH_SCOPE_INSTANCE_OPERATOR;
+  }
+  rpc UpdateInstanceSettings(UpdateInstanceSettingsRequest) returns (UpdateInstanceSettingsResponse) {
+    option (auth_scope) = AUTH_SCOPE_INSTANCE_OPERATOR;
+  }
+  rpc GetInstanceHealth(GetInstanceHealthRequest) returns (GetInstanceHealthResponse) {
+    option (auth_scope) = AUTH_SCOPE_INSTANCE_OPERATOR;
+  }
+  rpc GetInstanceUsage(GetInstanceUsageRequest) returns (GetInstanceUsageResponse) {
+    option (auth_scope) = AUTH_SCOPE_INSTANCE_OPERATOR;
+  }
+  rpc ListPriceOverrides(ListPriceOverridesRequest) returns (ListPriceOverridesResponse) {
+    option (auth_scope) = AUTH_SCOPE_INSTANCE_OPERATOR;
+  }
+  rpc SetPriceOverride(SetPriceOverrideRequest) returns (SetPriceOverrideResponse) {
+    option (auth_scope) = AUTH_SCOPE_INSTANCE_OPERATOR;
+  }
+  rpc DeletePriceOverride(DeletePriceOverrideRequest) returns (DeletePriceOverrideResponse) {
+    option (auth_scope) = AUTH_SCOPE_INSTANCE_OPERATOR;
+  }
+  rpc ListInstanceAudit(ListInstanceAuditRequest) returns (ListInstanceAuditResponse) {
+    option (auth_scope) = AUTH_SCOPE_INSTANCE_OPERATOR;
+  }
+}
+message GetInstanceSettingsRequest {}
+message GetInstanceSettingsResponse {
+  InstanceSettings settings = 1;
+}
+message UpdateInstanceSettingsRequest {
+  InstanceSettings settings = 1;
+  string expected_revision = 2;
+}
+message UpdateInstanceSettingsResponse {
+  InstanceSettings settings = 1;
+}
+message GetInstanceHealthRequest {}
+message GetInstanceHealthResponse {
+  InstanceHealth health = 1;
+}
+message GetInstanceUsageRequest {
+  TimeRange time_range = 1;
+}
+message GetInstanceUsageResponse {
+  UsageSummary summary = 1;
+}
+message ListPriceOverridesRequest {
+  PageRequest page = 1;
+}
+message ListPriceOverridesResponse {
+  repeated PriceOverride overrides = 1;
+  PageResponse page = 2;
+  // Opaque revision of the entire collection, including an empty collection.
+  // Page tokens must bind this revision; never combine pages from different revisions.
+  string revision = 3;
+}
+message SetPriceOverrideRequest {
+  string provider_id = 1;
+  string model_id = 2;
+  string service_tier = 3;
+  PriceRates rates = 4;
+  // Required nonempty collection revision from listing or a prior successful mutation.
+  // Atomically reject stale revisions with ABORTED; never silently overwrite.
+  string expected_revision = 5;
+}
+message SetPriceOverrideResponse {
+  PriceOverride override = 1;
+  // New collection revision after the successful mutation, not an item revision.
+  string revision = 2;
+}
+message DeletePriceOverrideRequest {
+  string override_id = 1;
+  // Required nonempty collection revision from listing or a prior successful mutation.
+  // Atomically reject stale revisions with ABORTED; never silently overwrite.
+  string expected_revision = 2;
+}
+message DeletePriceOverrideResponse { // New collection revision after the successful mutation, not an item revision.
+  string revision = 1;
+}
+message ListInstanceAuditRequest {
+  TimeRange time_range = 1;
+  PageRequest page = 2;
+  // Conjunctive filters never widen the existing audit visibility scope.
+  // Absent outcome means all; explicit UNSPECIFIED selects unknown outcomes.
+  optional AuditAction action = 3;
+  optional string actor_user_id = 4;
+  optional AuditOutcome outcome = 5;
+}
+message ListInstanceAuditResponse {
+  repeated AuditRecord records = 1;
+  PageResponse page = 2;
+}

@@ -1,0 +1,44 @@
+{
+  "gemma-4-31b": {
+    "input": 0.99,
+    "output": 1.49,
+    "cacheRead": 0,
+    "cacheWrite": 0
+  },
+  "gpt-oss-120b": {
+    "input": 0.35,
+    "output": 0.75,
+    "cacheRead": 0,
+    "cacheWrite": 0
+  },
+  "llama3.1-8b": {
+    "input": 0.1,
+    "output": 0.1,
+    "cacheRead": 0,
+    "cacheWrite": 0
+  },
+  "qwen-3-235b-a22b-instruct-2507": {
+    "input": 0.6,
+    "output": 1.2,
+    "cacheRead": 0,
+    "cacheWrite": 0
+  },
+  "qwen-3-coder-480b": {
+    "input": 0,
+    "output": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0
+  },
+  "zai-glm-4.6": {
+    "input": 0,
+    "output": 0,
+    "cacheRead": 0,
+    "cacheWrite": 0
+  },
+  "zai-glm-4.7": {
+    "input": 2.25,
+    "output": 2.75,
+    "cacheRead": 2.25,
+    "cacheWrite": 0
+  }
+}

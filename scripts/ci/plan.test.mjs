@@ -1295,6 +1295,19 @@ test("CI Result requires every selected formatting job to succeed", () => {
   }
 });
 
+test("AIPRouter shared Go libraries and fixtures select Go validation", () => {
+  for (const event of Object.values(Event)) {
+    for (const path of [
+      "packages/aiprouter/core/ids.go",
+      "scripts/aiprouter/fixture/main.go",
+    ]) {
+      const plan = planJobs(event, [path]);
+      assert.equal(plan.jobs["go-test"], true, `${event}: ${path}`);
+      assert.equal(plan.jobs["go-quality"], true, `${event}: ${path}`);
+    }
+  }
+});
+
 test("Labs docs own their app and force external build inputs on all CI events", () => {
   const id = "node-labs-docs-test";
   for (const event of Object.values(Event)) {

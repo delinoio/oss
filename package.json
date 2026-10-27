@@ -23,6 +23,7 @@
     "proto:check": "turbo run ci:proto:check --filter=@delinoio/ci",
     "dev:async-commit-hook": "pnpm --filter async-commit-hook dev",
     "format:check": "turbo run ci:format --filter=@delinoio/ci",
+    "dev:aiprouter": "turbo run dev --filter=@aiprouter/server --filter=@aiprouter/console --filter=public-docs",
     "dev:labs-site": "pnpm --filter labs-site dev",
     "dev:labs-docs": "pnpm --filter labs-docs dev",
     "i18n:check": "pnpm -r --workspace-concurrency=2 --if-present run i18n:check",
@@ -58,7 +59,8 @@
       "uuid": "11.1.1",
       "ws@>=6.0.0 <6.2.4": "6.2.6",
       "ws@>=7.0.0 <7.5.11": "7.5.13",
-      "ws@>=8.0.0 <8.21.0": "8.21.3"
+      "ws@>=8.0.0 <8.21.0": "8.21.3",
+      "source-map-js": "1.2.2"
     }
   },
   "devDependencies": {

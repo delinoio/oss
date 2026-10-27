@@ -1,0 +1,157 @@
+name: AIPRouter
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:14.19-bookworm
+        env:
+          POSTGRES_DB: aiprouter_test
+          POSTGRES_USER: aiprouter
+          POSTGRES_PASSWORD: fixture-only-password
+        ports: ["55432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U aiprouter -d aiprouter_test"
+          --health-interval 5s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+          lfs: true
+      - name: Resolve affected comparison
+        id: comparison
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PUSH_BASE: ${{ github.event.before }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          case "$EVENT" in
+            pull_request) base="$PR_BASE"; head="$PR_HEAD" ;;
+            push)
+              base="$PUSH_BASE"
+              if [[ "$base" =~ ^0+$ ]]; then
+                empty_tree="$(git hash-object -t tree /dev/null)"
+                base="$(git -c user.name=CI -c user.email=ci@example.invalid commit-tree "$empty_tree" -m 'Empty comparison')"
+              fi
+              ;;
+            workflow_dispatch)
+              if [[ "$GITHUB_REF" == 'refs/heads/main' ]]; then
+                base="$(git rev-parse HEAD^)"
+              else
+                base="$(git merge-base origin/main "$head")"
+              fi
+              ;;
+            *) exit 1 ;;
+          esac
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "Validation revision: $(git rev-parse HEAD)" >> "$GITHUB_STEP_SUMMARY"
+          echo "Comparison: $base..$head" >> "$GITHUB_STEP_SUMMARY"
+      - name: Select affected AIPRouter paths
+        id: affected
+        env:
+          BASE: ${{ steps.comparison.outputs.base }}
+          HEAD: ${{ steps.comparison.outputs.head }}
+        run: |
+          git diff --name-only "$BASE" "$HEAD" > "$RUNNER_TEMP/aiprouter-changed-paths"
+          if rg '^(go\.(mod|sum)|package\.json|pnpm-lock\.yaml|pnpm-workspace\.yaml|buf[^/]*\.ya?ml|rstack\.config\.ts|tsconfig[^/]*\.json|\.nvmrc|AGENTS\.md)$|^(apps/aiprouter[^/]*|packages/aiprouter[^/]*|servers/aiprouter|cmds/aiprouter|protos/aiprouter|scripts/aiprouter|packaging/aiprouter)/|^docs/|^apps/public-docs/|^\.github/workflows/aiprouter\.yml$' "$RUNNER_TEMP/aiprouter-changed-paths"; then
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        if: steps.affected.outputs.run == 'true'
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: steps.affected.outputs.run == 'true'
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+        if: steps.affected.outputs.run == 'true'
+      - name: Install workspace and pinned protoc
+        if: steps.affected.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          pnpm install --frozen-lockfile --ignore-scripts
+          mkdir -p "$RUNNER_TEMP/protoc-download" "$RUNNER_TEMP/protoc"
+          gh release download v33.0 --repo protocolbuffers/protobuf --pattern protoc-33.0-linux-x86_64.zip --dir "$RUNNER_TEMP/protoc-download"
+          echo "d99c011b799e9e412064244f0be417e5d76c9b6ace13a2ac735330fa7d57ad8f  $RUNNER_TEMP/protoc-download/protoc-33.0-linux-x86_64.zip" | sha256sum --check
+          unzip -q "$RUNNER_TEMP/protoc-download/protoc-33.0-linux-x86_64.zip" -d "$RUNNER_TEMP/protoc"
+          echo "$RUNNER_TEMP/protoc/bin" >> "$GITHUB_PATH"
+      - name: Generated bindings and TypeScript client
+        if: steps.affected.outputs.run == 'true'
+        run: |
+          pnpm exec buf lint
+          pnpm exec buf format --diff --exit-code
+          pnpm --dir packages/aiprouter-client generate:check
+          pnpm --dir packages/aiprouter-client typecheck
+          pnpm --dir packages/aiprouter-client test
+      - name: Documentation and console tests and builds
+        if: steps.affected.outputs.run == 'true'
+        run: |
+          for app in apps/aiprouter; do
+            if [[ -f "$app/package.json" ]]; then
+              pnpm --dir "$app" test
+              pnpm --dir "$app" build
+            else
+              echo "$app has no package; tests/build not performed" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+      - name: Unit and fixture validation
+        env:
+          AIPROUTER_TEST_DATABASE_URL: postgres://aiprouter:fixture-only-password@127.0.0.1:55432/aiprouter_test?sslmode=disable
+        if: steps.affected.outputs.run == 'true'
+        run: |
+          go mod download all
+          go test -race ./servers/aiprouter/... ./cmds/aiprouter/... ./packages/aiprouter/... ./protos/aiprouter/... ./scripts/aiprouter/...
+          scripts/aiprouter/validate.sh
+      - name: Alert condition fixtures
+        if: steps.affected.outputs.run == 'true'
+        run: docker run --rm --entrypoint promtool -v "$PWD/packaging/aiprouter/observability:/rules:ro" prom/prometheus:v3.5.0 test rules /rules/alerts.test.yml
+      - name: Compose installation and recovery fixture
+        if: steps.affected.outputs.run == 'true'
+        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/aiprouter/compose-smoke.py
+      - name: Cross-platform binaries and npm package validation
+        if: steps.affected.outputs.run == 'true'
+        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/aiprouter/build-release.py "$RUNNER_TEMP/aiprouter-release"
+      - name: Authenticated router load with synthetic upstream
+        if: steps.affected.outputs.run == 'true'
+        env:
+          AIPROUTER_TEST_DATABASE_URL: postgres://aiprouter:fixture-only-password@127.0.0.1:55432/aiprouter_test?sslmode=disable
+        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/aiprouter/router-load.py --output "$RUNNER_TEMP/aiprouter-load.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always() && steps.affected.outputs.run == 'true'
+        with:
+          name: aiprouter-validation
+          path: |
+            ${{ runner.temp }}/aiprouter-load.json
+            ${{ runner.temp }}/aiprouter-release/build.json
+            ${{ runner.temp }}/aiprouter-release/SHA256SUMS
+          if-no-files-found: warn
+      - name: Record validation boundaries
+        if: always()
+        env:
+          RESULT: ${{ job.status }}
+          AFFECTED: ${{ steps.affected.outputs.run }}
+        run: |
+          {
+            echo "Affected: ${AFFECTED:-false}; result: $RESULT"
+            echo 'Commands: pnpm install; generate:check; client typecheck/test; available apps test/build; go test -race ./servers/aiprouter/... ./cmds/aiprouter/... ./packages/aiprouter/... ./protos/aiprouter/... ./scripts/aiprouter/...; validate.sh; promtool test rules; compose-smoke.py; build-release.py; router-load.py'
+            echo 'Linux fixture/build checks only. No npm publication, deployment, real provider/account or native macOS/Windows acceptance. Router load uses seeded authentication and synthetic upstream responses; no live-provider capacity or SLO claim.'
+          } >> "$GITHUB_STEP_SUMMARY"
