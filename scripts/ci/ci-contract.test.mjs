@@ -44,7 +44,6 @@ const legacyJobs = [
   "node-public-docs-test",
   "node-clibox-test",
   "node-pnport-test",
-  "node-bundlewhy-test",
   "pnport-native",
 ];
 const releaseJobs = ["release-contracts"];

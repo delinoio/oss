@@ -30,11 +30,14 @@ try {
     original,
   );
   const baseline = JSON.parse(readFileSync(original, "utf8"));
-  // DevHud and DeliDev retired their APIs; Delcore moved to delino-apps. Keep FILE
+  // DevHud and DeliDev retired their APIs; Delcore and bundlewhy moved repositories. Keep FILE
   // checks for owned packages. Remove this projection once all baselines
   // omit the retired and transferred schemas.
   baseline.file = baseline.file.filter(
-    (file) => !["delidev.v1", "delcore.v1", "devhud.v1"].includes(file.package),
+    (file) =>
+      !["delidev.v1", "delcore.v1", "devhud.v1", "bundlewhy.v1"].includes(
+        file.package,
+      ),
   );
   // Retired services can be the only consumers of a protobuf well-known type.
   // Drop those orphan imports too, while retaining every owned schema and all

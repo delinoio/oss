@@ -34,7 +34,7 @@ Record new implementation status, validation results and unresolved limits in pu
 - Do not arbitrarily omit, delete, or simplify requested or source-backed content during documentation edits unless the user explicitly asks for that outcome.
 - If documentation content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret.
 - Update or create the relevant `AGENTS.md` in the same change only when development procedures, directory ownership or repository/domain development rules change; follow the [instruction-update policy](#instruction-update-policy).
-- `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Public documentation is owned and built by `apps/public-docs`; the project content roots are `apps/public-docs/docs/{runmoor,nodeup,binpm,async-commit-hook,clibox,pnport,bundlewhy}`. Those pages must curate from these contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
+- `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Public documentation is owned and built by `apps/public-docs`; the project content roots are `apps/public-docs/docs/{runmoor,nodeup,binpm,async-commit-hook,clibox,pnport}`. Those pages must curate from these contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
 
 ## Naming Rules
 
@@ -59,14 +59,6 @@ Record new implementation status, validation results and unresolved limits in pu
 - [repository-workflow-contract.md](repository-workflow-contract.md): CI selection and validation, manual CLI project/version releases, `delino-release-bot` setup, exact-commit recovery, Runmoor stable publication, and consolidated documentation publication.
 
 ## Project Catalog
-
-### bundlewhy
-
-- [Project index](project-bundlewhy.md)
-- [Rust core, CLI and local server](crates-bundlewhy-foundation.md)
-- [Web UI](apps-bundlewhy-web-contract.md)
-- [Connect protocol v1](protos-bundlewhy-v1-contract.md)
-- [Engine adapters and distribution](packages-bundlewhy-distribution-contract.md)
 
 ### typeopt
 
@@ -117,7 +109,7 @@ Record new implementation status, validation results and unresolved limits in pu
 ### public-docs
 
 - [project-public-docs.md](project-public-docs.md)
-- [apps-public-docs-foundation.md](apps-public-docs-foundation.md) (single `oss.delino.io` publisher, seven project subpaths including bundlewhy, site selector)
+- [apps-public-docs-foundation.md](apps-public-docs-foundation.md) (single `oss.delino.io` publisher, six project subpaths, site selector)
 - [packages-docs-site-switcher-contract.md](packages-docs-site-switcher-contract.md) (shared accessible documentation site selector package and fixed site registry)
 
 ### serde-feather
@@ -159,3 +151,5 @@ Record new implementation status, validation results and unresolved limits in pu
 ## Transferred projects
 
 Delcore, DeliDev, and DeliTools, including their contracts and historical DeliDev validation records, are maintained in [delino-apps](https://github.com/delinoio/delino-apps). This repository no longer owns their runtime paths or CI jobs.
+
+Bundlewhy, including its Rust CLI, web UI, adapters, protocol and public guides, is maintained in [delinoio/bundlewhy](https://github.com/delinoio/bundlewhy).

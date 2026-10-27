@@ -17,7 +17,6 @@ export enum DocumentationSiteId {
   AsyncCommitHook = "async-commit-hook",
   Clibox = "clibox",
   Pnport = "pnport",
-  Bundlewhy = "bundlewhy",
 }
 
 export interface DocumentationSite {
@@ -61,11 +60,6 @@ export const DOCUMENTATION_SITES = [
     id: DocumentationSiteId.Pnport,
     label: "pnport",
     href: "/pnport/",
-  },
-  {
-    id: DocumentationSiteId.Bundlewhy,
-    label: "bundlewhy",
-    href: "/bundlewhy/",
   },
 ] as const satisfies readonly DocumentationSite[];
 

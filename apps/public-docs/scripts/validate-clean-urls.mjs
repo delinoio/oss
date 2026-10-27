@@ -141,74 +141,6 @@ const pnportHeadings = {
   ],
 };
 
-const bundlewhyHeadings = {
-  "/bundlewhy/": [
-    "bundlewhy",
-    "What each diagnostic shows",
-    "Where it runs",
-    "Guides",
-  ],
-  "/bundlewhy/installation": [
-    "Install bundlewhy",
-    "Requirements",
-    "Planned platforms",
-    "Planned npm entry point",
-    "Update or roll back",
-  ],
-  "/bundlewhy/getting-started": [
-    "Getting started with bundlewhy",
-    "Analyze a project",
-    "Select the project, configuration and bundler",
-    "Cancel or stop",
-    "Open a saved run",
-    "Export an HTML report",
-    "Exit codes",
-  ],
-  "/bundlewhy/supported-engines": [
-    "Supported engines",
-    "Compatibility matrix",
-    "Other engine versions",
-    "Non-default minifiers",
-    "The diagnostic build",
-    "Supported builds",
-  ],
-  "/bundlewhy/interpreting-diagnostics": [
-    "Interpreting diagnostics",
-    "Evidence statuses",
-    "Coverage",
-    "Rules",
-    "Conditions",
-    "Locations",
-    "Dependency paths",
-    "Corrective direction",
-    "Chunk sizes",
-  ],
-  "/bundlewhy/privacy-and-export": [
-    "Privacy and export",
-    "Where results are stored",
-    "Exported reports",
-    "Local server",
-    "Logs",
-    "Trust model",
-  ],
-  "/bundlewhy/limitations": [
-    "Limitations",
-    "Analysis scope",
-    "Runs and results",
-    "Interface",
-  ],
-  "/bundlewhy/troubleshooting": [
-    "Troubleshooting bundlewhy",
-    "Project and configuration selection",
-    "Engine and Node.js",
-    "Build and collection",
-    "Result and report problems",
-    "Local server and browser",
-    "Logs",
-    "Support",
-  ],
-};
-
 const stableRouteIds = [
   ...Object.entries(projectRoutes).flatMap(([slug, routes]) =>
     routes.map((route) => `/${slug}${route}`),
@@ -222,7 +154,7 @@ const stableRouteIds = [
   "/with-watch",
 ];
 const projectSlugs = Object.keys(projectRoutes).filter(
-  (slug) => slug !== "clibox" && slug !== "pnport" && slug !== "bundlewhy",
+  (slug) => slug !== "clibox" && slug !== "pnport",
 );
 
 const outputDir = path.resolve("doc_build");
@@ -304,7 +236,6 @@ function attributeValue(match) {
 const requiredHeadings = new Map([
   ...Object.entries(cliboxHeadings),
   ...Object.entries(pnportHeadings),
-  ...Object.entries(bundlewhyHeadings),
 ]);
 const requiredLinks = new Map([
   [
@@ -368,32 +299,6 @@ const requiredLinks = new Map([
   ],
   ["/pnport/diagnostics", ["/pnport/cache"]],
   [
-    "/bundlewhy/",
-    [
-      "/bundlewhy/installation",
-      "/bundlewhy/getting-started",
-      "/bundlewhy/supported-engines",
-      "/bundlewhy/interpreting-diagnostics",
-      "/bundlewhy/privacy-and-export",
-      "/bundlewhy/limitations",
-      "/bundlewhy/troubleshooting",
-      "https://github.com/delinoio/oss/issues",
-    ],
-  ],
-  [
-    "/bundlewhy/installation",
-    ["/bundlewhy/supported-engines", "/bundlewhy/getting-started"],
-  ],
-  [
-    "/bundlewhy/getting-started",
-    [
-      "/bundlewhy/supported-engines",
-      "/bundlewhy/privacy-and-export",
-      "/bundlewhy/interpreting-diagnostics",
-    ],
-  ],
-  ["/bundlewhy/troubleshooting", ["/bundlewhy/supported-engines"]],
-  [
     "/",
     [
       "https://oss.delino.io/runmoor/",
@@ -402,7 +307,6 @@ const requiredLinks = new Map([
       "https://oss.delino.io/async-commit-hook/",
       "https://oss.delino.io/clibox/",
       "https://oss.delino.io/pnport/",
-      "https://oss.delino.io/bundlewhy/",
     ],
   ],
   [
@@ -414,7 +318,6 @@ const requiredLinks = new Map([
       "https://oss.delino.io/async-commit-hook/",
       "https://oss.delino.io/clibox/",
       "https://oss.delino.io/pnport/",
-      "https://oss.delino.io/bundlewhy/",
     ],
   ],
 ]);

@@ -16,7 +16,6 @@
 
 ## Owning contracts
 
-- [bundlewhy web UI](../docs/apps-bundlewhy-web-contract.md)
 - [async-commit-hook application contract](../docs/apps-async-commit-hook-contract.md)
 - [binpm public documentation foundation](../docs/apps-binpm-docs-foundation.md)
 - [clibox public documentation foundation](../docs/apps-clibox-docs-foundation.md)

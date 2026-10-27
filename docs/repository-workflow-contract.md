@@ -70,7 +70,7 @@ pushed revision. Manual main runs use `HEAD^`; PR and manual non-main runs use
 validation, including the manually dispatched async-commit-hook release
 workflow. The release workflow uses `HEAD^`; all of these jobs fetch full
 history, and the breaking leaf retains its existing environment pass-through.
-A revision without prior Buf configuration establishes the initial baseline. Retired schemas are excluded from the baseline projection; checks remain active for owned packages.
+A revision without prior Buf configuration establishes the initial baseline. Retired and transferred schemas, including `bundlewhy.v1`, are excluded from the baseline projection; checks remain active for owned packages.
 Workflow graph assertions and a temporary Git fixture cover the event rules,
 compatible additions, deleted fields and multi-commit pushes without
 downloading unrelated LFS assets.
@@ -461,7 +461,6 @@ Coverage expectations:
 
 - `node-clibox-test`: runs `cargo test --locked -p clibox -p clibox-config -p clibox-fspy -p clibox-system -p clibox-transform -p clibox-wait` for native utility/configuration/process/adapter and file-access behavior, including isolated Windows Ctrl+C/Ctrl+Break readiness cancellation and Node launcher result preservation. Native CLI consumer installation and launcher/distribution tests run on Linux and Windows, selected by shared CI planning and required by `CI Result`.
 
-- `node-bundlewhy-test`: runs the bundlewhy web UI tests (type checking, component tests, single-file build output), the collector adapter tests (adapters live in `crates/bundlewhy/adapters`, so Rust jobs select only the `bundlewhy` crate when they change) against real Vite and Rspack fixture builds and the npm launcher tests on affected PRs and main pushes. Rust rules, storage and server tests run in `rust-test`; end-to-end fixture acceptance remains a local `test:acceptance` command.
 - `node-pnport-test`: checks launcher and package contracts, version synchronization, immutable artifacts, installer rollback, and fail-closed release publication on affected PRs and main pushes.
 
 - `pnport-native`: on affected main pushes, runs the two glibc Linux x64/arm64 native targets for 0.1.0, installed npm/Yarn PnP consumers, TypeScript conformance, archive packaging, and direct-installer smoke. Each installed binary must also pass native hidden-cache conformance and the prepared offline default-config Vitest suite in inline/split form before benchmarking. PRs skip this native matrix; the pnport tag workflow independently requires the same four targets before publication. The package-owned development matrix also selects native Windows x64/arm64 hosts on those affected main pushes. Windows runs source and installed-development-archive filesystem, process and cache tests through scripts/ci/pnport-windows.ps1; it does not emit complete-release evidence or bypass pending npm/Yarn, PowerShell, watch/loader, benchmark and minimum-OS acceptance. PRs and affected manual runs retain their existing native-job exclusion. Windows x64/arm64 retains the complete acceptance requirements for 0.2.0.
@@ -490,7 +489,7 @@ Change-scoped execution rules:
 
 - Node workspace jobs use `scripts/ci/run-affected.mjs` to invoke the installed Turbo Node entry point directly with `turbo run <task> --affected --filter <workspace>` arguments, without a shell or package-manager shim, and with the planner's exact `TURBO_SCM_BASE` and `TURBO_SCM_HEAD`. External inputs and forced runs omit `--affected`; an otherwise empty affected set is a successful no-op.
 
-- Because `public-docs` builds seven project content roots directly, changes under `apps/public-docs/docs/{async-commit-hook,binpm,nodeup,runmoor,clibox,pnport,bundlewhy}` select and force `node-public-docs-test`.
+- Because `public-docs` builds six project content roots directly, changes under `apps/public-docs/docs/{async-commit-hook,binpm,nodeup,runmoor,clibox,pnport}` select and force `node-public-docs-test`.
 
 - Central path rules cover Go, Rust, every Node workspace, packaging, public docs, and package/release/review workflows.
 

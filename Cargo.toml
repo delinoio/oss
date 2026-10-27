@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
     "crates/typeopt",
-    "crates/bundlewhy",
     "crates/forge-tree-doc",
     "crates/forge-pptx",
     "crates/forge-package",

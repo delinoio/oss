@@ -190,20 +190,6 @@
       "turbo.json"
     ]
   },
-  "node-bundlewhy-test": {
-    "paths": [
-      ".npmrc",
-      ".nvmrc",
-      "apps/bundlewhy-web/**",
-      "crates/bundlewhy/adapters/**",
-      "packages/bundlewhy/**",
-      "protos/bundlewhy/**",
-      "package.json",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      "turbo.json"
-    ]
-  },
   "pnport-native": {
     "paths": [
       "scripts/ci/pnport-windows.ps1",
