@@ -140,8 +140,6 @@ for (const [path, reason] of [
   [".cargo/config.toml", "shared-input"],
   [".cargo/.config.toml", "shared-input"],
   ["rust-toolchain.toml", "shared-input"],
-  ["packages/devhud-api-client/fixture.txt", "external-input"],
-  ["packages/devhud-api-client/.npmrc", "external-input"],
 ])
   test(`${path} retains the full Rust baseline`, (t) => {
     const f = rustFixture(t);

@@ -12,7 +12,7 @@ const config = JSON.parse(
 );
 
 test("selected Rust owners have exactly their required Turbo prerequisite graph", () => {
-  const owners = ["devhud", "pnport"];
+  const owners = ["pnport"];
   for (const command of ["test", "clippy"]) {
     for (let mask = 0; mask < 1 << owners.length; mask++) {
       const packages = [
@@ -29,7 +29,6 @@ test("selected Rust owners have exactly their required Turbo prerequisite graph"
       assert.ok(task.passThroughEnv.includes("RUST_PACKAGES"));
       assert.ok(task.passThroughEnv.includes("GITHUB_STEP_SUMMARY"));
       const expected = [
-        ...(packages.includes("devhud") ? ["devhud#ci:build:frontend"] : []),
         ...(command === "test" && packages.includes("pnport")
           ? ["ci:pnport:companion"]
           : []),

@@ -182,7 +182,7 @@ test("SemVer resets lower components, remains exact, and rejects overflow and ar
     "1.2.18446744073709551615",
   ])
     assert.throws(() => bumpVersion(value, Bump.Patch));
-  for (const project of ["rustia", "devhud", "__proto__", "../../x"])
+  for (const project of ["rustia", "example", "__proto__", "../../x"])
     assert.throws(() => versionChanges(project, Bump.Patch, read));
   assert.throws(() => versionChanges(Project.Binpm, "pre", read));
 });

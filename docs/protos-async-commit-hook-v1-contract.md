@@ -56,7 +56,7 @@ Stable error codes and correlation IDs; never log Authorization, pairing codes, 
 
 ## Build and Test
 
-Buf format/lint/breaking/freshness, Go/TypeScript serialization and transport tests, same-origin, Host, method, version-header and retired-pairing tests. Generator filters keep DevHud and ach client outputs separate.
+Buf format/lint/breaking/freshness, Go/TypeScript serialization and transport tests, same-origin, Host, method, version-header and retired-pairing tests. Generator filters keep each project’s client outputs separate.
 
 ## Dependencies and Integrations
 

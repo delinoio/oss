@@ -117,7 +117,7 @@ Record new implementation status, validation results and unresolved limits in pu
 ### public-docs
 
 - [project-public-docs.md](project-public-docs.md)
-- [apps-public-docs-foundation.md](apps-public-docs-foundation.md) (single `oss.delino.io` publisher, seven project subpaths including bundlewhy, site selector, and stable `/devhud` section)
+- [apps-public-docs-foundation.md](apps-public-docs-foundation.md) (single `oss.delino.io` publisher, seven project subpaths including bundlewhy, site selector)
 - [packages-docs-site-switcher-contract.md](packages-docs-site-switcher-contract.md) (shared accessible documentation site selector package and fixed site registry)
 
 ### serde-feather
@@ -137,25 +137,6 @@ Record new implementation status, validation results and unresolved limits in pu
 - [crates-rustia-core-foundation.md](crates-rustia-core-foundation.md)
 - [crates-rustia-llm-foundation.md](crates-rustia-llm-foundation.md)
 - [crates-rustia-macros-foundation.md](crates-rustia-macros-foundation.md)
-
-### devhud
-
-The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS/Android system-webview hosts, production WidgetKit/AppWidgetProvider Deck widgets with backup-excluded coordinated iOS state and trusted Android configuration entry, synchronized Settings boundary, direct-client GitHub.com provider/setup and RealQA issue submission, desktop RealQA capture/editor/encrypted drafts/direct uploads, least-privilege Chrome context picker, authenticated Native Messaging broker, administrator SPA, and Admin API are implemented; other product-result surfaces and the remaining DevHUD domains are planned.
-
-- [project-devhud.md](project-devhud.md)
-- [apps-devhud-foundation.md](apps-devhud-foundation.md)
-- [apps-devhud-security-contract.md](apps-devhud-security-contract.md)
-- [apps-devhud-updater-contract.md](apps-devhud-updater-contract.md)
-- [apps-devhud-chrome-extension-contract.md](apps-devhud-chrome-extension-contract.md)
-- [apps-devhud-admin-contract.md](apps-devhud-admin-contract.md)
-- [servers-devhud-api-contract.md](servers-devhud-api-contract.md)
-- [servers-devhud-release-controller-contract.md](servers-devhud-release-controller-contract.md)
-- [protos-devhud-v1-contract.md](protos-devhud-v1-contract.md)
-- [packages-devhud-api-client-contract.md](packages-devhud-api-client-contract.md)
-- [crates-devhud-native-messaging-host-contract.md](crates-devhud-native-messaging-host-contract.md)
-- [apps-devhud-operations-contract.md](apps-devhud-operations-contract.md) (internal maintainer release, recovery, support, and high-severity runbooks)
-- [apps-devhud-support-contract.md](apps-devhud-support-contract.md) (administrator support, diagnostics, retention, and high-severity triage)
-- [repository-workflow-contract.md](repository-workflow-contract.md) (repository-level workflow and read-only CEF review contract)
 
 ### async-commit-hook
 

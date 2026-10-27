@@ -73,7 +73,7 @@ function run(artifacts, sigstore) {
 }
 
 test("checksums are recursive, sorted, deterministic, and preserve non-Sigstore signatures", () => {
-  const root = mkdtempSync(join(tmpdir(), "devhud-checksums-"));
+  const root = mkdtempSync(join(tmpdir(), "example-checksums-"));
   const artifacts = join(root, "artifacts");
   const sigstore = join(root, "sigstore");
   mkdirSync(join(artifacts, "updater/signatures"), { recursive: true });
@@ -112,7 +112,7 @@ test("checksums are recursive, sorted, deterministic, and preserve non-Sigstore 
 });
 
 test("a nested Sigstore destination is never included in SHA256SUMS", () => {
-  const root = mkdtempSync(join(tmpdir(), "devhud-checksums-nested-"));
+  const root = mkdtempSync(join(tmpdir(), "example-checksums-nested-"));
   const artifacts = join(root, "artifacts");
   const sigstore = join(artifacts, "sigstore");
   mkdirSync(sigstore, { recursive: true });

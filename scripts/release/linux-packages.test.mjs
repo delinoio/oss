@@ -144,7 +144,7 @@ test("project, version, revision and channels are closed", () => {
     identity({ project: "clibox", version: "1.0.0", revision }).channel,
     Channel.Stable,
   );
-  for (const project of ["ttl", "devhud", "../binpm", "binpm;true"])
+  for (const project of ["ttl", "example", "../binpm", "binpm;true"])
     assert.throws(() => identity({ project, version: "1.0.0", revision }));
   for (const version of ["01.0.0", "v1.0.0", "1.0.0-rc.1", "1.0\n0"])
     assert.throws(() => identity({ project: "binpm", version, revision }));

@@ -2,11 +2,13 @@
 
 ## Scope and ownership
 
-Root manifests and lockfiles own dependency resolution. Domain manifests retain their existing runtime, feature, platform, and licensing boundaries. Go's security baseline is `1.26.8` in `go.mod` and the API/sweeper Docker build image; the patched `golang.org/x/crypto` line requires Go 1.26. CI consumes the module's version. Registry dependencies retain their upstream licenses.
+Root manifests and lockfiles own dependency resolution. Domain manifests retain their existing runtime, feature, platform, and licensing boundaries. Go's security baseline is `1.26.8` in `go.mod`; the patched `golang.org/x/crypto` line requires Go 1.26. CI consumes the module's version. Registry dependencies retain their upstream licenses.
 
-Security updates must preserve the immutable DevHud Tauri/CEF revision and mobile target definitions. A compatible patch may change a mobile closure digest only after comparison with the previously verified graph. Unresolved advisories remain visible: missing patches, fixed runtime pins, and limited reachability are not equivalent to a fixed package. Do not add blanket audit exclusions or dismiss alerts merely to make a report green.
+Unresolved advisories remain visible: missing patches, fixed runtime pins, and limited reachability are not equivalent to a fixed package. Do not add blanket audit exclusions or dismiss alerts merely to make a report green.
 
-## September 25, 2026 remediation
+## Historical September 25, 2026 remediation
+
+The following records describe the dependency graph and validation at that revision. DevHud has since been removed, including its Tauri/CEF workspace dependencies. These records do not establish the current audit result. Run fresh audits for the remaining graph; do not infer that other unresolved advisories are fixed.
 
 GitHub reported 39 open Dependabot alerts at the start of this change. The changes below remove affected versions for 34 of those alerts. GitHub closes version-based alerts after the updated dependency graph reaches the default branch; opening a PR does not itself close them.
 
@@ -32,7 +34,7 @@ Additional ecosystem audits identified and addressed:
 
 All six DevHud mobile graphs were checked against their previous committed digests. Replacing `anyhow` 1.0.102 with 1.0.103 is their only change. The rebaselined hashes do not introduce new packages, features, networking, desktop dependencies, or target definitions.
 
-## Unresolved upstream constraints
+## Historical unresolved upstream constraints
 
 The following five Dependabot alerts still match packages in `Cargo.lock`:
 
@@ -52,7 +54,7 @@ Raw Cargo audit also retains the following findings, beyond those five GitHub al
 
 Go's verbose audit still lists the deprecated `golang.org/x/crypto/openpgp` package at module scope. It has no fixed version and is not an imported package in the repository's Go graph; the required module is also used for supported cryptography packages. This finding is retained in the audit output.
 
-## Validation
+## Historical validation
 
 Use GitHub's authenticated Dependabot API together with `pnpm audit`, `cargo audit`, `govulncheck -show verbose ./...`. Keep scanner databases and Python environments outside the checkout. Raw Cargo audit is expected to remain nonzero for the unresolved constraints above; do not describe it as clean.
 

@@ -74,7 +74,7 @@ Validation reports the route or output file and a safe classification, without e
 
 ## Dependencies and Integrations
 
-Uses existing Rspress, `packages/docs-site-switcher`, the shared Linux package guide and the single public-docs Cloudflare Pages deployment. The DevHud release continues to rebuild current aggregate docs and overlay only DevHud-owned assets, preserving clibox content.
+Uses existing Rspress, `packages/docs-site-switcher`, the shared Linux package guide and the single public-docs Cloudflare Pages deployment.
 
 ## Change Triggers
 

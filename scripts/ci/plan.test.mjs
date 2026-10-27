@@ -31,7 +31,6 @@ import { validateResults } from "./result.mjs";
 const native = Object.entries(jobPaths)
   .filter(([, rule]) => rule.native)
   .map(([id]) => id);
-const devhudNative = ["devhud-desktop", "devhud-android-emulator"];
 const selected = (event, paths, mode = Mode.Affected) =>
   Object.entries(planJobs(event, paths, jobPaths, mode).jobs)
     .filter(([, run]) => run)
@@ -44,7 +43,6 @@ test("rustfmt configuration selects only formatting on PRs and main pushes", () 
       "crates/binpm/",
       "crates/binpm/src/",
       "crates/binpm/src/.hidden/",
-      "apps/devhud/src-tauri/",
       "apps/delidev/src-tauri/src/",
       "packages/example/",
       ".cargo/",
@@ -76,24 +74,24 @@ test("rustfmt configuration selects only formatting on PRs and main pushes", () 
 
 test("shared path matching includes every hidden segment and preserves glob boundaries", () => {
   for (const [pattern, path, expected] of [
-    ["apps/devhud/**", "apps/devhud/.env.example", true],
-    ["apps/devhud/**", "apps/devhud/.x/.y/.file", true],
-    ["apps/devhud/**", "apps/devhud-extra/.file", false],
-    ["apps/devhud/*.ts", "apps/devhud/.file.ts", true],
-    ["apps/devhud/*.ts", "apps/devhud/.x/.file.ts", false],
+    ["apps/example/**", "apps/example/.env.example", true],
+    ["apps/example/**", "apps/example/.x/.y/.file", true],
+    ["apps/example/**", "apps/example-extra/.file", false],
+    ["apps/example/*.ts", "apps/example/.file.ts", true],
+    ["apps/example/*.ts", "apps/example/.x/.file.ts", false],
     ["**/*.rs", ".file.rs", true],
     ["**/*.rs", ".x/.y/.file.rs", true],
     ["**/Cargo.toml", ".x/.y/Cargo.toml", true],
     ["**/Cargo.toml", ".x/.y/.Cargo.toml", false],
     [".cargo/**", ".cargo/.x/.file", true],
     [".cargo/**", "cargo/.file", false],
-    ["apps/devhud/.*", "apps/devhud/.env.example", true],
-    ["apps/devhud/.*", "apps/devhud/env.example", false],
-    ["apps/devhud/.env.example", "apps/devhud/.env.example", true],
-    ["apps/devhud/.env.example", "apps/devhud/env.example", false],
-    ["apps/devhud/.env.example", "apps/devhud/x.env.example", false],
-    ["scripts/release/*devhud*", "scripts/release/.devhud-fixture", true],
-    ["scripts/release/*devhud*", "scripts/release/.x/devhud-fixture", false],
+    ["apps/example/.*", "apps/example/.env.example", true],
+    ["apps/example/.*", "apps/example/env.example", false],
+    ["apps/example/.env.example", "apps/example/.env.example", true],
+    ["apps/example/.env.example", "apps/example/env.example", false],
+    ["apps/example/.env.example", "apps/example/x.env.example", false],
+    ["scripts/release/*example*", "scripts/release/.example-fixture", true],
+    ["scripts/release/*example*", "scripts/release/.x/example-fixture", false],
     [
       "packages/example/examples/**/*.tsx",
       "packages/example/examples/.file.tsx",
@@ -104,14 +102,14 @@ test("shared path matching includes every hidden segment and preserves glob boun
       "packages/example/examples/.x/.y/.file.tsx",
       true,
     ],
-    ["apps/devhud/**", "apps/devhud/.space name.ts", true],
-    ["apps/devhud/**", "apps/devhud/.line\nname.ts", true],
-    ["apps/devhud/**", "apps/devhud/.back\\slash.ts", true],
-    ["apps/devhud/**", "apps/devhud/.한글[1].ts", true],
-    ["apps/devhud/.file", "apps/devhud/.file\n", false],
-    ["apps/devhud/.line\nname.ts", "apps/devhud/.line\nname.ts", true],
-    ["apps/devhud/.back/slash.ts", "apps/devhud/.back\\slash.ts", false],
-    ["apps/devhud/**", "apps/devhud/**/.file", true],
+    ["apps/example/**", "apps/example/.space name.ts", true],
+    ["apps/example/**", "apps/example/.line\nname.ts", true],
+    ["apps/example/**", "apps/example/.back\\slash.ts", true],
+    ["apps/example/**", "apps/example/.한글[1].ts", true],
+    ["apps/example/.file", "apps/example/.file\n", false],
+    ["apps/example/.line\nname.ts", "apps/example/.line\nname.ts", true],
+    ["apps/example/.back/slash.ts", "apps/example/.back\\slash.ts", false],
+    ["apps/example/**", "apps/example/**/.file", true],
   ]) {
     assert.equal(
       matchesPath(path, pattern),
@@ -141,7 +139,7 @@ test("ordinary paths retain the existing ownership pattern semantics", () => {
     .concat([
       "README.md",
       "unrelated/file.ts",
-      "apps/devhud-extra/file.ts",
+
       "crates/forge-test/src/file.rs",
     ]);
   for (const pattern of patterns) {
@@ -153,108 +151,6 @@ test("ordinary paths retain the existing ownership pattern semantics", () => {
         posix.matchesGlob(path, pattern),
         `${path}: ${pattern}`,
       );
-  }
-});
-
-test("real service environment examples select their checks on PRs and main pushes", () => {
-  for (const event of [Event.PullRequest, Event.Push]) {
-    for (const path of [
-      "apps/devhud-admin/.env.example",
-      "servers/devhud-api/.env.example",
-    ]) {
-      const plan = planJobs(event, [path]);
-      assert.equal(
-        plan.jobs["repository-environment"],
-        true,
-        `${event}: ${path}`,
-      );
-      assert.deepEqual(
-        plan,
-        planJobs(event, [path.replace(".env.example", "env.example")]),
-      );
-      const needs = results(event, [path]);
-      assert.equal(validateResults(needs), true);
-      needs["repository-environment"].result = "skipped";
-      assert.throws(() => validateResults(needs), /repository-environment/u);
-    }
-  }
-});
-
-test("hidden app and shared inputs retain ownership and workspace forcing", () => {
-  for (const event of [Event.PullRequest, Event.Push]) {
-    for (const root of [
-      "apps/devhud",
-      "apps/public-docs",
-      "packages/devhud-api-client",
-    ]) {
-      const ordinary = planJobs(event, [`${root}/x/y/file.ts`]);
-      assert.ok(Object.values(ordinary.jobs).some(Boolean), root);
-      for (const suffix of [
-        ".file.ts",
-        ".x/file.ts",
-        "x/.y/file.ts",
-        ".x/.y/.file.ts",
-      ]) {
-        assert.deepEqual(
-          planJobs(event, [`${root}/${suffix}`]),
-          ordinary,
-          `${event}: ${root}/${suffix}`,
-        );
-      }
-    }
-    for (const [ordinary, hidden, id, forced] of [
-      [
-        "apps/devhud/src/file.ts",
-        "apps/devhud/.src/.file.ts",
-        "devhud-frontend",
-        false,
-      ],
-      [
-        "packages/devhud-api-client/src/file.ts",
-        "packages/devhud-api-client/.src/.file.ts",
-        "devhud-frontend",
-        false,
-      ],
-      [
-        "apps/public-docs/docs/file.md",
-        "apps/public-docs/.docs/.file.md",
-        "node-public-docs-test",
-        false,
-      ],
-      [
-        "packages/docs-site-switcher/src/file.ts",
-        "packages/docs-site-switcher/.src/.file.ts",
-        "node-public-docs-test",
-        true,
-      ],
-      [
-        "protos/devhud/v1/file.proto",
-        "protos/devhud/.v1/.file.proto",
-        "devhud-frontend",
-        true,
-      ],
-    ]) {
-      const plan = planJobs(event, [hidden]);
-      assert.equal(plan.jobs[id], true, `${event}: ${hidden}`);
-      assert.equal(plan.forced[id], forced, `${event}: ${hidden}`);
-      assert.deepEqual(
-        plan,
-        planJobs(event, [ordinary]),
-        `${event}: ${hidden}`,
-      );
-    }
-    for (const path of [
-      ".unrelated/.file",
-      "apps/.unrelated/.file",
-      "packages/.unrelated/.file",
-      ".github/.unrelated/.file",
-    ]) {
-      assert.deepEqual(
-        planJobs(event, [path]),
-        planJobs(event, []),
-        `${event}: ${path}`,
-      );
-    }
   }
 });
 
@@ -403,8 +299,6 @@ test("root Turbo input native checks must succeed in CI Result", () => {
 
 test("PR never allocates native package jobs, including changes to CI itself", () => {
   for (const path of [
-    "apps/devhud/src/App.tsx",
-    "apps/devhud/src-tauri/src/main.rs",
     "Cargo.lock",
     ".gitattributes",
     ".github/workflows/CI.yml",
@@ -412,14 +306,10 @@ test("PR never allocates native package jobs, including changes to CI itself", (
     ".github/actions/setup-ci-node/action.yml",
   ]) {
     const jobs = selected(Event.PullRequest, [path]);
-    assert.ok(jobs.includes("devhud-frontend"), path);
+
     for (const id of native) assert.ok(!jobs.includes(id), `${path}: ${id}`);
   }
-  assert.deepEqual(native, [
-    "linux-packages",
-    "pnport-native",
-    ...devhudNative,
-  ]);
+  assert.deepEqual(native, ["linux-packages", "pnport-native"]);
 });
 
 test("shared CI execution inputs exercise every eligible workspace job", () => {
@@ -531,19 +421,11 @@ test("pnport native checks include Cargo and Node configuration on affected main
 
 test("main selects affected non-Mac native jobs; manual skips native jobs", () => {
   for (const path of [
-    "apps/devhud/src/App.tsx",
-    "apps/devhud/src-tauri/src/main.rs",
-    "protos/devhud/v1/settings.proto",
     "pnpm-lock.yaml",
     ".gitattributes",
     ".github/workflows/CI.yml",
   ]) {
-    for (const id of ["devhud-desktop", "devhud-android-emulator"])
-      assert.ok(selected(Event.Push, [path]).includes(id), `${path}: ${id}`);
-    assert.ok(
-      !selected(Event.Push, [path]).includes("devhud-ios-simulator"),
-      path,
-    );
+    assert.ok(!selected(Event.Push, [path]).includes("ios-simulator"), path);
   }
   assert.deepEqual(selected(Event.Manual, []), []);
   assert.deepEqual(selected(Event.Push, ["docs/project-with-watch.md"]), [
@@ -591,45 +473,13 @@ test("Linux packages run on affected main pushes, never on PRs or manual CI", ()
     );
   }
   assert.equal(planJobs(Event.Manual, []).jobs["linux-packages"], false);
-  for (const paths of [
-    [],
-    ["docs/project-with-watch.md"],
-    ["apps/devhud/src/App.tsx"],
-  ]) {
+  for (const paths of [[], ["docs/project-with-watch.md"], []]) {
     assert.equal(planJobs(Event.Push, paths).jobs["linux-packages"], false);
   }
   assert.deepEqual(
     selected(Event.PullRequest, [".github/workflows/CI.yml"]),
     Object.keys(jobPaths).filter((id) => !native.includes(id)),
   );
-});
-
-test("Runmoor source and release scripts do not rebuild DevHud desktop/mobile", () => {
-  for (const paths of [
-    ["cmds/runmoor/main.go"],
-    ["scripts/release/runmoor.mjs"],
-    ["scripts/release/runmoor.test.mjs"],
-    ["scripts/release/runmoor.mjs", "scripts/release/runmoor.test.mjs"],
-  ]) {
-    const jobs = selected(Event.Push, paths);
-    for (const id of devhudNative) assert.ok(!jobs.includes(id), id);
-    if (paths[0].startsWith("cmds/")) assert.ok(jobs.includes("go-test"));
-    else if (
-      paths.some(
-        (path) =>
-          path === "scripts/release/runmoor.mjs" || path.endsWith(".test.mjs"),
-      )
-    )
-      assert.ok(jobs.includes("devhud-release-contracts"));
-    else assert.ok(!jobs.includes("devhud-release-contracts"));
-  }
-  for (const path of [
-    "scripts/release/finalize-devhud-deb.sh",
-    "scripts/release/linux/prerm.in",
-    "scripts/release/generate-checksums.sh",
-  ]) {
-    assert.ok(selected(Event.Push, [path]).includes("devhud-desktop"), path);
-  }
 });
 
 test("shared release implementations select the fixture job that exercises them", () => {
@@ -643,7 +493,7 @@ test("shared release implementations select the fixture job that exercises them"
       "scripts/release/update-homebrew.sh",
     ]) {
       assert.equal(
-        planJobs(event, [path]).jobs["devhud-release-contracts"],
+        planJobs(event, [path]).jobs["release-contracts"],
         true,
         `${event}: ${path}`,
       );
@@ -666,29 +516,20 @@ test("Linux publication entry point, helpers and configuration select portable f
       ),
     ]) {
       const plan = planJobs(event, [path]);
-      assert.equal(
-        plan.jobs["devhud-release-contracts"],
-        true,
-        `${event}: ${path}`,
-      );
+      assert.equal(plan.jobs["release-contracts"], true, `${event}: ${path}`);
       assert.equal(
         plan.jobs["linux-packages"],
         event === Event.Push,
         `${event}: ${path}`,
       );
-      for (const id of devhudNative)
-        assert.equal(plan.jobs[id], false, `${event}: ${path}: ${id}`);
       if (path !== "scripts/release/linux-packages.mjs") {
         assert.equal(plan.jobs["node-clibox-test"], true, `${event}: ${path}`);
       }
       const needs = results(event, [path]);
       assert.equal(validateResults(needs), true);
       for (const result of ["failure", "cancelled", "skipped"]) {
-        needs["devhud-release-contracts"].result = result;
-        assert.throws(
-          () => validateResults(needs),
-          /devhud-release-contracts/u,
-        );
+        needs["release-contracts"].result = result;
+        assert.throws(() => validateResults(needs), /release-contracts/u);
       }
     }
   }
@@ -701,13 +542,13 @@ test("unrelated release helpers retain their narrower owners", () => {
       "scripts/release/runmoor-homebrew.mjs",
     ]) {
       assert.deepEqual(selected(event, [path]), [
-        "devhud-release-contracts",
         "source-format",
+        "release-contracts",
       ]);
     }
     assert.deepEqual(
       selected(event, ["scripts/release/generate-delidev-updater.test.mjs"]),
-      ["devhud-release-contracts", "source-format"],
+      ["source-format", "release-contracts"],
     );
   }
 });
@@ -765,31 +606,13 @@ test("a readback regression fails the portable fixture command and CI aggregate"
   );
   for (const event of [Event.PullRequest, Event.Push]) {
     const needs = results(event, [path]);
-    assert.equal(
-      planJobs(event, [path]).jobs["devhud-release-contracts"],
-      true,
-    );
-    needs["devhud-release-contracts"].result =
+    assert.equal(planJobs(event, [path]).jobs["release-contracts"], true);
+    needs["release-contracts"].result =
       failing.status === 0 ? "success" : "failure";
     assert.throws(
       () => validateResults(needs),
-      /devhud-release-contracts: expected success, got failure/u,
+      /release-contracts: expected success, got failure/u,
     );
-  }
-});
-
-test("checksum generator changes select their DevHud supply-chain fixture job", () => {
-  for (const event of [Event.PullRequest, Event.Push]) {
-    for (const path of [
-      "scripts/release/generate-checksums.sh",
-      "scripts/release/generate-checksums.test.mjs",
-    ]) {
-      assert.equal(
-        planJobs(event, [path]).jobs["devhud-supply-chain"],
-        true,
-        `${event}: ${path}`,
-      );
-    }
   }
 });
 
@@ -803,32 +626,13 @@ test("every shared release fixture selects its executing CI job", () => {
     for (const event of [Event.PullRequest, Event.Push]) {
       const needs = results(event, [path]);
       assert.equal(
-        planJobs(event, [path]).jobs["devhud-release-contracts"],
+        planJobs(event, [path]).jobs["release-contracts"],
         true,
         `${event}: ${path}`,
       );
       assert.equal(validateResults(needs), true);
-      needs["devhud-release-contracts"].result = "skipped";
-      assert.throws(() => validateResults(needs), /devhud-release-contracts/u);
-    }
-  }
-});
-
-test("nested DevHud release fixtures select their consuming CI job", () => {
-  for (const event of [Event.PullRequest, Event.Push]) {
-    for (const path of [
-      "scripts/release/fixtures/devhud-cef-security-review.json",
-      "scripts/release/fixtures/devhud-public-release.json",
-    ]) {
-      const needs = results(event, [path]);
-      assert.equal(
-        planJobs(event, [path]).jobs["devhud-release-contracts"],
-        true,
-        `${event}: ${path}`,
-      );
-      assert.equal(validateResults(needs), true);
-      needs["devhud-release-contracts"].result = "skipped";
-      assert.throws(() => validateResults(needs), /devhud-release-contracts/u);
+      needs["release-contracts"].result = "skipped";
+      assert.throws(() => validateResults(needs), /release-contracts/u);
     }
   }
 });
@@ -838,10 +642,9 @@ test("integrated project docs select the public-docs workspace and shared inputs
   for (const event of [Event.PullRequest, Event.Push]) {
     const paths = ["apps/public-docs/docs/runmoor/install.md"];
     assert.deepEqual(selected(event, paths), [
-      "repository-environment",
       id,
-      "devhud-release-contracts",
       "source-format",
+      "release-contracts",
     ]);
     assert.equal(planJobs(event, paths).forced[id], false);
     for (const path of [
@@ -854,10 +657,7 @@ test("integrated project docs select the public-docs workspace and shared inputs
       assert.equal(plan.forced[id], true, path);
     }
     for (const path of ["docs/project-runmoor.md"]) {
-      assert.deepEqual(selected(event, [path]), [
-        "repository-environment",
-        "source-format",
-      ]);
+      assert.deepEqual(selected(event, [path]), ["source-format"]);
     }
     const needs = results(event, paths);
     assert.equal(validateResults(needs), true);
@@ -928,41 +728,6 @@ test("async-commit-hook failures, missing results and unauthorized skips fail th
   assert.throws(() => validateResults(needs), /inventory/u);
 });
 
-test("DevHud generated inputs select shared freshness without selecting DeliDev jobs", () => {
-  for (const event of [Event.PullRequest, Event.Push]) {
-    for (const path of [
-      "packages/devhud-api-client/src/gen/devhud/v1/common_pb.ts",
-      "packages/devhud-api-client/src/gen/devhud/v1/account-AccountService_connectquery.ts",
-      "protos/devhud/v1/account.proto",
-      "protos/gen/go/devhud/v1/account.pb.go",
-    ]) {
-      const plan = planJobs(event, [path]);
-      assert.equal(plan.jobs["async-commit-hook"], true, `${event}: ${path}`);
-      for (const id of ["delidev-frontend"]) {
-        assert.equal(plan.jobs[id], undefined, `${event}: ${path}: ${id}`);
-      }
-      for (const id of ["devhud-frontend", "devhud-admin", "devhud-api"]) {
-        assert.equal(plan.jobs[id], true, `${event}: ${path}: ${id}`);
-      }
-      assert.equal(validateResults(results(event, [path])), true);
-      for (const result of ["failure", "cancelled", "skipped", undefined]) {
-        const needs = results(event, [path]);
-        needs["async-commit-hook"].result = result;
-        assert.throws(() => validateResults(needs), /async-commit-hook/u);
-      }
-      const needs = results(event, [path]);
-      delete needs["async-commit-hook"];
-      assert.throws(() => validateResults(needs), /inventory/u);
-    }
-    assert.equal(
-      planJobs(event, ["packages/devhud-api-client/src/client.ts"]).jobs[
-        "async-commit-hook"
-      ],
-      false,
-    );
-  }
-});
-
 test("workspace, shared, runtime, and external contract inputs select their owners", () => {
   for (const [path, ids] of [
     ["apps/public-docs/docs/projects-overview.md", ["node-public-docs-test"]],
@@ -973,49 +738,13 @@ test("workspace, shared, runtime, and external contract inputs select their owne
       ["async-commit-hook", "node-public-docs-test"],
     ],
     ["packages/docs-site-switcher/src/index.tsx", ["node-public-docs-test"]],
-    [
-      "apps/public-docs/theme/index.tsx",
-      ["repository-environment", "node-public-docs-test"],
-    ],
-    ["scripts/dev-environment/orchestrator.mjs", ["repository-environment"]],
-    [
-      "packages/devhud-api-client/src/client.ts",
-      ["devhud-frontend", "devhud-admin", "devhud-api", "rust-test"],
-    ],
-    [
-      "apps/devhud/src-tauri/src/updater.rs",
-      [
-        "rust-fmt",
-        "rust-clippy",
-        "rust-test",
-        "devhud-rust-conformance",
-        "devhud-frontend",
-      ],
-    ],
-    ["protos/devhud/v1/account.proto", ["devhud-api", "devhud-frontend"]],
+    ["apps/public-docs/theme/index.tsx", ["node-public-docs-test"]],
+    ["scripts/dev-environment/orchestrator.mjs", []],
+
     ["apps/delidev/src/App.tsx", []],
-    [
-      ".nvmrc",
-      [
-        "node-public-docs-test",
-        "devhud-frontend",
-        "devhud-api",
-        "repository-environment",
-      ],
-    ],
-    [
-      "pnpm-lock.yaml",
-      [
-        "node-public-docs-test",
-        "devhud-admin",
-        "devhud-api",
-        "devhud-frontend",
-      ],
-    ],
-    [
-      ".cargo/config.toml",
-      ["rust-fmt", "rust-clippy", "rust-test", "devhud-rust-conformance"],
-    ],
+    [".nvmrc", ["node-public-docs-test"]],
+    ["pnpm-lock.yaml", ["node-public-docs-test"]],
+    [".cargo/config.toml", ["rust-fmt", "rust-clippy", "rust-test"]],
     ["crates/binpm/src/main.rs", ["rust-fmt", "rust-clippy", "rust-test"]],
     ["crates/cargo-mono/src/main.rs", ["rust-fmt", "rust-clippy", "rust-test"]],
     ["crates/nodeup/src/main.rs", ["rust-fmt", "rust-clippy", "rust-test"]],
@@ -1040,27 +769,13 @@ test("workspace, shared, runtime, and external contract inputs select their owne
     );
   }
   assert.equal(
-    planJobs(Event.PullRequest, ["apps/devhud/src/App.tsx"]).forced[
-      "devhud-frontend"
-    ],
+    planJobs(Event.PullRequest, []).forced["node-public-docs-test"],
     false,
   );
   assert.equal(
-    planJobs(Event.PullRequest, ["packages/devhud-api-client/src/client.ts"])
-      .forced["devhud-frontend"],
+    planJobs(Event.PullRequest, []).forced["node-public-docs-test"],
     false,
   );
-  for (const path of [
-    ".nvmrc",
-    "Cargo.lock",
-    "protos/devhud/v1/account.proto",
-  ]) {
-    assert.equal(
-      planJobs(Event.PullRequest, [path]).forced["devhud-frontend"],
-      true,
-      path,
-    );
-  }
   assert.equal(
     planJobs(Event.PullRequest, ["scripts/install/binpm.sh"]).forced[
       "node-public-docs-test"
@@ -1134,22 +849,22 @@ test("deleted and renamed paths retain both owners, including unusual filenames"
   const f = fixture(t);
   f.write("apps/public-docs/old name.ts", "original\n");
   const base = f.commit();
-  mkdirSync(join(f.cwd, "apps/devhud"), { recursive: true });
+  mkdirSync(join(f.cwd, "apps/bundlewhy-web"), { recursive: true });
   renameSync(
     join(f.cwd, "apps/public-docs/old name.ts"),
-    join(f.cwd, "apps/devhud/new\nname.ts"),
+    join(f.cwd, "apps/bundlewhy-web/new\nname.ts"),
   );
   rmSync(join(f.cwd, "README.md"));
   const head = f.commit();
   const { paths } = changedFiles(Event.Push, { before: base }, head, f.cwd);
   assert.deepEqual(paths, [
     "README.md",
-    "apps/devhud/new\nname.ts",
+    "apps/bundlewhy-web/new\nname.ts",
     "apps/public-docs/old name.ts",
   ]);
   const jobs = selected(Event.Push, paths);
   assert.ok(jobs.includes("node-public-docs-test"));
-  assert.ok(jobs.includes("devhud-desktop"));
+  assert.ok(jobs.includes("node-bundlewhy-test"));
 });
 
 test("missing, malformed, and unavailable revisions fail rather than skip checks", (t) => {
@@ -1201,7 +916,6 @@ function results(event, paths, mode = Mode.Affected) {
       result: "success",
       outputs: {
         mode,
-        environment_matrix: JSON.stringify(matrices.environmentMatrix),
         forge_matrix: JSON.stringify(matrices.forgeMatrix),
         clibox_matrix: JSON.stringify(matrices.cliboxMatrix),
         pnport_matrix: JSON.stringify(matrices.pnportMatrix),
@@ -1211,7 +925,6 @@ function results(event, paths, mode = Mode.Affected) {
         ),
         event,
         go_test_matrix: JSON.stringify(matrices.goTestMatrix),
-        desktop_matrix: JSON.stringify(matrices.desktopMatrix),
       },
     },
     "ci-contracts": { result: "success" },
@@ -1248,19 +961,24 @@ test("aggregate requires Linux package skips on PRs/manual CI and success when s
 test("aggregate accepts only success and skips explicitly authorized by the plan", () => {
   for (const event of Object.values(Event))
     assert.equal(
-      validateResults(results(event, ["apps/devhud/src/App.tsx"])),
+      validateResults(results(event, ["apps/public-docs/docs/index.md"])),
       true,
     );
   assert.equal(validateResults(results(Event.PullRequest, [])), true);
   for (const result of ["failure", "cancelled", "skipped", undefined]) {
-    for (const id of ["changes", "ci-contracts", "devhud-frontend"]) {
-      const needs = results(Event.PullRequest, ["apps/devhud/src/App.tsx"]);
+    for (const id of ["changes", "ci-contracts", "node-public-docs-test"]) {
+      const needs = results(Event.PullRequest, [
+        "apps/public-docs/docs/index.md",
+      ]);
       needs[id].result = result;
       assert.throws(() => validateResults(needs), new RegExp(id, "u"));
     }
   }
-  for (const id of ["devhud-frontend", "devhud-desktop"]) {
-    const needs = results(Event.PullRequest, ["apps/devhud/src/App.tsx"]);
+
+  for (const id of ["node-public-docs-test", "pnport-native"]) {
+    const needs = results(Event.PullRequest, [
+      "apps/public-docs/docs/index.md",
+    ]);
     delete needs[id];
     assert.throws(() => validateResults(needs), /inventory/u);
   }
@@ -1275,25 +993,8 @@ test("aggregate accepts only success and skips explicitly authorized by the plan
     assert.throws(() => validateResults(needs));
   }
   const unexpected = results(Event.PullRequest, []);
-  unexpected["devhud-desktop"].result = "success";
+  unexpected["pnport-native"].result = "success";
   assert.throws(() => validateResults(unexpected), /expected skipped/u);
-  const wrongMatrix = results(Event.Push, ["apps/devhud/src/App.tsx"]);
-  wrongMatrix.changes.outputs.desktop_matrix = JSON.stringify({
-    include: nativeMatrices["devhud-desktop"],
-  });
-  assert.throws(() => validateResults(wrongMatrix), /desktop_matrix/u);
-});
-
-test("event matrices retain only the authorized native hosts", () => {
-  for (const event of [Event.PullRequest, Event.Push]) {
-    const { desktopMatrix } = matricesForEvent(event);
-    assert.deepEqual(
-      desktopMatrix.include.map(({ id }) => id),
-      nativeMatrices["devhud-desktop"]
-        .filter(({ os }) => os !== "macos")
-        .map(({ id }) => id),
-    );
-  }
 });
 
 test("Go matrix contains only Ubuntu on PRs, including dependency and forced configuration changes", () => {
@@ -1445,12 +1146,12 @@ test("path-rule edits force only changed eligible jobs", () => {
   previous["go-test"].paths = previous["go-test"].paths.filter(
     (path) => path !== "cmds/**",
   );
-  previous["devhud-frontend"].paths.push("packages/unrelated/**");
+  previous["node-public-docs-test"].paths.push("packages/unrelated/**");
   for (const event of [Event.PullRequest, Event.Push]) {
     const plan = planJobs(event, ["scripts/ci/job-paths.json"], previous);
     assert.equal(plan.jobs["go-test"], true);
-    assert.equal(plan.jobs["devhud-frontend"], true);
-    assert.equal(plan.jobs["devhud-desktop"], false);
+    assert.equal(plan.jobs["node-public-docs-test"], true);
+    assert.equal(plan.jobs["pnport-native"], false);
     assert.equal(plan.forced["go-test"], true);
   }
   assert.deepEqual(selected(Event.Push, ["scripts/ci/job-paths.json"]), [
@@ -1463,34 +1164,6 @@ test("path-rule edits force only changed eligible jobs", () => {
   ]) {
     const plan = planJobs(Event.Push, [path]);
     assert.equal(plan.jobs["forge-test"], true, path);
-  }
-});
-
-test("unrelated packages and protocols do not select DevHud jobs", () => {
-  for (const path of [
-    "packages/example/src/session.ts",
-    "packages/docs-site-switcher/src/index.ts",
-    "protos/async_commit_hook/v1/ach.proto",
-    "servers/unrelated/main.go",
-  ]) {
-    const plan = planJobs(Event.Push, [path]);
-    for (const id of Object.keys(jobPaths).filter((name) =>
-      name.startsWith("devhud-"),
-    ))
-      assert.equal(plan.jobs[id], false, `${path}: ${id}`);
-  }
-  for (const path of [
-    "packages/devhud-api-client/src/index.ts",
-    "protos/devhud/v1/settings.proto",
-    "protos/gen/go/devhud/v1/settings.pb.go",
-    "servers/devhud-api/internal/rpc/settings.go",
-  ]) {
-    assert.ok(
-      Object.entries(planJobs(Event.Push, [path]).jobs).some(
-        ([id, run]) => id.startsWith("devhud-") && run,
-      ),
-      path,
-    );
   }
 });
 
@@ -1610,13 +1283,7 @@ test("CI Result rejects missing modes, native execution on affected manual CI, a
     needs.changes.outputs.mode = mode;
     assert.throws(() => validateResults(needs));
   }
-  for (const output of [
-    "environment_matrix",
-    "forge_matrix",
-    "clibox_matrix",
-    "pnport_matrix",
-    "desktop_matrix",
-  ]) {
+  for (const output of ["forge_matrix", "clibox_matrix", "pnport_matrix"]) {
     for (const value of [undefined, "{", "{}", "null", "[]"]) {
       const needs = results(Event.Manual, []);
       needs.changes.outputs[output] = value;

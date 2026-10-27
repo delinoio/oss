@@ -58,76 +58,6 @@
         "GITHUB_SHA"
       ]
     },
-    "ci:environment": {
-      "cache": false,
-      "dependsOn": [],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "$TURBO_ROOT$/.nvmrc",
-        "$TURBO_ROOT$/package.json",
-        "$TURBO_ROOT$/pnpm-lock.yaml",
-        "$TURBO_ROOT$/rust-toolchain",
-        "$TURBO_ROOT$/go.mod",
-        "$TURBO_ROOT$/go.sum",
-        "$TURBO_ROOT$/scripts/**",
-        "$TURBO_ROOT$/.github/**",
-        "$TURBO_ROOT$/docs/repository-*-contract.md"
-      ],
-      "outputs": [],
-      "passThroughEnv": [
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "GOCACHE",
-        "GOPATH",
-        "GOFLAGS",
-        "CARGO_NET_OFFLINE",
-        "npm_execpath",
-        "RUNNER_TEMP",
-        "GITHUB_SHA"
-      ]
-    },
-    "ci:environment:turbo": {
-      "cache": true,
-      "dependsOn": [],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "$TURBO_ROOT$/.nvmrc",
-        "$TURBO_ROOT$/package.json",
-        "$TURBO_ROOT$/pnpm-lock.yaml",
-        "$TURBO_ROOT$/pnpm-workspace.yaml",
-        "$TURBO_ROOT$/turbo.json",
-        "$TURBO_ROOT$/apps/devhud/package.json",
-        "$TURBO_ROOT$/apps/devhud/turbo.json",
-        "$TURBO_ROOT$/apps/devhud-admin/package.json",
-        "$TURBO_ROOT$/apps/devhud-admin/turbo.json",
-        "$TURBO_ROOT$/servers/devhud-api/package.json",
-        "$TURBO_ROOT$/servers/devhud-api/turbo.json",
-        "$TURBO_ROOT$/packages/devhud-api-client/package.json",
-        "$TURBO_ROOT$/packages/devhud-api-client/turbo.json",
-        "$TURBO_ROOT$/rust-toolchain",
-        "$TURBO_ROOT$/go.mod",
-        "$TURBO_ROOT$/go.sum",
-        "$TURBO_ROOT$/scripts/**",
-        "!.turbo/**",
-        "!$TURBO_ROOT$/.turbo/**",
-        "!$TURBO_ROOT$/**/.turbo/**",
-        "$TURBO_ROOT$/.github/**",
-        "$TURBO_ROOT$/docs/repository-*-contract.md"
-      ],
-      "outputs": [],
-      "env": ["CI_CACHE_CONTEXT"],
-      "passThroughEnv": [
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "GOCACHE",
-        "GOPATH",
-        "GOFLAGS",
-        "CARGO_NET_OFFLINE",
-        "npm_execpath",
-        "RUNNER_TEMP",
-        "GITHUB_SHA"
-      ]
-    },
     "ci:tools": {
       "cache": true,
       "dependsOn": [],
@@ -185,47 +115,6 @@
         "GITHUB_SHA"
       ]
     },
-    "ci:supply-chain": {
-      "cache": false,
-      "dependsOn": [],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "$TURBO_ROOT$/.nvmrc",
-        "$TURBO_ROOT$/package.json",
-        "$TURBO_ROOT$/pnpm-lock.yaml",
-        "$TURBO_ROOT$/rust-toolchain",
-        "$TURBO_ROOT$/go.mod",
-        "$TURBO_ROOT$/go.sum",
-        "$TURBO_ROOT$/scripts/**",
-        "$TURBO_ROOT$/.github/**",
-        "$TURBO_ROOT$/docs/repository-*-contract.md"
-      ],
-      "outputs": [],
-      "passThroughEnv": [
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "GOCACHE",
-        "GOPATH",
-        "GOFLAGS",
-        "CARGO_NET_OFFLINE",
-        "npm_execpath",
-        "RUNNER_TEMP",
-        "GITHUB_SHA"
-      ]
-    },
-    "ci:windows-signature": {
-      "cache": false,
-      "dependsOn": [],
-      "inputs": [
-        "$TURBO_DEFAULT$",
-        "$TURBO_ROOT$/.github/workflows/package-devhud-private.yml",
-        "$TURBO_ROOT$/scripts/release/devhud-private-workflow.test.mjs",
-        "$TURBO_ROOT$/go.mod",
-        "$TURBO_ROOT$/go.sum"
-      ],
-      "outputs": [],
-      "passThroughEnv": ["GOCACHE", "GOPATH", "GOFLAGS"]
-    },
     "ci:go:format": {
       "cache": true,
       "dependsOn": [],
@@ -258,10 +147,7 @@
     },
     "ci:go:vet": {
       "cache": false,
-      "dependsOn": [
-        "devhud-admin#build:embedded",
-        "async-commit-hook#build:embedded"
-      ],
+      "dependsOn": ["async-commit-hook#build:embedded"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -289,10 +175,7 @@
     },
     "ci:go:test": {
       "cache": false,
-      "dependsOn": [
-        "devhud-admin#build:embedded",
-        "async-commit-hook#build:embedded"
-      ],
+      "dependsOn": ["async-commit-hook#build:embedded"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",
@@ -630,7 +513,7 @@
         "npm_execpath",
         "RUNNER_TEMP",
         "GITHUB_SHA",
-        "DEVHUD_PROTO_BASELINE"
+        "PROTO_BASELINE"
       ]
     },
     "ci:proto:fresh": {
@@ -799,63 +682,9 @@
         "ci:ach:package"
       ]
     },
-    "ci:rust:test:devhud": {
-      "cache": false,
-      "dependsOn": ["devhud#ci:build:frontend"],
-      "outputs": [],
-      "passThroughEnv": [
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "GOCACHE",
-        "GOPATH",
-        "GOFLAGS",
-        "CARGO_NET_OFFLINE",
-        "npm_execpath",
-        "RUNNER_TEMP",
-        "GITHUB_SHA",
-        "RUST_PACKAGES",
-        "GITHUB_STEP_SUMMARY"
-      ]
-    },
     "ci:rust:test:pnport": {
       "cache": false,
       "dependsOn": ["ci:pnport:companion"],
-      "outputs": [],
-      "passThroughEnv": [
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "GOCACHE",
-        "GOPATH",
-        "GOFLAGS",
-        "CARGO_NET_OFFLINE",
-        "npm_execpath",
-        "RUNNER_TEMP",
-        "GITHUB_SHA",
-        "RUST_PACKAGES",
-        "GITHUB_STEP_SUMMARY"
-      ]
-    },
-    "ci:rust:test:devhud-pnport": {
-      "cache": false,
-      "dependsOn": ["devhud#ci:build:frontend", "ci:pnport:companion"],
-      "outputs": [],
-      "passThroughEnv": [
-        "CARGO_HOME",
-        "RUSTUP_HOME",
-        "GOCACHE",
-        "GOPATH",
-        "GOFLAGS",
-        "CARGO_NET_OFFLINE",
-        "npm_execpath",
-        "RUNNER_TEMP",
-        "GITHUB_SHA",
-        "RUST_PACKAGES",
-        "GITHUB_STEP_SUMMARY"
-      ]
-    },
-    "ci:rust:clippy:devhud": {
-      "cache": false,
-      "dependsOn": ["devhud#ci:build:frontend"],
       "outputs": [],
       "passThroughEnv": [
         "CARGO_HOME",
@@ -883,10 +712,7 @@
     },
     "ci:go:quality": {
       "cache": false,
-      "dependsOn": [
-        "devhud-admin#build:embedded",
-        "async-commit-hook#build:embedded"
-      ],
+      "dependsOn": ["async-commit-hook#build:embedded"],
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/.nvmrc",

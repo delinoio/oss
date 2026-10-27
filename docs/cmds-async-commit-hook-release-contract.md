@@ -121,14 +121,13 @@ Reproduce the cross-platform lifecycle coverage with:
 set -Eeuo pipefail
 cleanup {
   local status=$?
-  rm -r -- apps/async-commit-hook/dist cmds/async-commit-hook/internal/webassets/dist servers/devhud-api/internal/adminassets/dist packages/async-commit-hook-api-client/dist packages/devhud-api-client/dist 2>/dev/null || true
+  rm -r -- apps/async-commit-hook/dist cmds/async-commit-hook/internal/webassets/dist packages/async-commit-hook-api-client/dist 2>/dev/null || true
   trap - EXIT
   exit "$status"
 }
 trap cleanup EXIT
 
 pnpm --filter async-commit-hook build:embedded
-pnpm --filter devhud-admin build:embedded
 go test -run 'TestScope(StartBarrierAndOutput|ReapsDaemonizedDescendants|CancellationDoesNotTouchAnotherCheck|JournalNeverStoresResolvedEnvironment|MissingJournalCannotConfirmCompletion)|TestLegacyScopeCannotClaimUnknownDescendantsExited|TestReplaceReapsDaemonizedDescendantsBeforeNextStarts|TestSupervisorLeaseBlocksConfigurationWithoutWorker' ./cmds/async-commit-hook/internal/core
 go test -race -run 'TestScope(StartBarrierAndOutput|ReapsDaemonizedDescendants|CancellationDoesNotTouchAnotherCheck|JournalNeverStoresResolvedEnvironment|MissingJournalCannotConfirmCompletion)|TestLegacyScopeCannotClaimUnknownDescendantsExited|TestReplaceReapsDaemonizedDescendantsBeforeNextStarts|TestSupervisorLeaseBlocksConfigurationWithoutWorker' ./cmds/async-commit-hook/internal/core
 go test -run TestScopeRecoveryAfterSupervisorDeath ./cmds/async-commit-hook/internal/core # macOS only

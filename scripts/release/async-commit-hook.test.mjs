@@ -150,7 +150,7 @@ test("installer selects the highest published project release by default and exa
     );
     writeFileSync(
       releases,
-      '[{"tag_name":"async-commit-hook@v0.2.0","draft":false,"prerelease":false},{"tag_name":"async-commit-hook@v0.3.0","draft":false,"prerelease":false},{"tag_name":"async-commit-hook@v9.0.0-rc.1","draft":false,"prerelease":true},{"tag_name":"devhud@v9.0.0","draft":false,"prerelease":false},{"tag_name":"async-commit-hook@v8.0.0","draft":true,"prerelease":false}]',
+      '[{"tag_name":"async-commit-hook@v0.2.0","draft":false,"prerelease":false},{"tag_name":"async-commit-hook@v0.3.0","draft":false,"prerelease":false},{"tag_name":"async-commit-hook@v9.0.0-rc.1","draft":false,"prerelease":true},{"tag_name":"example@v9.0.0","draft":false,"prerelease":false},{"tag_name":"async-commit-hook@v8.0.0","draft":true,"prerelease":false}]',
     );
     for (const [args, environment, version] of [
       [[], undefined, "0.3.0"],

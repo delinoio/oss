@@ -9,7 +9,6 @@ const homePages = [
 ];
 
 const productPages = [
-  { text: "DevHud", link: "/devhud", activeMatch: "^/devhud" },
   { text: "Cargo Mono", link: "/cargo-mono" },
   { text: "With Watch", link: "/with-watch" },
 ];
@@ -166,25 +165,12 @@ export default defineConfig({
         { text: "Get Started", items: homePages.slice(0, 2) },
         { text: "Reference", items: homePages.slice(2) },
         {
-          text: "Developer Utility",
-          items: [
-            { text: "Overview", link: "/devhud" },
-            { text: "Install and Verify", link: "/devhud/install" },
-            { text: "Using DevHud", link: "/devhud/guide" },
-            { text: "Privacy", link: "/devhud/privacy" },
-            { text: "Security", link: "/devhud/security" },
-            { text: "Support", link: "/devhud/support" },
-            { text: "Administration", link: "/devhud/admin" },
-            { text: "Releases", link: "/devhud/releases" },
-          ],
-        },
-        {
           text: "Rust Monorepo Tooling",
-          items: [productPages[1]],
+          items: [productPages[0]],
         },
         {
           text: "Command Rerun Watcher",
-          items: [productPages[2]],
+          items: [productPages[1]],
         },
       ],
       "/clibox/": [{ text: "clibox", items: cliboxPages }],

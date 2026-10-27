@@ -14,10 +14,7 @@ export function rustTask(command, packages) {
     throw new Error(
       "A scheduled Rust job requires a nonempty package selection",
     );
-  const owners = [
-    ["devhud", "devhud"],
-    ...(command === "test" ? [["pnport", "pnport"]] : []),
-  ]
+  const owners = [...(command === "test" ? [["pnport", "pnport"]] : [])]
     .filter(([name]) => packages.includes(name))
     .map(([, label]) => label);
   return `ci:rust:${command}${owners.length ? ":" + owners.join("-") : ""}`;

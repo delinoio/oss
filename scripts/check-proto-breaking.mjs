@@ -30,12 +30,27 @@ try {
     original,
   );
   const baseline = JSON.parse(readFileSync(original, "utf8"));
-  // DeliDev retired its API and Delcore moved to delino-apps. Keep FILE
+  // DevHud and DeliDev retired their APIs; Delcore moved to delino-apps. Keep FILE
   // checks for owned packages. Remove this projection once all baselines
   // omit the retired and transferred schemas.
   baseline.file = baseline.file.filter(
-    (file) => !["delidev.v1", "delcore.v1"].includes(file.package),
+    (file) => !["delidev.v1", "delcore.v1", "devhud.v1"].includes(file.package),
   );
+  // Retired services can be the only consumers of a protobuf well-known type.
+  // Drop those orphan imports too, while retaining every owned schema and all
+  // well-known types still reachable through its imports.
+  const files = new Map(baseline.file.map((file) => [file.name, file]));
+  const reachable = new Set();
+  const visit = (file) => {
+    if (!file || reachable.has(file.name)) return;
+    reachable.add(file.name);
+    for (const dependency of file.dependency ?? [])
+      visit(files.get(dependency));
+  };
+  for (const file of baseline.file) {
+    if (file.package !== "google.protobuf") visit(file);
+  }
+  baseline.file = baseline.file.filter((file) => reachable.has(file.name));
   writeFileSync(projected, JSON.stringify(baseline));
   run("breaking", "--against", projected);
 } finally {

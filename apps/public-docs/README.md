@@ -49,7 +49,6 @@ and forbidden paths in HTML resources and CSS `url()` values.
 - `docs/bundlewhy/`: Eight bundlewhy guides for the prepared, not yet published 0.1.0, including the frozen engine matrix and error-code troubleshooting.
 - `docs/cargo-mono.md`: Public project guide for `cargo-mono`.
 - `docs/with-watch.md`: Public project guide for `with-watch`.
-- `docs/devhud/`: Stable DevHud installation, usage, privacy, security, support, administration, and release guidance routes.
 
 Cargo Mono and With Watch remain in-site product documentation. Nodeup,
 binpm, Runmoor, async-commit-hook, clibox, pnport, and bundlewhy are first-class subdirectories of

@@ -35,7 +35,7 @@
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - Workspace crate publication on main pushes uses the verified prebuilt cargo-mono and shares serialization with manual releases. Keep remote release-tag publication with its existing owner; follow `docs/repository-workflow-contract.md`.
 - CI changes must preserve default affected manual validation and exclude macOS runners from PRs, main pushes and affected manual runs. Do not add a full manual CI mode; retain owning release platform gates and follow `docs/repository-workflow-contract.md`.
-- Root `pnpm dev` is the DevHud team workflow. Documentation development uses `pnpm dev:public-docs` on the consolidated fixed port documented in `docs/apps-public-docs-foundation.md`; it fails on conflicts instead of automatically remapping a server.
+- Documentation development uses `pnpm dev:public-docs` on the fixed port in `docs/apps-public-docs-foundation.md`; port conflicts fail.
 - Keep `.infisical.json`, `.dev-environment/`, real `.env` files, user credentials, and production/release/signing credentials uncommitted. Service-local `.env.example` files contain names, validation guidance, placeholders, and safe loopback defaults only; do not add a root environment example or expose internal secret paths in public product docs.
 - After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.
 - When no explicit scope is specified and you are currently working within a pull request scope, interpret instructions within the current pull request scope.
@@ -54,9 +54,9 @@
 - `apps/`: User-facing apps and documentation web surfaces.
 - `crates/`: Rust crates and Rust-based tooling.
 - `cmds/`: Go command tools for workflow orchestration.
-- `servers/`: Backend services, including the implemented DevHud API foundation.
-- `protos/`: Versioned protocol schemas, including the implemented DevHud Connect RPC schemas and committed Go bindings.
-- `packages/`: Shared generated and runtime packages, including the implemented DevHud API client.
+- `servers/`: Backend services.
+- `protos/`: Versioned protocol schemas and committed Go bindings.
+- `packages/`: Shared generated and runtime packages.
 - `packaging/`: Package-manager template assets for release automation.
 - `.agents/skills/`: Workspace-local Codex skills and reusable agent workflows.
 - `scripts/`: Shared development, CI, installation and release tooling.
@@ -90,7 +90,6 @@
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
 - `docs/project-jsonllm.md`: jsonllm typed Clairic generation project index.
 - `docs/project-rustia.md`: Rustia multi-crate project index.
-- `docs/project-devhud.md`: DevHud cross-platform desktop/mobile utility project index and current the feature contract.
 - `docs/crates-binpm-foundation.md`: binpm Rust CLI, release asset source selection, global cache, and local tooling contract.
 - `docs/crates-with-watch-foundation.md`: with-watch CLI and watcher foundation contract.
 - `docs/crates-rustia-core-foundation.md`: Rustia core runtime LLM data contract.
