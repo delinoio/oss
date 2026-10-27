@@ -14,6 +14,8 @@ Use `pnpm dev:async-commit-hook` for the application frontend. Its development f
 
 The shared `scripts/dev-environment/process.mjs` helper retains argv-based command invocation and bounded platform/tool environment construction for development wrappers. Spawn children with explicit argument arrays and `shell: false`. Windows pnpm shims use explicit `cmd.exe` invocation. Forward termination signals and wait for process trees to exit.
 
+Use `pnpm dev:labs-site` for the static marketing site at `127.0.0.1:46312`. The app uses the shared strict-port development wrapper and requires no service secrets. See [the labs-site foundation](apps-labs-site-foundation.md).
+
 ## Native CLI repository publication
 
 The `linux-packages` GitHub Environment owns only the package signing subkey/passphrase and the two-bucket R2 object credentials listed in `repository-linux-packages-contract.md`. Its non-secret account ID and public fingerprint are Environment variables. Main and the seven exact project tag namespaces (including `clibox@v*`) may enter this boundary; pull requests and dry runs never receive these secrets. These values are unrelated to local service configuration, Infisical, Turbo development environments. Primary signing recovery material is operator-owned outside the repository and CI.

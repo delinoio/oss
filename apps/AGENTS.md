@@ -6,6 +6,8 @@
 
 ## Development and validation
 
+- Use `pnpm dev:labs-site` for the marketing site on fixed loopback port `46312`; conflicts fail. Follow the labs-site foundation for build and preview procedures.
+
 - Use `pnpm dev:public-docs` for documentation development on fixed loopback port `46302`; conflicts fail. Follow the public-docs contract for wrapper and shutdown behavior.
 
 - Follow root `AGENTS.md` and project-specific docs before adding or changing app code.
@@ -15,6 +17,8 @@
 - Write all source and comments in English.
 
 ## Owning contracts
+
+- [labs-site marketing foundation](../docs/apps-labs-site-foundation.md)
 
 - [async-commit-hook application contract](../docs/apps-async-commit-hook-contract.md)
 - [binpm public documentation foundation](../docs/apps-binpm-docs-foundation.md)

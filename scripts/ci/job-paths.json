@@ -321,5 +321,23 @@
       "turbo.json",
       "scripts/release/generate-checksums*"
     ]
+  },
+  "node-labs-site-test": {
+    "paths": [
+      ".npmrc",
+      ".nvmrc",
+      "apps/labs-site/**",
+      "docs/project-labs-site.md",
+      "docs/apps-labs-site-foundation.md",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "turbo.json",
+      "scripts/run-rsbuild-dev.mjs",
+      "scripts/spawn-dev-server.mjs",
+      "scripts/dev-environment/process.mjs"
+    ],
+    "workspace": "labs-site",
+    "workspacePaths": ["apps/labs-site/**"]
   }
 }

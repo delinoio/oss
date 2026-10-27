@@ -81,6 +81,8 @@
 - `docs/apps-pnport-docs-foundation.md`: pnport public guide routes and availability contract.
 - `docs/project-nodeup.md`: Node.js version manager project index.
 - `docs/project-with-watch.md`: Command rerun watcher CLI project index.
+- `docs/project-labs-site.md`: Delino Labs static marketing site project index.
+- `docs/apps-labs-site-foundation.md`: labs-site static build, development, and Cloudflare Pages contract.
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/packages-docs-site-switcher-contract.md`: Shared accessible documentation site selector package contract.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
