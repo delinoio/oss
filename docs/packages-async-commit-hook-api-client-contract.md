@@ -57,7 +57,7 @@ No implicit logs or telemetry.
 
 ## Build and Test
 
-Package-local typecheck, unit tests and build; root protocol generation/freshness and compatibility checks.
+Package-local typecheck, Rstest unit tests and build; root protocol generation/freshness and compatibility checks.
 
 ## Dependencies and Integrations
 

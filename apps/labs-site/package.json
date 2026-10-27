@@ -20,6 +20,7 @@
   },
   "devDependencies": {
     "@rsbuild/core": "2.1.10",
-    "typescript": "5.9.3"
+    "typescript": "5.9.3",
+    "@types/node": "24.19.2"
   }
 }

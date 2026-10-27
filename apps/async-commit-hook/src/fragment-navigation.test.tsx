@@ -8,7 +8,7 @@ import {
   LocalService,
   RunSchema,
 } from "@delinoio/async-commit-hook-api-client";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, expect, it, rs } from "@rstest/core";
 import { Workspace } from "./App";
 import { readConnection } from "./connection";
 
@@ -75,7 +75,7 @@ function renderWorkspace(rerun: () => RerunResult, initialRun = "source") {
 
 it("writes the accepted rerun to the refreshable fragment", async () => {
   history.replaceState(null, "", "/#run=source");
-  const rerun = vi.fn(() => ({ runId: "accepted-run" }));
+  const rerun = rs.fn(() => ({ runId: "accepted-run" }));
   const first = renderWorkspace(rerun, readConnection().run);
   try {
     fireEvent.click(
@@ -107,7 +107,7 @@ it("writes the accepted rerun to the refreshable fragment", async () => {
 
 it("keeps the source fragment until a startup-failed rerun is opened", async () => {
   history.replaceState(null, "", "/#run=source");
-  const rerun = vi.fn(() => ({
+  const rerun = rs.fn(() => ({
     runId: "accepted-run",
     startupDiagnostic: {
       code: "startup-failed",

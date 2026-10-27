@@ -102,7 +102,7 @@ No automatic uploads or persistent result logging in the browser. Surface typed 
 
 ## Build and Test
 
-Package-local pnpm test, typecheck, component/accessibility tests, production build and route/security tests. Root development entry is pnpm dev:async-commit-hook. `build:embedded` clears the prior embed first, builds the generated client and UI, validates the complete hashed asset inventory, and copies it into the ignored command-owned webassets/dist. It is the sole producer of that embed. Go compilation requires this task first. HTML uses no-store; hashed JavaScript/CSS and their license files are immutable. Only real bundled files are served; missing paths never become an HTML fallback.
+Package-local pnpm test, typecheck, Rstest component/accessibility tests, production build and route/security tests. `rstest.config.ts` owns the jsdom environment, shared setup and single-worker CI limit. Root development entry is pnpm dev:async-commit-hook. `build:embedded` clears the prior embed first, builds the generated client and UI, validates the complete hashed asset inventory, and copies it into the ignored command-owned webassets/dist. It is the sole producer of that embed. Go compilation requires this task first. HTML uses no-store; hashed JavaScript/CSS and their license files are immutable. Only real bundled files are served; missing paths never become an HTML fallback.
 
 ## Dependencies and Integrations
 

@@ -1,8 +1,8 @@
-// @vitest-environment jsdom
-// @vitest-environment-options {"url":"http://127.0.0.1:46302/"}
+// @rstest-environment jsdom
+// @rstest-environment-options {"url":"http://127.0.0.1:46302/"}
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "@rstest/core";
 
 import {
   DOCUMENTATION_SITES,

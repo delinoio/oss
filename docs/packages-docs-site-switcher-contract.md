@@ -24,7 +24,7 @@
 ## Build and Test
 
 - The package is private workspace code and is consumed by the single `apps/public-docs` Rspress application.
-- Run `pnpm --filter @delinoio/docs-site-switcher test` for the component interaction and pathname-mapping tests.
+- Run `pnpm --filter @delinoio/docs-site-switcher test` for the Rstest component interaction and pathname-mapping tests in jsdom.
 - Changes to the enum, registry, markup contract, or keyboard behavior require corresponding updates to the package tests and consolidated public-docs validation.
 
 ## Package integration

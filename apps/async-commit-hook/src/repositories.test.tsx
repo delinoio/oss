@@ -10,7 +10,7 @@ import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
 import { TransportProvider } from "@connectrpc/connect-query";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { LocalService } from "@delinoio/async-commit-hook-api-client";
-import { expect, it, vi } from "vitest";
+import { expect, it, rs } from "@rstest/core";
 import { Workspace } from "./App";
 
 it("loads split repositories on demand and retains selection through a page error", async () => {
@@ -19,7 +19,7 @@ it("loads split repositories on demand and retains selection through a page erro
   const nextRead = new Promise<void>((resolve) => {
     releaseNext = resolve;
   });
-  const listRepositories = vi.fn(
+  const listRepositories = rs.fn(
     async (request: { cursor: string; limit: number }) => {
       if (!request.cursor)
         return {
@@ -49,7 +49,7 @@ it("loads split repositories on demand and retains selection through a page erro
       };
     },
   );
-  const listRuns = vi.fn(() => ({ runs: [] }));
+  const listRuns = rs.fn(() => ({ runs: [] }));
   const transport = createRouterTransport((router) =>
     router.service(LocalService, {
       listRepositories,
@@ -117,7 +117,7 @@ it("loads split repositories on demand and retains selection through a page erro
 
 it("pages branches without losing an unloaded selection or loaded options on errors", async () => {
   let fail = true;
-  const listBranches = vi.fn((request: { cursor: string; limit: number }) => {
+  const listBranches = rs.fn((request: { cursor: string; limit: number }) => {
     expect(request.limit).toBe(50);
     if (!request.cursor)
       return {
@@ -181,9 +181,9 @@ it("pages branches without losing an unloaded selection or loaded options on err
 });
 
 it("keeps colliding branch labels separate and sends opaque identities in every view", async () => {
-  const listRuns = vi.fn(() => ({ runs: [] }));
-  const getChanges = vi.fn(() => ({ diff: "selected branch", head: "two" }));
-  const listCommits = vi.fn(() => ({ commits: [] }));
+  const listRuns = rs.fn(() => ({ runs: [] }));
+  const getChanges = rs.fn(() => ({ diff: "selected branch", head: "two" }));
+  const listCommits = rs.fn(() => ({ commits: [] }));
   const transport = createRouterTransport((router) =>
     router.service(LocalService, {
       listRepositories: () => ({
@@ -274,7 +274,7 @@ it("keeps colliding branch labels separate and sends opaque identities in every 
 });
 
 it("renders the local diff-base diagnostic and accepts an explicit base", async () => {
-  const getChanges = vi.fn((request: { base: string }) => {
+  const getChanges = rs.fn((request: { base: string }) => {
     if (!request.base)
       throw new ConnectError(
         "diff-base-required: select a local diff base; no remote fetch is performed",
@@ -347,7 +347,7 @@ for (const outcome of ["selected", "empty", "error"] as const) {
     const pending = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const listRuns = vi.fn(() => ({ runs: [] }));
+    const listRuns = rs.fn(() => ({ runs: [] }));
     const transport = createRouterTransport((router) =>
       router.service(LocalService, {
         listRepositories: async () => {
