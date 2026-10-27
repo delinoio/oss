@@ -920,3 +920,5 @@ Update this contract and affected service, CLI, protocol, library, operations, c
 Google Antigravity OAuth login, completion and refresh require both `AIPROUTER_GOOGLE_OAUTH_CLIENT_ID` and `AIPROUTER_GOOGLE_OAUTH_CLIENT_SECRET` from the service environment. No upstream installed-application credentials are embedded. Missing values refuse these exchanges before network access; other provider paths remain available. Keep populated values outside version control. The deployment must supply an authorized OAuth application compatible with the provider, scopes and callback; source fixtures do not establish live acceptance.
 
 Live/realtime offer sessions, direct WebSocket model queries and saved call bindings carry the resolved upstream model ID. Public route selectors remain caller-facing names and must not overwrite that resolved model.
+
+Every admitted live or dictation socket records a scoped request history row after both relay directions stop, including selection, dial, protocol and cancellation failures. Provider terminal response usage is accumulated once per response ID; absent counters remain unknown. Client frames never supply billing counters.

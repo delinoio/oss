@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -203,7 +204,7 @@ func (h *Handler) liveCall(ctx context.Context, w http.ResponseWriter, r *http.R
 
 // ServeRealtimeSocket relays a single bounded live/dictation session. It never executes
 // tool, shell, filesystem or media commands locally. Host owns inbound upgrade and origins.
-func (h *Handler) ServeRealtimeSocket(ctx context.Context, token, path string, query url.Values, down Socket) error {
+func (h *Handler) ServeRealtimeSocket(ctx context.Context, token, path string, query url.Values, down Socket) (result error) {
 	if h.c.SocketDialer == nil {
 		return ErrUnsupported
 	}
@@ -217,6 +218,25 @@ func (h *Handler) ServeRealtimeSocket(ctx context.Context, token, path string, q
 	if release != nil {
 		defer release()
 	}
+	// Register after admission and before resolution so failed selections and dials
+	// remain visible. The pumps are joined before this recorder reads their state.
+	rec := UsageRecord{RequestID: newID()}
+	defer func() {
+		rec.Canceled = errors.Is(result, context.Canceled) || errors.Is(result, context.DeadlineExceeded)
+		if rec.Canceled {
+			rec.Outcome = OutcomeCanceled
+		} else if result != nil && !errors.Is(result, io.EOF) {
+			rec.Outcome = OutcomeGatewayError
+		} else if rec.Outcome == "" {
+			rec.Outcome = OutcomeSuccess
+		}
+		accounting, stop := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer stop()
+		if err := h.c.Usage.Record(accounting, p, rec); err != nil {
+			h.event(accounting, "usage_write_failed")
+			h.c.Logger.ErrorContext(accounting, "inference usage write failed", "request_id", rec.RequestID)
+		}
+	}()
 	var t Target
 	var c Credential
 	var suffix string
@@ -286,6 +306,7 @@ func (h *Handler) ServeRealtimeSocket(ctx context.Context, token, path string, q
 			}
 		}
 	}
+	rec.Provider, rec.Model, rec.AccountID = t.Provider, t.Model, c.AccountID
 	if t.Auth == OAuth && path != "/v1/audio/transcriptions/stream" {
 		if t.Provider != "openai" && t.Provider != "chatgpt" {
 			return ErrUnsupported
@@ -320,7 +341,7 @@ func (h *Handler) ServeRealtimeSocket(ctx context.Context, token, path string, q
 	if strings.HasPrefix(path, "/v1/live") {
 		headers.Set("openai-alpha", "quicksilver=v2")
 	}
-	gateClient(client, ctx, p, h.c.Authorizer, func() { h.event(ctx, "upstream_send") })
+	gateClient(client, ctx, p, h.c.Authorizer, func() { rec.Sends++; h.event(ctx, "upstream_send") })
 	var up Socket
 	endpoint := strings.TrimRight(t.BaseURL, "/") + suffix
 	if dictation {
@@ -336,7 +357,10 @@ func (h *Handler) ServeRealtimeSocket(ctx context.Context, token, path string, q
 		return e
 	}
 	defer up.Close()
+	rec.Status = http.StatusSwitchingProtocols
 	frames := &dictationFrames{}
+	seen := make(map[string]bool)
+	reported := false
 	done := make(chan error, 2)
 	copyFrames := func(dst, src Socket, fromClient bool) {
 		for {
@@ -378,6 +402,33 @@ func (h *Handler) ServeRealtimeSocket(ctx context.Context, token, path string, q
 				e = h.c.Authorizer.(Dispatcher).Dispatch(sendCtx, p, func(gateCtx context.Context) error { return dst.Write(gateCtx, b) })
 				stop()
 			} else {
+				// Only terminal per-response reports are additive. Never infer token
+				// counts from audio frames or accept client-supplied usage.
+				event, decodeErr := decode(b)
+				if decodeErr == nil {
+					if str(event["type"]) == "error" {
+						rec.Outcome = OutcomeUpstreamError
+					}
+					if str(event["type"]) == "response.done" {
+						response := obj(event["response"])
+						if str(response["status"]) == "failed" {
+							rec.Outcome = OutcomeUpstreamError
+						}
+						id := str(response["id"])
+						if id != "" && !seen[id] {
+							seen[id] = true
+							u := readUsage(response, Responses)
+							if !reported {
+								rec.Usage = u
+								reported = true
+							} else {
+								rec.IntermediateUsage = []Usage{u}
+								aggregateIntermediateUsage(&rec)
+								rec.IntermediateUsage = nil
+							}
+						}
+					}
+				}
 				e = dst.Write(ctx, b)
 			}
 			if e != nil {
