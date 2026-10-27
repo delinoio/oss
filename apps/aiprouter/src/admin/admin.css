@@ -834,6 +834,9 @@
 .admin-dialog.admin-dialog-wide {
   width: min(600px, calc(100vw - 32px));
 }
+.admin-dialog.admin-dialog-compact {
+  width: min(520px, calc(100vw - 32px));
+}
 @media (max-width: 600px) {
   .admin-settings .page-heading h1 {
     font-size: 24px;

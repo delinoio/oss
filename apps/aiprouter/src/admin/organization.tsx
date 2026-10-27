@@ -265,6 +265,7 @@ export function Invitations() {
   const [cooldowns, setCooldowns] = useState<Record<string, number>>({});
   const now = useNow();
   const action = useAction();
+  const inviteHelperId = useId();
   const dirty = useDirtyForm();
   useEffect(() => {
     dirty(open && !!email);
@@ -439,6 +440,7 @@ export function Invitations() {
       {open && (
         <Dialog
           title={translate("inviteMember")}
+          size={DialogSize.Compact}
           onClose={() => setOpen(false)}
         >
           <form
@@ -462,17 +464,32 @@ export function Invitations() {
               );
             }}
           >
+            <p>{translate("inviteSomeoneToThisOrganizationAs")}</p>
             <label>
               {translate("emailAddress")}
               <input
                 type="email"
                 required
+                placeholder={translate("nameExampleTest")}
+                aria-describedby={inviteHelperId}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </label>
-            <p>{translate("theInvitedPersonJoinsAsAMember")}</p>
+            <p id={inviteHelperId} className="admin-helper">
+              {translate("theyMustSignInWithThis")}
+            </p>
+            <p>{translate("message_f2ebd8cccf")}</p>
+            <p className="admin-helper">
+              {translate("promotionToAdministratorIsManagedSeparately")}
+            </p>
+            <p className="admin-quiet">
+              {translate("invitationLinksExpireAfterSevenDays")}
+            </p>
             <ErrorNotice error={action.error} />
+            <p role="status" className="admin-dialog-status">
+              {action.pending ? translate("message_238b2274b1") : ""}
+            </p>
             <div className="admin-actions">
               <button type="button" data-cancel onClick={() => setOpen(false)}>
                 {translate("cancel")}
