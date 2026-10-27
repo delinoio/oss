@@ -25,6 +25,8 @@
   "member": "Member",
   "unknownRole": "Unknown role",
   "pageNotFound": "Page not found",
+  "pageUnavailable": "PAGE UNAVAILABLE",
+  "pageNotFoundExplanation": "We couldn’t find this page. Check the address or return to your organizations.",
   "backToOrganizations": "Back to organizations",
   "tryAgain": "Try again",
   "skipToContent": "Skip to content",
