@@ -11,7 +11,7 @@ This site provides a curated, user-facing layer of documentation that complement
 - Review [Documentation Lifecycle](documentation-lifecycle) for the relationship between internal contracts and this public site.
 - Open [Cargo Mono](cargo-mono), and [With Watch](with-watch) from the sidebar for project guides on this site.
 
-- Open the [Nodeup](https://oss.delino.io/nodeup/), [binpm](https://oss.delino.io/binpm/), [Runmoor](https://oss.delino.io/runmoor/), [async-commit-hook](https://oss.delino.io/async-commit-hook/), [clibox](https://oss.delino.io/clibox/), [pnport](https://oss.delino.io/pnport/), or [bundlewhy](https://oss.delino.io/bundlewhy/) documentation from the site selector. pnport 0.1.2 is available for macOS and glibc Linux with [known limits](/pnport/installation).
+- Open the [Nodeup](https://oss.delino.io/nodeup/), [binpm](https://oss.delino.io/binpm/), [Runmoor](https://oss.delino.io/runmoor/), [async-commit-hook](https://oss.delino.io/async-commit-hook/), [clibox](https://oss.delino.io/clibox/), or [pnport](https://oss.delino.io/pnport/) documentation from the site selector. pnport 0.1.2 is available for macOS and glibc Linux with [known limits](/pnport/installation).
 
 ## Scope
 

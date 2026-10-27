@@ -831,22 +831,22 @@ test("deleted and renamed paths retain both owners, including unusual filenames"
   const f = fixture(t);
   f.write("apps/public-docs/old name.ts", "original\n");
   const base = f.commit();
-  mkdirSync(join(f.cwd, "apps/bundlewhy-web"), { recursive: true });
+  mkdirSync(join(f.cwd, "apps/async-commit-hook"), { recursive: true });
   renameSync(
     join(f.cwd, "apps/public-docs/old name.ts"),
-    join(f.cwd, "apps/bundlewhy-web/new\nname.ts"),
+    join(f.cwd, "apps/async-commit-hook/new\nname.ts"),
   );
   rmSync(join(f.cwd, "README.md"));
   const head = f.commit();
   const { paths } = changedFiles(Event.Push, { before: base }, head, f.cwd);
   assert.deepEqual(paths, [
     "README.md",
-    "apps/bundlewhy-web/new\nname.ts",
+    "apps/async-commit-hook/new\nname.ts",
     "apps/public-docs/old name.ts",
   ]);
   const jobs = selected(Event.Push, paths);
   assert.ok(jobs.includes("node-public-docs-test"));
-  assert.ok(jobs.includes("node-bundlewhy-test"));
+  assert.ok(jobs.includes("async-commit-hook"));
 });
 
 test("missing, malformed, and unavailable revisions fail rather than skip checks", (t) => {

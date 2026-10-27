@@ -895,49 +895,6 @@ jobs:
           path: .turbo/runs/*.json
           if-no-files-found: ignore
 
-  node-bundlewhy-test:
-    needs: changes
-    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['node-bundlewhy-test'] }}
-    name: bundlewhy UI, adapters and launcher
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: read
-      pull-requests: read
-      id-token: write
-    steps:
-      - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-      - uses: ./.github/actions/setup-ci-node
-        id: ci-node
-      - name: Setup Turbo remote cache
-        uses: ./.github/actions/setup-turbo-cache
-        with:
-          team: ${{ vars.TURBO_TEAM }}
-          policy: ${{ vars.TURBO_OIDC_POLICY }}
-
-      - run: pnpm install --frozen-lockfile --ignore-scripts
-      - name: Test the web UI, collector adapters and npm launcher
-        run: node scripts/ci/run-affected.mjs bundlewhy-web test && node scripts/ci/run-affected.mjs @delino/bundlewhy test
-        env:
-          FORCE_RUN: "true"
-
-      - name: Save pnpm cache after successful main validation
-        if: ${{ success() && github.ref == 'refs/heads/main' && steps.ci-node.outputs.cache-hit != 'true' }}
-        uses: actions/cache/save@v5
-        with:
-          path: ${{ steps.ci-node.outputs.cache-path }}
-          key: ${{ steps.ci-node.outputs.cache-key }}
-
-      - name: Preserve Turbo run summaries
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: turbo-node-bundlewhy-test-${{ strategy.job-index }}-${{ github.run_attempt }}
-          path: .turbo/runs/*.json
-          if-no-files-found: ignore
-
   pnport-native:
     needs: changes
     if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['pnport-native'] }}
@@ -1032,7 +989,6 @@ jobs:
       - node-public-docs-test
       - node-clibox-test
       - node-pnport-test
-      - node-bundlewhy-test
       - pnport-native
       - linux-packages
     steps:

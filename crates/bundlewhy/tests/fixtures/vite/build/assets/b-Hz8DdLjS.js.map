@@ -1,1 +1,0 @@
-{"version":3,"file":"b-Hz8DdLjS.js","names":["common","b"],"sources":["/__bundlewhy_project__/src/lazy/b.js"],"sourcesContent":["import { common } from \"./common.js\";\n\nexport function b() {\n  return common(\"b\");\n}\n"],"mappings":"yCAEA,SAAgBC,GAAI,CAClB,OAAOD,EAAO,GAAG,CACnB"}

@@ -86,6 +86,12 @@ test("schema baseline comparison ignores unavailable LFS assets but still reject
   );
   git("add", "--all");
   git("commit", "-m", "schema baseline with unavailable LFS asset");
+  write(
+    "protos/bundlewhy/v1/service.proto",
+    schema.replaceAll("example.v1", "bundlewhy.v1"),
+  );
+  git("add", "protos/bundlewhy/v1/service.proto");
+  git("commit", "-m", "add transferred schema baseline");
   const baseline = git("rev-parse", "HEAD");
   symlinkSync(
     join(root, "node_modules"),
@@ -112,6 +118,7 @@ test("schema baseline comparison ignores unavailable LFS assets but still reject
   rmSync(join(cwd, "protos/devhud"), { recursive: true });
   rmSync(join(cwd, "protos/delidev"), { recursive: true });
   rmSync(join(cwd, "protos/delcore"), { recursive: true });
+  rmSync(join(cwd, "protos/bundlewhy"), { recursive: true });
   let result = run(baseline);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(existsSync(join(cwd, ".git/lfs/objects/aa/aa", oid)), false);

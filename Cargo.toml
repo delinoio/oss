@@ -2,7 +2,6 @@
 resolver = "2"
 members = [
     "crates/typeopt",
-    "crates/bundlewhy",
     "crates/binpm",
     "crates/cargo-mono",
     "crates/clibox",

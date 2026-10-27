@@ -593,33 +593,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bundlewhy"
-version = "0.1.0"
-dependencies = [
- "brotli",
- "bytes",
- "chrono",
- "clap",
- "flate2",
- "getrandom 0.3.4",
- "http-body-util",
- "hyper",
- "hyper-util",
- "libc",
- "regex",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "sourcemap",
- "tempfile",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
 name = "bytemuck"
 version = "1.25.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
