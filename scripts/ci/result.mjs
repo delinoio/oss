@@ -20,12 +20,10 @@ export function validateResults(needs) {
     throw new Error("Rust package selection differs from the planned jobs");
   const matrices = matricesForEvent(event, mode);
   for (const [output, matrix] of [
-    ["environment_matrix", matrices.environmentMatrix],
     ["forge_matrix", matrices.forgeMatrix],
     ["clibox_matrix", matrices.cliboxMatrix],
     ["pnport_matrix", matrices.pnportMatrix],
     ["go_test_matrix", matrices.goTestMatrix],
-    ["desktop_matrix", matrices.desktopMatrix],
   ]) {
     const actual = JSON.parse(needs.changes.outputs[output]);
     if (JSON.stringify(actual) !== JSON.stringify(matrix))

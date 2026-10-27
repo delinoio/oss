@@ -1,114 +1,21 @@
-# Repository Environment Contract
+# Repository environment contract
 
-## Scope and authority
+## Configuration ownership
 
-This is the internal source of truth for repository configuration, local development environments, and secret ownership. Project contracts may narrow a service allowlist but may not create a second shared secret-loading mechanism. Public product documentation must describe user-visible setup only; it must not expose the team secret paths, upstream project identifiers, local state layout, or operational recovery internals in this document.
+Repository files contain public configuration, toolchain selectors, names and safe examples. Real `.env` files, `.infisical.json`, `.dev-environment/`, user credentials, and production, release and signing credentials remain uncommitted. Do not add a root environment example. Service-local `.env.example` files contain names, validation guidance, placeholders and safe loopback defaults only.
 
-Local development has one bounded selector:
+User-owned credentials stay in the owning local mechanism. They must not enter repository files, logs, process arguments or shared build cache metadata. Secrets belong to their owning service or protected release environment.
 
-```ts
-enum DevHudLocalMode {
-  Team = "team",
-  Oss = "oss",
-}
-```
+## Local development
 
-Only `DEVHUD_LOCAL_MODE`, the optional non-secret `CARGO_HOME` and `RUSTUP_HOME` tool locations, and the platform-conditional Linux X11/XWayland `DISPLAY` selector, `XAUTHORITY` authority-file location, and `XDG_RUNTIME_DIR` per-user runtime location cross the root Turbo boundary, through the exact task `env` allowlist. Secret names and values must not appear in Turbo `globalEnv`, `globalPassThroughEnv`, task `env`, broad passthrough configuration, summaries, cache metadata, or root process arguments.
+Use `pnpm dev:public-docs` for the consolidated documentation site at `127.0.0.1:46302`. Port conflicts fail instead of selecting another port. Follow `apps-public-docs-foundation.md` for wrapper and shutdown behavior.
 
-## Configuration classes
+Use `pnpm dev:async-commit-hook` for the application frontend. Its development frontend uses fixed port `46308`; the local UI/API uses configurable `api_port`, default `46309`. No root team or OSS dependency orchestrator is required.
 
-1. **Committed configuration** is non-sensitive policy required to reproduce the repository: fixed ports and origins, schemas, immutable tool/container versions and digests, safe loopback defaults, validation rules, and `.env.example` files. Examples contain names and placeholders, never usable credentials.
-2. **Team development secrets** are the DevHud API and administrator values enumerated below. They are available only to authorized team members through the service-owned Infisical wrappers in `dev`; they are not a CI, production, release, or OSS dependency.
-3. **Generated local material** is unique to one checkout and development-only. The OSS identity HMAC key and related state live under ignored `.dev-environment/`, use mode `0600` where supported, are never printed, and are not shared through Infisical. A complete key is published atomically so concurrent commands select the same identity; incomplete or malformed existing material fails closed instead of being hashed. A one-way digest of the validated key scopes the checkout's Compose project and persistent volume without disclosing the key. Team startup stores only its ephemeral comparison key, matched issuer digest, and ownership token in a private pin under the same ignored state directory; no raw service value is written. That pin exclusively owns team startup through Turbo completion, and each migration or service wrapper must prove its freshly injected issuer matches the pinned digest. OSS startup separately owns an exclusive checkout-local lock from its first preflight through dependency cleanup. A second start in the same mode fails before mutation; handled completion removes the applicable ownership file, while stale ownership is removed manually only after confirming no matching development process remains.
-4. **User-owned credentials** belong to a developer or product user and remain in their owning local mechanism. This includes binpm registry tokens, DevHud GitHub PATs, DevHud BYO R2 credentials, and contributor-owned Logto users/applications. They must not enter the team development secret manager, synchronized DevHud settings, the API service environment unless explicitly part of the API's official development upload group, or repository files.
-5. **Production, deployment, release, and signing secrets** remain in their protected operator/workflow boundaries. Store credentials, platform signing identities, updater signing keys, registry/deployment credentials, production database/Logto/R2/Cloudflare credentials, and release tokens must never be migrated into the team development secret manager.
-
-Generic dotenv support and contractually required `.env` Turbo inputs remain supported. Real `.env` files remain ignored.
-
-## Stable commands
-
-- `pnpm env:login` checks for the exact supported Infisical CLI, authenticates interactively only when the current user session is missing, and runs local project initialization only when `.infisical.json` is absent.
-- `pnpm env:doctor` performs a non-mutating team tool/authentication/project/path/allowlist check. It emits name/category-only recovery guidance.
-- `pnpm dev` selects `team`, fails non-interactively when authentication or local project binding is missing, validates the API and administrator environments, privately pins their matched issuer comparison, requires migration plus the API, administrator, and frontend launches to match that pin, and starts those applications through `turbo run dev` on fixed ports `46307`, `46306`, and `46305`.
-- `pnpm dev:public-docs` is the repository-root documentation development entry point. It serves the root and all six project content sections through the `public-docs` workspace without requiring the DevHud team environment.
-- `pnpm dev:oss` selects `oss`, never invokes Infisical, acquires exclusive startup ownership for the checkout, validates fixed ports, starts repository-owned dependencies, idempotently ensures the Logto database exists, waits for health, runs the API migration, and starts the same three applications through the same Turbo boundary.
-- `pnpm dev:oss:down` stops the current checkout's repository-owned dependencies and removes orphan containers without deleting its persistent PostgreSQL volume. Use an explicit Docker volume operation only when intentionally discarding local data.
-- The workspace-local `$run-dev` Codex skill is explicit-invocation-only. It asks for a credential mode when none is provided, then runs root `pnpm install` once when `node_modules` is absent or, after a clear missing-workspace-module or workspace-binary failure, runs it once and retries only the failed command once. It maps user-facing `Delino` and internal `team` to the ordered `pnpm env:login`, `pnpm env:doctor`, and `pnpm dev` sequence, and maps `OSS` to `pnpm dev:oss` without invoking Infisical. This installation permission covers only repository pnpm workspace dependencies and does not authorize installing or upgrading pnpm, Infisical, Docker, Go, Rust, or other external tools. The skill delegates all secret injection and validation to the existing service-owned wrappers and must not export provider values or write them to environment files.
-
-The tested supported Infisical CLI is exactly [`0.43.116`](https://github.com/Infisical/cli/releases/tag/v0.43.116). Repository commands validate this pin and never install or upgrade it. `.infisical.json` is ignored and must never be committed because it binds an authorized developer's checkout to an upstream project.
-
-Authentication, project, or secret-path failure is terminal for `pnpm dev`. It must not fall back to OSS mode. Resolve the named category with `pnpm env:login` or `pnpm env:doctor`; diagnostics must not print a value, project ID, token, path response, or raw provider error.
-
-## Team service ownership
-
-Infisical injection occurs only inside an owning package wrapper. The root process and Turbo are never wrapped. The API, administrator, and frontend wrappers select environment `dev`, disable personal-secret overriding, expansion, and imports, disable telemetry and verbose output, use argv-based spawning, and buffer provider output until the package allowlist is accepted. The frontend reads the administrator path only for the validated public issuer needed by the development browser policy.
-
-Base child environments preserve only the documented non-secret platform and tool context, including custom `CARGO_HOME` and `RUSTUP_HOME` locations needed by the Rust toolchain. On Linux, the app-owned Native Messaging listener also receives `XDG_RUNTIME_DIR`; it requires that location to be absolute and private before using its per-user socket. On Windows, process-tree termination passes only `PATH`, `PATHEXT`, `SYSTEMROOT`, and `WINDIR` to `taskkill.exe`; validated service configuration never enters that utility process. The API owns path `/devhud/api`. Its required names are:
-
-- `DEVHUD_DATABASE_URL`
-- `DEVHUD_PUBLIC_API_URL`
-- `DEVHUD_LOGTO_ISSUER`
-- `DEVHUD_LOGTO_AUDIENCE`
-- `DEVHUD_LOGTO_DESKTOP_CLIENT_ID`
-- `DEVHUD_LOGTO_IOS_CLIENT_ID`
-- `DEVHUD_LOGTO_ANDROID_CLIENT_ID`
-- `DEVHUD_LOGTO_ADMIN_CLIENT_ID`
-- `DEVHUD_ADMIN_REDIRECT_URI`, exactly `http://localhost:46306/auth/callback` in development
-- `DEVHUD_PUBLIC_ASSET_BASE_URL`
-- `DEVHUD_IDENTITY_HMAC_KEYS`, a comma-separated standard-Base64 key ring with at least 32 decoded bytes per key
-
-The API's optional official-development-upload group is all present or all absent:
-
-- `DEVHUD_R2_ENDPOINT`
-- `DEVHUD_R2_ACCESS_KEY_ID`
-- `DEVHUD_R2_SECRET_ACCESS_KEY`
-- `DEVHUD_R2_STAGING_BUCKET`
-- `DEVHUD_R2_PUBLIC_BUCKET`
-- `DEVHUD_CLOUDFLARE_API_TOKEN`
-- `DEVHUD_CLOUDFLARE_ZONE_ID`
-- `DEVHUD_CLOUDFLARE_RATE_LIMIT_RULE_ID`
-
-The administrator owns path `/devhud/admin` and receives only `DEVHUD_LOGTO_ISSUER`. The frontend wrapper reads that same path and accepts only the same public name; it reduces the issuer to its origin for the fixed development CSP because pinned CEF does not rewrite response headers for the external Rsbuild development URL. That CSP permits only the fixed local and canonical API origins, GitHub API, the validated issuer origin, and the fixed HMR endpoint. The wrappers reject missing required names, every unknown name, an invalid value, and every partial optional group before migration or package start. Raw HTTP(S) configuration must contain an explicit `scheme://authority`; parser-normalized spellings without an authority delimiter are invalid. HTTP loopback IPv4 authorities must use the canonical four-part decimal notation accepted by Go; shorthand, integer, octal, and hexadecimal spellings are invalid even when WHATWG normalizes them to loopback. The public asset base must have no raw path or exactly `/`; dot segments and encoded equivalents are rejected before WHATWG normalization so preflight matches Go. The wrappers rebuild each child environment from a small platform/tool allowlist and the accepted values. Raw values never enter a file, log, diagnostic, argument, or sibling process. Team preflight uses an ephemeral keyed comparison from the API and administrator wrappers to require their issuer values to match exactly before migration without exposing either value. Root then writes only that key, its matched digest, and an ownership token to the private team pin. Every later API migration, API serve, administrator serve, and frontend serve wrapper recomputes its issuer comparison and fails closed if the injected generation changed; the pin never crosses Turbo and remains until Turbo exits so task launch cannot bypass parity. In OSS mode, a contributor who overrides the issuer must record the exact same value in `servers/devhud-api/.env` and `apps/devhud-admin/.env` so API Bootstrap, the administrator CSP, and the frontend CSP remain aligned.
-
-Production-only listener/proxy/updater/sweeper/telemetry settings are not accepted from these team paths. User GitHub PATs and BYO R2 credentials are never accepted. `apps/devhud-admin/.env.example` and `servers/devhud-api/.env.example` document service names and safe local guidance; no root `.env.example` is permitted.
-
-## OSS dependency and capability boundary
-
-`pnpm dev:oss` owns a local Compose definition with these immutable images:
-
-- `postgres:15-bookworm@sha256:5d1d70e254e3c5d7d76847a9deebb18478cd518df37abf6b278d4bdb1fe5d96c`
-- `svhd/logto:1.41.0@sha256:7f79547e3d1fe569a3ecae757968a7cfc579687aa8164eec35113c0adc983c5b`
-
-PostgreSQL binds `127.0.0.1:5432`, Logto core binds `127.0.0.1:3001`, and Logto Console binds `127.0.0.1:3002`; the applications bind `46305`, `46306`, and `46307`. The administrator preflight probes the same `localhost` host used by its development server. A conflicting owner is an actionable failure, never a port remap. An already-running dependency is accepted only when the current checkout's identity-derived Compose project owns the exact binding.
-
-OSS mode creates a unique identity HMAC key without printing it. It supplies safe loopback database/API/issuer/asset defaults and deliberately omits the complete R2/Cloudflare group, so Bootstrap does not advertise official uploads. Guest/bootstrap development remains functional. After PostgreSQL is healthy over TCP, an idempotent one-shot service creates the Logto database only when absent; Logto seeding waits for that step, so a preserved volume from an interrupted first initialization repairs itself on retry. The repository does not fabricate a shared Logto administrator, user, API resource, application, or client secret. Authenticated flows and administrator sign-in remain unavailable until a contributor creates and owns the needed local Logto objects, records their public issuer/audience/client configuration in the service-local files as documented above, or uses the authorized team path.
-
-Termination and child failure stop the active process tree and reap partial startup. Every Infisical, Docker, migration, and Turbo preflight, startup, or cleanup child is lifecycle-tracked while the root signal handlers are installed, including version, authentication, context, and Compose-ownership probes; buffered probes complete only after their stdout and stderr pipes close. OSS cleanup stops only the current checkout's identity-derived Compose project even when dependency startup, migration, or steady-state application execution is interrupted, while preserving that checkout's volumes. An interruption already being handled does not suppress cleanup, and a later signal is forwarded to the active cleanup process tree. Docker availability, ownership, startup, and cleanup children preserve only the contributor's `DOCKER_HOST` and `DOCKER_CONTEXT` daemon selectors in addition to the base process allowlist; those selectors do not enter Turbo or service children. `DOCKER_CONTEXT` retains Docker's precedence over `DOCKER_HOST`, but `pnpm dev:oss` accepts only an effective Unix socket, Windows named pipe, or loopback TCP endpoint and rejects remote or uninspectable daemons before Compose startup because the dependencies publish loopback-only ports for local services.
-
-## Implementation and validation
-
-Root scripts are orchestration-only cross-platform Node ESM. `servers/devhud-api` is a pnpm workspace package and owns its local validation, migration, and serve wrapper; `apps/devhud-admin` owns its development wrapper. Every child is spawned with an explicit argv array and `shell: false`; Windows pnpm `.cmd` shims are invoked explicitly through `cmd.exe` rather than treated as native executables.
-
-No-network tests use fake Infisical, Docker, Go, and Turbo executables, an injected temporary generated-state directory, and an injected Infisical project-config directory outside the checkout; they never delete or replace the checkout's `.dev-environment` identity or `.infisical.json` binding. They cover first/repeat team setup through the explicit login command; non-interactive startup readiness; exact provider flags, paths, and service allowlists; complete provider-pipe marker handling; missing/unknown/partial/malformed-authority configuration, raw asset-path normalization, escaped database-host rejection, and numeric IPv4 alias rejection; canary non-disclosure; fail-closed authentication/path behavior; OSS ordering and lack of Infisical; matching administrator/API issuers in team and OSS modes; team issuer rotation before migration and service launch; private exclusive pin ownership and cleanup; local Docker endpoint enforcement; immutable pins; every fixed port and bind host; atomic generated-key publication, validation, permissions, and checkout-scoped Compose identity; checkout-exclusive OSS startup with release after cleanup and failure; idempotent Logto database preparation after PostgreSQL health; custom Rust toolchain locations; platform-conditional Linux session/runtime context; migration-before-Turbo ordering; unavailable OSS authenticated/admin/official-upload capability; preflight, startup, migration, steady-state, and cleanup interruptions with process-tree cleanup; and volume-preserving down. CI installs this suite's workspace dependencies without lifecycle scripts and runs it on Linux, macOS, and Windows.
-
-Changes to this contract require synchronized updates to `docs/README.md`, applicable project/domain contracts and service READMEs, root/domain `AGENTS.md`, package scripts, tests, and the lockfile. Validation also includes Go API/config/migration tests, affected frontend tests, a clean frozen-lockfile install, resolved Turbo configuration inspection, `git diff --check`, and checks that no generated root `.env`, `.infisical.json`, or secret-bearing state is committed.
-
-Instruction-file updates in this requirement apply only to changes in development procedures, directory ownership or repository/domain development rules under the [instruction-update policy](README.md#instruction-update-policy); ordinary behavior and validation changes update the owning contracts and validation records.
+The shared `scripts/dev-environment/process.mjs` helper retains argv-based command invocation and bounded platform/tool environment construction for development wrappers. Spawn children with explicit argument arrays and `shell: false`. Windows pnpm shims use explicit `cmd.exe` invocation. Forward termination signals and wait for process trees to exit.
 
 ## Native CLI repository publication
 
-The `linux-packages` GitHub Environment owns only the package signing subkey/passphrase and the two-bucket R2 object credentials listed in `repository-linux-packages-contract.md`. Its non-secret account ID and public fingerprint are Environment variables. Main and the seven exact project tag namespaces (including `clibox@v*`) may enter this boundary; pull requests and dry runs never receive these secrets. These values are unrelated to local service configuration, Infisical, Turbo development environments and DevHud credentials. Primary signing recovery material is operator-owned outside the repository and CI.
+The `linux-packages` GitHub Environment owns only the package signing subkey/passphrase and the two-bucket R2 object credentials listed in `repository-linux-packages-contract.md`. Its non-secret account ID and public fingerprint are Environment variables. Main and the seven exact project tag namespaces (including `clibox@v*`) may enter this boundary; pull requests and dry runs never receive these secrets. These values are unrelated to local service configuration, Infisical, Turbo development environments. Primary signing recovery material is operator-owned outside the repository and CI.
 
 The async-commit-hook local UI/API remain on configurable api_port (default 46309), with frontend development on fixed 46308. Its public documentation is served by the consolidated `public-docs` app on fixed development port 46302; the root `pnpm dev:public-docs` command never invokes Infisical. No new environment input is required.
-
-## Project requirements
-
-- `repository-environment-contract.md` is the source of truth for environment ownership. Root development orchestration may pass only the bounded `DEVHUD_LOCAL_MODE` selector, optional non-secret `CARGO_HOME` and `RUSTUP_HOME` tool locations, and platform-conditional Linux X11/XWayland `DISPLAY`, `XAUTHORITY`, and per-user `XDG_RUNTIME_DIR` session/runtime context through Turbo's exact task environment allowlist; team values are injected and validated only by their owning service wrapper, whose loopback HTTP validation must reject numeric IPv4 spellings not accepted by Go and whose public asset-base validation must inspect the raw path before WHATWG normalization. Exact API/administrator issuer parity must be proved before migration and pinned through migration plus the API, administrator, and frontend Turbo launches without writing a raw value; the frontend wrapper may receive only that validated public issuer and may use only its origin in the fixed development CSP. OSS mode must never invoke Infisical. Team startup is non-interactive and exclusive while that private comparison pin exists, checkout identity material is published atomically, and every preflight, startup, or cleanup child run under installed root signal handlers must be lifecycle-tracked. Windows process-tree termination utilities receive only minimal system lookup context, never validated service configuration. Docker children may additionally inherit only `DOCKER_HOST` and `DOCKER_CONTEXT`, but OSS startup must reject effective remote daemon endpoints before Compose startup. OSS startup is exclusive per checkout through cleanup, and an idempotent one-shot database step must repair missing Logto database creation in preserved PostgreSQL volumes before Logto seeding. Environment tests must inject temporary generated state and an external temporary Infisical config directory, and must never replace checkout identity or project-binding material.
-
-## Application integration
-
-- DevHud frontend and administrator development use fixed ports `46305` and `46306`. Their package wrappers receive only the validated `DEVHUD_LOGTO_ISSUER` from the administrator configuration path, reject every other team-injected name, and never pass configuration through the root Turbo process. The frontend reduces that issuer to its origin for the exact development CSP required by pinned CEF. In team mode both launch issuers must match the private preflight comparison pin; in OSS mode they must exactly match the API wrapper's package-local value so Bootstrap and both browser policies agree. Follow `repository-environment-contract.md`.
-
-## Service integration
-
-- `servers/devhud-api` is a pnpm workspace package for local orchestration and owns its validation, migration, and serve wrapper. Team configuration must use the exact API allowlist in `repository-environment-contract.md`; reject missing/unknown/invalid names, authority-less URLs, public asset paths hidden by parser normalization, and partial upload groups before migrations or startup. Require the migration and serve issuer to match the private API/administrator preflight comparison pin, then construct a sanitized child environment.

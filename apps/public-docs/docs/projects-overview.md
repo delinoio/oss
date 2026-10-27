@@ -4,7 +4,6 @@ This page provides a high-level public catalog of projects in the Delino OSS mon
 
 ## Active Projects
 
-- [`DevHud`](devhud): Coordinated desktop and mobile developer utility with RealQA capture, Deck monitoring, widgets, and a Chrome companion extension.
 - [`cargo-mono`](cargo-mono): Cargo subcommand tooling for Rust monorepo workflows.
 - [`nodeup`](https://oss.delino.io/nodeup/): Rust-based Node.js runtime manager.
 - [`binpm`](https://oss.delino.io/binpm/): Rust-based, Node-free binary package manager.

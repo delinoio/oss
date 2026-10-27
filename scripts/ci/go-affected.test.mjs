@@ -40,7 +40,7 @@ const inventory = [
   pkg("cmds/fixture/internal/workspace"),
   pkg("cmds/fixture/internal/cli", ["cmds/fixture"]),
   pkg("cmds/fixture/internal/server", ["cmds/fixture"]),
-  pkg("servers/devhud-api"),
+  pkg("servers/example-api"),
   pkg("cmds/runmoor/internal/runmoor"),
 ];
 const changes = (name, status = "M") => [{ path: name, status }];
@@ -370,15 +370,15 @@ test("production embeds propagate to callers while external-test embeds seed onl
 });
 
 test("frontend source changes include their real Go embed owners and callers", () => {
-  const embed = "servers/devhud-api/internal/adminassets";
+  const embed = "cmds/async-commit-hook/internal/webassets";
   const packages = [
     pkg(embed),
-    pkg("servers/devhud-api", [embed]),
+    pkg("cmds/async-commit-hook", [embed]),
     pkg("cmds/fixture"),
   ];
   for (const file of [
-    "apps/devhud-admin/src/App.tsx",
-    "packages/devhud-api-client/src/client.ts",
+    "apps/async-commit-hook/src/App.tsx",
+    "packages/async-commit-hook-api-client/src/client.ts",
   ]) {
     assert.deepEqual(
       selectAffected(packages, changes(file)).packages,

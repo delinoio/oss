@@ -27,11 +27,11 @@ const projectSecuritySlugs = new Set([
   "bundlewhy",
 ]);
 const forbiddenProjectContent = [
-  /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)|Authorization:\s*Bearer)/iu,
+  /(?:GH_TOKEN|EXAMPLE_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)|Authorization:\s*Bearer)/iu,
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/iu,
   /BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY/iu,
   /(?:\/Users\/|\/home\/[a-z]|\.infisical)/iu,
-  /(?:apps|cmds|servers|protos)\/(?:runmoor|async-commit-hook|devhud)(?:\/|\b)/iu,
+  /(?:apps|cmds|servers|protos)\/(?:runmoor|async-commit-hook)(?:\/|\b)/iu,
   /(?:crates|packages)\/pnport(?:\/|\b)/iu,
   /(?:apps|crates|packages|protos)\/bundlewhy(?:-web)?(?:\/|\b)/iu,
 ];
@@ -41,14 +41,6 @@ const rootRoutes = [
   "/projects-overview",
   "/documentation-lifecycle",
   "/linux-packages",
-  "/devhud",
-  "/devhud/install",
-  "/devhud/guide",
-  "/devhud/privacy",
-  "/devhud/security",
-  "/devhud/support",
-  "/devhud/admin",
-  "/devhud/releases",
   "/cargo-mono",
   "/with-watch",
 ];

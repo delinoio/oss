@@ -19,8 +19,7 @@ application target never selects the host executable.
 `scripts/prebuilt-dependencies.mjs` owns generic installation.
 `scripts/tauri-cli.mjs -- <arguments...>` prepares the CLI and forwards structured
 arguments, environment, cwd, exit status and termination signals through the
-repository process supervisor. It prepends the verified executable directory to the child PATH so generated Xcode/Gradle Cargo invocations use the same CLI. The direct Intel iOS simulator path applies that verified environment to Xcode and its options server. DevHud desktop/mobile generation/build paths and
-Consumer manifests and `Cargo.lock` contain no Tauri CLI wrapper.
+repository process supervisor. It prepends the verified executable directory to the child PATH so generated Xcode/Gradle Cargo invocations use the same CLI. Consumer manifests and `Cargo.lock` contain no Tauri CLI wrapper.
 
 ## Installation and storage
 
@@ -56,13 +55,8 @@ The consumers retain CEF package notices and their independent app validation.
 Installer fixtures cover first download, reuse, corruption, digest mismatch,
 network failure, Windows executable names, unsupported hosts, explicit local
 source builds and CI source-build refusal. CI contract tests guard cache keys,
-main-only saves and native/mobile routing. `pnpm ci:contracts` and package-owned
-DevHud tests include these boundaries.
-
-CEF AppImage build helpers are prepared by `scripts/appimage-tools.mjs` for DevHud using the existing canonical pins in `apps/devhud/cef-pins.json`. The helper verifies the sharun executable, anylinux C source, and original MIT license before exposing them to the bundler. Native compilation receives the caller-owned environment. These helper inputs are distinct from the published Tauri CLI release.
+main-only saves and native/mobile routing. `pnpm ci:contracts` covers shared installer boundaries.
 
 ## Project requirements
 
 - Shared dependency executables follow `repository-prebuilt-dependencies-contract.md`. Use the locked public Tauri CLI through `scripts/tauri-cli.mjs`; never compile a CLI wrapper in consumers or fall back to source in CI. New source/recipe versions require six-host public release verification before updating both consumer locks.
-
-- DevHud CEF AppImage packaging must share verified helper preparation through `scripts/appimage-tools.mjs` and the canonical DevHud runtime pins. Preserve each caller’s environment restrictions and private staging cleanup; follow `repository-prebuilt-dependencies-contract.md`.

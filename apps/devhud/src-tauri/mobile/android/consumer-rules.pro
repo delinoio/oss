@@ -1,2 +1,0 @@
--keep class io.delino.devhud.bridge.DevhudNativePlugin { *; }
--keep class io.delino.devhud.widget.** { *; }

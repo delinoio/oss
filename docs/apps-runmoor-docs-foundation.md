@@ -109,7 +109,7 @@
 
 ## Build and Test
 
-- Development: `pnpm --filter public-docs dev`, independent of the DevHud team environment.
+- Development: `pnpm --filter public-docs dev`.
 - Build: `pnpm --filter public-docs build`.
 - Preview: use the `public-docs` preview command for the consolidated output.
 - Validation: `pnpm --filter public-docs test`, building the site and validating Runmoor route artifacts, required article headings and links, main landmarks, base-prefixed clean internal links, absence of retired standalone-origin links or root-path escapes, and public-content restrictions.

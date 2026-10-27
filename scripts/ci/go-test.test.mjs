@@ -10,8 +10,8 @@ const fixtures = {
   [GoTestShard.Core]: [
     `${root}/cmds/async-commit-hook/internal/core`,
     `${root}/cmds/runmoor/internal/runmoor`,
-    `${root}/servers/devhud-api/internal/server`,
-    `${root}/protos/gen/go/devhud/v1`,
+    `${root}/servers/example-api/internal/server`,
+    `${root}/protos/gen/go/example/v1`,
     `${root}/new-windows-only-package`,
   ],
 };

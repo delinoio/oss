@@ -358,7 +358,7 @@ test("Rstack owns exclusions and retains Markdown prose and embedded code", (t) 
 
 test("authored localization JSON remains eligible for formatting", (t) => {
   const f = fixture(t);
-  const name = "apps/devhud-chrome-extension/public/_locales/en/messages.json";
+  const name = "apps/example-chrome-extension/public/_locales/en/messages.json";
   const source = '{"title":{"message":"Browser context"}}\n';
   f.write(name, source);
   const head = f.commit();

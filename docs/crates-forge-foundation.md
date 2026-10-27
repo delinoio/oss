@@ -126,7 +126,7 @@ Use tracing on stderr with operation, stage, stable error code, and elapsed dura
 
 ## Build and Test
 
-Run package unit/integration tests, schema/example checks, cargo fmt and Clippy. Run root `cargo test` after preparing required generated DevHud frontend assets. Add affected three-OS Forge validation and Linux LibreOffice/Poppler rendering to central CI selection and aggregation. Test external PPTX round trips, opaque XML/part preservation, native chart workbooks, revision conflicts, concurrent updates, cancellation, atomic output, MCP interoperability, and renderer absence. Tests use isolated temporary state. Remove repository-owned generated dist directories before finishing.
+Run package unit/integration tests, schema/example checks, cargo fmt and Clippy. Run root `cargo test`. Add affected three-OS Forge validation and Linux LibreOffice/Poppler rendering to central CI selection and aggregation. Test external PPTX round trips, opaque XML/part preservation, native chart workbooks, revision conflicts, concurrent updates, cancellation, atomic output, MCP interoperability, and renderer absence. Tests use isolated temporary state. Remove repository-owned generated dist directories before finishing.
 
 ## Dependencies and Integrations
 
@@ -155,7 +155,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - `crates/delino-forge/README.md` documents the local CLI/MCP contract and supported editing boundaries.
 - External PPTX fixtures are authored with python-pptx 1.0.2 and Pillow by the checked-in fixture script. These tools are not production dependencies. Namespace changes and unbound extensions are applied in Rust tests.
 - Local validation uses macOS, LibreOfficeDev 26.8.0.0.alpha0 and Poppler. Generated and edited decks were rendered and PNGs inspected for Korean/English text, image containment/cropping, merged tables, legends and connections. This is not validation in the Microsoft PowerPoint application.
-- The root Cargo suite requires the documented DevHud frontend build and pnport/preload build. On this macOS host, `TMPDIR=/private/tmp` avoids the already documented binpm `/var` versus `/private/var` fixture mismatch; the complete root suite passed with those prerequisites.
+- The root Cargo suite requires the documented pnport/preload build. On this macOS host, `TMPDIR=/private/tmp` avoids the already documented binpm `/var` versus `/private/var` fixture mismatch; the complete root suite passed with those prerequisites.
 - CI selection and aggregation include `forge-test` on all three desktop OS families and `forge-render` on Linux. Hosted Windows/Linux results remain pending until CI runs; local tests must not be presented as hosted matrix evidence.
 
 ### Format references

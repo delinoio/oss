@@ -255,7 +255,7 @@ test("shared stylesheets reject raw credentials in comments and custom propertie
       ['/* {"refresh_token":"fixture-sensitive"} */', "fixture-sensitive"],
       ["/* password: fixture-sensitive */", "fixture-sensitive"],
       ["/* GH_TOKEN=fixture-sensitive */", "fixture-sensitive"],
-      ["/* DEVHUD_UPLOAD_SECRET=fixture-sensitive */", "fixture-sensitive"],
+      ["/* EXAMPLE_UPLOAD_SECRET=fixture-sensitive */", "fixture-sensitive"],
       ["/* ghp_fixture_sensitive */", "ghp_fixture_sensitive"],
       ["/* github_pat_fixture_sensitive */", "github_pat_fixture_sensitive"],
     ]) {

@@ -23,7 +23,6 @@ const manifest = JSON.parse(
 );
 const generatedPaths = [
   "protos/gen",
-  "packages/devhud-api-client/src/gen",
   "packages/async-commit-hook-api-client/src/gen",
 ];
 
