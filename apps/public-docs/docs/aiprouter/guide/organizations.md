@@ -28,7 +28,7 @@ Open `/overview` to choose an organization and `/invitation` to accept an invita
 3. The account's verified email must match the invitation email.
 4. The recipient accepts within seven days. Each link can be used once.
 
-Cancel an invitation that is no longer needed. Wait at least one minute between resends to the same email. A manual resend invalidates the old link and pending delivery jobs, then starts a new seven-day lifetime. Use the newest email.
+Cancel an invitation that is no longer needed: choose Cancel invitation, type the invited email address exactly as shown, and select Confirm. The invitation link stops working. Wait at least one minute between resends to the same email. A manual resend invalidates the old link and pending delivery jobs, then starts a new seven-day lifetime. Use the newest email.
 
 SMTP delivery allows at most three attempts: the initial send, a retry after one minute, then a retry five minutes after the next failure. Only transient errors retry. Permanent errors fail immediately. Each attempt counts toward 100 attempts per organization per hour. Limited attempts wait for capacity but never send after expiry. In the invitation list, Sent means the email was submitted to the SMTP server; it does not confirm recipient delivery or acceptance, and a stored attempt time does not confirm a scheduled delivery.
 

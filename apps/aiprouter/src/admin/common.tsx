@@ -269,12 +269,16 @@ export function Dialog({
   onClose,
   initial = "input",
   size = DialogSize.Standard,
+  headingFallback = false,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   initial?: "input" | "cancel";
   size?: DialogSize;
+  // Opt-in: when the trigger no longer exists on close (for example polling
+  // removed it), focus the page heading instead of dropping focus to the body.
+  headingFallback?: boolean;
 }) {
   useLocale();
   const ref = useRef<HTMLDialogElement>(null);
@@ -293,8 +297,16 @@ export function Dialog({
     return () => {
       element.close();
       if (previous?.isConnected) previous.focus();
+      else if (headingFallback) {
+        const heading = document.querySelector<HTMLElement>("h1");
+        if (heading) {
+          if (!heading.hasAttribute("tabindex"))
+            heading.setAttribute("tabindex", "-1");
+          heading.focus();
+        }
+      }
     };
-  }, [initial]);
+  }, [initial, headingFallback]);
   return (
     <dialog
       ref={ref}
@@ -364,6 +376,7 @@ export function Confirm({
   size,
   pendingStatus = false,
   footerNote,
+  headingFallback = false,
 }: {
   title: string;
   name?: string;
@@ -383,6 +396,7 @@ export function Confirm({
   pendingStatus?: boolean;
   // Optional note shown directly above the dialog actions.
   footerNote?: ReactNode;
+  headingFallback?: boolean;
 }) {
   useLocale();
   const [typed, setTyped] = useState("");
@@ -393,6 +407,7 @@ export function Confirm({
       onClose={onClose}
       initial={initialFocus === ConfirmFocus.Input ? "input" : "cancel"}
       size={size}
+      headingFallback={headingFallback}
     >
       <form
         onSubmit={(e) => {
