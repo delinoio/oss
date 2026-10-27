@@ -9,6 +9,7 @@ import {
   PriceSource,
   type UsageSummary,
   type UsageRecord,
+  type Money,
 } from "@aiprouter/client";
 import { type PageProps, pageSize } from "./api";
 import {
@@ -19,6 +20,7 @@ import {
   Dialog,
   ErrorNotice,
   Loading,
+  RefreshStatus,
   EmptyState,
   Notice,
   formatDate,
@@ -26,47 +28,79 @@ import {
   enumLabel,
   Pagination,
 } from "./ui";
-export function SummaryCards({ summary }: { summary?: UsageSummary }) {
+/** Lists every known cost as its own currency line; never converts or sums. */
+export function MoneyList({
+  costs,
+  className = "",
+}: {
+  costs?: Money[];
+  className?: string;
+}) {
   useLocale();
+  if (!costs?.length)
+    return <strong className={className}>{translate("unknown")}</strong>;
   return (
-    <div className="stats">
-      <Card>
-        <p>{translate("requests")}</p>
-        <strong>{formatNumber(summary?.requestCount)}</strong>
-      </Card>
-      <Card>
-        <p>{translate("knownEstimatedCost")}</p>
-        <strong>
-          {summary?.knownCosts.length
-            ? summary.knownCosts.map(formatMoney).join(" · ")
-            : translate("unknown")}
-        </strong>
-        <p>
-          {summary
-            ? translate("requestsWithUnknownCost", {
-                value0: summary.missingCostCount,
-              })
-            : translate("unknownCostCoverage")}
-        </p>
-      </Card>
-      <Card>
-        <p>{translate("confirmedTokens")}</p>
-        <strong>
-          {translate("inOut", {
-            value0: formatNumber(summary?.knownUsage?.inputTokens),
-            value1: formatNumber(summary?.knownUsage?.outputTokens),
-          })}
-        </strong>
-        <p>
-          {summary
-            ? translate("missingUsageMissingPrices", {
-                value0: summary.missingUsageCount,
-                value1: summary.missingPriceCount,
-              })
-            : translate("unknownUsageCoverage")}
-        </p>
-      </Card>
-    </div>
+    <ul className={`money-list ${className}`}>
+      {costs.map((money, index) => (
+        <li key={`${money.currency}:${index}`}>{formatMoney(money)}</li>
+      ))}
+    </ul>
+  );
+}
+export function SummaryCards({
+  summary,
+  loading = false,
+  updating = false,
+  refreshFailed = false,
+}: {
+  summary?: UsageSummary;
+  /** Show a labeled loading status instead of values while the summary loads. */
+  loading?: boolean;
+  /** Label visible data as refreshing. */
+  updating?: boolean;
+  /** Label visible data as stale after a failed refresh. */
+  refreshFailed?: boolean;
+}) {
+  useLocale();
+  if (loading) return <Loading label={translate("loadingUsageSummary")} />;
+  return (
+    <>
+      <RefreshStatus updating={updating} failed={refreshFailed} />
+      <div className="stats">
+        <Card>
+          <p>{translate("requests")}</p>
+          <strong>{formatNumber(summary?.requestCount)}</strong>
+        </Card>
+        <Card>
+          <p>{translate("knownEstimatedCost")}</p>
+          <MoneyList costs={summary?.knownCosts} className="stat-value" />
+          <p>
+            {summary
+              ? translate("requestsWithUnknownCost", {
+                  value0: summary.missingCostCount,
+                })
+              : translate("unknownCostCoverage")}
+          </p>
+        </Card>
+        <Card>
+          <p>{translate("confirmedTokens")}</p>
+          <strong>
+            {translate("inOut", {
+              value0: formatNumber(summary?.knownUsage?.inputTokens),
+              value1: formatNumber(summary?.knownUsage?.outputTokens),
+            })}
+          </strong>
+          <p>
+            {summary
+              ? translate("missingUsageMissingPrices", {
+                  value0: summary.missingUsageCount,
+                  value1: summary.missingPriceCount,
+                })
+              : translate("unknownUsageCoverage")}
+          </p>
+        </Card>
+      </div>
+    </>
   );
 }
 export function UsagePage({ organization, session }: PageProps) {
@@ -216,7 +250,14 @@ export function UsagePage({ organization, session }: PageProps) {
         </Notice>
       )}
       <ErrorNotice error={summary.error} retry={() => void summary.refetch()} />
-      <SummaryCards summary={valid ? summary.data?.summary : undefined} />
+      <SummaryCards
+        summary={valid ? summary.data?.summary : undefined}
+        loading={valid && summary.isPending}
+        updating={
+          valid && summary.isFetching && !summary.isPending && !summary.isError
+        }
+        refreshFailed={valid && summary.isError && summary.data !== undefined}
+      />
       {valid && input.timeRange && (
         <UsageTrend
           key={`${range.start}:${range.end}:${model}:${provider}:${outcome}`}
@@ -353,43 +394,63 @@ export function UsageTrend({
     outcome,
     page: { pageSize, pageToken: token },
   });
+  // Only the current ListDailyUsage page is shown; absent dates are never
+  // filled in and entries keep the server order.
   const days = query.data?.days ?? [];
   const max = days.reduce((m, d) => {
     const n = d.summary?.requestCount;
     return n !== undefined && n > m ? n : m;
   }, 1n);
+  const hasData = query.data !== undefined;
+  const failedWithoutData = query.isError && !hasData;
   return (
     <Card>
       <h2>{translate("requestsOverTime")}</h2>
       <p>{translate("dailyRecordedRequestsInUtcMissingRecords")}</p>
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
+      <RefreshStatus
+        updating={hasData && query.isFetching && !query.isError}
+        failed={hasData && query.isError}
+      />
       {query.isPending ? (
-        <Loading />
-      ) : days.length === 0 ? (
+        <Loading label={translate("loadingDailyUsage")} />
+      ) : failedWithoutData ? null : days.length === 0 ? (
         <p>{translate("noDailyRecordsAvailableForThisRange")}</p>
       ) : (
         <>
-          <div className="usage-bars" aria-hidden="true">
-            {days.map((d, i) => (
-              <div key={`${d.date}:${d.modelId}:${i}`}>
-                <span className="bar-count">
-                  {formatNumber(d.summary?.requestCount)}
-                </span>
-                <span
-                  className="usage-bar"
-                  style={{
-                    height: d.summary
-                      ? `${Number((d.summary.requestCount * 100n) / max)}%`
-                      : undefined,
-                  }}
-                />
-                <small>{d.date.slice(5)}</small>
-              </div>
-            ))}
+          <div className="usage-bars-viewport">
+            <div className="usage-bars" aria-hidden="true">
+              {days.map((d, i) => {
+                const count = d.summary?.requestCount;
+                return (
+                  <div key={`${d.date}:${d.modelId}:${i}`}>
+                    <span className="bar-count">{formatNumber(count)}</span>
+                    {count === undefined ? (
+                      <span className="usage-gap" />
+                    ) : (
+                      <span
+                        className={
+                          count === 0n ? "usage-bar zero" : "usage-bar"
+                        }
+                        style={{
+                          height: `${Number((count * 100n) / max)}%`,
+                        }}
+                      />
+                    )}
+                    <small>{d.date.slice(5)}</small>
+                  </div>
+                );
+              })}
+            </div>
           </div>
           <details>
             <summary>{translate("viewDailyDataTable")}</summary>
-            <div className="table-wrap">
+            <div
+              className="table-wrap"
+              role="region"
+              aria-label={translate("dailyUsageTable")}
+              tabIndex={0}
+            >
               <table>
                 <caption>{translate("dailyRecordedUsageUtc")}</caption>
                 <thead>
@@ -404,13 +465,15 @@ export function UsageTrend({
                 <tbody>
                   {days.map((d, i) => (
                     <tr key={i}>
-                      <th scope="row">{d.date}</th>
+                      <th scope="row">{d.date || translate("unknown")}</th>
                       <td>{d.modelId || translate("allModels")}</td>
                       <td>{formatNumber(d.summary?.requestCount)}</td>
                       <td>
-                        {d.summary?.knownCosts.length
-                          ? d.summary.knownCosts.map(formatMoney).join(" · ")
-                          : translate("unknown")}
+                        {d.summary?.knownCosts.length ? (
+                          <MoneyList costs={d.summary.knownCosts} />
+                        ) : (
+                          translate("unknown")
+                        )}
                       </td>
                       <td>{formatNumber(d.summary?.missingCostCount)}</td>
                     </tr>
@@ -422,10 +485,12 @@ export function UsageTrend({
         </>
       )}
       <Pagination
+        label={translate("dailyUsagePages")}
         next={query.data?.page?.nextPageToken}
         onNext={setToken}
         onFirst={() => setToken("")}
         hasPrevious={!!token}
+        pending={query.isFetching && !hasData}
       />
     </Card>
   );

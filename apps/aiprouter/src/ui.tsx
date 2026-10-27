@@ -147,14 +147,40 @@ export function ErrorNotice({
     </Notice>
   );
 }
-export function Loading() {
+export function Loading({ label }: { label?: string }) {
   useLocale();
   return (
     <div className="loading-state" role="status" aria-busy="true">
-      <p>{translate("loading")}</p>
+      <p>{label ?? translate("loading")}</p>
       <div className="skeleton" aria-hidden="true" />
     </div>
   );
+}
+/**
+ * Labels already-visible data that is being refetched or whose refresh failed.
+ * Renders nothing when neither state applies.
+ */
+export function RefreshStatus({
+  updating = false,
+  failed = false,
+}: {
+  updating?: boolean;
+  failed?: boolean;
+}) {
+  useLocale();
+  if (failed)
+    return (
+      <p className="refresh-status failed" role="status">
+        {translate("couldNotRefreshShowingPreviouslyLoadedData")}
+      </p>
+    );
+  if (updating)
+    return (
+      <p className="refresh-status" role="status">
+        {translate("updating")}
+      </p>
+    );
+  return null;
 }
 export function EmptyState({
   title,
@@ -180,6 +206,7 @@ export function Dialog({
   onClose,
   initialFocus,
   wide = false,
+  focusHeading = false,
   className = "",
   describedBy,
 }: {
@@ -188,6 +215,8 @@ export function Dialog({
   onClose: () => void;
   initialFocus?: string;
   wide?: boolean;
+  /** Focus the dialog heading on open instead of the first form control. */
+  focusHeading?: boolean;
   className?: string;
   describedBy?: string;
 }) {
@@ -199,12 +228,13 @@ export function Dialog({
   const titleId = useId();
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
+  const focusSelector = focusHeading ? "[data-dialog-heading]" : initialFocus;
   useEffect(() => {
     const el = ref.current!;
     const previous = document.activeElement as HTMLElement | null;
     el.showModal();
     const target = el.querySelector<HTMLElement>(
-      initialFocus ?? "[autofocus],input,select,textarea,[data-initial-focus]",
+      focusSelector ?? "[autofocus],input,select,textarea,[data-initial-focus]",
     );
     target?.focus();
     return () => {
@@ -212,7 +242,7 @@ export function Dialog({
       if (el.querySelector("form")) reportDirtyRef.current(false);
       previous?.focus();
     };
-  }, [initialFocus]);
+  }, [focusSelector]);
   return (
     <dialog
       ref={ref}
@@ -242,7 +272,12 @@ export function Dialog({
       }}
     >
       <div className="dialog-heading">
-        <h2 id={titleId}>{title}</h2>
+        <h2
+          id={titleId}
+          {...(focusHeading ? { tabIndex: -1, "data-dialog-heading": "" } : {})}
+        >
+          {title}
+        </h2>
         <Button
           aria-label={translate("closeDialog")}
           variant="ghost"
@@ -300,16 +335,22 @@ export function Pagination({
   onFirst,
   hasPrevious = false,
   pending = false,
+  label,
 }: {
   next?: string;
   onNext: (token: string) => void;
   onFirst: () => void;
   hasPrevious?: boolean;
   pending?: boolean;
+  /** Accessible group name; adds role="group" when provided. */
+  label?: string;
 }) {
   useLocale();
   return (
-    <div className="actions">
+    <div
+      className="actions"
+      {...(label ? { role: "group", "aria-label": label } : {})}
+    >
       <Button disabled={!hasPrevious || pending} onClick={onFirst}>
         {translate("firstPage")}
       </Button>
