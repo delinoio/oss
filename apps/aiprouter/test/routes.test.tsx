@@ -84,6 +84,89 @@ describe("canonical console routes", () => {
       screen.getByRole("heading", { name: "Page not found" }),
     ).toBeTruthy();
   });
+  it("renders the page-not-found recovery surface without echoing the unknown URL", () => {
+    const unknown =
+      "/missing?organization=studio&org=other&organization_id=third&page=keys&token=fictional&user_code=ABCD&transfer_id=t1&error=e&return_to=https%3A%2F%2Fexample.test#fictional";
+    window.history.replaceState(null, "", unknown);
+    const replaceState = rs.spyOn(window.history, "replaceState");
+    const { container } = render(<App />);
+    const main = screen.getByRole("main", { name: "Page not found" });
+    expect(screen.getAllByRole("heading")).toHaveLength(1);
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Page not found" }),
+    ).toBeTruthy();
+    expect(within(main).getByText("PAGE UNAVAILABLE").tagName).toBe("P");
+    expect(
+      within(main).getByText(
+        "We couldn’t find this page. Check the address or return to your organizations.",
+      ),
+    ).toBeTruthy();
+    const links = within(main).getAllByRole("link");
+    expect(links).toHaveLength(1);
+    expect(links[0].textContent).toBe("Back to organizations");
+    expect(links[0].getAttribute("href")).toBe(pageHref("overview"));
+    expect(links[0].getAttribute("href")).toBe("/overview");
+    for (const secret of [
+      "missing",
+      "studio",
+      "other",
+      "third",
+      "fictional",
+      "ABCD",
+      "example.test",
+    ])
+      expect(container.innerHTML).not.toContain(secret);
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("status")).toBeNull();
+    expect(replaceState).not.toHaveBeenCalled();
+    expect(window.location.pathname + window.location.search).toBe(
+      unknown.split("#")[0],
+    );
+    expect(window.location.hash).toBe("#fictional");
+    replaceState.mockRestore();
+  });
+  it.each([
+    "/missing?page=keys",
+    "/instance/not-a-section?organization=studio",
+  ])("keeps %s on the fallback without canonicalizing the address", (path) => {
+    expect(resolveRoute(url(path))).toBeUndefined();
+    window.history.replaceState(null, "", path);
+    const replaceState = rs.spyOn(window.history, "replaceState");
+    render(<App />);
+    expect(screen.getByRole("main", { name: "Page not found" })).toBeTruthy();
+    expect(replaceState).not.toHaveBeenCalled();
+    expect(window.location.pathname + window.location.search).toBe(path);
+    replaceState.mockRestore();
+  });
+  it("focuses the heading first, then reaches the single link by keyboard", async () => {
+    window.history.replaceState(null, "", "/missing");
+    render(<App />);
+    const heading = screen.getByRole("heading", { name: "Page not found" });
+    expect(heading.getAttribute("tabindex")).toBe("-1");
+    expect(document.activeElement).toBe(heading);
+    const link = screen.getByRole("link", { name: "Back to organizations" });
+    expect(document.activeElement).not.toBe(link);
+    const user = userEvent.setup();
+    await user.tab();
+    expect(document.activeElement).toBe(link);
+    await user.tab();
+    expect(document.activeElement).not.toBe(link);
+    await user.tab({ shift: true });
+    expect(document.activeElement).toBe(link);
+  });
+  it("scopes the fallback styles without changing the shared standalone rule", () => {
+    const css = readFileSync("src/styles.css", "utf8");
+    expect(css).toContain(
+      ".standalone {\n  max-width: 720px;\n  margin: 60px auto;\n  padding: 24px;\n}",
+    );
+    expect(css).toContain(
+      ".not-found-action:focus-visible {\n  outline: 2px solid #1d4ed8;\n  outline-offset: 3px;\n}",
+    );
+    expect(css).toContain("min-height: 44px;");
+    expect(css).toContain("max-width: 768px");
+    expect(css).toContain("--not-found-padding: 24px;");
+  });
   it("matches every server allowlisted route and serves every generated route", () => {
     const source = readFileSync("../../servers/aiprouter/console.go", "utf8");
     const paths = [...source.matchAll(/"(\/[^\"]*)": true/g)].map(

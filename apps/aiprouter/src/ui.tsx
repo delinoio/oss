@@ -184,6 +184,7 @@ export function Dialog({
   initialFocus,
   wide = false,
   className = "",
+  describedBy,
 }: {
   title: string;
   children: ReactNode;
@@ -191,6 +192,7 @@ export function Dialog({
   initialFocus?: string;
   wide?: boolean;
   className?: string;
+  describedBy?: string;
 }) {
   useLocale();
   const ref = useRef<HTMLDialogElement>(null);
@@ -218,6 +220,7 @@ export function Dialog({
     <dialog
       ref={ref}
       aria-labelledby={titleId}
+      aria-describedby={describedBy}
       className={[wide ? "wide" : "", className].filter(Boolean).join(" ")}
       onKeyDown={(event) => {
         if (event.key !== "Tab") return;

@@ -26,13 +26,13 @@ import {
 import { useApi, useRefresh, type PageProps, pageSize } from "./api";
 import { useAction } from "./actions";
 import { usePersonalResources } from "./resources";
+import { DisconnectDialog } from "./provider-disconnect";
 import {
   PageHeader,
   Button,
   Card,
   Field,
   Dialog,
-  ConfirmDialog,
   ErrorNotice,
   Loading,
   EmptyState,
@@ -78,6 +78,11 @@ export function ProvidersPage({ organization }: PageProps) {
   const [search, setSearch] = useState("");
   const [edit, setEdit] = useState<ProviderConnection | true>();
   const [remove, setRemove] = useState<ProviderConnection>();
+  // Connection whose deletion was last submitted; scopes the error and pending display.
+  const [attempted, setAttempted] = useState<string>();
+  // Timestamp of a confirmed disconnect whose focus target may disappear with the list row.
+  const [restoreFocus, setRestoreFocus] = useState<number>();
+  const listTarget = useRef<HTMLDivElement>(null);
   const [models, setModels] = useState<ProviderConnection>();
   const [oauth, setOauth] = useState<ProviderOAuth>();
   const [oauthMethod, setOauthMethod] = useState<ProviderOAuthMethod>();
@@ -92,6 +97,24 @@ export function ProvidersPage({ organization }: PageProps) {
   });
   const catalog = useQuery(ProviderService.method.listProviderCatalog, {});
   const { pools, routes } = usePersonalResources(organization.id);
+  // An organization switch must not carry a scoped confirmation into another organization.
+  useEffect(() => {
+    setRemove(undefined);
+    setAttempted(undefined);
+  }, [organization.id]);
+  useEffect(() => {
+    if (restoreFocus === undefined) return;
+    const active = document.activeElement;
+    if (!active || active === document.body || !active.isConnected) {
+      listTarget.current?.focus();
+      setRestoreFocus(undefined);
+    } else if (
+      query.fetchStatus === "idle" &&
+      query.dataUpdatedAt >= restoreFocus
+    ) {
+      setRestoreFocus(undefined);
+    }
+  }, [restoreFocus, query.data, query.fetchStatus, query.dataUpdatedAt]);
   const records = query.data?.connections.filter((c) =>
     `${c.name} ${c.providerId}`.toLowerCase().includes(search.toLowerCase()),
   );
@@ -122,94 +145,103 @@ export function ProvidersPage({ organization }: PageProps) {
         />
       </Field>
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-      {query.isPending ? (
-        <Loading />
-      ) : records?.length === 0 ? (
-        <EmptyState
-          title={
-            search
-              ? translate("noMatchingConnections")
-              : translate("connectYourFirstProvider")
-          }
-          action={
-            search ? (
-              <Button onClick={() => setSearch("")}>
-                {translate("clearFilters")}
-              </Button>
-            ) : undefined
-          }
-        >
-          {translate("onlyYouCanUseTheseProviderAccounts")}
-        </EmptyState>
-      ) : (
-        <div className="grid">
-          {records?.map((c) => (
-            <Card key={c.id}>
-              <div className="record-title">
-                <span className="provider-mark" aria-hidden="true">
-                  {c.providerId.slice(0, 2).toUpperCase()}
-                </span>
-                <div>
-                  <h2>{c.name}</h2>
-                  <p>
-                    {catalog.data?.providers.find((p) => p.id === c.providerId)
-                      ?.displayName ?? c.providerId}
-                  </p>
+      <div
+        ref={listTarget}
+        className="providers-list"
+        role="group"
+        aria-label={translate("yourProviders")}
+        tabIndex={-1}
+      >
+        {query.isPending ? (
+          <Loading />
+        ) : records?.length === 0 ? (
+          <EmptyState
+            title={
+              search
+                ? translate("noMatchingConnections")
+                : translate("connectYourFirstProvider")
+            }
+            action={
+              search ? (
+                <Button onClick={() => setSearch("")}>
+                  {translate("clearFilters")}
+                </Button>
+              ) : undefined
+            }
+          >
+            {translate("onlyYouCanUseTheseProviderAccounts")}
+          </EmptyState>
+        ) : (
+          <div className="grid">
+            {records?.map((c) => (
+              <Card key={c.id}>
+                <div className="record-title">
+                  <span className="provider-mark" aria-hidden="true">
+                    {c.providerId.slice(0, 2).toUpperCase()}
+                  </span>
+                  <div>
+                    <h2>{c.name}</h2>
+                    <p>
+                      {catalog.data?.providers.find(
+                        (p) => p.id === c.providerId,
+                      )?.displayName ?? c.providerId}
+                    </p>
+                  </div>
                 </div>
-              </div>
-              <Badge
-                tone={
-                  c.state === ConnectionState.READY
-                    ? "success"
-                    : c.state === ConnectionState.ERROR
-                      ? "danger"
-                      : "warning"
-                }
-              >
-                {connectionLabel[c.state] ?? translate("unknownStatus")}
-              </Badge>
-              <p>
-                {translate("personalAccount_938eac", {
-                  value0: authLabel[c.authKind],
-                })}
-              </p>
-              <p>{translate("added", { value0: formatDate(c.createdAt) })}</p>
-              {c.cooldownUntil && (
+                <Badge
+                  tone={
+                    c.state === ConnectionState.READY
+                      ? "success"
+                      : c.state === ConnectionState.ERROR
+                        ? "danger"
+                        : "warning"
+                  }
+                >
+                  {connectionLabel[c.state] ?? translate("unknownStatus")}
+                </Badge>
                 <p>
-                  {translate("coolingDownUntil", {
-                    value0: formatDate(c.cooldownUntil),
+                  {translate("personalAccount_938eac", {
+                    value0: authLabel[c.authKind],
                   })}
                 </p>
-              )}
-              <div className="actions">
-                <Button onClick={() => setEdit(c)}>
-                  {translate("editConnection")}
-                </Button>
-                <Button onClick={() => setModels(c)}>
-                  {translate("viewModels")}
-                </Button>
-                {c.authKind === ProviderAuthKind.OAUTH && (
-                  <Button
-                    disabled={action.pending}
-                    onClick={() =>
-                      setOauthSetup({
-                        providerId: c.providerId,
-                        name: c.name,
-                        connectionId: c.id,
-                      })
-                    }
-                  >
-                    {translate("reconnect")}
-                  </Button>
+                <p>{translate("added", { value0: formatDate(c.createdAt) })}</p>
+                {c.cooldownUntil && (
+                  <p>
+                    {translate("coolingDownUntil", {
+                      value0: formatDate(c.cooldownUntil),
+                    })}
+                  </p>
                 )}
-                <Button variant="danger" onClick={() => setRemove(c)}>
-                  {translate("disconnect")}
-                </Button>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
+                <div className="actions">
+                  <Button onClick={() => setEdit(c)}>
+                    {translate("editConnection")}
+                  </Button>
+                  <Button onClick={() => setModels(c)}>
+                    {translate("viewModels")}
+                  </Button>
+                  {c.authKind === ProviderAuthKind.OAUTH && (
+                    <Button
+                      disabled={action.pending}
+                      onClick={() =>
+                        setOauthSetup({
+                          providerId: c.providerId,
+                          name: c.name,
+                          connectionId: c.id,
+                        })
+                      }
+                    >
+                      {translate("reconnect")}
+                    </Button>
+                  )}
+                  <Button variant="danger" onClick={() => setRemove(c)}>
+                    {translate("disconnect")}
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
       <Pagination
         next={query.data?.page?.nextPageToken}
         onNext={setToken}
@@ -317,57 +349,36 @@ export function ProvidersPage({ organization }: PageProps) {
         />
       )}
       {remove && (
-        <ConfirmDialog
-          title={translate("disconnect_51710a", { value0: remove.name })}
-          confirmLabel={translate("disconnectProvider")}
+        <DisconnectDialog
+          connection={remove}
+          providerLabel={
+            catalog.data?.providers.find((p) => p.id === remove.providerId)
+              ?.displayName ?? remove.providerId
+          }
+          organizationId={organization.id}
+          organizationName={organization.name}
+          pools={pools}
+          routes={routes}
+          pending={action.pending && attempted === remove.id}
+          busy={action.pending}
+          error={attempted === remove.id ? action.error : undefined}
           onClose={() => setRemove(undefined)}
-          pending={action.pending}
-          error={action.error}
           onConfirm={() => {
+            setAttempted(remove.id);
             void action.run(
               () =>
                 api.provider.deleteProviderConnection({
                   organizationId: organization.id,
                   connectionId: remove.id,
                 }),
-              () => setRemove(undefined),
+              () => {
+                setRemove(undefined);
+                setRestoreFocus(Date.now());
+              },
               translate("providerDisconnected"),
             );
           }}
-        >
-          {translate("futureRequestsCanNoLongerUseThis", {
-            value0:
-              pools.data
-                ?.filter((p) =>
-                  p.members.some((m) => m.connectionId === remove.id),
-                )
-                .map((p) => p.name)
-                .join(", ") ||
-              (pools.isPending || routes.isPending
-                ? translate("message_8bf7d8fc28")
-                : translate("message_dc937b5989")),
-            value1:
-              routes.data
-                ?.filter((r) =>
-                  r.targets.some(
-                    (t) =>
-                      t.target.case === "connectionId" &&
-                      t.target.value === remove.id,
-                  ),
-                )
-                .map((r) => r.modelId)
-                .join(", ") ||
-              (pools.isPending || routes.isPending
-                ? translate("message_8bf7d8fc28")
-                : translate("message_dc937b5989")),
-            value2:
-              (pools.error || routes.error) && translate("message_0ff7c2b8d6"),
-          })}
-          <a href={pageHref("routing", organization.id)}>
-            {translate("reviewRouting")}
-          </a>
-          {translate("beforeDisconnecting")}
-        </ConfirmDialog>
+        />
       )}
     </>
   );
