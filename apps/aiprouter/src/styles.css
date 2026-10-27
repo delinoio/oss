@@ -979,3 +979,73 @@ dialog.disconnect-dialog {
     flex: 1 1 100%;
   }
 }
+/* Provider authorization dialog. Scoped so other dialogs are unchanged. */
+dialog.oauth-dialog {
+  width: min(640px, calc(100% - 32px));
+  padding: 24px;
+  border-radius: 12px;
+}
+.oauth-dialog .dialog-heading {
+  margin-bottom: 8px;
+}
+.oauth-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+}
+.oauth-summary:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 4px;
+}
+.oauth-expiry {
+  margin: 0;
+  color: var(--secondary);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.oauth-step {
+  margin: 16px 0 0;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+.oauth-step h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.oauth-step p {
+  overflow-wrap: anywhere;
+}
+.oauth-waiting {
+  margin: 0;
+  color: var(--secondary);
+}
+.oauth-footer {
+  justify-content: space-between;
+  margin-top: 16px;
+}
+.oauth-cancel,
+.oauth-cancel:hover:not(:disabled) {
+  color: var(--danger);
+}
+.oauth-helper {
+  margin: 8px 0 0;
+  color: var(--secondary);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.oauth-dialog .oauth-footer:has(> :only-child) {
+  justify-content: flex-end;
+}
+@media (max-width: 767px) {
+  dialog.oauth-dialog {
+    width: calc(100% - 32px);
+    padding: 16px;
+  }
+  .oauth-footer > .button,
+  .oauth-step > .button {
+    width: 100%;
+    flex: 1 1 100%;
+  }
+}

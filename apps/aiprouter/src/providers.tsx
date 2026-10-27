@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale, formatNumber, enumLabel } from "./i18n";
 import { pageHref } from "./routes";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { HostedHelpers } from "./hosted";
 import {
   ConfigurationFields,
@@ -343,6 +343,7 @@ export function ProvidersPage({ organization }: PageProps) {
           organizationId={organization.id}
           authorization={oauth}
           method={oauthMethod}
+          action={action}
           onClose={() => setOauth(undefined)}
         />
       )}
@@ -579,21 +580,79 @@ function ConnectionEditor({
     </Dialog>
   );
 }
+type OAuthAction = ReturnType<typeof useAction>;
+const oauthStateTone: Record<
+  number,
+  "neutral" | "success" | "warning" | "danger" | "info"
+> = {
+  [OAuthState.PENDING]: "info",
+  [OAuthState.COMPLETED]: "success",
+  [OAuthState.CANCELED]: "neutral",
+  [OAuthState.EXPIRED]: "warning",
+  [OAuthState.FAILED]: "danger",
+};
+// Text labels keep the state readable without color. Unknown values never borrow a known label.
+function oauthStateLabel(state: OAuthState): string {
+  switch (state) {
+    case OAuthState.PENDING:
+      return translate("oauthStatePending");
+    case OAuthState.COMPLETED:
+      return translate("oauthStateCompleted");
+    case OAuthState.CANCELED:
+      return translate("oauthStateCanceled");
+    case OAuthState.EXPIRED:
+      return translate("oauthStateExpired");
+    case OAuthState.FAILED:
+      return translate("oauthStateFailed");
+    default:
+      return translate("unknownStatus");
+  }
+}
+// Every terminal state has its own safe text; none of them offers pending actions
+// or implies that the old attempt can be retried.
+function oauthTerminalMessage(auth: ProviderOAuth): {
+  tone: "success" | "warning" | "danger" | "info";
+  text: string;
+} {
+  switch (auth.state) {
+    case OAuthState.COMPLETED:
+      return auth.connectionId
+        ? {
+            tone: "success",
+            text: translate("providerConnectedYourConnectionIsReadyIn"),
+          }
+        : {
+            tone: "warning",
+            text: translate("oauthCompletedWithoutConnection"),
+          };
+    case OAuthState.CANCELED:
+      return { tone: "info", text: translate("oauthCanceledMessage") };
+    case OAuthState.EXPIRED:
+      return { tone: "warning", text: translate("oauthExpiredMessage") };
+    case OAuthState.FAILED:
+      return { tone: "danger", text: translate("oauthFailedMessage") };
+    default:
+      return { tone: "warning", text: translate("oauthUnknownMessage") };
+  }
+}
+// The page owns the mutation state so a result survives dismissal of this dialog.
 function OAuthDialog({
   organizationId,
   authorization,
   method,
+  action,
   onClose,
 }: {
   organizationId: string;
   authorization: ProviderOAuth;
   method?: ProviderOAuthMethod;
+  action: OAuthAction;
   onClose: () => void;
 }) {
   useLocale();
   const api = useApi();
   const refresh = useRefresh();
-  const action = useAction();
+  const ids = useId();
   const [code, setCode] = useState("");
   const [state, setState] = useState(authorization.callbackState ?? "");
   const result = useQuery(
@@ -620,6 +679,15 @@ function OAuthDialog({
     auth.pollIntervalSeconds !== undefined ||
     authorization.pollIntervalSeconds !== undefined;
   const callbackState = auth.callbackState ?? state;
+  // Focus is chosen once so a state change never re-opens the modal.
+  const [initialFocus] = useState(() =>
+    authorization.state === OAuthState.PENDING &&
+    method !== ProviderOAuthMethod.DEVICE &&
+    method !== ProviderOAuthMethod.BROWSER_POLL &&
+    authorization.pollIntervalSeconds === undefined
+      ? "input"
+      : "[data-initial-focus]",
+  );
   useEffect(() => {
     if (auth.state === OAuthState.COMPLETED) void refresh();
   }, [auth.state, refresh]);
@@ -635,35 +703,76 @@ function OAuthDialog({
   } catch {
     /* Invalid authorization destinations are not rendered as links. */
   }
-
+  const terminal = oauthTerminalMessage(auth);
+  const helpId = `${ids}-help`;
+  const errorId = `${ids}-error`;
+  const loadingStatus =
+    result.isFetching && (result.isPending || !!result.error);
+  // Automatic checks stop on a query error, so the shown status may be stale.
+  const checksStopped = pending && !!result.error;
   return (
-    <Dialog title={translate("providerAuthorization")} onClose={onClose}>
-      <Badge>{enumLabel(OAuthState[auth.state])}</Badge>
-      <p>
-        {translate("expiresClosingThisDialogDoesNotCancel", {
-          value0: formatDate(auth.expiresAt),
-        })}
+    <Dialog
+      title={translate("providerAuthorization")}
+      onClose={onClose}
+      className="oauth-dialog"
+      initialFocus={initialFocus}
+    >
+      <div className="oauth-summary" tabIndex={-1} data-initial-focus>
+        <Badge tone={oauthStateTone[auth.state] ?? "neutral"}>
+          {oauthStateLabel(auth.state)}
+        </Badge>
+        <p className="oauth-expiry">
+          {translate("expires_8c3e7e", { value0: formatDate(auth.expiresAt) })}
+        </p>
+      </div>
+      {pending && (
+        <Notice>
+          {translate("closingThisDialogDoesNotCancelAuthorization")}
+        </Notice>
+      )}
+      <p className="mutation-status" role="status">
+        {loadingStatus ? translate("checkingAuthorizationStatus") : ""}
       </p>
+      <ErrorNotice error={result.error} retry={() => void result.refetch()} />
       {pending && (
         <>
-          {url && (
-            <a
-              className="button primary"
-              href={url.href}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              {translate("openProviderSignIn")}
-            </a>
-          )}
-          {auth.userCode && (
-            <p>
-              {translate("enterThisCodeAtTheProvider")}
-              <strong>{auth.userCode}</strong>
-            </p>
-          )}
-          {!pollFlow && (
+          <section className="oauth-step" aria-labelledby={`${ids}-sign-in`}>
+            <h3 id={`${ids}-sign-in`}>{translate("signInWithYourProvider")}</h3>
+            {url ? (
+              <a
+                className="button primary"
+                href={url.href}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {translate("openProviderSignIn")}
+              </a>
+            ) : (
+              <p>{translate("providerSignInUnavailable")}</p>
+            )}
+            {auth.userCode && (
+              <p>
+                {translate("enterThisCodeAtTheProvider")}
+                <strong>{auth.userCode}</strong>
+              </p>
+            )}
+          </section>
+          {pollFlow ? (
+            <section className="oauth-step">
+              {checksStopped ? (
+                <Notice tone="warning">
+                  {translate("automaticStatusChecksStopped")}
+                </Notice>
+              ) : (
+                <p className="oauth-waiting" role="status">
+                  {translate("waitingForProviderApprovalThisPageChecks")}
+                </p>
+              )}
+            </section>
+          ) : (
             <form
+              className="oauth-step"
+              aria-labelledby={`${ids}-finish`}
               onSubmit={(e) => {
                 e.preventDefault();
                 void action.run(
@@ -678,12 +787,20 @@ function OAuthDialog({
                 );
               }}
             >
-              <p>{translate("pasteTheAuthorizationCodeTokenOrFull")}</p>
+              <h3 id={`${ids}-finish`}>{translate("finishAuthorization")}</h3>
+              <p id={helpId}>
+                {translate("pasteTheAuthorizationCodeTokenOrFull")}
+              </p>
               <Field label={translate("authorizationCodeTokenOrCallbackUrl")}>
                 <input
                   type="password"
                   value={code}
                   autoComplete="off"
+                  spellCheck={false}
+                  aria-describedby={
+                    action.error ? `${helpId} ${errorId}` : helpId
+                  }
+                  aria-invalid={action.error ? true : undefined}
                   onChange={(e) => setCode(e.target.value)}
                 />
               </Field>
@@ -692,58 +809,70 @@ function OAuthDialog({
                   <input
                     value={state}
                     autoComplete="off"
+                    spellCheck={false}
                     onChange={(e) => setState(e.target.value)}
                   />
                 </Field>
               )}
+              <div id={errorId}>
+                <ErrorNotice error={action.error} />
+              </div>
               <Button
                 type="submit"
                 variant="primary"
-                disabled={action.pending || !code || !callbackState}
+                disabled={action.pending || !code.trim() || !callbackState}
               >
                 {translate("completeAuthorization")}
               </Button>
             </form>
           )}
-          {pollFlow && (
-            <Notice>
-              {translate("waitingForProviderApprovalThisPageChecks")}
-            </Notice>
+          {pollFlow && <ErrorNotice error={action.error} />}
+          {action.pending && (
+            <p className="mutation-status" role="status">
+              {translate("message_c5ca36dfc7")}
+            </p>
           )}
-          <Button
-            disabled={action.pending}
-            onClick={() => {
-              void action.run(
-                () =>
-                  api.provider.cancelProviderOAuth({
-                    organizationId,
-                    authorizationId: auth.id,
-                  }),
-                onClose,
-                translate("authorizationCanceled"),
-              );
-            }}
-          >
-            {translate("cancelAuthorization")}
-          </Button>
+          <div className="actions oauth-footer">
+            <Button
+              className="oauth-cancel"
+              variant="ghost"
+              disabled={action.pending}
+              onClick={() => {
+                void action.run(
+                  () =>
+                    api.provider.cancelProviderOAuth({
+                      organizationId,
+                      authorizationId: auth.id,
+                    }),
+                  onClose,
+                  translate("authorizationCanceled"),
+                );
+              }}
+            >
+              {translate("cancelAuthorization")}
+            </Button>
+            <Button onClick={onClose}>{translate("close")}</Button>
+          </div>
+          <p className="oauth-helper">
+            {translate("cancelAuthorizationStopsThisAttemptCloseLeaves")}
+          </p>
         </>
       )}
-      {auth.state === OAuthState.COMPLETED && auth.connectionId && (
-        <Notice tone="success">
-          {translate("providerConnectedYourConnectionIsReadyIn")}
-        </Notice>
-      )}
-      {action.feedback}
-      <ErrorNotice error={result.error} retry={() => void result.refetch()} />
       {!pending && (
-        <Button
-          onClick={() => {
-            void refresh();
-            onClose();
-          }}
-        >
-          {translate("done")}
-        </Button>
+        <>
+          <Notice tone={terminal.tone}>{terminal.text}</Notice>
+          <div className="actions oauth-footer">
+            <Button
+              variant="primary"
+              onClick={() => {
+                void refresh();
+                onClose();
+              }}
+            >
+              {translate("done")}
+            </Button>
+          </div>
+        </>
       )}
     </Dialog>
   );

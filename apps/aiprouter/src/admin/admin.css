@@ -666,3 +666,103 @@
     width: 100%;
   }
 }
+
+/* Instance health: availability, cleanup evidence and aggregate uncertainty. */
+.admin-health-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.admin-workspace .admin-health-heading h2 {
+  margin: 0;
+}
+.admin-health-status,
+.admin-health-cleanup,
+.admin-health-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: 16px 24px;
+  margin: 0;
+}
+.admin-health-status > div,
+.admin-health-cleanup > div,
+.admin-health-metrics > div {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+.admin-health-status dt,
+.admin-health-cleanup dt,
+.admin-health-metrics dt {
+  color: #4e5968;
+  font-size: 14px;
+}
+.admin-health-status dd,
+.admin-health-cleanup dd,
+.admin-health-metrics dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.admin-health-status dd p {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+.admin-health-metrics dd {
+  font-size: 24px;
+  font-weight: 700;
+}
+.admin-health-costs,
+.admin-health-missing {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.admin-health-costs li {
+  overflow-wrap: anywhere;
+}
+.admin-health-missing {
+  display: grid;
+  gap: 4px;
+  margin-top: 16px;
+}
+.admin-health-callout {
+  background: #fff2d6;
+  color: #744500;
+  border: 1px solid #f1d28a;
+  border-radius: 8px;
+  padding: 16px;
+}
+.admin-health-callout p {
+  margin: 4px 0 0;
+}
+.admin-health-refresh-status:empty {
+  display: none;
+}
+.admin-health-skeleton {
+  padding: 24px;
+  color: #4e5968;
+  background: #f7f8fa;
+  border-radius: 12px;
+}
+.admin-health-updating {
+  opacity: 0.7;
+  transition: opacity 150ms ease;
+}
+.admin-health-card button[aria-disabled="true"] {
+  cursor: progress;
+}
+@media (max-width: 768px) {
+  .admin-health-status,
+  .admin-health-cleanup,
+  .admin-health-metrics {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-health-updating {
+    transition: none;
+  }
+}
