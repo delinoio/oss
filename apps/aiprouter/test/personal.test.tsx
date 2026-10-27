@@ -297,6 +297,329 @@ describe("organization boundary", () => {
   });
 });
 
+const rawKey = "aipr_one-time-sensitive-key";
+type Deferred = {
+  promise: Promise<void>;
+  resolve: () => void;
+  reject: () => void;
+};
+function deferred(): Deferred {
+  let resolve!: () => void;
+  let reject!: () => void;
+  const promise = new Promise<void>((res, rej) => {
+    resolve = res;
+    reject = rej;
+  });
+  return { promise, resolve, reject };
+}
+function stubClipboard(writeText: (text: string) => Promise<void>) {
+  const fn = rs.fn(writeText);
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: { writeText: fn },
+  });
+  return fn;
+}
+async function openResult(
+  value = rawKey,
+  organizationOverride = organization,
+  cache?: { current?: QueryClient },
+) {
+  const user = userEvent.setup();
+  const mounted = mount(
+    <KeysPage {...props} organization={organizationOverride} />,
+    (r) =>
+      r.service(KeyService, {
+        listKeys: () => ({ keys: [] }),
+        createKey: () => ({ rawKey: value }),
+      }),
+  );
+  if (cache) cache.current = mounted.cache;
+  const trigger = screen.getByRole("button", { name: "Create API key" });
+  await user.click(trigger);
+  await user.type(screen.getByLabelText("Name"), "Laptop");
+  await user.click(
+    within(screen.getByRole("dialog")).getByRole("button", {
+      name: "Create API key",
+    }),
+  );
+  await screen.findByText("This key is shown only once.");
+  return { user, trigger, ...mounted };
+}
+
+describe("one-time API key result dialog", () => {
+  it("renders the specified content in order with described, read-only input", async () => {
+    await openResult();
+    const dialog = screen.getByRole("dialog", { name: "Your new API key" });
+    expect(dialog.className).toContain("key-result");
+    const text = dialog.textContent ?? "";
+    const order = [
+      "Your new API key",
+      "Your key in Studio.",
+      "This key is shown only once.",
+      "Store it securely before closing this dialog.",
+      "Copy API key",
+      "You cannot view this key again after closing.",
+      "Done",
+    ].map((part) => text.indexOf(part));
+    expect(order.every((index) => index >= 0)).toBe(true);
+    expect([...order].sort((a, b) => a - b)).toEqual(order);
+    expect(
+      within(dialog).getByRole("button", { name: "Close dialog" }),
+    ).toBeTruthy();
+    expect(within(dialog).getAllByRole("button", { name: "Done" }).length).toBe(
+      1,
+    );
+    expect(screen.getByText("This key is shown only once.").tagName).toBe(
+      "STRONG",
+    );
+    const input = screen.getByLabelText("API key") as HTMLInputElement;
+    expect(input.readOnly).toBe(true);
+    expect(input.type).toBe("text");
+    expect(input.value).toBe(rawKey);
+    const described = (input.getAttribute("aria-describedby") ?? "")
+      .split(" ")
+      .map((id) => document.getElementById(id)?.textContent ?? "");
+    expect(described.join(" ")).toContain("Store it securely");
+    expect(described.join(" ")).toContain("cannot view this key again");
+    expect(described.join(" ")).not.toContain(rawKey);
+    expect(document.activeElement).toBe(input);
+  });
+
+  it("keeps the copy status empty and in one polite region that never contains the key", async () => {
+    const { user } = await openResult();
+    const writeText = stubClipboard(async () => {});
+    const status = screen.getAllByRole("status")[0]!;
+    const regions = within(screen.getByRole("dialog")).getAllByRole("status");
+    expect(regions.length).toBe(1);
+    expect(regions[0]!.textContent).toBe("");
+    expect(writeText).not.toHaveBeenCalled();
+    const copy = screen.getByRole("button", { name: "Copy API key" });
+    expect(copy.getAttribute("aria-describedby")).toBe(regions[0]!.id);
+    await user.click(copy);
+    await waitFor(() => expect(regions[0]!.textContent).toBe("Copied."));
+    expect(writeText).toHaveBeenCalledTimes(1);
+    expect(writeText).toHaveBeenCalledWith(rawKey);
+    expect(status.textContent).not.toContain(rawKey);
+    expect(document.activeElement).toBe(copy);
+  });
+
+  it("reports rejection, keeps the dialog open and allows retry", async () => {
+    const { user } = await openResult();
+    let fail = true;
+    const writeText = stubClipboard(async () => {
+      if (fail) throw new Error("denied");
+    });
+    const copy = screen.getByRole("button", { name: "Copy API key" });
+    await user.click(copy);
+    const status = within(screen.getByRole("dialog")).getByRole("status");
+    await waitFor(() =>
+      expect(status.textContent).toBe(
+        "Copy failed. Select and copy the value manually.",
+      ),
+    );
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect((screen.getByLabelText("API key") as HTMLInputElement).value).toBe(
+      rawKey,
+    );
+    expect(status.textContent).not.toContain(rawKey);
+    expect((copy as HTMLButtonElement).disabled).toBe(false);
+    fail = false;
+    await user.click(copy);
+    await waitFor(() => expect(status.textContent).toBe("Copied."));
+    expect(writeText).toHaveBeenCalledTimes(2);
+    expect(writeText).toHaveBeenNthCalledWith(2, rawKey);
+  });
+
+  it("does not require copying before Done and never touches the clipboard automatically", async () => {
+    const { user } = await openResult();
+    const writeText = stubClipboard(async () => {});
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it("contains Tab in the order Close, input, Copy, Done", async () => {
+    const { user } = await openResult();
+    const close = screen.getByRole("button", { name: "Close dialog" });
+    const input = screen.getByLabelText("API key");
+    const copy = screen.getByRole("button", { name: "Copy API key" });
+    const done = screen.getByRole("button", { name: "Done" });
+    expect(document.activeElement).toBe(input);
+    await user.tab();
+    expect(document.activeElement).toBe(copy);
+    await user.tab();
+    expect(document.activeElement).toBe(done);
+    await user.tab();
+    expect(document.activeElement).toBe(close);
+    await user.tab();
+    expect(document.activeElement).toBe(input);
+    await user.tab({ shift: true });
+    expect(document.activeElement).toBe(close);
+    await user.tab({ shift: true });
+    expect(document.activeElement).toBe(done);
+  });
+
+  it.each([
+    [
+      "Done",
+      async () =>
+        userEvent.setup().click(screen.getByRole("button", { name: "Done" })),
+    ],
+    [
+      "Close",
+      async () =>
+        userEvent
+          .setup()
+          .click(screen.getByRole("button", { name: "Close dialog" })),
+    ],
+    [
+      "Escape",
+      async () => {
+        fireEvent(
+          screen.getByRole("dialog"),
+          new Event("cancel", { cancelable: true }),
+        );
+      },
+    ],
+  ])(
+    "%s clears the raw value, dismisses and returns focus to the trigger",
+    async (_name, dismiss) => {
+      const { trigger } = await openResult();
+      await dismiss();
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(screen.queryByDisplayValue(rawKey)).toBeNull();
+      expect(document.body.textContent).not.toContain(rawKey);
+      expect(document.activeElement).toBe(trigger);
+    },
+  );
+
+  it("shows nothing when the clipboard settles after dismissal", async () => {
+    const { user } = await openResult();
+    const pending = deferred();
+    const writeText = stubClipboard(() => pending.promise);
+    await user.click(screen.getByRole("button", { name: "Copy API key" }));
+    expect(writeText).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    pending.resolve();
+    await pending.promise;
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.body.textContent).not.toContain("Copied.");
+    expect(document.body.textContent).not.toContain("Copy failed");
+  });
+
+  it("shows nothing when the clipboard rejects after dismissal", async () => {
+    const { user } = await openResult();
+    const pending = deferred();
+    stubClipboard(() => pending.promise);
+    await user.click(screen.getByRole("button", { name: "Copy API key" }));
+    await user.click(screen.getByRole("button", { name: "Close dialog" }));
+    pending.reject();
+    await pending.promise.catch(() => {});
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(document.body.textContent).not.toContain("Copy failed");
+  });
+
+  it("keeps the raw key out of storage, history, URL, cache and the later list", async () => {
+    const holder: { current?: QueryClient } = {};
+    const { user } = await openResult(rawKey, organization, holder);
+    expect(localStorage.length).toBe(0);
+    expect(sessionStorage.length).toBe(0);
+    expect(window.location.href).not.toContain(rawKey);
+    expect(JSON.stringify(window.history.state ?? null)).not.toContain(rawKey);
+    const snapshot = () =>
+      JSON.stringify(
+        holder
+          .current!.getQueryCache()
+          .getAll()
+          .map((query) => query.state.data),
+        (_key, value) => (typeof value === "bigint" ? value.toString() : value),
+      );
+    expect(snapshot()).not.toContain(rawKey);
+    await user.click(screen.getByRole("button", { name: "Done" }));
+    expect(snapshot()).not.toContain(rawKey);
+    expect(document.body.textContent).not.toContain(rawKey);
+    expect(localStorage.length).toBe(0);
+    expect(sessionStorage.length).toBe(0);
+  });
+
+  it("renders a 256-character key and 100-character organization name unchanged", async () => {
+    const longKey = `aipr_${"k".repeat(251)}`;
+    const longOrganization = create(OrganizationSchema, {
+      id: "one",
+      name: "O".repeat(100),
+      role: Role.MEMBER,
+    });
+    await openResult(longKey, longOrganization);
+    expect(longKey.length).toBe(256);
+    expect((screen.getByLabelText("API key") as HTMLInputElement).value).toBe(
+      longKey,
+    );
+    expect(
+      within(screen.getByRole("dialog")).getByText(
+        `Your key in ${"O".repeat(100)}.`,
+      ),
+    ).toBeTruthy();
+  });
+
+  it("leaves other dialogs without result-scoped styling hooks", async () => {
+    const user = userEvent.setup();
+    mount(<KeysPage {...props} />, (r) =>
+      r.service(KeyService, { listKeys: () => ({ keys: [] }) }),
+    );
+    await user.click(screen.getByRole("button", { name: "Create API key" }));
+    expect(screen.getByRole("dialog").className).not.toContain("key-result");
+  });
+
+  it("removes the dialog, status and key when the organization scope changes", async () => {
+    window.history.replaceState(null, "", "/keys?organization=one");
+    const user = userEvent.setup();
+    mount(<App />, (r) => {
+      r.service(AccountService, { getSession: () => session });
+      r.service(OrganizationService, {
+        listOrganizations: () => ({
+          organizations: [
+            organization,
+            { id: "two", name: "Second", role: Role.MEMBER },
+          ],
+        }),
+        getOrganization: (req) => ({
+          organization:
+            req.organizationId === "one"
+              ? organization
+              : { id: "two", name: "Second", role: Role.MEMBER },
+        }),
+      });
+      r.service(KeyService, {
+        listKeys: () => ({ keys: [] }),
+        createKey: () => ({ rawKey }),
+      });
+    });
+    await user.click(
+      await screen.findByRole("button", { name: "Create API key" }),
+    );
+    await user.type(screen.getByLabelText("Name"), "Laptop");
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Create API key",
+      }),
+    );
+    await screen.findByText("This key is shown only once.");
+    stubClipboard(async () => {});
+    await user.click(screen.getByRole("button", { name: "Copy API key" }));
+    await screen.findByText("Copied.");
+    await user.click(
+      screen.getAllByRole("button", { name: "Switch organization" })[0]!,
+    );
+    await user.click(screen.getByRole("button", { name: "Second Member" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByText("Copied.")).toBeNull();
+    expect(document.body.textContent).not.toContain(rawKey);
+    expect(screen.queryByDisplayValue(rawKey)).toBeNull();
+  });
+});
+
 describe("routing and pools", () => {
   it("sends ordered personal pool members and rejects duplicate names before submission", async () => {
     const { PoolsPage } = await import("../src/routing");
