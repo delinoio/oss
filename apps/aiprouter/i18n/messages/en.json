@@ -1198,5 +1198,9 @@
   "ownershipChangesOnlyAfterAcceptsBecomes": "Ownership changes only after {value0} accepts. {value0} becomes owner and you become an administrator. You remain owner until acceptance. This nomination expires after seven days.",
   "keepTransfer": "Keep transfer",
   "cancelTheOwnershipTransferTo": "Cancel the ownership transfer to {value0}?",
-  "theNomineeWillNoLongerBe": "The nominee will no longer be able to accept this transfer. You remain the owner of {value0}."
+  "theNomineeWillNoLongerBe": "The nominee will no longer be able to accept this transfer. You remain the owner of {value0}.",
+  "resendsAreAtLeastOneMinute": "Resends are at least one minute apart. Up to 100 send attempts per organization per hour. Manual resend invalidates the old link and starts a new seven-day invitation.",
+  "message_230b931bd9": "Created: {value0}",
+  "storedAttemptTimeThisTimestampDoes": "Stored attempt time: {value0}. This timestamp does not confirm a scheduled delivery.",
+  "sentMeansTheEmailWasSubmitted": "Sent means the email was submitted to the SMTP server; recipient delivery and invitation acceptance are not confirmed."
 }

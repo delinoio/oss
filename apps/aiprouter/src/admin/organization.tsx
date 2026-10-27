@@ -234,6 +234,27 @@ export function invitationStatus(invitation: Invitation, now: number) {
     return translate("pendingDelivery");
   return translate("unknownStatus");
 }
+export enum InvitationTiming {
+  NextAttempt = "next-attempt",
+  StoredAttempt = "stored-attempt",
+  None = "none",
+}
+// Decides how a returned nextAttemptAt may be presented. The server serializes
+// nextAttemptAt for every lifecycle (for example eight days ahead after a
+// successful send), so its presence alone never proves a scheduled delivery.
+export function invitationTiming(invitation: Invitation, now: number) {
+  if (!invitation.nextAttemptAt) return InvitationTiming.None;
+  const expiresAt = milliseconds(invitation.expiresAt);
+  const deliverable =
+    invitation.state === LifecycleState.PENDING &&
+    (invitation.deliveryState === DeliveryState.QUEUED ||
+      invitation.deliveryState === DeliveryState.RETRY_PENDING) &&
+    expiresAt !== undefined &&
+    expiresAt > now;
+  return deliverable
+    ? InvitationTiming.NextAttempt
+    : InvitationTiming.StoredAttempt;
+}
 export function Invitations() {
   useLocale();
   const { organizationId } = useContext(AdminAuthority);
@@ -275,7 +296,7 @@ export function Invitations() {
         }
       />
       {action.feedback}
-      <p>{translate("resendsAreAtLeastOneMinuteApart")}</p>
+      <p className="admin-quiet">{translate("resendsAreAtLeastOneMinute")}</p>
       {query.isPending ? (
         <Loading />
       ) : query.error ? (
@@ -288,6 +309,7 @@ export function Invitations() {
           <div className="admin-records">
             {query.data?.invitations.map((invitation) => {
               const status = invitationStatus(invitation, now);
+              const timing = invitationTiming(invitation, now);
               const available = Math.max(
                 milliseconds(invitation.resendAvailableAt) ?? 0,
                 cooldowns[invitation.email] ?? 0,
@@ -299,25 +321,47 @@ export function Invitations() {
                 LifecycleState.SUPERSEDED,
               ].includes(invitation.state);
               return (
-                <article className="admin-record" key={invitation.id}>
-                  <div>
+                <article
+                  className="admin-record admin-invitation"
+                  key={invitation.id}
+                >
+                  <div className="admin-invitation-identity">
                     <h2>{invitation.email}</h2>
                     <p>{translate("roleMember")}</p>
-                    <p>{translate("createdNotReported")}</p>
+                  </div>
+                  <div className="admin-invitation-status">
                     <span className="admin-badge">{status}</span>
+                  </div>
+                  <div className="admin-invitation-dates">
                     <p>
                       {translate("expires_8c3e7e", {
                         value0: date(invitation.expiresAt),
                       })}
                     </p>
+                    <p>
+                      {invitation.createdAt
+                        ? translate("message_230b931bd9", {
+                            value0: date(invitation.createdAt),
+                          })
+                        : translate("createdNotReported")}
+                    </p>
+                  </div>
+                  <div className="admin-invitation-diagnostics">
                     {status === translate("deliveryFailed") && (
                       <p className="admin-danger-text">
                         {translate("theLinkIsInvalidResendToCreate")}
                       </p>
                     )}
-                    {invitation.nextAttemptAt && (
+                    {timing === InvitationTiming.NextAttempt && (
                       <p>
                         {translate("nextDeliveryAttemptDeliveryCanBeDeferred", {
+                          value0: date(invitation.nextAttemptAt),
+                        })}
+                      </p>
+                    )}
+                    {timing === InvitationTiming.StoredAttempt && (
+                      <p>
+                        {translate("storedAttemptTimeThisTimestampDoes", {
                           value0: date(invitation.nextAttemptAt),
                         })}
                       </p>
@@ -387,6 +431,9 @@ export function Invitations() {
             token={token}
             onChange={setToken}
           />
+          <p className="admin-quiet">
+            {translate("sentMeansTheEmailWasSubmitted")}
+          </p>
         </Card>
       )}
       {open && (

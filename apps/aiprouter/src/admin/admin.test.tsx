@@ -9,7 +9,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { Code, ConnectError, createRouterTransport } from "@connectrpc/connect";
-import { create } from "@bufbuild/protobuf";
+import { create, type MessageInitShape } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { QueryClient } from "@tanstack/react-query";
 import {
@@ -17,6 +17,7 @@ import {
   GetSessionResponseSchema,
   InvitationSchema,
   InvitationService,
+  type Invitation,
   LifecycleState,
   DeliveryState,
   MembershipService,
@@ -28,7 +29,11 @@ import {
 } from "@aiprouter/client";
 import { ApiProvider } from "../api";
 import { AdminPage, OperatorPage } from "./index";
-import { invitationStatus } from "./organization";
+import {
+  InvitationTiming,
+  invitationStatus,
+  invitationTiming,
+} from "./organization";
 import { money } from "./common";
 
 beforeAll(() => {
@@ -74,6 +79,7 @@ function fixture(
     memberPages:
       | { userId: string; displayName: string; email: string; role: Role }[][]
       | undefined;
+    invitations: Invitation[] | undefined;
   } = {
     name: organization.name,
     transfer: {
@@ -87,6 +93,7 @@ function fixture(
     updateGate: undefined,
     cancelError: undefined,
     memberPages: undefined,
+    invitations: undefined,
   };
   const mutations = {
     remove: rs.fn(),
@@ -166,7 +173,7 @@ function fixture(
     });
     router.service(InvitationService, {
       listInvitations: () => ({
-        invitations: [
+        invitations: state.invitations ?? [
           {
             id: "failed",
             email: "failed@example.test",
@@ -423,6 +430,256 @@ describe("invitation lifecycle", () => {
         Date.now(),
       ),
     ).toBe("Delivery failed");
+  });
+});
+const FIXED_NOW = Date.parse("2026-10-27T10:00:00Z");
+const at = (iso: string) => timestampFromDate(new Date(iso));
+const invitationRecord = (
+  overrides: MessageInitShape<typeof InvitationSchema> = {},
+) =>
+  create(InvitationSchema, {
+    id: "inv",
+    email: "alex@example.test",
+    state: LifecycleState.PENDING,
+    deliveryState: DeliveryState.QUEUED,
+    createdAt: at("2026-10-27T09:00:00Z"),
+    expiresAt: at("2026-11-03T09:00:00Z"),
+    nextAttemptAt: at("2026-10-27T10:01:00Z"),
+    deliveryAttempts: 1,
+    ...overrides,
+  });
+const NEXT = "Next delivery attempt:";
+const STORED = "Stored attempt time:";
+describe("invitation timing gate", () => {
+  const timing = (
+    overrides: MessageInitShape<typeof InvitationSchema>,
+    now = FIXED_NOW,
+  ) => invitationTiming(invitationRecord(overrides), now);
+  it("promises a next attempt only for unexpired pending queued or retrying invitations", () => {
+    expect(timing({})).toBe(InvitationTiming.NextAttempt);
+    expect(timing({ deliveryState: DeliveryState.RETRY_PENDING })).toBe(
+      InvitationTiming.NextAttempt,
+    );
+  });
+  it("shows no timing without a returned nextAttemptAt", () => {
+    for (const state of [
+      LifecycleState.PENDING,
+      LifecycleState.FAILED,
+      LifecycleState.ACCEPTED,
+    ])
+      expect(timing({ state, nextAttemptAt: undefined })).toBe(
+        InvitationTiming.None,
+      );
+  });
+  it("stores the timestamp without a promise in every other state", () => {
+    const stored = [
+      { deliveryState: DeliveryState.SENT },
+      { deliveryState: DeliveryState.FAILED },
+      { state: LifecycleState.FAILED, deliveryState: DeliveryState.FAILED },
+      { state: LifecycleState.EXPIRED },
+      {
+        state: LifecycleState.ACCEPTED,
+        deliveryState: DeliveryState.RETRY_PENDING,
+      },
+      {
+        state: LifecycleState.CANCELED,
+        deliveryState: DeliveryState.RETRY_PENDING,
+      },
+      {
+        state: LifecycleState.SUPERSEDED,
+        deliveryState: DeliveryState.RETRY_PENDING,
+      },
+      { state: LifecycleState.ACCEPTED, deliveryState: DeliveryState.SENT },
+      { expiresAt: undefined },
+      { expiresAt: at("2026-10-27T10:00:00Z") },
+      { expiresAt: at("2026-10-27T09:59:59Z") },
+      { state: LifecycleState.UNSPECIFIED },
+      { deliveryState: DeliveryState.UNSPECIFIED },
+    ];
+    for (const overrides of stored)
+      expect(timing(overrides)).toBe(InvitationTiming.StoredAttempt);
+  });
+  it("re-evaluates when the clock reaches expiry", () => {
+    const overrides = { expiresAt: at("2026-10-27T10:00:01Z") };
+    expect(timing(overrides, FIXED_NOW)).toBe(InvitationTiming.NextAttempt);
+    expect(timing(overrides, FIXED_NOW + 1000)).toBe(
+      InvitationTiming.StoredAttempt,
+    );
+  });
+});
+describe("invitation list rendering", () => {
+  const article = (email: string) =>
+    screen.getByRole("heading", { name: email }).closest("article")!;
+  it("renders the policy notice, SMTP note and the returned created time", async () => {
+    const f = fixture({ section: "invitations" });
+    f.state.invitations = [invitationRecord()];
+    await f.client.invalidateQueries();
+    const card = await screen.findByRole("heading", {
+      name: "alex@example.test",
+    });
+    expect(
+      screen.getByText(
+        "Resends are at least one minute apart. Up to 100 send attempts per organization per hour. Manual resend invalidates the old link and starts a new seven-day invitation.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Sent means the email was submitted to the SMTP server; recipient delivery and invitation acceptance are not confirmed.",
+      ),
+    ).toBeTruthy();
+    const record = card.closest("article")!;
+    expect(
+      within(record).getByText(
+        `Created: ${new Date("2026-10-27T09:00:00Z").toLocaleString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`,
+      ),
+    ).toBeTruthy();
+    expect(within(record).getByText("Role: Member")).toBeTruthy();
+    expect(within(record).getByText("Send attempts: 1")).toBeTruthy();
+  });
+  it("reports an absent created time instead of deriving it", async () => {
+    const f = fixture({ section: "invitations" });
+    f.state.invitations = [
+      invitationRecord({ createdAt: undefined, deliveryAttempts: 0 }),
+    ];
+    await f.client.invalidateQueries();
+    const record = (
+      await screen.findByRole("heading", { name: "alex@example.test" })
+    ).closest("article")!;
+    expect(within(record).getByText("Created: Not reported")).toBeTruthy();
+    expect(within(record).getByText("Send attempts: 0")).toBeTruthy();
+  });
+  it("labels the returned attempt time according to the gate", async () => {
+    const f = fixture({ section: "invitations" });
+    const future = at(new Date(Date.now() + 3600000).toISOString());
+    const expires = at(new Date(Date.now() + 86400000).toISOString());
+    f.state.invitations = [
+      invitationRecord({
+        id: "q",
+        email: "q@example.test",
+        nextAttemptAt: future,
+        expiresAt: expires,
+      }),
+      invitationRecord({
+        id: "s",
+        email: "s@example.test",
+        deliveryState: DeliveryState.SENT,
+        nextAttemptAt: future,
+        expiresAt: expires,
+      }),
+      invitationRecord({
+        id: "n",
+        email: "n@example.test",
+        nextAttemptAt: undefined,
+        expiresAt: expires,
+      }),
+    ];
+    await f.client.invalidateQueries();
+    await screen.findByRole("heading", { name: "q@example.test" });
+    const queued = within(article("q@example.test"));
+    expect(queued.getByText(/Next delivery attempt:/)).toBeTruthy();
+    expect(
+      queued.getByText(/Delivery can be deferred by the hourly limit\./),
+    ).toBeTruthy();
+    expect(queued.queryByText(new RegExp(STORED))).toBeNull();
+    const sent = within(article("s@example.test"));
+    expect(sent.getByText("Sent")).toBeTruthy();
+    expect(sent.getByText(/Stored attempt time:/)).toBeTruthy();
+    expect(
+      sent.getByText(/does not confirm a scheduled delivery/),
+    ).toBeTruthy();
+    expect(sent.queryByText(new RegExp(NEXT))).toBeNull();
+    const none = within(article("n@example.test"));
+    expect(none.queryByText(new RegExp(NEXT))).toBeNull();
+    expect(none.queryByText(new RegExp(STORED))).toBeNull();
+    expect(screen.queryByText("Rate limited")).toBeNull();
+  });
+  it("drops the next-attempt promise when polling reports a terminal state", async () => {
+    const f = fixture({ section: "invitations" });
+    const expires = at(new Date(Date.now() + 86400000).toISOString());
+    const future = at(new Date(Date.now() + 3600000).toISOString());
+    const base = {
+      deliveryState: DeliveryState.RETRY_PENDING,
+      expiresAt: expires,
+      nextAttemptAt: future,
+    };
+    f.state.invitations = [invitationRecord(base)];
+    await f.client.invalidateQueries();
+    await screen.findByText(/Next delivery attempt:/);
+    expect(screen.getByText("Retry scheduled")).toBeTruthy();
+    f.state.invitations = [
+      invitationRecord({ ...base, state: LifecycleState.CANCELED }),
+    ];
+    await f.client.invalidateQueries();
+    await screen.findByText(/Stored attempt time:/);
+    expect(screen.queryByText(/Next delivery attempt:/)).toBeNull();
+    expect(screen.getByText("Canceled")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Resend" })).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Cancel invitation" }),
+    ).toBeNull();
+  });
+  it("replaces the next-attempt label on the clock tick that reaches expiry", async () => {
+    const f = fixture({ section: "invitations" });
+    f.state.invitations = [
+      invitationRecord({
+        deliveryState: DeliveryState.RETRY_PENDING,
+        expiresAt: at(new Date(Date.now() + 1500).toISOString()),
+        nextAttemptAt: at(new Date(Date.now() + 3600000).toISOString()),
+      }),
+    ];
+    await f.client.invalidateQueries();
+    await screen.findByText(/Next delivery attempt:/);
+    expect(
+      screen.getByRole("button", { name: "Cancel invitation" }),
+    ).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("Expired")).toBeTruthy(), {
+      timeout: 4000,
+    });
+    expect(screen.getByText(/Stored attempt time:/)).toBeTruthy();
+    expect(screen.queryByText(/Next delivery attempt:/)).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Cancel invitation" }),
+    ).toBeNull();
+    expect(screen.getByRole("button", { name: "Resend" })).toBeTruthy();
+  });
+  it("keeps action predicates for each lifecycle", async () => {
+    const f = fixture({ section: "invitations" });
+    const lifecycles: [string, LifecycleState, DeliveryState][] = [
+      ["acc", LifecycleState.ACCEPTED, DeliveryState.SENT],
+      ["can", LifecycleState.CANCELED, DeliveryState.QUEUED],
+      ["sup", LifecycleState.SUPERSEDED, DeliveryState.QUEUED],
+      ["fail", LifecycleState.FAILED, DeliveryState.FAILED],
+      ["pfail", LifecycleState.PENDING, DeliveryState.FAILED],
+    ];
+    f.state.invitations = lifecycles.map(([id, state, deliveryState]) =>
+      invitationRecord({
+        id,
+        email: `${id}@example.test`,
+        state,
+        deliveryState,
+        expiresAt: at(new Date(Date.now() + 86400000).toISOString()),
+        nextAttemptAt: undefined,
+      }),
+    );
+    await f.client.invalidateQueries();
+    await screen.findByRole("heading", { name: "acc@example.test" });
+    for (const id of ["acc", "can", "sup"]) {
+      const record = within(article(`${id}@example.test`));
+      expect(record.queryByRole("button", { name: "Resend" })).toBeNull();
+      expect(
+        record.queryByRole("button", { name: "Cancel invitation" }),
+      ).toBeNull();
+    }
+    const failed = within(article("fail@example.test"));
+    expect(failed.getByRole("button", { name: "Resend" })).toBeTruthy();
+    expect(
+      failed.queryByRole("button", { name: "Cancel invitation" }),
+    ).toBeNull();
+    const pendingFailed = within(article("pfail@example.test"));
+    expect(pendingFailed.getByRole("button", { name: "Resend" })).toBeTruthy();
+    expect(
+      pendingFailed.getByRole("button", { name: "Cancel invitation" }),
+    ).toBeTruthy();
   });
 });
 describe("operator boundary and unknown values", () => {

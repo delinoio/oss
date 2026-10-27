@@ -842,3 +842,42 @@
     padding: 16px;
   }
 }
+
+.admin-quiet {
+  color: #4e5968;
+  font-size: 14px;
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
+.admin-invitation {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) auto minmax(0, 2fr) minmax(0, 3fr) auto;
+  align-items: start;
+  gap: 16px 24px;
+}
+.admin-invitation > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.admin-invitation .admin-actions {
+  margin: 0;
+}
+@media (max-width: 900px) {
+  .admin-invitation {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .admin-invitation-dates,
+  .admin-invitation-diagnostics,
+  .admin-invitation > .admin-actions {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 600px) {
+  .admin-invitation {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .admin-invitation > .admin-actions > button {
+    flex: 1 1 100%;
+    min-height: 44px;
+  }
+}
