@@ -77,10 +77,13 @@ export function Field({
   label,
   children,
   hint,
+  describedBy,
 }: {
   label: string;
   children: ReactNode;
   hint?: ReactNode;
+  /** Extra element ids (for example an error summary) appended to the control description. */
+  describedBy?: string;
 }) {
   useLocale();
   const id = useId();
@@ -94,9 +97,14 @@ export function Field({
       {child
         ? cloneElement(child, {
             id: inputId,
-            "aria-describedby": hint
-              ? `${id}-hint`
-              : child.props["aria-describedby"],
+            "aria-describedby":
+              [
+                child.props["aria-describedby"],
+                hint ? `${id}-hint` : undefined,
+                describedBy,
+              ]
+                .filter(Boolean)
+                .join(" ") || undefined,
           })
         : children}
       {hint && <small id={`${id}-hint`}>{hint}</small>}
@@ -180,12 +188,15 @@ export function Dialog({
   onClose,
   initialFocus,
   wide = false,
+  className,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   initialFocus?: string;
   wide?: boolean;
+  /** Optional scoped class so one consumer can style its dialog without changing others. */
+  className?: string;
 }) {
   useLocale();
   const ref = useRef<HTMLDialogElement>(null);
@@ -213,7 +224,7 @@ export function Dialog({
     <dialog
       ref={ref}
       aria-labelledby={titleId}
-      className={wide ? "wide" : ""}
+      className={[wide ? "wide" : "", className].filter(Boolean).join(" ")}
       onKeyDown={(event) => {
         if (event.key !== "Tab") return;
         const items = Array.from(

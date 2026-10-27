@@ -1036,5 +1036,10 @@
   "message_16ca547b59": "Reset first",
   "message_37a06ca83a": "Five hour",
   "message_2975132481": "Weekly",
-  "message_8966c8a3ae": "Max utilization"
+  "message_8966c8a3ae": "Max utilization",
+  "createKeyNameGuidance": "Use a name you can recognize later.",
+  "createKeyNameHelper": "Up to 100 characters.",
+  "createKeyExpiryHelper": "Choose 7, 30 or 90 days, or No expiry.",
+  "createKeyRevokeGuidance": "You can revoke this key from API keys.",
+  "createKeyPendingStatus": "Creating… Closing this dialog does not cancel a submitted change."
 }

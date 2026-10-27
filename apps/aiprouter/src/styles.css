@@ -770,3 +770,56 @@ caption {
     padding: 12px 16px;
   }
 }
+
+/* Create API key dialog. Scoped so other Dialog consumers keep the shared sizing. */
+dialog.create-key-dialog {
+  width: min(560px, calc(100% - 32px));
+  padding: 32px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+.create-key-dialog .dialog-heading h2 {
+  font-size: 24px;
+}
+.create-key-dialog .create-key-guidance {
+  margin: 0 0 24px;
+  color: var(--secondary);
+}
+.create-key-dialog form > .create-key-guidance {
+  margin: 0 0 16px;
+}
+.create-key-dialog .field {
+  gap: 8px;
+  margin-bottom: 24px;
+}
+.create-key-dialog .create-key-error:empty {
+  display: none;
+}
+.create-key-dialog .create-key-status {
+  margin: 0 0 16px;
+  font-size: 14px;
+}
+.create-key-dialog .create-key-status:empty {
+  display: none;
+}
+.create-key-dialog .create-key-actions {
+  gap: 16px;
+  margin-top: 0;
+  padding-top: 24px;
+  border-top: 1px solid var(--border);
+}
+@media (max-width: 480px) {
+  dialog.create-key-dialog {
+    width: calc(100% - 32px);
+    padding: 16px;
+  }
+  .create-key-dialog .create-key-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .create-key-dialog .create-key-actions > .button,
+  .create-key-dialog .create-key-actions > button {
+    width: 100%;
+  }
+}
