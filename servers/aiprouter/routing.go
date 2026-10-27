@@ -182,7 +182,7 @@ func (a *inferenceAdapter) Resolve(ctx context.Context, p inference.Principal, m
 		provider := ""
 		for _, member := range members {
 			d, version, e := a.providerVersion(ctx, sc, member.ConnectionId)
-			if errors.Is(e, inference.ErrNoCredential) || errors.Is(e, store.ErrNotFound) {
+			if errors.Is(e, inference.ErrNoCredential) || errors.Is(e, store.ErrNotFound) || errors.Is(e, store.ErrBusy) || errors.Is(e, store.ErrReauthentication) {
 				continue
 			}
 			if e != nil {
@@ -396,7 +396,7 @@ func (a *inferenceAdapter) Select(ctx context.Context, p inference.Principal, t 
 			continue
 		}
 		d, version, e := a.providerVersion(ctx, scopeOf(p), candidate.ID)
-		if errors.Is(e, inference.ErrNoCredential) || errors.Is(e, store.ErrNotFound) {
+		if errors.Is(e, inference.ErrNoCredential) || errors.Is(e, store.ErrNotFound) || errors.Is(e, store.ErrBusy) || errors.Is(e, store.ErrReauthentication) {
 			continue
 		}
 		if e != nil {

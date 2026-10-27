@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -237,5 +238,47 @@ func TestRoutingCodexSoftDenialDoesNotEmptyPool(t *testing.T) {
 			t.Fatalf("soft-denial recovery=%v %v", decision, e)
 		}
 		release()
+	}
+}
+
+func TestPoolSkipsBusyAndReauthenticationAccounts(t *testing.T) {
+	for _, afterResolve := range []bool{false, true} {
+		t.Run(fmt.Sprint("after-resolve-", afterResolve), func(t *testing.T) {
+			a, sc, key := poolRoutingFixture(t, v1.PoolStrategy_POOL_STRATEGY_PRIORITY)
+			p := admitRouting(t, a, key)
+			ctx := context.Background()
+			var route inference.Route
+			var err error
+			if afterResolve {
+				route, err = a.Resolve(ctx, p, "model", inference.Generate)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			_, _, claim, err := a.s.ClaimScopePrivateRefresh(ctx, sc, string(providerKind), "a")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, _, uncertain, err := a.s.ClaimScopePrivateRefresh(ctx, sc, string(providerKind), "b")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = a.s.MarkScopePrivateRefreshUncertain(ctx, sc, string(providerKind), "b", uncertain); err != nil {
+				t.Fatal(err)
+			}
+			if !afterResolve {
+				route, err = a.Resolve(ctx, p, "model", inference.Generate)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			selected, err := a.Select(ctx, p, route.Targets[0], "")
+			if err != nil || selected.AccountID != "c" {
+				t.Fatalf("selection=%+v error=%v", selected, err)
+			}
+			if err = a.s.ReleaseScopePrivateRefresh(ctx, sc, string(providerKind), "a", claim); err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }
