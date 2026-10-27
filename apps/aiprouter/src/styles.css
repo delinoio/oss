@@ -274,6 +274,30 @@ nav a:hover {
 .stats p {
   font-size: 14px;
 }
+.money-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  overflow-wrap: anywhere;
+}
+.stats .money-list.stat-value {
+  font-size: 23px;
+  font-weight: 700;
+  margin: 8px 0;
+}
+.table-wrap .money-list {
+  gap: 2px;
+}
+.refresh-status {
+  margin: 8px 0;
+  font-size: 14px;
+  color: #4e5968;
+}
+.refresh-status.failed {
+  color: #724400;
+}
 .notice {
   border: 1px solid #c8d9fc;
   border-radius: 8px;
@@ -1120,4 +1144,37 @@ dialog.oauth-dialog {
     width: 100%;
     flex: 1 1 100%;
   }
+}
+
+.usage-bars-viewport {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.usage-bars-viewport .usage-bars {
+  min-width: min-content;
+  overflow: visible;
+}
+.usage-bar.zero {
+  min-height: 0;
+  height: 0;
+}
+.usage-gap {
+  width: min(36px, 80%);
+  height: 12px;
+  border: 1px dashed #4e5968;
+  border-radius: 3px;
+  background: repeating-linear-gradient(
+    135deg,
+    #fff,
+    #fff 3px,
+    #e9edf3 3px,
+    #e9edf3 6px
+  );
+}
+.table-wrap:focus-visible {
+  outline: 3px solid #1d4ed8;
+  outline-offset: 2px;
+}
+dialog.sized {
+  width: min(600px, calc(100% - 32px));
 }
