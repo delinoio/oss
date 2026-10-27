@@ -17,7 +17,7 @@
   },
   "main": "./src/index.tsx",
   "scripts": {
-    "test": "vitest run --environment jsdom"
+    "test": "rstest --testEnvironment jsdom"
   },
   "peerDependencies": {
     "react": "^18.0.0 || ^19.0.0"
@@ -30,6 +30,7 @@
     "jsdom": "20.0.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "vitest": "4.1.11"
+    "@rstest/core": "0.12.5",
+    "@rsbuild/plugin-react": "2.0.1"
   }
 }

@@ -17,8 +17,8 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm typecheck",
-    "test": "vitest run",
-    "test:unit": "vitest run"
+    "test": "rstest",
+    "test:unit": "rstest"
   },
   "dependencies": {
     "@bufbuild/protobuf": "2.14.0",
@@ -35,6 +35,6 @@
     "@types/react": "19.2.14",
     "react": "19.2.8",
     "typescript": "5.9.3",
-    "vitest": "4.1.11"
+    "@rstest/core": "0.12.5"
   }
 }

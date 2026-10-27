@@ -8,7 +8,7 @@
     "strict": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["vitest/globals"]
+    "types": ["@rstest/core/globals"]
   },
   "include": ["src", "rsbuild.config.ts"]
 }

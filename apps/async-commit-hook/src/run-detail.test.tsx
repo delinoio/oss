@@ -14,7 +14,7 @@ import {
   LocalService,
   RunSchema,
 } from "@delinoio/async-commit-hook-api-client";
-import { expect, it, vi } from "vitest";
+import { expect, it, rs } from "@rstest/core";
 import { RunDetail, RunList } from "./App";
 
 it.each([
@@ -25,7 +25,7 @@ it.each([
   ExecutionState.UNSPECIFIED,
   ExecutionState.FAILED,
 ])("acknowledges only completed results (state %s)", async (state) => {
-  const acknowledge = vi.fn(() => ({}));
+  const acknowledge = rs.fn(() => ({}));
   const transport = createRouterTransport((router) =>
     router.service(LocalService, {
       getRun: () => ({ run: create(RunSchema, { id: "run", state }) }),
@@ -57,7 +57,7 @@ it.each([
 it.each([false, true])(
   "distinguishes detached checks from an unfiltered inbox (%s)",
   async (inbox) => {
-    const listRuns = vi.fn(
+    const listRuns = rs.fn(
       (_request: { branch: string; detached: boolean; inbox: boolean }) => ({
         runs: [],
       }),
@@ -94,8 +94,8 @@ it.each([false, true])(
 );
 
 it("stops detail polling after completion and still supports explicit invalidation", async () => {
-  vi.useFakeTimers();
-  const getRun = vi
+  rs.useFakeTimers();
+  const getRun = rs
     .fn()
     .mockReturnValueOnce({
       run: create(RunSchema, { id: "run", state: ExecutionState.RUNNING }),
@@ -118,33 +118,33 @@ it("stops detail polling after completion and still supports explicit invalidati
   );
   try {
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1);
+      await rs.advanceTimersByTimeAsync(1);
     });
     expect(getRun).toHaveBeenCalledTimes(1);
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(1600);
+      await rs.advanceTimersByTimeAsync(1600);
     });
     expect(getRun).toHaveBeenCalledTimes(2);
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(10000);
+      await rs.advanceTimersByTimeAsync(10000);
     });
     expect(getRun).toHaveBeenCalledTimes(2);
     await act(async () => {
       await client.invalidateQueries();
-      await vi.advanceTimersByTimeAsync(1);
+      await rs.advanceTimersByTimeAsync(1);
     });
     expect(getRun).toHaveBeenCalledTimes(3);
   } finally {
     unmount();
     client.clear();
-    vi.useRealTimers();
+    rs.useRealTimers();
   }
 });
 
 it.each(["Rerun all checks", "Rerun failed checks"])(
   "retains the accepted receipt when %s cannot start",
   async (buttonName) => {
-    const rerun = vi.fn(() => ({
+    const rerun = rs.fn(() => ({
       runId: "accepted-run",
       startupDiagnostic: {
         code: "startup-failed",
@@ -152,7 +152,7 @@ it.each(["Rerun all checks", "Rerun failed checks"])(
         hint: "Inspect ach doctor.",
       },
     }));
-    const onSelect = vi.fn();
+    const onSelect = rs.fn();
     const transport = createRouterTransport((router) =>
       router.service(LocalService, {
         getRun: () => ({
@@ -198,7 +198,7 @@ it.each(["Rerun all checks", "Rerun failed checks"])(
 );
 
 it("opens an accepted rerun directly when startup succeeds", async () => {
-  const onSelect = vi.fn();
+  const onSelect = rs.fn();
   const transport = createRouterTransport((router) =>
     router.service(LocalService, {
       getRun: () => ({
@@ -234,7 +234,7 @@ it("opens an accepted rerun directly when startup succeeds", async () => {
 it.each([false, true])(
   "displays bounded run summaries and opens details (inbox=%s)",
   async (inbox) => {
-    const onSelect = vi.fn();
+    const onSelect = rs.fn();
     const transport = createRouterTransport((router) =>
       router.service(LocalService, {
         listRuns: () => ({
@@ -311,9 +311,9 @@ it.each([
 ])(
   "finishes log polling once check %s completes while other checks remain active",
   async (terminal) => {
-    vi.useFakeTimers();
+    rs.useFakeTimers();
     let state = ExecutionState.RUNNING;
-    const getLogs = vi.fn((request: { offset: bigint }) => ({
+    const getLogs = rs.fn((request: { offset: bigint }) => ({
       text:
         state === ExecutionState.RUNNING
           ? "live output"
@@ -345,50 +345,50 @@ it.each([
     );
     try {
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(1);
+        await rs.advanceTimersByTimeAsync(1);
       });
       fireEvent.click(screen.getByRole("button", { name: "Example check" }));
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(1);
+        await rs.advanceTimersByTimeAsync(1);
       });
       expect(getLogs).toHaveBeenCalledTimes(1);
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(2200);
+        await rs.advanceTimersByTimeAsync(2200);
       });
       expect(getLogs).toHaveBeenCalledTimes(2);
       state = terminal;
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(1600);
+        await rs.advanceTimersByTimeAsync(1600);
       });
       expect(getLogs).toHaveBeenCalledTimes(3);
       expect(screen.getByLabelText("Check log output").textContent).toBe(
         "final page 0",
       );
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(10000);
+        await rs.advanceTimersByTimeAsync(10000);
       });
       expect(getLogs).toHaveBeenCalledTimes(3);
       fireEvent.click(screen.getByRole("button", { name: "Refresh log" }));
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(1);
+        await rs.advanceTimersByTimeAsync(1);
       });
       expect(getLogs).toHaveBeenCalledTimes(4);
       fireEvent.click(screen.getByRole("button", { name: "Next log page" }));
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(1);
+        await rs.advanceTimersByTimeAsync(1);
       });
       expect(screen.getByLabelText("Check log output").textContent).toBe(
         "final page 65536",
       );
       expect(getLogs).toHaveBeenCalledTimes(5);
       await act(async () => {
-        await vi.advanceTimersByTimeAsync(10000);
+        await rs.advanceTimersByTimeAsync(10000);
       });
       expect(getLogs).toHaveBeenCalledTimes(5);
     } finally {
       unmount();
       client.clear();
-      vi.useRealTimers();
+      rs.useRealTimers();
     }
   },
 );
