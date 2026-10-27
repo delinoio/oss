@@ -1309,3 +1309,41 @@
   display: block;
   margin-top: 4px;
 }
+
+/* Organization usage: header range label, filters and summary */
+.admin-usage-range {
+  margin: 0;
+  color: #4e5968;
+  font-size: 14px;
+}
+.admin-usage-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+.admin-usage-filter-grid label {
+  margin-bottom: 0;
+}
+.admin-usage-filters .admin-danger-text {
+  margin: 16px 0 0;
+}
+.admin-usage-metrics {
+  grid-template-columns: minmax(0, 1fr);
+  margin-bottom: 16px;
+}
+@media (min-width: 768px) {
+  .admin-usage-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .admin-usage-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (min-width: 1024px) {
+  .admin-usage-filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .admin-usage-metrics {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}

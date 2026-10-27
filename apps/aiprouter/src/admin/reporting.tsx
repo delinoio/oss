@@ -43,14 +43,12 @@ export function timeRange(start: string, end: string) {
     end: timestampFromDate(new Date(`${end}T23:59:59.999Z`)),
   };
 }
-export function Summary({ summary }: { summary?: UsageSummary }) {
-  useLocale();
+function SummaryBody({ summary }: { summary?: UsageSummary }) {
   return (
-    <Card>
-      <h2>{translate("usageSummary")}</h2>
+    <>
       {summary ? (
         <>
-          <div className="admin-metrics">
+          <div className="admin-metrics admin-usage-metrics">
             <div>
               <span>{translate("requests")}</span>
               <strong>{String(summary.requestCount)}</strong>
@@ -89,12 +87,89 @@ export function Summary({ summary }: { summary?: UsageSummary }) {
         <Empty>{translate("usageSummaryIsUnavailable")}</Empty>
       )}
       <p>{translate("estimatesNotBillingCurrencyIsShownWith")}</p>
+    </>
+  );
+}
+export function Summary({ summary }: { summary?: UsageSummary }) {
+  useLocale();
+  return (
+    <Card>
+      <h2>{translate("usageSummary")}</h2>
+      <SummaryBody summary={summary} />
+    </Card>
+  );
+}
+// Summary region of the organization usage report. It keeps its own loading,
+// error, refreshing and stale states so sibling regions are never blocked, and
+// pending or failed data is never rendered as zeros.
+function UsageSummaryRegion({
+  query,
+}: {
+  query: {
+    data?: { summary?: UsageSummary };
+    error: unknown;
+    isPending: boolean;
+    isFetching: boolean;
+    fetchStatus: string;
+    refetch: () => unknown;
+  };
+}) {
+  useLocale();
+  const headingId = useId();
+  const retry = () => void query.refetch();
+  const retryLabel = translate("tryAgainLoadingUsageSummary");
+  const staleDataText = translate("usageDataStale");
+  const offline = query.fetchStatus === "paused";
+  let content;
+  if (!query.data) {
+    content = query.error ? (
+      <ErrorNotice error={query.error} retry={retry} retryLabel={retryLabel} />
+    ) : offline ? (
+      <div role="status" className="admin-stale">
+        <p>{staleDataText}</p>
+        <button aria-label={retryLabel} onClick={retry}>
+          {translate("tryAgain")}
+        </button>
+      </div>
+    ) : (
+      <Loading label={translate("loadingUsageSummary")} />
+    );
+  } else {
+    const stale = !!query.error || offline;
+    content = (
+      <>
+        {query.error && (
+          <ErrorNotice
+            error={query.error}
+            retry={retry}
+            retryLabel={retryLabel}
+          />
+        )}
+        {stale && (
+          <p role="status" className="admin-stale">
+            {staleDataText}
+          </p>
+        )}
+        {!stale && query.isFetching && (
+          <p role="status" className="admin-stale">
+            {translate("refreshing")}
+          </p>
+        )}
+        <SummaryBody summary={query.data.summary} />
+      </>
+    );
+  }
+  return (
+    <Card aria-labelledby={headingId} className="admin-usage-summary">
+      <h2 id={headingId}>{translate("usageSummary")}</h2>
+      {content}
     </Card>
   );
 }
 export function OrganizationUsage() {
   useLocale();
   const { organizationId } = useContext(AdminAuthority);
+  const rangeErrorId = useId();
   const [dates, setDates] = useState(initialDates);
   const [userId, setUserId] = useState("");
   const [modelId, setModelId] = useState("");
@@ -129,6 +204,16 @@ export function OrganizationUsage() {
     { enabled: valid },
   );
   const records = query.data?.records ?? [];
+  // Both date inputs share the validation message so assistive technology
+  // announces it from either field.
+  const dateProps = {
+    "aria-invalid": valid ? undefined : true,
+    "aria-describedby": valid ? undefined : rangeErrorId,
+  };
+  function resetCursors() {
+    setToken("");
+    setDailyToken("");
+  }
   function reset() {
     setDates(initialDates());
     setUserId("");
@@ -144,10 +229,18 @@ export function OrganizationUsage() {
         title={translate("organizationUsage")}
         description={translate("perMemberRequestMetadataNoCredentialsPrompts")}
       />
-      <Card>
+      {dates.start && dates.end && (
+        <p className="admin-usage-range">
+          {translate("usageRangeUtc", {
+            value0: dates.start,
+            value1: dates.end,
+          })}
+        </p>
+      )}
+      <Card className="admin-usage-filters">
         <details className="admin-filters" open>
           <summary>{translate("filters_546ebb")}</summary>
-          <div className="admin-form-grid">
+          <div className="admin-usage-filter-grid">
             <label>
               {translate("fromUtc")}
               <input
@@ -155,9 +248,9 @@ export function OrganizationUsage() {
                 value={dates.start}
                 onChange={(e) => {
                   setDates({ ...dates, start: e.target.value });
-                  setToken("");
-                  setDailyToken("");
+                  resetCursors();
                 }}
+                {...dateProps}
               />
             </label>
             <label>
@@ -167,9 +260,9 @@ export function OrganizationUsage() {
                 value={dates.end}
                 onChange={(e) => {
                   setDates({ ...dates, end: e.target.value });
-                  setToken("");
-                  setDailyToken("");
+                  resetCursors();
                 }}
+                {...dateProps}
               />
             </label>
             <label>
@@ -178,8 +271,7 @@ export function OrganizationUsage() {
                 value={userId}
                 onChange={(e) => {
                   setUserId(e.target.value);
-                  setToken("");
-                  setDailyToken("");
+                  resetCursors();
                 }}
                 placeholder={translate("allMembers")}
               />
@@ -190,8 +282,7 @@ export function OrganizationUsage() {
                 value={modelId}
                 onChange={(e) => {
                   setModelId(e.target.value);
-                  setToken("");
-                  setDailyToken("");
+                  resetCursors();
                 }}
                 placeholder={translate("allModels")}
               />
@@ -203,8 +294,7 @@ export function OrganizationUsage() {
                 placeholder={translate("allProviders")}
                 onChange={(e) => {
                   setProviderId(e.target.value);
-                  setToken("");
-                  setDailyToken("");
+                  resetCursors();
                 }}
               />
             </label>
@@ -214,8 +304,7 @@ export function OrganizationUsage() {
                 value={outcome}
                 onChange={(e) => {
                   setOutcome(e.target.value);
-                  setToken("");
-                  setDailyToken("");
+                  resetCursors();
                 }}
               >
                 <option value="">{translate("allOutcomes")}</option>
@@ -231,22 +320,21 @@ export function OrganizationUsage() {
               </select>
             </label>
           </div>
-          <button onClick={reset}>{translate("clearFilters")}</button>
+          <div className="admin-actions">
+            <button type="button" onClick={reset}>
+              {translate("clearFilters")}
+            </button>
+          </div>
         </details>
-        {!valid && <p role="alert">{translate("chooseAnEndDateOnOrAfter")}</p>}
+        {!valid && (
+          <p role="alert" id={rangeErrorId} className="admin-danger-text">
+            {translate("chooseAnEndDateOnOrAfter")}
+          </p>
+        )}
       </Card>
       {valid && (
         <>
-          {summary.isPending ? (
-            <Loading />
-          ) : summary.error ? (
-            <ErrorNotice
-              error={summary.error}
-              retry={() => void summary.refetch()}
-            />
-          ) : (
-            <Summary summary={summary.data?.summary} />
-          )}
+          <UsageSummaryRegion query={summary} />
           <Card>
             <h2>{translate("dailyUsage")}</h2>
             {daily.isPending ? (

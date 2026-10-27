@@ -76,9 +76,12 @@ export function useNow() {
 export function ErrorNotice({
   error,
   retry,
+  retryLabel,
 }: {
   error: unknown;
   retry?: () => void;
+  // Optional accessible name for the retry button when several regions can fail.
+  retryLabel?: string;
 }) {
   useLocale();
   if (!error) return null;
@@ -111,7 +114,11 @@ export function ErrorNotice({
           {translate("retryAfterSeconds", { value0: detail.retryAfterSeconds })}
         </p>
       )}
-      {retry && <button onClick={retry}>{translate("tryAgain")}</button>}
+      {retry && (
+        <button aria-label={retryLabel} onClick={retry}>
+          {translate("tryAgain")}
+        </button>
+      )}
     </div>
   );
 }
