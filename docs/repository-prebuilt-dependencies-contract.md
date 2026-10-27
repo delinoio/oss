@@ -54,8 +54,7 @@ The consumers retain CEF package notices and their independent app validation.
 
 Installer fixtures cover first download, reuse, corruption, digest mismatch,
 network failure, Windows executable names, unsupported hosts, explicit local
-source builds and CI source-build refusal. CI contract tests guard cache keys,
-main-only saves and native/mobile routing. `pnpm ci:contracts` covers shared installer boundaries.
+source builds and CI source-build refusal. CI contract tests guard cache keys and CLI environment forwarding. `pnpm ci:contracts` covers shared installer boundaries.
 
 ## Project requirements
 

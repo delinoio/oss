@@ -20,6 +20,8 @@ Provide the Rspress-based public documentation site for user-facing product and 
 
 ## Cross-Domain Invariants
 
+- The root site’s top-level navbar contains no route items. Product pages `cargo-mono` and `with-watch` remain available through the sidebar and documented links.
+
 - Rspress clean routes, navigation, sidebar, and docs structure must stay aligned with documented contracts.
 - pnport's eleven public guide routes include `/pnport/preview-testing` for external Turbopack and TypeScript 7 testing; its sidebar, entry-page links and required headings/links stay aligned with the shared route catalog and `docs/apps-pnport-docs-foundation.md`.
 - User-facing content changes should be versioned alongside relevant contract updates.

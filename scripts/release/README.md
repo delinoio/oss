@@ -11,9 +11,18 @@ Configure the private `delino-release-bot` app on only `oss` and `homebrew-tap`,
 
 - async-commit-hook preparation synchronizes the Go version, all three package manifests and release metadata; it rejects version drift or ambiguous declarations before writing. After preparation succeeds, use the summary link to run **Release async-commit-hook** on `main` with the prepared version explicitly entered. Its default remains `dry_run=true`. Publication still requires the dispatch commit to equal the prepared tag commit; if main has advanced, its existing tag check rejects publication. Never move the tag or use another coordinator run to recover an existing prepared version. The documentation package deploys automatically with the consolidated Public Docs Cloudflare Pages build, and its installers select the latest published stable release by default so that automatic deployment is safe before release publication. Historical-source publication remains outside this integration.
 
+- `generate-checksums.sh`: produces `SHA256SUMS` and Sigstore bundle sidecars (`*.sigstore.json`) for each published artifact.
+
 - `update-homebrew.sh`: renders and optionally pushes Homebrew formula updates to the tap repository `main` branch (binpm, nodeup, and with-watch consume prebuilt multi-OS release artifacts). For binpm, rendered URLs must point to the expected prebuilt archive names for `darwin/amd64`, `darwin/arm64`, `linux/amd64`, and `linux/arm64`; Homebrew is not a source-build fallback channel. In non-dry-run mode, it expects `HOMEBREW_TAP_GH_TOKEN` (or `GH_TOKEN`) with write access to the tap repository and uses `RELEASE_BOT_NAME` and `RELEASE_BOT_EMAIL` resolved from the dedicated app before creating the tap commit (the existing `github-actions[bot]` identity remains the standalone-script fallback). Workflows provide a fresh tap-only installation token, and Git authentication uses an environment-backed credential helper rather than a token-bearing URL.
 
 These scripts are designed for use by release workflows:
+
+- `.github/workflows/release-project.yml` (manual project and SemVer selection)
+- `.github/workflows/release-async-commit-hook.yml` (separate manual main publication with exact version and dry-run default)
+- `.github/workflows/release-cargo-mono.yml`
+- `.github/workflows/release-binpm.yml`
+- `.github/workflows/release-nodeup.yml`
+- `.github/workflows/release-with-watch.yml`
 
 ## Runmoor Homebrew
 
