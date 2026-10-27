@@ -93,6 +93,36 @@ function roleLabel(role: Role) {
         ? translate("member")
         : translate("unknownRole");
 }
+/**
+ * Static recovery surface for unresolved routes. It renders nothing derived
+ * from the unknown URL and links only to the unscoped overview destination.
+ */
+function NotFound() {
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    heading.current?.focus();
+  }, []);
+  return (
+    <main className="not-found" aria-labelledby="not-found-title">
+      <p className="not-found-label">{translate("pageUnavailable")}</p>
+      <h1 id="not-found-title" ref={heading} tabIndex={-1}>
+        {translate("pageNotFound")}
+      </h1>
+      <div
+        role="group"
+        aria-labelledby="not-found-title"
+        aria-describedby="not-found-description"
+      >
+        <p id="not-found-description" className="not-found-description">
+          {translate("pageNotFoundExplanation")}
+        </p>
+        <a className="not-found-action" href={pageHref("overview")}>
+          {translate("backToOrganizations")}
+        </a>
+      </div>
+    </main>
+  );
+}
 export function App() {
   useLocale();
   const route = resolveRoute(new URL(window.location.href));
@@ -100,13 +130,7 @@ export function App() {
     if (route && route.url.href !== window.location.href)
       window.history.replaceState(null, "", route.url);
   }, [route?.url.href]);
-  if (!route)
-    return (
-      <main className="standalone">
-        <h1>{translate("pageNotFound")}</h1>
-        <a href={pageHref("overview")}>{translate("backToOrganizations")}</a>
-      </main>
-    );
+  if (!route) return <NotFound />;
   const page = route.page;
   return (
     <Suspense fallback={<Loading />}>

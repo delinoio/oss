@@ -259,3 +259,510 @@
   background: white;
   font: inherit;
 }
+
+/* Request limits: paired field rows, unit suffix and in-flow save footer. */
+.admin-workspace .admin-limits-card {
+  padding: 32px;
+  max-width: 960px;
+}
+.admin-limits-description {
+  margin: 0 0 24px;
+  color: #4e5968;
+}
+.admin-limit-rows {
+  display: grid;
+  border-top: 1px solid #d8dde5;
+}
+.admin-limit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 320px);
+  gap: 24px;
+  align-items: start;
+  padding: 24px 0;
+  border-bottom: 1px solid #d8dde5;
+}
+.admin-workspace .admin-limit-copy label {
+  margin-bottom: 4px;
+  font-size: 16px;
+}
+.admin-limit-copy p,
+.admin-limit-control p {
+  margin: 0;
+  color: #4e5968;
+  font-size: 14px;
+}
+.admin-limit-input {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.admin-limit-unit {
+  flex: 0 1 auto;
+  min-width: 0;
+  color: #4e5968;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.admin-workspace .admin-limit-input input {
+  flex: 1 1 96px;
+}
+.admin-workspace .admin-limit-control .admin-field-error {
+  margin-top: 8px;
+  color: #b42318;
+  font-weight: 600;
+}
+.admin-limits-summary ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.admin-limits-summary a {
+  color: inherit;
+  font-weight: 600;
+}
+.admin-limits-panel {
+  margin-top: 24px;
+  padding: 16px;
+  border: 1px solid #d8dde5;
+  border-radius: 8px;
+  background: #f7f8fa;
+}
+.admin-workspace .admin-limits-panel h3 {
+  font-size: 16px;
+  margin: 0 0 4px;
+}
+.admin-limits-panel p {
+  margin: 0;
+  color: #4e5968;
+}
+.admin-limits-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 24px;
+}
+.admin-limits-status {
+  margin: 0;
+  color: #4e5968;
+}
+@media (max-width: 768px) {
+  .admin-workspace .admin-limits-card {
+    padding: 24px;
+  }
+}
+@media (max-width: 600px) {
+  .admin-workspace .admin-limits-card {
+    padding: 16px;
+  }
+  .admin-limit-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .admin-limits-footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .admin-limits-footer button {
+    width: 100%;
+  }
+}
+
+/* Retention: saved-value captions, comparison dialog and conflict recovery. */
+.admin-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.admin-retention-card .admin-limit-control > p {
+  margin-top: 8px;
+}
+.admin-retention-conflict {
+  margin-top: 16px;
+}
+.admin-retention-conflict p {
+  margin: 0 0 8px;
+}
+.admin-dialog .admin-retention-table {
+  width: 100%;
+  margin: 0 0 16px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.admin-dialog .admin-retention-table th,
+.admin-dialog .admin-retention-table td {
+  padding: 12px 8px;
+  border-bottom: 1px solid #d8dde5;
+  text-align: left;
+  vertical-align: top;
+}
+.admin-dialog .admin-retention-table thead th {
+  color: #4e5968;
+  font-weight: 600;
+}
+.admin-dialog .admin-retention-table .admin-retention-reduced {
+  color: #b42318;
+  font-weight: 600;
+}
+.admin-dialog .admin-retention-warning {
+  margin: 0 0 8px;
+  padding: 0 12px;
+  border-left: 4px solid #b42318;
+}
+.admin-dialog .admin-retention-warning p {
+  margin: 8px 0;
+}
+.admin-dialog:has(.admin-retention-table) {
+  width: min(640px, calc(100vw - 32px));
+}
+@media (max-width: 600px) {
+  .admin-dialog .admin-retention-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .admin-dialog .admin-retention-table,
+  .admin-dialog .admin-retention-table tbody,
+  .admin-dialog .admin-retention-table tr,
+  .admin-dialog .admin-retention-table th,
+  .admin-dialog .admin-retention-table td {
+    display: block;
+  }
+  .admin-dialog .admin-retention-table tr {
+    padding: 8px 0;
+    border-bottom: 1px solid #d8dde5;
+  }
+  .admin-dialog .admin-retention-table th,
+  .admin-dialog .admin-retention-table td {
+    border-bottom: 0;
+    padding: 4px 0;
+  }
+  .admin-dialog .admin-retention-table td::before {
+    content: attr(data-label) ": ";
+    color: #4e5968;
+    font-weight: 600;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-retention-card * {
+    transition: none;
+  }
+}
+
+/* Approved destinations: policy notice, staged rules and inline editor. */
+.admin-destination-notice {
+  padding: 16px 24px;
+  border: 1px solid #d8dde5;
+  border-radius: 12px;
+  background: #f2f6ff;
+}
+.admin-workspace .admin-destination-notice h2 {
+  font-size: 16px;
+  margin: 0 0 4px;
+}
+.admin-destination-notice p {
+  margin: 0 0 8px;
+  color: #4e5968;
+}
+.admin-destination-notice p:last-child {
+  margin-bottom: 0;
+}
+.admin-workspace .admin-destinations-card {
+  padding: 24px;
+}
+.admin-policy-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+}
+.admin-policy-heading h2 {
+  margin: 0;
+}
+.admin-policy-state {
+  display: inline-block;
+  padding: 4px 12px;
+  border: 1px solid #8b95a1;
+  border-radius: 999px;
+  color: #191f28;
+  font-size: 14px;
+}
+.admin-policy-state[data-state="unsaved"] {
+  border-color: #1d4ed8;
+  color: #1d4ed8;
+}
+.admin-policy-helper {
+  margin: 8px 0 0;
+  color: #4e5968;
+}
+.admin-destination-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+}
+.admin-destination-list > .admin-record {
+  align-items: flex-start;
+}
+.admin-destination-list h3 {
+  overflow-wrap: anywhere;
+}
+.admin-destination-list h3:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 2px;
+}
+.admin-workspace .admin-destination-list .admin-destination-scope {
+  margin: 4px 0;
+  font-weight: 600;
+  color: #191f28;
+}
+.admin-cidr-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 14px;
+  color: #191f28;
+}
+.admin-cidr-list li {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.admin-destination-editor {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #d8dde5;
+}
+.admin-destination-editor p {
+  margin: 4px 0;
+  color: #4e5968;
+}
+.admin-destination-field {
+  margin-top: 16px;
+}
+.admin-destination-field label {
+  display: block;
+  margin-bottom: 4px;
+}
+.admin-workspace .admin-destination-editor .admin-destination-error {
+  color: #b42318;
+  font-weight: 600;
+}
+.admin-destination-note {
+  font-size: 14px;
+}
+.admin-destination-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #d8dde5;
+}
+.admin-destination-footer p {
+  margin: 0;
+  color: #4e5968;
+}
+@media (max-width: 600px) {
+  .admin-workspace .admin-destinations-card {
+    padding: 16px;
+  }
+  .admin-destination-list .admin-actions {
+    width: 100%;
+  }
+  .admin-destination-footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .admin-destination-footer button {
+    width: 100%;
+  }
+}
+
+/* Save destination policy review dialog. */
+.admin-dialog:has(.admin-destination-review) {
+  width: min(800px, calc(100vw - 32px));
+}
+.admin-dialog .admin-confirm-note {
+  margin: 16px 0 0;
+  color: #4e5968;
+  font-size: 14px;
+}
+.admin-dialog .admin-destination-review h3 {
+  margin: 24px 0 8px;
+  font-size: 16px;
+}
+.admin-dialog .admin-destination-review .admin-destination-notice h3 {
+  margin-top: 0;
+}
+.admin-dialog .admin-destination-review .admin-destination-notice {
+  margin-top: 16px;
+}
+.admin-destination-review-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.admin-destination-review-list > li {
+  border-top: 1px solid #d8dde5;
+  padding: 16px 0;
+}
+.admin-dialog .admin-destination-review-list p {
+  margin: 4px 0;
+}
+.admin-dialog .admin-destination-origin strong {
+  overflow-wrap: anywhere;
+}
+.admin-dialog .admin-destination-review .admin-destination-scope {
+  font-weight: 600;
+  color: #191f28;
+}
+.admin-diff-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border: 1px solid #8b95a1;
+  border-radius: 999px;
+  font-size: 14px;
+  color: #191f28;
+}
+.admin-destination-review-list > li[data-change="added"] .admin-diff-badge,
+.admin-destination-review-list > li[data-change="changed"] .admin-diff-badge {
+  border-color: #1d4ed8;
+  color: #1d4ed8;
+}
+.admin-diff-blocks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 8px 0;
+}
+.admin-dialog .admin-destination-review .admin-destination-warning,
+.admin-dialog .admin-destination-review .admin-destination-removals h3 {
+  color: #b42318;
+  font-weight: 600;
+}
+.admin-dialog .admin-destination-removals {
+  margin-top: 8px;
+}
+.admin-dialog .admin-destination-removals .admin-diff-badge {
+  border-color: #b42318;
+  color: #b42318;
+}
+@media (max-width: 600px) {
+  .admin-diff-blocks {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .admin-dialog:has(.admin-destination-review) .admin-actions > button {
+    width: 100%;
+  }
+}
+
+/* Instance health: availability, cleanup evidence and aggregate uncertainty. */
+.admin-health-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.admin-workspace .admin-health-heading h2 {
+  margin: 0;
+}
+.admin-health-status,
+.admin-health-cleanup,
+.admin-health-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: 16px 24px;
+  margin: 0;
+}
+.admin-health-status > div,
+.admin-health-cleanup > div,
+.admin-health-metrics > div {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+}
+.admin-health-status dt,
+.admin-health-cleanup dt,
+.admin-health-metrics dt {
+  color: #4e5968;
+  font-size: 14px;
+}
+.admin-health-status dd,
+.admin-health-cleanup dd,
+.admin-health-metrics dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.admin-health-status dd p {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+.admin-health-metrics dd {
+  font-size: 24px;
+  font-weight: 700;
+}
+.admin-health-costs,
+.admin-health-missing {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.admin-health-costs li {
+  overflow-wrap: anywhere;
+}
+.admin-health-missing {
+  display: grid;
+  gap: 4px;
+  margin-top: 16px;
+}
+.admin-health-callout {
+  background: #fff2d6;
+  color: #744500;
+  border: 1px solid #f1d28a;
+  border-radius: 8px;
+  padding: 16px;
+}
+.admin-health-callout p {
+  margin: 4px 0 0;
+}
+.admin-health-refresh-status:empty {
+  display: none;
+}
+.admin-health-skeleton {
+  padding: 24px;
+  color: #4e5968;
+  background: #f7f8fa;
+  border-radius: 12px;
+}
+.admin-health-updating {
+  opacity: 0.7;
+  transition: opacity 150ms ease;
+}
+.admin-health-card button[aria-disabled="true"] {
+  cursor: progress;
+}
+@media (max-width: 768px) {
+  .admin-health-status,
+  .admin-health-cleanup,
+  .admin-health-metrics {
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-health-updating {
+    transition: none;
+  }
+}
