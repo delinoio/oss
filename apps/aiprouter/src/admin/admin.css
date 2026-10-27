@@ -587,3 +587,82 @@
     width: 100%;
   }
 }
+
+/* Save destination policy review dialog. */
+.admin-dialog:has(.admin-destination-review) {
+  width: min(800px, calc(100vw - 32px));
+}
+.admin-dialog .admin-confirm-note {
+  margin: 16px 0 0;
+  color: #4e5968;
+  font-size: 14px;
+}
+.admin-dialog .admin-destination-review h3 {
+  margin: 24px 0 8px;
+  font-size: 16px;
+}
+.admin-dialog .admin-destination-review .admin-destination-notice h3 {
+  margin-top: 0;
+}
+.admin-dialog .admin-destination-review .admin-destination-notice {
+  margin-top: 16px;
+}
+.admin-destination-review-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.admin-destination-review-list > li {
+  border-top: 1px solid #d8dde5;
+  padding: 16px 0;
+}
+.admin-dialog .admin-destination-review-list p {
+  margin: 4px 0;
+}
+.admin-dialog .admin-destination-origin strong {
+  overflow-wrap: anywhere;
+}
+.admin-dialog .admin-destination-review .admin-destination-scope {
+  font-weight: 600;
+  color: #191f28;
+}
+.admin-diff-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border: 1px solid #8b95a1;
+  border-radius: 999px;
+  font-size: 14px;
+  color: #191f28;
+}
+.admin-destination-review-list > li[data-change="added"] .admin-diff-badge,
+.admin-destination-review-list > li[data-change="changed"] .admin-diff-badge {
+  border-color: #1d4ed8;
+  color: #1d4ed8;
+}
+.admin-diff-blocks {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 8px 0;
+}
+.admin-dialog .admin-destination-review .admin-destination-warning,
+.admin-dialog .admin-destination-review .admin-destination-removals h3 {
+  color: #b42318;
+  font-weight: 600;
+}
+.admin-dialog .admin-destination-removals {
+  margin-top: 8px;
+}
+.admin-dialog .admin-destination-removals .admin-diff-badge {
+  border-color: #b42318;
+  color: #b42318;
+}
+@media (max-width: 600px) {
+  .admin-diff-blocks {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .admin-dialog:has(.admin-destination-review) .admin-actions > button {
+    width: 100%;
+  }
+}
