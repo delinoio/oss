@@ -7,6 +7,7 @@ import { Card, Notice, PageHeader } from "../ui";
 import { useDirtyForm } from "../api";
 import {
   Confirm,
+  ConfirmFocus,
   Dialog,
   Empty,
   ErrorNotice,
@@ -109,6 +110,13 @@ export function Prices() {
   const [token, setToken] = useState("");
   const [editing, setEditing] = useState<PriceSnapshot>();
   const [deleting, setDeleting] = useState<PriceSnapshot>();
+  // Set after a confirmed deletion so focus moves to the page heading, because
+  // the deleted record's Delete button no longer exists to receive it.
+  const [deletedCount, setDeletedCount] = useState(0);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (deletedCount) headingRef.current?.focus();
+  }, [deletedCount]);
   const action = useAction(true);
   const query = useQuery(OperatorService.method.listPriceOverrides, {
     page: { pageSize: 100, pageToken: token },
@@ -118,6 +126,7 @@ export function Prices() {
     <>
       <PageHeader
         title={translate("priceOverrides")}
+        headingRef={headingRef}
         description={translate("commonPricesInCurrencyUnitsPerMillion")}
         action={
           <button
@@ -242,6 +251,10 @@ export function Prices() {
           revision={deleting.revision}
           action={action}
           onClose={() => setDeleting(undefined)}
+          onDeleted={() => {
+            setDeleting(undefined);
+            setDeletedCount((count) => count + 1);
+          }}
         />
       )}
     </>
@@ -420,11 +433,14 @@ function PriceDeletion({
   revision,
   action,
   onClose,
+  onDeleted,
 }: {
   price: PriceOverride;
   revision: string;
   action: ReturnType<typeof useAction>;
   onClose: () => void;
+  // Called only after the server confirmed the deletion.
+  onDeleted: () => void;
 }) {
   useLocale();
   const snapshot = usePriceRevision(
@@ -440,6 +456,7 @@ function PriceDeletion({
       name={price.modelId}
       pending={action.pending || snapshot.blocked}
       onClose={onClose}
+      initialFocus={ConfirmFocus.Input}
       action={() => {
         if (snapshot.blocked) return;
         void action.run(
@@ -448,11 +465,29 @@ function PriceDeletion({
               overrideId: price.id,
               expectedRevision: snapshot.revision,
             }),
-          { done: onClose, success: translate("priceOverrideDeleted") },
+          { done: onDeleted, success: translate("priceOverrideDeleted") },
         );
       }}
     >
-      <p>{translate("futureRequestsUseTheBundledPriceWhere")}</p>
+      <dl className="admin-price-delete-identity">
+        <div>
+          <dt>{translate("provider")}</dt>
+          <dd>{price.providerId}</dd>
+        </div>
+        <div>
+          <dt>{translate("model")}</dt>
+          <dd>{price.modelId}</dd>
+        </div>
+        <div>
+          <dt>{translate("serviceTier_e9cf60")}</dt>
+          <dd>{tierLabel(price.serviceTier)}</dd>
+        </div>
+        <div>
+          <dt>{translate("provenance")}</dt>
+          <dd>{translate("instanceOperatorOverride")}</dd>
+        </div>
+      </dl>
+      <p>{translate("futureRequestsUseAnyRemainingApplicableOverride")}</p>
       {!snapshot.conflicted && <ErrorNotice error={action.error} />}
       {snapshot.controls}
     </Confirm>

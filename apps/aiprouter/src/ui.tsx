@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type Ref,
   type ReactElement,
   type ComponentProps,
 } from "react";
@@ -57,16 +58,21 @@ export function PageHeader({
   title,
   description,
   action,
+  headingRef,
 }: {
   title: string;
   description?: ReactNode;
   action?: ReactNode;
+  // Optional ref that makes the h1 a programmatic focus target.
+  headingRef?: Ref<HTMLHeadingElement>;
 }) {
   useLocale();
   return (
     <header className="page-heading">
       <div>
-        <h1>{title}</h1>
+        <h1 ref={headingRef} tabIndex={headingRef ? -1 : undefined}>
+          {title}
+        </h1>
         {description && <p>{description}</p>}
       </div>
       {action}

@@ -1034,3 +1034,100 @@ describe("price conflict review panel", () => {
     expect(f.set).not.toHaveBeenCalled();
   });
 });
+describe("price deletion dialog", () => {
+  async function openDelete(overrides: Record<string, unknown>[]) {
+    const f = priceFixture({ overrides });
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: /^Delete override for/ }),
+    );
+    return { f, user, dialog: screen.getByRole("dialog") };
+  }
+  const definition = (dialog: HTMLElement, term: string) =>
+    within(dialog)
+      .getByText(term, { selector: "dt" })
+      .parentElement?.querySelector("dd")?.textContent;
+
+  it("identifies provider, model, tier and provenance and states the consequence", async () => {
+    const { dialog } = await openDelete([
+      identity("atlas-chat", "", { input: "1.25" }),
+    ]);
+    expect(
+      within(dialog).getByRole("heading", { name: "Delete price override" }),
+    ).toBeTruthy();
+    expect(definition(dialog, "Provider")).toBe("example-ai");
+    expect(definition(dialog, "Model")).toBe("atlas-chat");
+    expect(definition(dialog, "Service tier")).toBe("All tiers (fallback)");
+    expect(definition(dialog, "Provenance")).toBe("Instance operator override");
+    expect(
+      within(dialog).getByText(
+        "Future requests use any remaining applicable override, then bundled pricing where available. Cost remains unknown when required usage or prices are unavailable. Historical estimates remain unchanged.",
+      ),
+    ).toBeTruthy();
+  });
+  it("keeps the literal default tier distinct from the empty tier", async () => {
+    const { dialog } = await openDelete([identity("atlas-chat", "default")]);
+    expect(definition(dialog, "Service tier")).toBe("Tier: default");
+  });
+  it("focuses the typed confirmation input on open", async () => {
+    const { dialog } = await openDelete([identity("atlas-chat", "priority")]);
+    expect(document.activeElement).toBe(
+      within(dialog).getByLabelText("Type atlas-chat to confirm"),
+    );
+    expect(definition(dialog, "Service tier")).toBe("Tier: priority");
+  });
+  it("enables deletion only for the exact case-sensitive model name and sends only the override ID and revision", async () => {
+    const { f, user, dialog } = await openDelete([
+      identity("atlas-chat", "priority"),
+    ]);
+    const button = () =>
+      within(dialog).getByRole("button", {
+        name: "Delete price override",
+      }) as HTMLButtonElement;
+    const input = within(dialog).getByLabelText("Type atlas-chat to confirm");
+    expect(button().disabled).toBe(true);
+    for (const wrong of ["Atlas-Chat", "atlas", "atlas-chat ", " atlas-chat"]) {
+      await user.clear(input);
+      await user.type(input, wrong);
+      expect(button().disabled).toBe(true);
+    }
+    await user.clear(input);
+    await user.type(input, "atlas-chat");
+    expect(button().disabled).toBe(false);
+    await user.click(button());
+    await waitFor(() => expect(f.remove).toHaveBeenCalledTimes(1));
+    expect(f.remove.mock.lastCall?.[0]).toMatchObject({
+      overrideId: "atlas-chat-priority",
+      expectedRevision: "1",
+    });
+    expect(f.set).not.toHaveBeenCalled();
+  });
+  it("moves focus to the page heading and reports success after a confirmed deletion", async () => {
+    const { user, dialog } = await openDelete([identity("atlas-chat", "")]);
+    await user.type(
+      within(dialog).getByLabelText("Type atlas-chat to confirm"),
+      "atlas-chat",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Delete price override" }),
+    );
+    await screen.findByText("Price override deleted.");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole("heading", { level: 1, name: "Price overrides" }),
+    );
+  });
+  it("keeps the typed text and returns focus to the trigger when cancelled", async () => {
+    const { f, user, dialog } = await openDelete([identity("atlas-chat", "")]);
+    await user.type(
+      within(dialog).getByLabelText("Type atlas-chat to confirm"),
+      "atlas-chat",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(f.remove).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(
+      screen.getByRole("button", { name: /^Delete override for/ }),
+    );
+  });
+});

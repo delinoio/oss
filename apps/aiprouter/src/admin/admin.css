@@ -1118,3 +1118,24 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Delete price override dialog: record identity above the consequence copy. */
+.admin-price-delete-identity {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 24px;
+  margin: 0 0 16px;
+}
+.admin-price-delete-identity dt {
+  color: #4e5968;
+  font-size: 14px;
+}
+.admin-price-delete-identity dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 600px) {
+  .admin-price-delete-identity {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
