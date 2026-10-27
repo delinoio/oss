@@ -82,6 +82,8 @@ function fixture(
     invitations: Invitation[] | undefined;
     inviteError: Code | undefined;
     inviteGate: Promise<void> | undefined;
+    cancelInviteError: Code | undefined;
+    cancelInviteGate: Promise<void> | undefined;
   } = {
     name: organization.name,
     transfer: {
@@ -98,6 +100,8 @@ function fixture(
     invitations: undefined,
     inviteError: undefined,
     inviteGate: undefined,
+    cancelInviteError: undefined,
+    cancelInviteGate: undefined,
   };
   const mutations = {
     remove: rs.fn(),
@@ -109,6 +113,7 @@ function fixture(
     nominate: rs.fn(),
     update: rs.fn(),
     cancel: rs.fn(),
+    cancelInvite: rs.fn(),
   };
   const transport = createRouterTransport((router) => {
     router.service(AccountService, {
@@ -203,6 +208,13 @@ function fixture(
       },
       resendInvitation: () => {
         mutations.resend();
+        return {};
+      },
+      cancelInvitation: async (req) => {
+        mutations.cancelInvite(req);
+        await state.cancelInviteGate;
+        if (state.cancelInviteError !== undefined)
+          throw new ConnectError("cancel failed", state.cancelInviteError);
         return {};
       },
     });
@@ -826,6 +838,164 @@ describe("invitation list rendering", () => {
     expect(
       pendingFailed.getByRole("button", { name: "Cancel invitation" }),
     ).toBeTruthy();
+  });
+});
+describe("cancel invitation dialog", () => {
+  const open = async (
+    f: ReturnType<typeof fixture>,
+    overrides: MessageInitShape<typeof InvitationSchema> = {},
+  ) => {
+    f.state.invitations = [invitationRecord(overrides)];
+    await f.client.invalidateQueries();
+    const user = userEvent.setup();
+    const trigger = await screen.findByRole("button", {
+      name: "Cancel invitation",
+    });
+    await user.click(trigger);
+    return { user, trigger, dialog: await screen.findByRole("dialog") };
+  };
+  const confirmButton = (dialog: HTMLElement) =>
+    within(dialog).getByRole("button", {
+      name: "Confirm",
+    }) as HTMLButtonElement;
+  it("shows the specified copy, a compact width and a focused confirmation input", async () => {
+    const f = fixture({ section: "invitations" });
+    const { dialog } = await open(f);
+    const view = within(dialog);
+    expect(dialog.className).toContain("admin-dialog-compact");
+    expect(
+      view.getByRole("heading", { name: "Cancel invitation" }),
+    ).toBeTruthy();
+    expect(view.getByRole("button", { name: "Close dialog" })).toBeTruthy();
+    expect(
+      view.getByText(
+        "The invitation link for alex@example.test will stop working.",
+      ),
+    ).toBeTruthy();
+    const input = view.getByRole("textbox", {
+      name: "Type alex@example.test to confirm",
+    });
+    expect(document.activeElement).toBe(input);
+    expect(input.getAttribute("aria-describedby")).toBeTruthy();
+    expect(
+      view.getByText("Enter the email address exactly as shown."),
+    ).toBeTruthy();
+    expect(confirmButton(dialog).disabled).toBe(true);
+    expect(view.getByRole("button", { name: "Cancel" })).toBeTruthy();
+  });
+  it("requires an exact byte-for-byte match before one cancel request", async () => {
+    const f = fixture({ section: "invitations" });
+    const { user, dialog } = await open(f);
+    const input = within(dialog).getByRole("textbox");
+    for (const wrong of [
+      "alex@example.tes",
+      "Alex@example.test",
+      "alex@example.test ",
+      " alex@example.test",
+    ]) {
+      await user.clear(input);
+      await user.type(input, wrong);
+      expect(confirmButton(dialog).disabled).toBe(true);
+      await user.keyboard("{Enter}");
+      expect(f.mutations.cancelInvite).not.toHaveBeenCalled();
+    }
+    await user.clear(input);
+    await user.type(input, "alex@example.test");
+    expect(confirmButton(dialog).disabled).toBe(false);
+    await user.click(confirmButton(dialog));
+    await screen.findByText("Invitation canceled.");
+    expect(f.mutations.cancelInvite).toHaveBeenCalledTimes(1);
+    expect(f.mutations.cancelInvite).toHaveBeenCalledWith(
+      expect.objectContaining({ organizationId: "org-a", invitationId: "inv" }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  it("blocks duplicate submission and keeps dismissal usable while pending", async () => {
+    const f = fixture({ section: "invitations" });
+    let release!: () => void;
+    f.state.cancelInviteGate = new Promise<void>(
+      (resolve) => (release = resolve),
+    );
+    const { user, dialog } = await open(f);
+    await user.type(within(dialog).getByRole("textbox"), "alex@example.test");
+    await user.click(confirmButton(dialog));
+    await screen.findAllByText(
+      "Saving… Closing a dialog does not cancel a submitted change.",
+    );
+    expect(confirmButton(dialog).disabled).toBe(true);
+    await user.type(within(dialog).getByRole("textbox"), "{Enter}");
+    expect(
+      (
+        within(dialog).getByRole("button", { name: "Cancel" }) as HTMLElement
+      ).hasAttribute("disabled"),
+    ).toBe(false);
+    release();
+    await screen.findByText("Invitation canceled.");
+    expect(f.mutations.cancelInvite).toHaveBeenCalledTimes(1);
+  });
+  it("retains the typed email after a recoverable failure", async () => {
+    const f = fixture({ section: "invitations" });
+    f.state.cancelInviteError = Code.Unavailable;
+    const { user, dialog } = await open(f);
+    const input = within(dialog).getByRole("textbox") as HTMLInputElement;
+    await user.type(input, "alex@example.test");
+    await user.click(confirmButton(dialog));
+    await waitFor(() =>
+      expect(f.mutations.cancelInvite).toHaveBeenCalledTimes(1),
+    );
+    await waitFor(() => expect(confirmButton(dialog).disabled).toBe(false));
+    expect(screen.queryByText("Invitation canceled.")).toBeNull();
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    expect(input.value).toBe("alex@example.test");
+  });
+  it("traps Tab, closes on Escape without a request and returns focus to the trigger", async () => {
+    const f = fixture({ section: "invitations" });
+    const { user, trigger, dialog } = await open(f);
+    const view = within(dialog);
+    view.getByRole("button", { name: "Cancel" }).focus();
+    await user.tab();
+    expect(document.activeElement).toBe(
+      view.getByRole("button", { name: "Close dialog" }),
+    );
+    await user.tab({ shift: true });
+    expect(document.activeElement).toBe(
+      view.getByRole("button", { name: "Cancel" }),
+    );
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    expect(f.mutations.cancelInvite).not.toHaveBeenCalled();
+  });
+  it("falls back to the page heading when polling removed the trigger", async () => {
+    const f = fixture({ section: "invitations" });
+    const { user, dialog } = await open(f);
+    f.state.invitations = [
+      invitationRecord({ state: LifecycleState.CANCELED }),
+    ];
+    await f.client.invalidateQueries();
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("button", { name: "Cancel invitation" }),
+      ).toBeNull(),
+    );
+    expect(screen.getByRole("dialog")).toBeTruthy();
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole("heading", { level: 1, name: "Invitations" }),
+    );
+  });
+  it("leaves other Confirm consumers on Cancel-first focus", async () => {
+    fixture();
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: "Remove Member person" }),
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(document.activeElement).toBe(
+      within(dialog).getByRole("button", { name: "Cancel" }),
+    );
+    expect(dialog.className).not.toContain("admin-dialog-compact");
   });
 });
 describe("operator boundary and unknown values", () => {

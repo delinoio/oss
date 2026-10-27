@@ -441,6 +441,7 @@ export function Invitations() {
         <Dialog
           title={translate("inviteMember")}
           size={DialogSize.Compact}
+          headingFallback
           onClose={() => setOpen(false)}
         >
           <form
@@ -505,6 +506,12 @@ export function Invitations() {
         <Confirm
           title={translate("cancelInvitation")}
           name={cancel.email}
+          helper={translate("enterTheEmailAddressExactlyAs")}
+          initialFocus={ConfirmFocus.Input}
+          size={DialogSize.Compact}
+          confirmLabel={translate("confirm")}
+          pendingStatus
+          headingFallback
           pending={action.pending}
           onClose={() => setCancel(undefined)}
           action={() =>
@@ -518,6 +525,9 @@ export function Invitations() {
             )
           }
         >
+          <p>
+            <strong>{cancel.email}</strong>
+          </p>
           <p>
             {translate("theInvitationLinkForWillStopWorking", {
               value0: cancel.email,

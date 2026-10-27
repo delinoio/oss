@@ -1208,5 +1208,6 @@
   "theyMustSignInWithThis": "They must sign in with this verified email address.",
   "message_f2ebd8cccf": "Role: Member.",
   "promotionToAdministratorIsManagedSeparately": "Promotion to administrator is managed separately by an owner.",
-  "invitationLinksExpireAfterSevenDays": "Invitation links expire after seven days. Creating an invitation starts delivery; it does not confirm that an email was sent."
+  "invitationLinksExpireAfterSevenDays": "Invitation links expire after seven days. Creating an invitation starts delivery; it does not confirm that an email was sent.",
+  "enterTheEmailAddressExactlyAs": "Enter the email address exactly as shown."
 }
