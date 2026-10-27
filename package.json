@@ -22,7 +22,8 @@
     "proto:fresh": "turbo run ci:proto:fresh --filter=@delinoio/ci",
     "proto:check": "turbo run ci:proto:check --filter=@delinoio/ci",
     "dev:async-commit-hook": "pnpm --filter async-commit-hook dev",
-    "format:check": "turbo run ci:format --filter=@delinoio/ci"
+    "format:check": "turbo run ci:format --filter=@delinoio/ci",
+    "dev:labs-site": "pnpm --filter labs-site dev"
   },
   "pnpm": {
     "overrides": {

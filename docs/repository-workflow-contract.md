@@ -621,3 +621,7 @@ The shared release planner exports `cargo_publish` from the central project poli
 The coordinator resolves it before configuration validation and version commits,
 then uses it to select Cargo registry credentials, Rust setup, caching and
 publication. Non-Cargo projects still validate their immutable source and tag.
+
+## labs-site validation
+
+The central `node-labs-site-test` job owns `apps/labs-site/**` and its project/foundation contracts. It uses one frozen script-disabled workspace install and the shared affected runner with the exact planner comparison to run `labs-site test` on Ubuntu. Shared workspace and development-wrapper inputs force validation. The final CI result includes this job. PRs, main pushes, and manual dispatch retain affected selection and existing native platform restrictions. This job validates TypeScript and the static production build; it does not publish to Cloudflare Pages or establish domain, DNS, TLS, or production HTTP acceptance. See [the labs-site foundation](apps-labs-site-foundation.md).

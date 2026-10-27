@@ -40,6 +40,7 @@ const legacyJobs = [
   "rust-test",
   "linux-packages",
   "node-public-docs-test",
+  "node-labs-site-test",
   "node-clibox-test",
   "node-pnport-test",
   "pnport-native",

@@ -50,6 +50,7 @@ enum ProjectId {
   Rustia = "rustia",
   Jsonllm = "jsonllm",
   PublicDocs = "public-docs",
+  LabsSite = "labs-site",
   AsyncCommitHook = "async-commit-hook",
 }
 ```

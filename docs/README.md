@@ -96,6 +96,11 @@ Record new implementation status, validation results and unresolved limits in pu
 - [cmds-runmoor-foundation.md](cmds-runmoor-foundation.md)
 - [apps-runmoor-docs-foundation.md](apps-runmoor-docs-foundation.md) (`apps/public-docs/docs/runmoor`, canonical URL `https://oss.delino.io/runmoor`, routes published below `/runmoor`: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/host`, `/operations`)
 
+### labs-site
+
+- [Project index](project-labs-site.md)
+- [Marketing site foundation](apps-labs-site-foundation.md) (`apps/labs-site`, canonical URL `https://labs.delino.io`)
+
 ### public-docs
 
 - [project-public-docs.md](project-public-docs.md)

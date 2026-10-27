@@ -1,0 +1,19 @@
+{
+  "name": "labs-site",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node ../../scripts/run-rsbuild-dev.mjs labs-site 46312",
+    "build": "rsbuild build",
+    "preview": "rsbuild preview --host 127.0.0.1 --port 46313 --strict-port",
+    "typecheck": "tsc --noEmit",
+    "lint": "pnpm typecheck",
+    "test": "pnpm typecheck && pnpm build"
+  },
+  "devDependencies": {
+    "@rsbuild/core": "2.1.10",
+    "typescript": "5.9.3"
+  }
+}
