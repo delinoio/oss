@@ -319,7 +319,9 @@ describe("account and onboarding", () => {
       const link = screen.getByRole("link", {
         name: "Continue with your identity provider",
       });
-      expect(link.getAttribute("href")).toBe("/auth/login?return_to=%2F");
+      expect(link.getAttribute("href")).toBe(
+        "/auth/login?return_to=%2Foverview",
+      );
       expect(container.querySelectorAll("a")).toHaveLength(1);
       expect(container.querySelectorAll("input, select, button")).toHaveLength(
         0,
@@ -400,7 +402,7 @@ describe("account and onboarding", () => {
     });
 
     it.each([
-      [undefined, "", "%2F"],
+      [undefined, "", "%2Foverview"],
       ["/device?code=fictional", "", "%2Fdevice%3Fcode%3Dfictional"],
       [
         undefined,
@@ -408,9 +410,9 @@ describe("account and onboarding", () => {
         "%2Fdevice%3Fcode%3Dfictional",
       ],
       ["/device", "?return_to=/other", "%2Fdevice"],
-      ["//external.example", "", "%2F"],
-      ["https://external.example", "", "%2F"],
-      ["/a\\b", "", "%2F"],
+      ["//external.example", "", "%2Foverview"],
+      ["https://external.example", "", "%2Foverview"],
+      ["/a\\b", "", "%2Foverview"],
     ])(
       "builds the href for returnTo %s and query %s",
       (returnTo, query, encoded) => {
