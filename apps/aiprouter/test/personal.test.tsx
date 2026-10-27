@@ -1092,7 +1092,7 @@ describe("provider OAuth setup dialog", () => {
     expect(advanced.textContent).toContain(
       "Regional and advanced provider settings",
     );
-    const footer = dialog.querySelector(".oauth-footer")!;
+    const footer = dialog.querySelector(".oauth-setup-footer")!;
     expect(within(footer as HTMLElement).getAllByRole("button")).toHaveLength(
       2,
     );
