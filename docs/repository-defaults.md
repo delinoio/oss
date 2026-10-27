@@ -52,7 +52,6 @@ enum ProjectId {
   Jsonllm = "jsonllm",
   PublicDocs = "public-docs",
   AsyncCommitHook = "async-commit-hook",
-  Forge = "forge",
 }
 ```
 

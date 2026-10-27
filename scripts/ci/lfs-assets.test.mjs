@@ -29,18 +29,9 @@ const assetExtensions = new Set([
   ".xlsx",
   ".zip",
 ]);
-const lfsAssets = [
-  "crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf",
-];
+const lfsAssets = [];
 const hydratedJobs = {
-  "CI.yml": [
-    "go-quality",
-    "go-test",
-    "rust-clippy",
-    "rust-test",
-    "forge-test",
-    "forge-render",
-  ],
+  "CI.yml": ["go-quality", "go-test", "rust-clippy", "rust-test"],
   "release-async-commit-hook.yml": ["validate"],
 };
 

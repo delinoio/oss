@@ -96,7 +96,6 @@ export function matricesForEvent(event, mode = Mode.Affected) {
         (row) => !row.os.startsWith("macos"),
       ),
     },
-    forgeMatrix: hosts("ubuntu-latest"),
     cliboxMatrix: hosts("ubuntu-22.04"),
     pnportMatrix: {
       include: pnportMatrix.include.filter(
@@ -262,7 +261,6 @@ export function main(env = process.env) {
   const outputs = {
     mode,
     main_sha: mainSha ?? "",
-    forge_matrix: JSON.stringify(matrices.forgeMatrix),
     clibox_matrix: JSON.stringify(matrices.cliboxMatrix),
     base: range.base,
     head: range.head,

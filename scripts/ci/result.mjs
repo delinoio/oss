@@ -20,7 +20,6 @@ export function validateResults(needs) {
     throw new Error("Rust package selection differs from the planned jobs");
   const matrices = matricesForEvent(event, mode);
   for (const [output, matrix] of [
-    ["forge_matrix", matrices.forgeMatrix],
     ["clibox_matrix", matrices.cliboxMatrix],
     ["pnport_matrix", matrices.pnportMatrix],
     ["go_test_matrix", matrices.goTestMatrix],
