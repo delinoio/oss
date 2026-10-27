@@ -29,7 +29,13 @@ import { timestampDate, type Timestamp } from "@bufbuild/protobuf/wkt";
 
 export const permissionMessage = () =>
   translate("yourPermissionsChangedThisActionIsNo");
-export const AdminAuthority = createContext({
+export const AdminAuthority = createContext<{
+  organizationId: string;
+  role: Role;
+  onDenied: () => void;
+  // Display-only scope context. It never grants authority.
+  organizationName?: string;
+}>({
   organizationId: "",
   role: Role.UNSPECIFIED,
   onDenied: () => {},
@@ -252,16 +258,19 @@ export function useAction(operator = false) {
 
 // Dialog widths. Standard keeps the original 560px maximum; Wide is the 600px
 // maximum used by consequence-heavy confirmations; Compact is the 520px maximum
-// used by single-field dialogs. All keep a 16px gutter.
+// used by single-field dialogs; Large is the 640px maximum used by the Remove
+// member confirmation. All keep a 16px gutter.
 export enum DialogSize {
   Standard = "standard",
   Wide = "wide",
   Compact = "compact",
+  Large = "large",
 }
 const dialogClassNames: Record<DialogSize, string> = {
   [DialogSize.Standard]: "admin-dialog",
   [DialogSize.Wide]: "admin-dialog admin-dialog-wide",
   [DialogSize.Compact]: "admin-dialog admin-dialog-compact",
+  [DialogSize.Large]: "admin-dialog admin-dialog-large",
 };
 export function Dialog({
   title,

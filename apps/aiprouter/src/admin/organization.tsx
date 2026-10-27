@@ -38,11 +38,12 @@ import {
 
 export function Members() {
   useLocale();
-  const { organizationId, role } = useContext(AdminAuthority);
+  const { organizationId, role, organizationName } = useContext(AdminAuthority);
   const transport = useTransport();
   const [token, setToken] = useState("");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Member>();
+  const searchHelperId = useId();
   const query = useQuery(MembershipService.method.listMembers, {
     organizationId,
     page: { pageSize: 100, pageToken: token },
@@ -72,6 +73,8 @@ export function Members() {
         Code.PermissionDenied,
       );
   }
+  // Page-local filter: case-insensitive substring over the loaded page only.
+  // The query is intentionally not trimmed or reinterpreted.
   const members =
     query.data?.members.filter((m) =>
       `${m.displayName} ${m.email}`
@@ -86,16 +89,28 @@ export function Members() {
           "manageMembershipPersonalCredentialsAndRequestContent",
         )}
       />
-      {action.feedback}
-      <Card>
+      {organizationName && (
+        <p className="admin-quiet admin-members-context">
+          {translate("organizationMembersIn", { value0: organizationName })}
+        </p>
+      )}
+      {/* While the removal dialog is open it owns the error and pending
+          announcements, so the same message is not announced twice. */}
+      {!selected && action.feedback}
+      <Card className="admin-members-card">
         <label>
           {translate("searchThisPage")}
           <input
             type="search"
+            placeholder={translate("searchNameOrEmail")}
+            aria-describedby={searchHelperId}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
+        <p id={searchHelperId} className="admin-helper">
+          {translate("searchAppliesOnlyToTheLoaded")}
+        </p>
         {search && (
           <button onClick={() => setSearch("")}>
             {translate("clearFilters")}
@@ -107,58 +122,97 @@ export function Members() {
           <ErrorNotice error={query.error} retry={() => void query.refetch()} />
         ) : (
           <>
-            <div className="admin-records">
-              {members.map((member) => (
-                <article className="admin-record" key={member.userId}>
-                  <div>
-                    <h2>{member.displayName || member.email}</h2>
-                    <p>{member.email}</p>
-                    <span className="admin-badge">
-                      {label(Role[member.role])}
-                    </span>
-                    <p>
-                      {translate("joined", { value0: date(member.joinedAt) })}
-                    </p>
-                  </div>
-                  <div className="admin-actions">
-                    {role === Role.OWNER && member.role !== Role.OWNER && (
-                      <button
-                        disabled={action.pending}
-                        onClick={() =>
-                          void action.run(
-                            async () => {
-                              await checkTarget(member);
-                              await change.mutateAsync({
-                                organizationId,
-                                userId: member.userId,
-                                role:
-                                  member.role === Role.ADMINISTRATOR
-                                    ? Role.MEMBER
-                                    : Role.ADMINISTRATOR,
-                              });
-                            },
-                            { owner: true },
-                          )
-                        }
-                      >
-                        {member.role === Role.ADMINISTRATOR
-                          ? translate("makeMember")
-                          : translate("makeAdministrator")}
-                      </button>
-                    )}
-                    {canRemove(role, member.role) && (
-                      <button
-                        className="admin-danger-outline"
-                        onClick={() => setSelected(member)}
-                      >
-                        {translate("remove_3028bf", {
-                          value0: member.displayName || member.email,
-                        })}
-                      </button>
-                    )}
-                  </div>
-                </article>
-              ))}
+            {members.length > 0 && (
+              <div className="admin-members-columns" aria-hidden="true">
+                <span>{translate("member")}</span>
+                <span>{translate("role")}</span>
+                <span>{translate("message_69318b0c6a")}</span>
+                <span>{translate("actions")}</span>
+              </div>
+            )}
+            <div className="admin-records admin-members-list">
+              {members.map((member) => {
+                const identity = member.displayName || member.email;
+                const canChangeRole =
+                  role === Role.OWNER && member.role !== Role.OWNER;
+                const canDelete = canRemove(role, member.role);
+                const roleLabel =
+                  member.role === Role.ADMINISTRATOR
+                    ? translate("makeMember")
+                    : translate("makeAdministrator");
+                return (
+                  <article
+                    className="admin-record admin-member"
+                    key={member.userId}
+                  >
+                    <div className="admin-member-identity">
+                      <h2>{identity}</h2>
+                      {/* The email is the heading when no display name exists,
+                          so it is not repeated beneath it. */}
+                      {member.displayName && <p>{member.email}</p>}
+                    </div>
+                    <div className="admin-member-role">
+                      <span className="admin-member-label">
+                        {translate("role")}
+                      </span>
+                      <span className="admin-badge">
+                        {label(Role[member.role])}
+                      </span>
+                    </div>
+                    <div className="admin-member-joined">
+                      <span className="admin-member-label">
+                        {translate("message_69318b0c6a")}
+                      </span>
+                      <span>{date(member.joinedAt)}</span>
+                    </div>
+                    <div
+                      className="admin-actions admin-member-actions"
+                      role={canChangeRole || canDelete ? "group" : undefined}
+                      aria-label={
+                        canChangeRole || canDelete
+                          ? translate("actionsFor", { value0: identity })
+                          : undefined
+                      }
+                    >
+                      {canChangeRole && (
+                        <button
+                          disabled={action.pending}
+                          aria-label={translate("message_6a776812d7", {
+                            value0: roleLabel,
+                            value1: identity,
+                          })}
+                          onClick={() =>
+                            void action.run(
+                              async () => {
+                                await checkTarget(member);
+                                await change.mutateAsync({
+                                  organizationId,
+                                  userId: member.userId,
+                                  role:
+                                    member.role === Role.ADMINISTRATOR
+                                      ? Role.MEMBER
+                                      : Role.ADMINISTRATOR,
+                                });
+                              },
+                              { owner: true },
+                            )
+                          }
+                        >
+                          {roleLabel}
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          className="admin-danger-outline"
+                          onClick={() => setSelected(member)}
+                        >
+                          {translate("remove_3028bf", { value0: identity })}
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
             {!members.length && (
               <Empty>
@@ -179,6 +233,11 @@ export function Members() {
         <Confirm
           title={translate("removeMember")}
           name={selected.displayName || selected.email}
+          helper={translate("theNameMustMatchExactly")}
+          initialFocus={ConfirmFocus.Input}
+          size={DialogSize.Large}
+          pendingStatus
+          headingFallback
           pending={action.pending}
           onClose={() => setSelected(undefined)}
           action={() =>
@@ -197,12 +256,20 @@ export function Members() {
             )
           }
         >
-          <p>
-            {translate("removeTheirOrganizationKeysStopWorkingImmediately", {
-              value0: selected.displayName || selected.email,
-            })}
-          </p>
-          <p>{translate("usageRemainsSubjectToRetentionAlreadyDispatched")}</p>
+          <div className="admin-member-summary">
+            <strong>{selected.displayName || selected.email}</strong>
+            {selected.displayName && <span>{selected.email}</span>}
+          </div>
+          <div className="admin-consequences">
+            <p>
+              {translate("removeTheirOrganizationKeysStopWorkingImmediately", {
+                value0: selected.displayName || selected.email,
+              })}
+            </p>
+            <p>
+              {translate("usageRemainsSubjectToRetentionAlreadyDispatched")}
+            </p>
+          </div>
           <ErrorNotice error={action.error} />
         </Confirm>
       )}
