@@ -570,6 +570,14 @@ it("keeps the draft and original revision across refetches and recovers only aft
   expect(screen.queryByText(/network entries/)).toBeNull();
   expect(f.update).toHaveBeenCalledTimes(1);
   expect(f.update.mock.lastCall?.[0].expectedRevision).toBe("1");
+  // The conflicted review cannot resubmit the stale revision, even by form
+  // submission, until an explicit reload and a new review.
+  const blocked = within(dialog).getByRole("button", {
+    name: "Reduce retention",
+  }) as HTMLButtonElement;
+  expect(blocked.disabled).toBe(true);
+  fireEvent.submit(blocked.closest("form")!);
+  expect(f.update).toHaveBeenCalledTimes(1);
   expect(
     (screen.getByRole("spinbutton", { name: names.audit }) as HTMLInputElement)
       .value,

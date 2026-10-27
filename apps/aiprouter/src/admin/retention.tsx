@@ -157,7 +157,9 @@ export function RetentionForm({
     });
   }
   function save() {
-    if (!valid || action.pending) return;
+    // A conflicted or reloading draft must be reviewed again before another
+    // mutation can use the stale revision.
+    if (!valid || action.pending || reloading || conflict) return;
     const next = build();
     setReloaded(false);
     void action.run(
@@ -374,8 +376,10 @@ export function RetentionForm({
       {review && valid && saved && (
         <Confirm
           title={translate("reduceRetention")}
-          pending={action.pending}
-          pendingLabel={translate("message_23e39291d6")}
+          pending={action.pending || reloading || conflict}
+          pendingLabel={
+            action.pending ? translate("message_23e39291d6") : undefined
+          }
           onClose={() => setReview(false)}
           action={save}
         >
