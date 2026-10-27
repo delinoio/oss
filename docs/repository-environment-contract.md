@@ -8,11 +8,15 @@ User-owned credentials stay in the owning local mechanism. They must not enter r
 
 ## Local development
 
+Use `pnpm dev:labs-docs` for the independent Labs site at `127.0.0.1:46303`. Package preview uses `127.0.0.1:46304`. Port conflicts fail; no secret or environment input is required. Follow [the Labs app contract](apps-labs-docs-foundation.md).
+
 Use `pnpm dev:public-docs` for the consolidated documentation site at `127.0.0.1:46302`. Port conflicts fail instead of selecting another port. Follow `apps-public-docs-foundation.md` for wrapper and shutdown behavior.
 
 Use `pnpm dev:async-commit-hook` for the application frontend. Its development frontend uses fixed port `46308`; the local UI/API uses configurable `api_port`, default `46309`. No root team or OSS dependency orchestrator is required.
 
 The shared `scripts/dev-environment/process.mjs` helper retains argv-based command invocation and bounded platform/tool environment construction for development wrappers. Spawn children with explicit argument arrays and `shell: false`. Windows pnpm shims use explicit `cmd.exe` invocation. Forward termination signals and wait for process trees to exit.
+
+Use `pnpm dev:labs-site` for the static marketing site at `127.0.0.1:46312`. The app uses the shared strict-port development wrapper and requires no service secrets. See [the labs-site foundation](apps-labs-site-foundation.md).
 
 ## Native CLI repository publication
 

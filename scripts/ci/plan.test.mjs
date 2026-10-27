@@ -1307,3 +1307,26 @@ test("AIPRouter shared Go libraries and fixtures select Go validation", () => {
     }
   }
 });
+
+test("Labs docs own their app and force external build inputs on all CI events", () => {
+  const id = "node-labs-docs-test";
+  for (const event of Object.values(Event)) {
+    const local = planJobs(event, ["apps/labs-docs/docs/index.md"]);
+    assert.equal(local.jobs[id], true);
+    assert.equal(local.forced[id], false);
+    for (const path of [
+      "docs/apps-labs-docs-foundation.md",
+      "scripts/run-rspress-port.mjs",
+      "pnpm-lock.yaml",
+    ]) {
+      const plan = planJobs(event, [path]);
+      assert.equal(plan.jobs[id], true);
+      assert.equal(plan.forced[id], true);
+    }
+    assert.equal(
+      planJobs(event, ["apps/public-docs/docs/index.md"]).jobs[id],
+      false,
+    );
+    assert.equal(planJobs(event, ["docs/project-rustia.md"]).jobs[id], false);
+  }
+});

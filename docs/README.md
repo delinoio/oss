@@ -34,7 +34,7 @@ Record new implementation status, validation results and unresolved limits in pu
 - Do not arbitrarily omit, delete, or simplify requested or source-backed content during documentation edits unless the user explicitly asks for that outcome.
 - If documentation content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret.
 - Update or create the relevant `AGENTS.md` in the same change only when development procedures, directory ownership or repository/domain development rules change; follow the [instruction-update policy](#instruction-update-policy).
-- `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Public documentation is owned and built by `apps/public-docs`; the project content roots are `apps/public-docs/docs/{runmoor,nodeup,binpm,async-commit-hook,clibox,pnport,aiprouter}`. Those pages must curate from these contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
+- `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Consolidated OSS public documentation is owned and built by `apps/public-docs`; the project content roots are `apps/public-docs/docs/{runmoor,nodeup,binpm,async-commit-hook,clibox,pnport,aiprouter}`. Those pages must curate from these contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow. Independent Labs documentation is owned by `apps/labs-docs`; its public-content boundary is defined in [the Labs app contract](apps-labs-docs-foundation.md).
 
 ## Naming Rules
 
@@ -109,6 +109,16 @@ Record new implementation status, validation results and unresolved limits in pu
 - [project-runmoor.md](project-runmoor.md)
 - [cmds-runmoor-foundation.md](cmds-runmoor-foundation.md)
 - [apps-runmoor-docs-foundation.md](apps-runmoor-docs-foundation.md) (`apps/public-docs/docs/runmoor`, canonical URL `https://oss.delino.io/runmoor`, routes published below `/runmoor`: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/host`, `/operations`)
+
+### labs-site
+
+- [Project index](project-labs-site.md)
+- [Marketing site foundation](apps-labs-site-foundation.md) (`apps/labs-site`, canonical URL `https://labs.delino.io`)
+
+### labs-docs
+
+- [Project index](project-labs-docs.md)
+- [Labs documentation foundation](apps-labs-docs-foundation.md) (standalone Rspress site at `https://docs.labs.delino.io`)
 
 ### public-docs
 

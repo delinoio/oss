@@ -1,0 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
+name = "labs-site"
+pages_build_output_dir = "./dist"
+compatibility_date = "2026-10-27"

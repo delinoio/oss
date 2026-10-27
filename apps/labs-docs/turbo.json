@@ -1,0 +1,22 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "ci:routes": {
+      "cache": true,
+      "dependsOn": ["build:frontend"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/docs/apps-labs-docs-foundation.md"
+      ],
+      "outputs": [],
+      "env": ["CI_CACHE_CONTEXT"]
+    },
+    "ci:check": {
+      "cache": false,
+      "dependsOn": ["ci:routes"]
+    },
+    "test": {
+      "cache": false
+    }
+  }
+}
