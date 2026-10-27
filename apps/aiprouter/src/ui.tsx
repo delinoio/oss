@@ -188,7 +188,7 @@ export function Dialog({
   onClose,
   initialFocus,
   wide = false,
-  className,
+  className = "",
 }: {
   title: string;
   children: ReactNode;
@@ -328,15 +328,23 @@ export function Pagination({
 export function CopyButton({
   value,
   label = translate("copy"),
+  statusId,
+  className,
 }: {
   value: string;
   label?: string;
+  /** Optional id for the status region; the button is described by it. */
+  statusId?: string;
+  /** Optional extra class for the button. */
+  className?: string;
 }) {
   useLocale();
   const [message, setMessage] = useState("");
   return (
     <>
       <Button
+        className={className}
+        aria-describedby={statusId}
         onClick={() => {
           void navigator.clipboard.writeText(value).then(
             () => setMessage(translate("copied")),
@@ -346,7 +354,9 @@ export function CopyButton({
       >
         {label}
       </Button>
-      <span role="status">{message}</span>
+      <span role="status" id={statusId} className="copy-status">
+        {message}
+      </span>
     </>
   );
 }
