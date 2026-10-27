@@ -164,7 +164,9 @@ it.each(["limits", "retention"] as const)(
     await user.clear(input);
     await user.type(input, section === "limits" ? "200" : "40");
     await user.click(
-      screen.getByRole("button", { name: "Review and save changes" }),
+      screen.getByRole("button", {
+        name: section === "limits" ? "Save changes" : "Review and save changes",
+      }),
     );
     await waitFor(() => expect(f.update).toHaveBeenCalledTimes(1));
     expect(f.update.mock.lastCall?.[0].settings?.allowedDestinations).toEqual([
