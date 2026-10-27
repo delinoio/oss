@@ -26,6 +26,7 @@ import {
 } from "@tairouter/client";
 import { useEffect, useState, type ReactNode } from "react";
 import { ApiProvider, DirtyContext } from "../api";
+import { pageHref } from "../routes";
 import {
   AccountPage,
   DevicePage,
@@ -1940,5 +1941,490 @@ describe("onboarding navigation guards", () => {
     ).toBe("Keep this draft");
     expect(unloadIsBlocked()).toBe(true);
     expect(navigation).not.toHaveBeenCalled();
+  });
+});
+
+describe("onboarding page redesign", () => {
+  const invitation = (id: string, organizationName: string) => ({
+    id,
+    organizationName,
+    email: session.email,
+  });
+  const emptyInvitations = () => ({ invitations: [] });
+  const nameField = () => screen.getByLabelText("Organization name");
+  const createButton = () =>
+    screen.getByRole("button", { name: /^(Create organization|Creating…)$/ });
+
+  it("renders the invitations card, create card and ordered setup guide in reading order", async () => {
+    mount(<OnboardingPage />, (router) => {
+      router.service(InvitationService, {
+        listMyInvitations: emptyInvitations,
+      });
+    });
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
+      "Choose your organization",
+    );
+    screen.getByText(
+      "Create an organization or accept an invitation to get started.",
+    );
+    const headings = screen
+      .getAllByRole("heading", { level: 2 })
+      .map((heading) => heading.textContent);
+    expect(headings).toEqual([
+      "Your invitations",
+      "Create organization",
+      "Your setup guide",
+    ]);
+    const surface = document.querySelector(".account-surface");
+    expect(surface?.classList.contains("onboarding-surface")).toBe(true);
+    const steps = screen
+      .getAllByRole("listitem")
+      .filter((item) => item.closest("ol"));
+    expect(steps.map((item) => item.firstElementChild?.textContent)).toEqual([
+      "Choose organization",
+      "Connect personal providers",
+      "Configure models and routing",
+      "Create API key",
+      "Connect a client",
+    ]);
+    expect(steps[0].textContent).toContain("Current step");
+    expect(steps[0].getAttribute("aria-current")).toBe("step");
+    for (const step of steps.slice(1)) {
+      expect(step.textContent).not.toContain("Current step");
+      expect(step.getAttribute("aria-current")).toBeNull();
+    }
+    expect(
+      document.querySelectorAll(
+        ".onboarding-guide a, .onboarding-guide button",
+      ),
+    ).toHaveLength(0);
+    await screen.findByText("No pending invitations.");
+  });
+
+  it("lists invitations semantically with unique encoded review links", async () => {
+    mount(<OnboardingPage />, (router) => {
+      router.service(InvitationService, {
+        listMyInvitations: () => ({
+          invitations: [
+            invitation("inv/one two", "Acme Studio 한국"),
+            invitation("inv-two", "Beta Labs"),
+          ],
+        }),
+      });
+    });
+    const list = await screen
+      .findByRole("list", { name: "" })
+      .catch(() => null);
+    expect(list).not.toBeNull();
+    const links = await screen.findAllByRole("link", {
+      name: /^Review invitation/,
+    });
+    expect(links.map((link) => link.getAttribute("aria-label"))).toEqual([
+      "Review invitation for Acme Studio 한국",
+      "Review invitation for Beta Labs",
+    ]);
+    expect(links.map((link) => link.getAttribute("href"))).toEqual([
+      "/invitation?invitation_id=inv%2Fone%20two",
+      "/invitation?invitation_id=inv-two",
+    ]);
+    expect(
+      screen.getByRole("link", { name: "Review invitation for Beta Labs" }),
+    ).toBeDefined();
+    screen.getByText("Acme Studio 한국");
+    expect(screen.queryByText("No pending invitations.")).toBeNull();
+    expect(screen.queryByRole("button", { name: /Load more/ })).toBeNull();
+    expect(
+      screen
+        .getByRole("link", { name: "Enter an invitation" })
+        .getAttribute("href"),
+    ).toBe("/invitation");
+  });
+
+  it("shows the empty state with manual entry help and no create call", async () => {
+    const createOrg = rs.fn();
+    mount(<OnboardingPage />, (router) => {
+      router.service(OrganizationService, { createOrganization: createOrg });
+      router.service(InvitationService, {
+        listMyInvitations: emptyInvitations,
+      });
+    });
+    await screen.findByText("No pending invitations.");
+    screen.getByText(
+      "Open the invitation link from your email to review and accept it. Sign in with the invited email address.",
+    );
+    expect(
+      screen
+        .getByRole("link", { name: "Enter an invitation" })
+        .getAttribute("href"),
+    ).toBe("/invitation");
+    expect(document.activeElement).toBe(nameField());
+    expect(createOrg).not.toHaveBeenCalled();
+  });
+
+  it("shows a skeleton and polite loading status while invitations load", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mount(<OnboardingPage />, (router) => {
+      router.service(InvitationService, {
+        listMyInvitations: async () => {
+          await gate;
+          return { invitations: [] };
+        },
+      });
+    });
+    const status = screen.getByRole("status");
+    expect(status.textContent).toBe("Loading invitations…");
+    expect(
+      document
+        .querySelector(".onboarding-skeleton")
+        ?.getAttribute("aria-hidden"),
+    ).toBe("true");
+    expect(screen.queryByText("No pending invitations.")).toBeNull();
+    release();
+    await screen.findByText("No pending invitations.");
+    expect(screen.queryByText("Loading invitations…")).toBeNull();
+  });
+
+  it("uses Try again after a first-query failure without showing the empty state", async () => {
+    const user = userEvent.setup();
+    let calls = 0;
+    mount(<OnboardingPage />, (router) => {
+      router.service(InvitationService, {
+        listMyInvitations: () => {
+          calls += 1;
+          if (calls === 1) throw new ConnectError("down", Code.Unavailable);
+          return { invitations: [invitation("a", "Recovered Org")] };
+        },
+      });
+    });
+    await screen.findByText(
+      "The service is unavailable. No change has been confirmed.",
+    );
+    expect(screen.queryByText("No pending invitations.")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByText("Recovered Org");
+    expect(calls).toBe(2);
+  });
+
+  describe("paging", () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) =>
+      invitation(`inv-${index}`, `Organization ${index}`),
+    );
+
+    it("accumulates pages, disables the control while fetching and announces additions without moving focus", async () => {
+      const user = userEvent.setup();
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const requests: string[] = [];
+      mount(<OnboardingPage />, (router) => {
+        router.service(InvitationService, {
+          listMyInvitations: async (request) => {
+            const token = request.page?.pageToken ?? "";
+            requests.push(token);
+            if (!token)
+              return { invitations: firstPage, page: { nextPageToken: "p2" } };
+            await gate;
+            return { invitations: [invitation("last", "Last Org")] };
+          },
+        });
+      });
+      const more = await screen.findByRole("button", {
+        name: "Load more invitations",
+      });
+      expect(
+        screen.getAllByRole("link", { name: /^Review invitation/ }),
+      ).toHaveLength(100);
+      more.focus();
+      await user.click(more);
+      const loading = await screen.findByRole("button", {
+        name: "Loading more invitations…",
+      });
+      expect((loading as HTMLButtonElement).disabled).toBe(true);
+      await user.click(loading);
+      release();
+      await screen.findByText("Last Org");
+      expect(screen.getByRole("status").textContent).toBe(
+        "1 more invitation loaded.",
+      );
+      expect(
+        screen.getAllByRole("link", { name: /^Review invitation/ }),
+      ).toHaveLength(101);
+      expect(
+        screen.queryByRole("button", { name: /Load more|Loading more/ }),
+      ).toBeNull();
+      expect(document.activeElement).not.toBe(
+        screen.getByRole("heading", { level: 1 }),
+      );
+      expect(requests).toEqual(["", "p2"]);
+    });
+
+    it("keeps loaded rows and retries the failed next page with its token", async () => {
+      const user = userEvent.setup();
+      const requests: string[] = [];
+      let secondPageCalls = 0;
+      mount(<OnboardingPage />, (router) => {
+        router.service(InvitationService, {
+          listMyInvitations: (request) => {
+            const token = request.page?.pageToken ?? "";
+            requests.push(token);
+            if (!token)
+              return {
+                invitations: [invitation("one", "First Org")],
+                page: { nextPageToken: "p2" },
+              };
+            secondPageCalls += 1;
+            if (secondPageCalls === 1)
+              throw new ConnectError("down", Code.Unavailable);
+            return { invitations: [invitation("two", "Second Org")] };
+          },
+        });
+      });
+      await user.click(
+        await screen.findByRole("button", { name: "Load more invitations" }),
+      );
+      await screen.findByText(
+        "The service is unavailable. No change has been confirmed.",
+      );
+      screen.getByText("First Org");
+      expect(screen.queryByText("No pending invitations.")).toBeNull();
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+      await screen.findByText("Second Org");
+      screen.getByText("First Org");
+      expect(requests).toEqual(["", "p2", "p2"]);
+      expect(
+        screen.queryByText(
+          "The service is unavailable. No change has been confirmed.",
+        ),
+      ).toBeNull();
+    });
+  });
+
+  describe("create form", () => {
+    it("associates the helper, focuses once and ignores later rerenders", async () => {
+      const user = userEvent.setup();
+      let calls = 0;
+      const { cache } = mount(<OnboardingPage />, (router) => {
+        router.service(InvitationService, {
+          listMyInvitations: () => {
+            calls += 1;
+            return { invitations: [] };
+          },
+        });
+      });
+      const field = nameField() as HTMLInputElement;
+      expect(document.activeElement).toBe(field);
+      expect(field.required).toBe(true);
+      expect(field.maxLength).toBe(200);
+      const helper = screen.getByText("Up to 200 characters.");
+      expect(field.getAttribute("aria-describedby")).toContain(helper.id);
+      screen.getByText(
+        "An organization is created only when you submit this form.",
+      );
+      await screen.findByText("No pending invitations.");
+      // Move focus away, then trigger an invitation refetch.
+      screen.getByRole("link", { name: "Enter an invitation" }).focus();
+      await cache.invalidateQueries();
+      await waitFor(() => expect(calls).toBeGreaterThan(1));
+      expect(document.activeElement).toBe(
+        screen.getByRole("link", { name: "Enter an invitation" }),
+      );
+      await user.click(field);
+      expect(document.activeElement).toBe(field);
+    });
+
+    it("disables submit for blank or whitespace names and sends the trimmed name once", async () => {
+      const user = userEvent.setup();
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const createOrg = rs.fn(async (request) => {
+        await gate;
+        return { organization: { ...org, name: request.name } };
+      });
+      mount(<OnboardingPage />, (router) => {
+        router.service(OrganizationService, { createOrganization: createOrg });
+        router.service(InvitationService, {
+          listMyInvitations: emptyInvitations,
+        });
+      });
+      expect((createButton() as HTMLButtonElement).disabled).toBe(true);
+      await user.type(nameField(), "   ");
+      expect((createButton() as HTMLButtonElement).disabled).toBe(true);
+      await user.clear(nameField());
+      await user.type(nameField(), "  Acme Studio  ");
+      expect((createButton() as HTMLButtonElement).disabled).toBe(false);
+      await user.type(nameField(), "{Enter}");
+      await user.dblClick(createButton());
+      await waitFor(() => expect(createOrg).toHaveBeenCalledTimes(1));
+      expect(createOrg.mock.calls[0][0]).toMatchObject({ name: "Acme Studio" });
+      expect(createButton().textContent).toBe("Creating…");
+      expect((createButton() as HTMLButtonElement).disabled).toBe(true);
+      expect((nameField() as HTMLInputElement).disabled).toBe(true);
+      release();
+      await screen.findByText("Organization created");
+      expect(createOrg).toHaveBeenCalledTimes(1);
+    });
+
+    it("accepts 200 characters and blocks the 201st with maxLength", async () => {
+      const user = userEvent.setup();
+      mount(<OnboardingPage />, (router) => {
+        router.service(InvitationService, {
+          listMyInvitations: emptyInvitations,
+        });
+      });
+      await user.click(nameField());
+      await user.paste("a".repeat(205));
+      expect((nameField() as HTMLInputElement).maxLength).toBe(200);
+      expect((nameField() as HTMLInputElement).value).toHaveLength(200);
+    });
+
+    it("does not persist the draft in storage or the URL", async () => {
+      const user = userEvent.setup();
+      const before = window.location.href;
+      mount(<OnboardingPage />, (router) => {
+        router.service(InvitationService, {
+          listMyInvitations: emptyInvitations,
+        });
+      });
+      await user.type(nameField(), "Secret draft");
+      expect(window.location.href).toBe(before);
+      expect(JSON.stringify({ ...window.localStorage })).not.toContain(
+        "Secret draft",
+      );
+      expect(JSON.stringify({ ...window.sessionStorage })).not.toContain(
+        "Secret draft",
+      );
+    });
+
+    it("shows invalid-argument failures below the field, keeps the draft and re-enables submit", async () => {
+      const user = userEvent.setup();
+      const createOrg = rs.fn(() => {
+        throw new ConnectError("bad", Code.InvalidArgument);
+      });
+      mount(<OnboardingPage />, (router) => {
+        router.service(OrganizationService, { createOrganization: createOrg });
+        router.service(InvitationService, {
+          listMyInvitations: emptyInvitations,
+        });
+      });
+      await user.type(nameField(), "Draft name");
+      await user.click(createButton());
+      const message = await screen.findByText(
+        "Check the entered value and try again.",
+      );
+      const field = nameField() as HTMLInputElement;
+      expect(field.value).toBe("Draft name");
+      expect(field.getAttribute("aria-invalid")).toBe("true");
+      const describedBy = (field.getAttribute("aria-describedby") ?? "").split(
+        " ",
+      );
+      expect(
+        describedBy.some((id) =>
+          document.getElementById(id)?.contains(message),
+        ),
+      ).toBe(true);
+      expect((createButton() as HTMLButtonElement).disabled).toBe(false);
+      expect(
+        field.compareDocumentPosition(message) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(createOrg).toHaveBeenCalledTimes(1);
+    });
+
+    it("offers Sign in again for an expired session without replaying the request", async () => {
+      const user = userEvent.setup();
+      const createOrg = rs.fn(() => {
+        throw new ConnectError("expired", Code.Unauthenticated);
+      });
+      mount(<OnboardingPage />, (router) => {
+        router.service(OrganizationService, { createOrganization: createOrg });
+        router.service(InvitationService, {
+          listMyInvitations: emptyInvitations,
+        });
+      });
+      await user.type(nameField(), "Draft name");
+      await user.click(createButton());
+      const link = await screen.findByRole("link", { name: "Sign in again" });
+      expect(link.getAttribute("href")).toContain("/auth/login?return_to=");
+      expect((nameField() as HTMLInputElement).value).toBe("Draft name");
+      expect(createOrg).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not treat a response without an organization as success", async () => {
+      const user = userEvent.setup();
+      const navigation = rs.fn();
+      const createOrg = rs.fn(() => ({}));
+      mount(<OnboardingPage onOrganizationCreated={navigation} />, (router) => {
+        router.service(OrganizationService, { createOrganization: createOrg });
+        router.service(InvitationService, {
+          listMyInvitations: emptyInvitations,
+        });
+      });
+      await user.type(nameField(), "Draft name");
+      await user.click(createButton());
+      await screen.findByText("No organization was created. Try again.");
+      expect(navigation).not.toHaveBeenCalled();
+      expect(screen.queryByText("Organization created")).toBeNull();
+      expect((nameField() as HTMLInputElement).value).toBe("Draft name");
+      expect((createButton() as HTMLButtonElement).disabled).toBe(false);
+    });
+  });
+
+  describe("success", () => {
+    it("calls the callback immediately with the created organization and invalidates queries", async () => {
+      const user = userEvent.setup();
+      const navigation = rs.fn();
+      const createOrg = rs.fn(() => ({ organization: org }));
+      const { cache } = mount(
+        <OnboardingPage onOrganizationCreated={navigation} />,
+        (router) => {
+          router.service(OrganizationService, {
+            createOrganization: createOrg,
+          });
+          router.service(InvitationService, {
+            listMyInvitations: emptyInvitations,
+          });
+        },
+      );
+      const invalidate = rs.spyOn(cache, "invalidateQueries");
+      await user.type(nameField(), "Studio");
+      await user.click(createButton());
+      await waitFor(() => expect(navigation).toHaveBeenCalledTimes(1));
+      expect(navigation.mock.calls[0][0]).toMatchObject({ id: org.id });
+      expect(invalidate).toHaveBeenCalled();
+    });
+
+    it("shows the fallback success with a focused heading and the scoped overview link", async () => {
+      const user = userEvent.setup();
+      mount(<OnboardingPage />, (router) => {
+        router.service(OrganizationService, {
+          createOrganization: () => ({ organization: org }),
+        });
+        router.service(InvitationService, {
+          listMyInvitations: emptyInvitations,
+        });
+      });
+      await user.type(nameField(), "Studio");
+      await user.click(createButton());
+      const heading = await screen.findByRole("heading", {
+        level: 1,
+        name: "Organization created",
+      });
+      expect(document.activeElement).toBe(heading);
+      screen.getByText(org.name);
+      expect(screen.getByRole("status").textContent).toBe(
+        "Your organization is ready. Connect your personal providers next.",
+      );
+      const link = screen.getByRole("link", { name: "Open organization" });
+      expect(link.getAttribute("href")).toBe(pageHref("overview", org.id));
+      expect(
+        screen.queryByRole("button", { name: "Create organization" }),
+      ).toBeNull();
+    });
   });
 });
