@@ -402,3 +402,136 @@
     gap: 2px;
   }
 }
+
+/* Invitation acceptance review card. All rules are scoped to
+   .invitation-surface so the other AccountSurface consumers keep their
+   geometry. */
+.account-surface.invitation-surface {
+  width: min(100%, 560px);
+}
+.invitation-surface h1:focus {
+  outline: none;
+}
+.invitation-surface .invitation-card {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 24px;
+  border-color: #d5dbe3;
+}
+.invitation-card > :first-child {
+  margin-top: 0;
+}
+.invitation-card p {
+  margin: 0 0 16px;
+}
+.invitation-card .invitation-identity {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #f2f4f6;
+  color: #4e5968;
+  font-size: 14px;
+}
+.invitation-card .invitation-status {
+  font-weight: 600;
+}
+.invitation-card .invitation-status:empty {
+  display: none;
+}
+.invitation-surface .invitation-card label {
+  margin: 0 0 8px;
+}
+.invitation-card .invitation-helper {
+  margin: 8px 0 16px;
+  font-size: 14px;
+}
+.invitation-card .invitation-field-error {
+  border: 1px solid #b42318;
+  background: #fff5f4;
+  color: #922016;
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+.invitation-organization {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+.invitation-surface .invitation-organization h2 {
+  margin: 0;
+  line-height: 1.35;
+}
+.invitation-badge {
+  padding: 2px 10px;
+  border: 1px solid #1d4ed8;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.invitation-details {
+  margin: 16px 0;
+}
+.invitation-details dd {
+  font-weight: 600;
+}
+.invitation-card .invitation-note {
+  padding: 16px;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #191f28;
+}
+.invitation-card .invitation-unresolved {
+  color: #191f28;
+}
+.invitation-card .invitation-return {
+  margin: 0;
+}
+.invitation-surface .invitation-return a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.invitation-surface .invitation-accept,
+.invitation-surface .invitation-paging {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+}
+.invitation-surface .invitation-paging {
+  margin-bottom: 16px;
+}
+.invitation-skeleton {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.invitation-skeleton-line {
+  display: block;
+  height: 16px;
+  border-radius: 4px;
+  background: #e5e8eb;
+  animation: invitation-skeleton-pulse 1.4s ease-in-out infinite;
+}
+.invitation-skeleton-title {
+  width: 60%;
+  height: 24px;
+}
+@keyframes invitation-skeleton-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .invitation-skeleton-line {
+    animation: none;
+  }
+}
+@media (max-width: 480px) {
+  .invitation-surface .invitation-card {
+    padding: 16px;
+  }
+}

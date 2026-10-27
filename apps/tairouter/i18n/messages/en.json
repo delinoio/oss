@@ -1456,5 +1456,12 @@
   "becomeAdministrator": "Become administrator",
   "transferRequestsAreValidFor7": "Transfer requests are valid for 7 days.",
   "ownershipDoesNotChangeUntilYou": "Ownership does not change until you accept.",
-  "leavingThisPageDoesNotCancel": "Leaving this page does not cancel the transfer."
+  "leavingThisPageDoesNotCancel": "Leaving this page does not cancel the transfer.",
+  "checkingMoreInvitations": "Checking more invitations…",
+  "pasteTheInvitationLinkOrCode": "Paste the invitation link or code from your email.",
+  "enterTheInvitationLinkOrCode": "Enter the invitation link or code from your email.",
+  "reviewYourInvitationBeforeJoining": "Review your invitation before joining.",
+  "joiningDoesNotCopyProviderCredentials": "Joining does not copy provider credentials or settings from other organizations.",
+  "thisInvitationHasNotBeenFound": "This invitation has not been found in the invitations checked so far.",
+  "youJoinOnlyAfterYouAccept": "You join only after you accept."
 }
