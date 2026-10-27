@@ -154,7 +154,7 @@ function OperatorBoundary() {
     return (
       <div className="admin-workspace">
         <p role="alert">{permissionMessage}</p>
-        <a href="/">Back to organizations</a>
+        <a href="/overview">Back to organizations</a>
       </div>
     );
   return (
@@ -164,7 +164,7 @@ function OperatorBoundary() {
       <div className="admin-workspace">
         <header className="admin-instance-heading">
           <strong>Instance console</strong>
-          <a href="/">Back to organizations</a>
+          <a href="/overview">Back to organizations</a>
         </header>
         <p className="admin-banner">
           Whole-instance health and aggregates only.

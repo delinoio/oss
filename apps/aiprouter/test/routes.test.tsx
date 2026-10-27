@@ -21,7 +21,7 @@ import {
 } from "../src/routes";
 
 const url = (path: string) => new URL(path, "http://localhost");
-describe("console route compatibility", () => {
+describe("canonical console routes", () => {
   it.each(Object.entries(pagePaths))(
     "resolves the %s deep link",
     (page, path) => {
@@ -31,19 +31,7 @@ describe("console route compatibility", () => {
     },
   );
   it.each([
-    ["/?org=studio&page=keys", "/keys?organization=studio", "keys"],
-    [
-      "/providers?organization_id=studio&page=organization-usage",
-      "/organization-usage?organization=studio",
-      "organization-usage",
-    ],
-    ["/connect-client?org=studio", "/connect?organization=studio", "connect"],
-    ["/organizations", "/overview", "overview"],
-    [
-      "/invitations/accept?token=secret&organization_id=studio",
-      "/invitation?token=secret&organization_id=studio",
-      "invitation",
-    ],
+    ["/keys?organization=", "/keys", "keys"],
     ["/device?user_code=ABCD", "/device?user_code=ABCD", "device"],
     [
       "/ownership?organization_id=studio&transfer_id=transfer",
@@ -55,8 +43,6 @@ describe("console route compatibility", () => {
       "/sign-in?error=missing_email&return_to=%2Fkeys",
       "sign-in",
     ],
-    ["/instance", "/instance/health", "instance"],
-    ["/instance/usage", "/instance/health", "instance"],
   ])(
     "normalizes %s without losing flow parameters",
     (source, canonical, page) => {
@@ -65,11 +51,30 @@ describe("console route compatibility", () => {
       expect(route!.url.pathname + route!.url.search).toBe(canonical);
     },
   );
+  it.each([
+    "/",
+    "/?organization=&page=keys",
+    "/organizations",
+    "/connect-client",
+    "/invitations/accept?token=secret",
+    "/instance",
+    "/instance/usage",
+    "/providers?page=keys",
+    "/keys?org=studio",
+    "/keys?organization_id=studio",
+    "/device?page=keys",
+    "/keys?page=",
+    "/keys?org=",
+    "/keys?organization_id=",
+  ])("rejects the retired route %s", (path) => {
+    expect(resolveRoute(url(path))).toBeUndefined();
+  });
   it("encodes organization scope in absolute navigation links", () => {
     expect(pageHref("keys", "studio & other")).toBe(
       "/keys?organization=studio+%26+other",
     );
     expect(pageHref("account")).toBe("/account");
+    expect(pageHref("keys", "")).toBe("/keys");
   });
   it("rejects unknown paths instead of showing overview", () => {
     expect(resolveRoute(url("/missing?page=keys"))).toBeUndefined();
@@ -126,15 +131,22 @@ function mount(path: string) {
   );
 }
 describe("page entry and navigation", () => {
-  it("opens invitation acceptance through the server alias", async () => {
-    mount("/invitations/accept");
+  it("removes an empty workspace selector without adding history entries", () => {
+    window.history.replaceState(null, "", "/keys?organization=");
+    const historyLength = window.history.length;
+    mount("/keys?organization=");
+    expect(window.location.pathname + window.location.search).toBe("/keys");
+    expect(window.history.length).toBe(historyLength);
+  });
+  it("opens invitation acceptance through its canonical route", async () => {
+    mount("/invitation");
     expect(
       await screen.findByRole("heading", { name: "Join an organization" }),
     ).toBeTruthy();
     expect(window.location.pathname).toBe("/invitation");
   });
   it("opens organization usage and emits scoped canonical menu links", async () => {
-    mount("/?org=studio&page=organization-usage");
+    mount("/organization-usage?organization=studio");
     expect(
       await screen.findByRole("heading", { name: "Organization usage" }),
     ).toBeTruthy();

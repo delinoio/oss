@@ -10,16 +10,32 @@ import (
 	"strings"
 )
 
-var consoleRoutes = map[string]bool{"/": true, "/sign-in": true, "/onboarding": true, "/organizations": true, "/overview": true, "/providers": true, "/pools": true, "/routing": true, "/keys": true, "/usage": true, "/organization-usage": true, "/connect": true, "/connect-client": true, "/device": true, "/members": true, "/invitation": true, "/invitations": true, "/invitations/accept": true, "/ownership": true, "/audit": true, "/settings": true, "/account": true, "/instance": true, "/instance/settings": true, "/instance/retention": true, "/instance/destinations": true, "/instance/health": true, "/instance/usage": true, "/instance/prices": true, "/instance/audit": true}
+var consoleRoutes = map[string]bool{"/sign-in": true, "/onboarding": true, "/overview": true, "/providers": true, "/pools": true, "/routing": true, "/keys": true, "/usage": true, "/organization-usage": true, "/connect": true, "/device": true, "/members": true, "/invitation": true, "/invitations": true, "/ownership": true, "/audit": true, "/settings": true, "/account": true, "/instance/settings": true, "/instance/retention": true, "/instance/destinations": true, "/instance/health": true, "/instance/prices": true, "/instance/audit": true}
 
 func knownConsoleRoute(value string) bool { return consoleRoutes[value] }
+func knownConsoleURL(u *url.URL) bool {
+	if !knownConsoleRoute(u.Path) {
+		return false
+	}
+	query := u.Query()
+	if query.Has("page") || query.Has("org") {
+		return false
+	}
+	switch u.Path {
+	case "/device", "/invitation", "/ownership", "/sign-in":
+		return true
+	default:
+		return !query.Has("organization_id")
+	}
+}
+
 func safeReturnTo(raw string) string {
 	if len(raw) > 4096 || strings.ContainsAny(raw, "\\\r\n\x00") {
-		return "/"
+		return "/overview"
 	}
 	u, e := url.Parse(raw)
-	if e != nil || u.IsAbs() || u.Host != "" || u.User != nil || strings.HasPrefix(raw, "//") || !knownConsoleRoute(u.Path) {
-		return "/"
+	if e != nil || u.IsAbs() || u.Host != "" || u.User != nil || strings.HasPrefix(raw, "//") || !knownConsoleURL(u) {
+		return "/overview"
 	}
 	return u.String()
 }
@@ -43,7 +59,7 @@ func consoleHandler(directory string) (http.Handler, error) {
 			http.Error(w, "method not allowed", 405)
 			return
 		}
-		if knownConsoleRoute(r.URL.Path) {
+		if knownConsoleURL(r.URL) {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Header().Set("Cache-Control", "no-store")
 			if r.Method != "HEAD" {

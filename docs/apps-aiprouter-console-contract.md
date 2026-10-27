@@ -33,7 +33,9 @@ Console navigation uses absolute pathname routes and the `organization` query pa
 
 Standalone flows use `/sign-in`, `/device`, `/invitation`, and `/ownership`; preserve their error, code, token, invitation, and organization parameters. Instance sections use `/instance/health`, `/instance/settings` (request limits), `/instance/retention`, `/instance/destinations`, `/instance/prices`, and `/instance/audit`. The health page includes instance usage aggregates.
 
-Keep existing `?page=` links and `org`/`organization_id` workspace selectors compatible, normalizing them to canonical addresses without adding browser history entries. Preserve `/`, `/organizations`, `/connect-client`, `/invitations/accept`, `/instance`, and `/instance/usage` as aliases for overview, overview, connect, invitation acceptance, instance health, and instance health respectively. Unknown paths must not render the overview. The service console allowlist and OIDC return targets must support the same routes as the frontend.
+Only canonical pathname routes are supported. Reject `?page=` navigation, `org` workspace selectors, and `organization_id` workspace selectors on authenticated pages. The former aliases `/`, `/organizations`, `/connect-client`, `/invitations/accept`, `/instance`, and `/instance/usage` are not console routes. Unknown or retired routes must not render the overview. Internal navigation and default OIDC return targets use `/overview`. The service console allowlist and OIDC return targets must enforce the same route rules as the frontend.
+
+Omit an empty `organization` workspace selector from canonical console addresses. For example, `/keys?organization=` normalizes to `/keys`; a selected organization uses `/keys?organization=<id>`. Keep standalone flow parameters, including ownership acceptance's `organization_id`, unchanged.
 
 ## Storage
 

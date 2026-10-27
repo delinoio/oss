@@ -252,7 +252,7 @@ function DeviceReview({
                 !organizations.isError &&
                 orgs.length === 0 && (
                   <p>
-                    <a href="/">
+                    <a href="/overview">
                       Create an organization or accept an invitation
                     </a>
                     , then return to this code before its deadline.

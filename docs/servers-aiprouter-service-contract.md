@@ -55,7 +55,7 @@ Organization owners, administrators, members, and separately configured instance
 
 ### Console route integration
 
-Serve the console document and permit local OIDC return targets for every canonical page and compatibility alias in the [console page-route contract](apps-aiprouter-console-contract.md#page-routes). Keep unknown paths and authentication, inference, and management API paths outside the console fallback. Route support does not grant management authority.
+Serve the console document and permit local OIDC return targets for every canonical page in the [console page-route contract](apps-aiprouter-console-contract.md#page-routes). Keep unknown paths and authentication, inference, and management API paths outside the console fallback. Reject retired paths and legacy navigation selectors in console requests and OIDC return targets. Use `/overview` as the default OIDC return target and `/invitation` for invitation email links. Route support does not grant management authority.
 
 ### OIDC, web sessions, and onboarding
 

@@ -19,7 +19,7 @@ Administrators cannot change another administrator's or the owner's role/members
 
 Console pages have direct addresses such as `/providers`, `/routing`, `/keys`, and `/organization-usage`. The `organization` query parameter selects the workspace, for example `/keys?organization=<organization-id>`. Opening or refreshing the address keeps that page and workspace; current membership and permissions still apply.
 
-Older `?page=` addresses and invitation links continue to open the corresponding page. Instance operators can also open individual sections, such as `/instance/settings` for request limits and `/instance/health` for health and usage aggregates.
+Open `/overview` to choose an organization and `/invitation` to accept an invitation. Legacy `?page=` addresses, path aliases, and `org` or `organization_id` workspace selectors are no longer supported. Use the direct page address and the `organization` workspace parameter. Instance operators can also open individual sections, such as `/instance/settings` for request limits and `/instance/health` for health and usage aggregates.
 
 ## Invite and accept
 

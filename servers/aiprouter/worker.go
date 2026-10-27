@@ -123,7 +123,7 @@ func (s *server) smtp(ctx context.Context, m store.Mail) error {
 	if e != nil {
 		return e
 	}
-	link := s.config.PublicURL + "/invitations/accept?token=" + url.QueryEscape(m.Token)
+	link := s.config.PublicURL + "/invitation?token=" + url.QueryEscape(m.Token)
 	_, e = fmt.Fprintf(writer, "From: %s\r\nTo: %s\r\nSubject: AIPRouter organization invitation\r\nMIME-Version: 1.0\r\nContent-Type: text/plain; charset=UTF-8\r\n\r\nSign in with your verified email to accept this invitation:\r\n%s\r\n\r\nThis invitation expires in seven days.\r\n", from.String(), to.String(), link)
 	if e != nil {
 		return e

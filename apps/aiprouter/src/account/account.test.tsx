@@ -288,7 +288,7 @@ describe("account and onboarding", () => {
       "Verify your email",
     );
     expect(screen.getByRole("link").getAttribute("href")).toBe(
-      "/auth/login?return_to=%2F",
+      "/auth/login?return_to=%2Foverview",
     );
   });
 });

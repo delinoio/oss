@@ -88,7 +88,7 @@ func TestSMTPInvitationDeliveryAndAcceptance(t *testing.T) {
 		t.Fatal(e)
 	}
 	body := <-message
-	if !strings.Contains(body, "https://router.example/invitations/accept?token="+token) || !strings.Contains(body, "To: <recipient@example.test>") {
+	if !strings.Contains(body, "https://router.example/invitation?token="+token) || !strings.Contains(body, "To: <recipient@example.test>") {
 		t.Fatalf("invalid invitation fixture body")
 	}
 	if _, e = db.AcceptInvite(ctx, recipient.ID, token); e != nil {
