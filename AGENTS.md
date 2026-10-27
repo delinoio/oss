@@ -35,6 +35,7 @@
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - Workspace crate publication on main pushes uses the verified prebuilt cargo-mono and shares serialization with manual releases. Keep remote release-tag publication with its existing owner; follow `docs/repository-workflow-contract.md`.
 - CI changes must preserve default affected manual validation and exclude macOS runners from PRs, main pushes and affected manual runs. Do not add a full manual CI mode; retain owning release platform gates and follow `docs/repository-workflow-contract.md`.
+- Independent Labs documentation uses `pnpm dev:labs-docs`; follow `docs/apps-labs-docs-foundation.md` for fixed loopback development and preview ports.
 - Documentation development uses `pnpm dev:public-docs` on the fixed port in `docs/apps-public-docs-foundation.md`; port conflicts fail.
 - Keep `.infisical.json`, `.dev-environment/`, real `.env` files, user credentials, and production/release/signing credentials uncommitted. Service-local `.env.example` files contain names, validation guidance, placeholders, and safe loopback defaults only; do not add a root environment example or expose internal secret paths in public product docs.
 - After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.

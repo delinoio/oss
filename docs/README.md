@@ -101,6 +101,11 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Project index](project-labs-site.md)
 - [Marketing site foundation](apps-labs-site-foundation.md) (`apps/labs-site`, canonical URL `https://labs.delino.io`)
 
+### labs-docs
+
+- [Project index](project-labs-docs.md)
+- [Labs documentation foundation](apps-labs-docs-foundation.md) (standalone Rspress site at `https://docs.labs.delino.io`)
+
 ### public-docs
 
 - [project-public-docs.md](project-public-docs.md)

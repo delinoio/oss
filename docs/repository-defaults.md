@@ -31,7 +31,8 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - Pull request title scopes should use stable lowercase project, component, domain, or tooling identifiers from repository contracts when one applies.
 - Pull request titles must not omit the scope and must not use bracket-style project prefixes.
 - Root `pnpm install` must support linked worktrees when the effective Git hooks path resolves to the repository's shared common-directory hooks directory, without overriding an unrelated custom hooks path. Source archives and other workspaces without Git metadata skip hook installation while continuing app preparation.
-- Documentation development uses the single `pnpm dev:public-docs` entry point; the Runmoor, Nodeup, binpm, async-commit-hook, and clibox content sections are served from that consolidated site. Every documentation development command uses the documented fixed loopback host and port, prevents CLI address overrides from changing that binding, and fails when that port is occupied rather than automatically selecting another port. Development wrappers forward termination signals to the child server and wait for it to exit so stopped commands do not leave orphaned listeners.
+- Labs documentation uses the independent `pnpm dev:labs-docs` entry point and fixed loopback ports from `apps-labs-docs-foundation.md`.
+- Consolidated documentation development uses the single `pnpm dev:public-docs` entry point; the Runmoor, Nodeup, binpm, async-commit-hook, and clibox content sections are served from that consolidated site. Every documentation development command uses the documented fixed loopback host and port, prevents CLI address overrides from changing that binding, and fails when that port is occupied rather than automatically selecting another port. Development wrappers forward termination signals to the child server and wait for it to exit so stopped commands do not leave orphaned listeners.
 
 ## Project identifier contract
 
@@ -51,6 +52,7 @@ enum ProjectId {
   Jsonllm = "jsonllm",
   PublicDocs = "public-docs",
   LabsSite = "labs-site",
+  LabsDocs = "labs-docs",
   AsyncCommitHook = "async-commit-hook",
 }
 ```

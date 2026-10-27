@@ -8,6 +8,8 @@ User-owned credentials stay in the owning local mechanism. They must not enter r
 
 ## Local development
 
+Use `pnpm dev:labs-docs` for the independent Labs site at `127.0.0.1:46303`. Package preview uses `127.0.0.1:46304`. Port conflicts fail; no secret or environment input is required. Follow [the Labs app contract](apps-labs-docs-foundation.md).
+
 Use `pnpm dev:public-docs` for the consolidated documentation site at `127.0.0.1:46302`. Port conflicts fail instead of selecting another port. Follow `apps-public-docs-foundation.md` for wrapper and shutdown behavior.
 
 Use `pnpm dev:async-commit-hook` for the application frontend. Its development frontend uses fixed port `46308`; the local UI/API uses configurable `api_port`, default `46309`. No root team or OSS dependency orchestrator is required.
