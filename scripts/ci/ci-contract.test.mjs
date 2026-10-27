@@ -38,8 +38,6 @@ const legacyJobs = [
   "rust-fmt",
   "rust-clippy",
   "rust-test",
-  "forge-test",
-  "forge-render",
   "linux-packages",
   "node-public-docs-test",
   "node-clibox-test",
@@ -629,21 +627,6 @@ test("scoped Go caches preserve default keys and restore shared main caches on f
   );
 });
 
-test("Forge retains three-platform interoperability and mandatory Linux rendering", () => {
-  assert.equal(
-    workflow.jobs["forge-test"].strategy.matrix,
-    "${{ fromJSON(needs.changes.outputs.forge_matrix) }}",
-  );
-  const testCommands = jobCommands(workflow.jobs["forge-test"]);
-  assert.match(
-    testCommands,
-    /cargo test -p forge-tree-doc -p forge-pptx -p delino-forge/u,
-  );
-  const renderCommands = jobCommands(workflow.jobs["forge-render"]);
-  assert.match(renderCommands, /libreoffice-impress poppler-utils/u);
-  assert.match(renderCommands, /--test render -- --ignored/u);
-});
-
 test("Rust CI consumes one verified prebuilt selection and gates native preparation", () => {
   const changes = workflow.jobs.changes;
   assert.equal(changes["runs-on"], "ubuntu-24.04");
@@ -836,7 +819,6 @@ test("CI exposes no full manual input and allocates no macOS runner on any event
     const outputs = Object.fromEntries(
       Object.entries({
         go_test_matrix: matrices.goTestMatrix,
-        forge_matrix: matrices.forgeMatrix,
         clibox_matrix: matrices.cliboxMatrix,
         pnport_matrix: matrices.pnportMatrix,
       }).map(([name, value]) => [name, JSON.stringify(value)]),
