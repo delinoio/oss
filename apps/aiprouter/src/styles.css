@@ -545,8 +545,7 @@ dialog .actions {
 .skip-link:focus {
   transform: none;
 }
-.mobile-header,
-.mobile-filters {
+.mobile-header {
   display: none;
 }
 .not-found {
@@ -724,12 +723,6 @@ li {
   }
   .stats {
     gap: 12px;
-  }
-  .filters.desktop-filters {
-    display: none;
-  }
-  .mobile-filters {
-    display: inline-flex;
   }
   .notice {
     padding: 16px;
@@ -1177,4 +1170,38 @@ dialog.oauth-dialog {
 }
 dialog.sized {
   width: min(600px, calc(100% - 32px));
+}
+
+.usage-filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 16px;
+  margin: 24px 0;
+  padding: 24px;
+  background: #fff;
+  border: 1px solid #e0e5ec;
+  border-radius: 12px;
+}
+.usage-filters .field {
+  flex: 1 1 180px;
+  margin: 0;
+}
+.usage-filters .button {
+  flex: 0 0 auto;
+  min-height: 44px;
+}
+.usage-filters-trigger {
+  margin: 16px 0;
+  min-height: 44px;
+}
+dialog.usage-filters-dialog > p {
+  margin: 0 0 20px;
+  color: #4e5968;
+}
+.field-error {
+  color: #b42318;
+}
+.field input[aria-invalid="true"] {
+  border-color: #b42318;
 }
