@@ -77,10 +77,13 @@ export function Field({
   label,
   children,
   hint,
+  error,
 }: {
   label: string;
   children: ReactNode;
   hint?: ReactNode;
+  // Optional inline validation message. It is associated with the control and marks it invalid.
+  error?: ReactNode;
 }) {
   useLocale();
   const id = useId();
@@ -88,18 +91,27 @@ export function Field({
     ? (children as ReactElement<Record<string, unknown>>)
     : undefined;
   const inputId = String(child?.props.id ?? id);
+  const describedBy = error
+    ? [hint ? `${id}-hint` : undefined, `${id}-error`].filter(Boolean).join(" ")
+    : hint
+      ? `${id}-hint`
+      : child?.props["aria-describedby"];
   return (
     <div className="field">
       <label htmlFor={inputId}>{label}</label>
       {child
         ? cloneElement(child, {
             id: inputId,
-            "aria-describedby": hint
-              ? `${id}-hint`
-              : child.props["aria-describedby"],
+            "aria-describedby": describedBy,
+            ...(error ? { "aria-invalid": true } : {}),
           })
         : children}
       {hint && <small id={`${id}-hint`}>{hint}</small>}
+      {error && (
+        <small id={`${id}-error`} className="field-error" role="alert">
+          {error}
+        </small>
+      )}
     </div>
   );
 }
@@ -319,11 +331,13 @@ export function Pagination({
 export function CopyButton({
   value,
   label = translate("copy"),
+  variant = "secondary",
   statusId,
   className,
 }: {
   value: string;
   label?: string;
+  variant?: ComponentProps<typeof Button>["variant"];
   /** Optional id for the status region; the button is described by it. */
   statusId?: string;
   /** Optional extra class for the button. */
@@ -334,6 +348,7 @@ export function CopyButton({
   return (
     <>
       <Button
+        variant={variant}
         className={className}
         aria-describedby={statusId}
         onClick={() => {
@@ -345,7 +360,12 @@ export function CopyButton({
       >
         {label}
       </Button>
-      <span role="status" id={statusId} className="copy-status">
+      <span
+        role="status"
+        aria-live="polite"
+        id={statusId}
+        className="copy-status"
+      >
         {message}
       </span>
     </>
