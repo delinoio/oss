@@ -124,6 +124,56 @@ export function Field({
     </div>
   );
 }
+export type ErrorSummaryItem = {
+  /** Stable key for the item. */
+  key: string;
+  /** Message explaining why the form cannot be saved. */
+  message: string;
+  /** DOM id of the control that owns the error; the item links to it. */
+  fieldId?: string;
+};
+export function ErrorSummary({
+  errors,
+  title,
+}: {
+  errors: ErrorSummaryItem[];
+  title?: string;
+}) {
+  useLocale();
+  const titleId = useId();
+  if (errors.length === 0) return null;
+  return (
+    <div
+      className="error-summary"
+      role="alert"
+      aria-labelledby={titleId}
+      data-testid="error-summary"
+    >
+      <strong id={titleId}>
+        {title ?? translate("fixTheFollowingBeforeSaving")}
+      </strong>
+      <ul>
+        {errors.map((item) => (
+          <li key={item.key}>
+            {item.fieldId ? (
+              <a
+                href={`#${item.fieldId}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  document.getElementById(item.fieldId!)?.focus();
+                }}
+              >
+                {item.message}
+              </a>
+            ) : (
+              item.message
+            )}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 export function Notice({
   children,
   tone = "info",
@@ -221,27 +271,42 @@ export function EmptyState({
     </Card>
   );
 }
+export enum DialogSize {
+  Default = "default",
+  /** Up to 720px. */
+  Wide = "wide",
+  /** Up to 880px, used by the large editor dialogs. */
+  Large = "large",
+}
 export function Dialog({
   title,
+  subtitle,
   children,
   onClose,
   initialFocus,
   wide = false,
+  size,
   focusHeading = false,
   className = "",
   describedBy,
 }: {
   title: string;
+  /** Optional scope line rendered under the heading and used as the dialog description. */
+  subtitle?: ReactNode;
   children: ReactNode;
   onClose: () => void;
   initialFocus?: string;
+  /** Legacy shorthand for DialogSize.Wide. */
   wide?: boolean;
+  size?: DialogSize;
   /** Focus the dialog heading on open instead of the first form control. */
   focusHeading?: boolean;
   className?: string;
   describedBy?: string;
 }) {
   useLocale();
+  const resolvedSize = size ?? (wide ? DialogSize.Wide : DialogSize.Default);
+  const subtitleId = useId();
   const ref = useRef<HTMLDialogElement>(null);
   const reportDirty = useDirtyForm();
   const reportDirtyRef = useRef(reportDirty);
@@ -268,8 +333,17 @@ export function Dialog({
     <dialog
       ref={ref}
       aria-labelledby={titleId}
-      aria-describedby={describedBy}
-      className={[wide ? "wide" : "", className].filter(Boolean).join(" ")}
+      aria-describedby={
+        [describedBy, subtitle ? subtitleId : undefined]
+          .filter(Boolean)
+          .join(" ") || undefined
+      }
+      className={[
+        resolvedSize === DialogSize.Default ? "" : resolvedSize,
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
       onKeyDown={(event) => {
         if (event.key !== "Tab") return;
         const items = Array.from(
@@ -293,12 +367,21 @@ export function Dialog({
       }}
     >
       <div className="dialog-heading">
-        <h2
-          id={titleId}
-          {...(focusHeading ? { tabIndex: -1, "data-dialog-heading": "" } : {})}
-        >
-          {title}
-        </h2>
+        <div className="dialog-heading-text">
+          <h2
+            id={titleId}
+            {...(focusHeading
+              ? { tabIndex: -1, "data-dialog-heading": "" }
+              : {})}
+          >
+            {title}
+          </h2>
+          {subtitle && (
+            <p id={subtitleId} className="dialog-subtitle">
+              {subtitle}
+            </p>
+          )}
+        </div>
         <Button
           aria-label={translate("closeDialog")}
           variant="ghost"

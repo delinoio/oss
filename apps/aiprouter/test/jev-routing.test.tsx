@@ -105,6 +105,29 @@ async function edit() {
     }),
   );
 }
+describe("Route editor dialog chrome", () => {
+  it.each([
+    ["create", undefined, "Create route"],
+    ["edit", configured, "Edit routing"],
+  ] as const)(
+    "%s dialog is named, scoped to the organization and large",
+    async (_mode, route, title) => {
+      const user = userEvent.setup();
+      mount(route, () => ({}));
+      if (route) await edit();
+      else {
+        await screen.findByRole("heading", { name: "decision-alias" });
+        await user.click(screen.getByRole("button", { name: "Create route" }));
+      }
+      const dialog = await screen.findByRole("dialog", { name: title });
+      expect(dialog.className).toBe("large");
+      expect(within(dialog).getByText("Only yours in Studio.")).toBeTruthy();
+      expect(
+        within(dialog).getByRole("button", { name: "Close dialog" }),
+      ).toBeTruthy();
+    },
+  );
+});
 describe("JEV routing payloads", () => {
   it.each(["preserve", "zero", "omit-limits", "remove"] as const)(
     "retention edit %s preserves generated payload presence",

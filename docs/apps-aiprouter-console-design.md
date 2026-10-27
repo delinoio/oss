@@ -94,6 +94,16 @@ States share one dialog so heading focus stays put: loading shows “Loading hos
 
 Server-side limits stay with the server. Target model IDs and the two media overrides allow 512 UTF-8 bytes and each X handle allows 256 UTF-8 bytes, while up to 20 handles are accepted per list and only one list may be used. The console does not count bytes and does not mirror those limits with `maxLength` on target model ID inputs or handle lists, because HTML `maxLength` counts UTF-16 code units and would reject valid multibyte input or accept invalid input. The only client cap is the existing `maxLength={512}` on the “Image model override” and “Video model override” inputs, which is kept unchanged. Non-ASCII values are preserved in the draft and sent unchanged; an over-limit value is rejected by `updateHostedSettings`, and the console shows the safe error with the draft retained and no success claim. `apps/aiprouter/test/configuration.test.tsx` pins this with boundary fixtures at 512 and 513 bytes for ASCII, two-byte and three-byte model IDs and overrides, and at 256 and 257 bytes for handles in both lists. Further regression tests keep nested Advanced and outer section collapse from changing the draft, and keep form submission blocked while personal resources load or fail.
 
+### Shared form primitives
+
+Editor dialogs share these primitives in `apps/aiprouter/src/ui.tsx` and `apps/aiprouter/src/validation.ts`. All copy comes from the localized source catalog:
+
+- `Field` accepts an optional `error`. The control receives `aria-invalid="true"` and `aria-describedby` listing the hint and error ids; the error text is plain text, not color alone.
+- `ErrorSummary` renders an assertive alert that titles “Fix the following before saving” (catalog key `fixTheFollowingBeforeSaving`) and lists every cause that disables Save. Items with a `fieldId` link to and focus the owning control.
+- `utf8ByteLength` and `exceedsUtf8Bytes` measure values with `TextEncoder`. Service limits such as the 512-byte route alias and provider model ID are UTF-8 byte limits, so HTML `maxlength` and `String.length` must not be used.
+- `Dialog` accepts an optional `subtitle` (also exposed as the dialog description, together with any `describedBy` id) and a `DialogSize` option: `Default` (520px), `Wide` (720px) and `Large` (up to 880px with 32px, 24px and 16px padding on desktop, tablet and mobile). The legacy `wide` prop maps to `DialogSize.Wide`. The `.field-grid` class lays out two columns and collapses to one below 600px.
+- The routing editor uses `DialogSize.Large` and the subtitle “Only yours in {organization}.”
+
 ## API keys and client connection
 
 Key list: name, masked identifier, ordinary/CLI type, created date, expiry or “No expiry,” status and Revoke. Create form asks for name and expiry, with an explicit no-expiry option. One-time result shows a copyable raw key, warning “This key is shown only once,” and Done. Do not persist the raw value in browser storage or subsequent list views. Copy confirmation is announced accessibly. Leaving the result never suggests that the same secret can be recovered.
