@@ -1,10 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale } from "./i18n";
 import { useEffect, useRef, useState } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import { useQueryClient } from "@tanstack/react-query";
 import { ErrorNotice } from "./ui";
 import { useDirtyForm } from "./api";
 export function useAction() {
+  useLocale();
   const client = useQueryClient();
   const reportDirty = useDirtyForm();
   const mounted = useRef(true);
@@ -21,7 +23,7 @@ export function useAction() {
   async function run<T>(
     operation: () => Promise<T>,
     done?: (value: T) => void,
-    success = "Changes saved.",
+    success = translate("changesSaved"),
   ) {
     if (busy.current) return;
     busy.current = true;
@@ -58,9 +60,7 @@ export function useAction() {
       <>
         <ErrorNotice error={error} />
         <p className="mutation-status" role="status">
-          {pending
-            ? "Saving… Closing this dialog does not cancel a submitted change."
-            : notice}
+          {pending ? translate("message_c5ca36dfc7") : notice}
         </p>
       </>
     ),

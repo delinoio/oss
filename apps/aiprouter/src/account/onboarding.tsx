@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale } from "../i18n";
 import { pageHref } from "../routes";
 import { useState } from "react";
 import { flushSync } from "react-dom";
@@ -13,6 +14,7 @@ export function OnboardingPage({
 }: {
   onOrganizationCreated?: (organization: Organization) => void;
 }) {
+  useLocale();
   const [name, setName] = useState("");
   const [created, setCreated] = useState<Organization>();
   const cache = useQueryClient();
@@ -23,21 +25,28 @@ export function OnboardingPage({
   });
   if (created)
     return (
-      <AccountSurface title="Organization created" subtitle={created.name}>
+      <AccountSurface
+        title={translate("organizationCreated")}
+        subtitle={created.name}
+      >
         <p role="status">
-          Your organization is ready. Connect your personal providers next.
+          {translate("yourOrganizationIsReadyConnectYourPersonal")}
         </p>
-        <a href={pageHref("overview", created.id)}>Open organization</a>
+        <a href={pageHref("overview", created.id)}>
+          {translate("openOrganization")}
+        </a>
       </AccountSurface>
     );
   return (
     <AccountSurface
-      title="Choose your organization"
-      subtitle="Create an organization or accept an invitation to get started."
+      title={translate("chooseYourOrganization")}
+      subtitle={translate("createAnOrganizationOrAcceptAnInvitation_ebcbcc")}
     >
       <div className="account-card">
-        <h2>Your invitations</h2>
-        {invitations.isPending && <p role="status">Loading invitations…</p>}
+        <h2>{translate("yourInvitations")}</h2>
+        {invitations.isPending && (
+          <p role="status">{translate("loadingInvitations")}</p>
+        )}
         <AccountError
           error={invitations.error}
           retry={() => {
@@ -50,7 +59,7 @@ export function OnboardingPage({
             <a
               href={`/invitation?invitation_id=${encodeURIComponent(invitation.id)}`}
             >
-              Review invitation
+              {translate("reviewInvitation")}
             </a>
           </p>
         ))}
@@ -62,14 +71,11 @@ export function OnboardingPage({
               void invitations.fetchNextPage();
             }}
           >
-            Load more invitations
+            {translate("loadMoreInvitations")}
           </button>
         )}
-        <p>
-          Open the invitation link from your email to review and accept it. Sign
-          in with the invited email address.
-        </p>
-        <a href="/invitation">Enter an invitation</a>
+        <p>{translate("openTheInvitationLinkFromYourEmail")}</p>
+        <a href="/invitation">{translate("enterAnInvitation")}</a>
       </div>
       <form
         className="account-card"
@@ -92,9 +98,9 @@ export function OnboardingPage({
           );
         }}
       >
-        <h2>Create organization</h2>
+        <h2>{translate("createOrganization")}</h2>
         <label>
-          Organization name
+          {translate("organizationName")}
           <input
             autoFocus
             required
@@ -110,15 +116,17 @@ export function OnboardingPage({
           type="submit"
           disabled={!name.trim() || create.isPending}
         >
-          {create.isPending ? "Creating…" : "Create organization"}
+          {create.isPending
+            ? translate("message_c79ed9492e")
+            : translate("createOrganization")}
         </button>
       </form>
       <ol className="account-hint">
-        <li>Choose organization</li>
-        <li>Connect personal providers</li>
-        <li>Configure models and routing</li>
-        <li>Create API key</li>
-        <li>Connect a client</li>
+        <li>{translate("chooseOrganization")}</li>
+        <li>{translate("connectPersonalProviders")}</li>
+        <li>{translate("configureModelsAndRouting")}</li>
+        <li>{translate("createApiKey")}</li>
+        <li>{translate("connectAClient")}</li>
       </ol>
     </AccountSurface>
   );

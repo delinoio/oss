@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale } from "./i18n";
 import { pageHref, type Page } from "./routes";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -27,6 +28,7 @@ import {
 import { SummaryCards, UsageTrend } from "./usage";
 import { connectionLabel } from "./providers";
 export function OverviewPage({ organization, session }: PageProps) {
+  useLocale();
   const [timeRange] = useState(() => ({
     start: timestampFromDate(new Date(Date.now() - 7 * 86400000)),
     end: timestampFromDate(new Date()),
@@ -50,26 +52,26 @@ export function OverviewPage({ organization, session }: PageProps) {
   });
   const link = (page: Page) => pageHref(page, organization.id);
   const steps = [
-    ["Choose organization", "overview", true],
+    [translate("chooseOrganization"), "overview", true],
     [
-      "Connect personal providers",
+      translate("connectPersonalProviders"),
       "providers",
       providers.data?.connections.some(
         (c) => c.state === ConnectionState.READY,
       ),
     ],
     [
-      "Configure models/routing",
+      translate("configureModelsRouting"),
       "routing",
       routes.data?.routes.some((r) => r.enabled && r.targets.length > 0),
     ],
     [
-      "Create API key",
+      translate("createApiKey"),
       "keys",
       keys.data?.keys.some((k) => k.state === KeyState.ACTIVE),
     ],
     [
-      "Connect a client",
+      translate("connectAClient"),
       "connect",
       keys.data?.keys.some((k) => k.kind === KeyKind.CLI && k.lastUsedAt),
     ],
@@ -77,18 +79,18 @@ export function OverviewPage({ organization, session }: PageProps) {
   return (
     <>
       <PageHeader
-        title="Your workspace"
-        description={`Your settings in ${organization.name}.`}
+        title={translate("yourWorkspace")}
+        description={translate("yourSettingsIn", { value0: organization.name })}
         action={
           <a className="button primary" href={link("keys")}>
-            Create API key
+            {translate("createApiKey")}
           </a>
         }
       />
       <Notice>
-        <strong>Private to you</strong>
+        <strong>{translate("privateToYou")}</strong>
         <br />
-        Your providers and routing are separate in every organization.
+        {translate("yourProvidersAndRoutingAreSeparateIn")}
       </Notice>
       <ErrorNotice
         error={providers.error ?? routes.error ?? keys.error ?? usage.error}
@@ -108,10 +110,10 @@ export function OverviewPage({ organization, session }: PageProps) {
               <Badge
                 tone={c.state === ConnectionState.READY ? "success" : "warning"}
               >
-                {connectionLabel[c.state] ?? "Unknown status"}
+                {connectionLabel[c.state] ?? translate("unknownStatus")}
               </Badge>
-              <p>Personal account</p>
-              <a href={link("providers")}>Manage connection</a>
+              <p>{translate("personalAccount")}</p>
+              <a href={link("providers")}>{translate("manageConnection")}</a>
             </Card>
           ))}
         </div>
@@ -123,13 +125,17 @@ export function OverviewPage({ organization, session }: PageProps) {
         timeRange={timeRange}
       />
       <Card>
-        <h2>Get connected</h2>
+        <h2>{translate("getConnected")}</h2>
         <ol className="checklist">
           {steps.map(([label, page, done], i) => (
-            <li key={label}>
+            <li key={page}>
               <span
                 className={done ? "step done" : "step"}
-                aria-label={done ? "Complete" : "Not yet complete"}
+                aria-label={
+                  done
+                    ? translate("message_143b270a32")
+                    : translate("notYetComplete")
+                }
               >
                 {done ? "✓" : i + 1}
               </span>
@@ -140,20 +146,20 @@ export function OverviewPage({ organization, session }: PageProps) {
       </Card>
       <Card>
         <div className="record">
-          <h2>Your routing</h2>
-          <a href={link("routing")}>View all</a>
+          <h2>{translate("yourRouting")}</h2>
+          <a href={link("routing")}>{translate("viewAll")}</a>
         </div>
         {routes.data?.routes.length === 0 ? (
-          <p>
-            No model routes yet. Configure a route to start sending requests.
-          </p>
+          <p>{translate("noModelRoutesYetConfigureARoute")}</p>
         ) : (
           routes.data?.routes.slice(0, 4).map((r) => (
             <div className="record" key={r.id}>
               <strong>{r.modelId}</strong>
-              <span>{r.targets.length} targets</span>
+              <span>{translate("targets", { value0: r.targets.length })}</span>
               <Badge>
-                {r.enabled ? "Enabled · check connection health" : "Disabled"}
+                {r.enabled
+                  ? translate("enabledCheckConnectionHealth")
+                  : translate("disabled")}
               </Badge>
             </div>
           ))
@@ -163,6 +169,7 @@ export function OverviewPage({ organization, session }: PageProps) {
   );
 }
 export function ConnectPage({ organization }: PageProps) {
+  useLocale();
   const [profile, setProfile] = useState("default");
   const safeProfile = /^[a-z][a-z0-9-]{0,47}$/.test(profile);
   const origin = window.location.origin;
@@ -170,81 +177,64 @@ export function ConnectPage({ organization }: PageProps) {
   return (
     <>
       <PageHeader
-        title="Connect a client"
-        description={`Connect to ${organization.name} with your own routing.`}
+        title={translate("connectAClient")}
+        description={translate("connectToWithYourOwnRouting", {
+          value0: organization.name,
+        })}
       />
       <Card>
-        <h2>1. Start a secure connection</h2>
+        <h2>{translate("message1StartASecureConnection")}</h2>
         <p>
-          Server: <strong>{origin}</strong>
+          {translate("server")}
+          <strong>{origin}</strong>
         </p>
         <p>
-          Choose <strong>{organization.name}</strong> when approving the device
-          in your browser.
+          {translate("choose")}
+          <strong>{organization.name}</strong>{" "}
+          {translate("whenApprovingTheDeviceInYourBrowser")}
         </p>
         <Field
-          label="Profile name"
-          hint="Start with a lowercase letter. Use lowercase letters, digits, and hyphens; at most 48 characters."
+          label={translate("profileName")}
+          hint={translate("startWithALowercaseLetterUseLowercase")}
         >
           <input value={profile} onChange={(e) => setProfile(e.target.value)} />
         </Field>
         {!safeProfile && (
           <Notice tone="danger">
-            Enter a valid profile name before copying the command.
+            {translate("enterAValidProfileNameBeforeCopying")}
           </Notice>
         )}
         <pre>
           <code>{command}</code>
         </pre>
         {safeProfile && (
-          <CopyButton value={command} label="Copy connect command" />
+          <CopyButton value={command} label={translate("copyConnectCommand")} />
         )}
-        <p>
-          Run this command with the installed AIPRouter CLI. Confirm the browser
-          code matches your CLI. The CLI stores the resulting key in your OS
-          credential store.
-        </p>
+        <p>{translate("runThisCommandWithTheInstalledAiprouter")}</p>
       </Card>
       <Card>
-        <h2>2. Choose and configure your client</h2>
+        <h2>{translate("message2ChooseAndConfigureYourClient")}</h2>
         <pre>
           <code>aiprouter clients</code>
         </pre>
-        <p>
-          List supported clients, settings formats, and platform availability.
-          Then choose the client ID from that list:
-        </p>
+        <p>{translate("listSupportedClientsSettingsFormatsAndPlatform")}</p>
         <pre>
           <code>{`aiprouter configure --profile '${safeProfile ? profile : "default"}' --client CLIENT_ID`}</code>
         </pre>
-        <Notice>
-          The CLI previews settings changes and asks before applying them. A
-          separate confirmation is required if a client stores the remote key in
-          its settings.
-        </Notice>
-        <p>
-          Clients that need a loopback relay show an explicit local-access
-          warning. Review it before installing the profile service.
-        </p>
+        <Notice>{translate("theCliPreviewsSettingsChangesAndAsks")}</Notice>
+        <p>{translate("clientsThatNeedALoopbackRelayShow")}</p>
       </Card>
       <Card>
-        <h2>Recover safely</h2>
+        <h2>{translate("recoverSafely")}</h2>
+        <p>{translate("ifTheOsCredentialStoreIsUnavailable")}</p>
         <p>
-          If the OS credential store is unavailable, the CLI leaves client
-          settings unchanged. Restore access to the OS credential store and
-          retry. There is no plaintext credential fallback.
+          {translate("ifServerRevocationCouldNotFinishOpen")}
+          <a href={pageHref("keys", organization.id)}>
+            {translate("apiKeys")}
+          </a>{" "}
+          {translate("andRevokeTheOutstandingCliKey")}
         </p>
-        <p>
-          If server revocation could not finish, open{" "}
-          <a href={pageHref("keys", organization.id)}>API keys</a> and revoke
-          the outstanding CLI key.
-        </p>
-        <p>
-          If restoration detects settings conflicts, preserve your settings and
-          protected backups. Resolve conflicts manually before retrying
-          restoration. Server key revocation and local settings restoration are
-          separate outcomes.
-        </p>
+        <p>{translate("ifRestorationDetectsSettingsConflictsPreserveYour")}</p>
         <pre>
           <code>{`aiprouter disconnect --profile '${safeProfile ? profile : "default"}'`}</code>
         </pre>

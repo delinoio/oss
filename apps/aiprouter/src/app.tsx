@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale } from "./i18n";
 import { useEffect, useRef, useState, lazy, Suspense } from "react";
 import { useQuery, useTransport } from "@connectrpc/connect-query";
 import {
@@ -66,31 +67,34 @@ const InvitationPage = lazy(() =>
 const OwnershipAcceptancePage = lazy(() =>
   import("./account").then((m) => ({ default: m.OwnershipAcceptancePage })),
 );
-const personalLinks = [
-  ["overview", "Overview"],
-  ["providers", "Providers"],
-  ["routing", "Routing"],
-  ["keys", "API keys"],
-  ["usage", "Usage"],
-  ["connect", "Connect a client"],
-] as const;
-const adminLinks = [
-  ["members", "Members"],
-  ["invitations", "Invitations"],
-  ["organization-usage", "Organization usage"],
-  ["audit", "Audit"],
-  ["settings", "Settings"],
-] as const;
+const personalLinks = () =>
+  [
+    ["overview", translate("overview")],
+    ["providers", translate("providers")],
+    ["routing", translate("routing")],
+    ["keys", translate("apiKeys")],
+    ["usage", translate("usage")],
+    ["connect", translate("connectAClient")],
+  ] as const;
+const adminLinks = () =>
+  [
+    ["members", translate("members")],
+    ["invitations", translate("invitations")],
+    ["organization-usage", translate("organizationUsage")],
+    ["audit", translate("audit")],
+    ["settings", translate("settings")],
+  ] as const;
 function roleLabel(role: Role) {
   return role === Role.OWNER
-    ? "Owner"
+    ? translate("owner")
     : role === Role.ADMINISTRATOR
-      ? "Administrator"
+      ? translate("administrator")
       : role === Role.MEMBER
-        ? "Member"
-        : "Unknown role";
+        ? translate("member")
+        : translate("unknownRole");
 }
 export function App() {
+  useLocale();
   const route = resolveRoute(new URL(window.location.href));
   useEffect(() => {
     if (route && route.url.href !== window.location.href)
@@ -99,8 +103,8 @@ export function App() {
   if (!route)
     return (
       <main className="standalone">
-        <h1>Page not found</h1>
-        <a href={pageHref("overview")}>Back to organizations</a>
+        <h1>{translate("pageNotFound")}</h1>
+        <a href={pageHref("overview")}>{translate("backToOrganizations")}</a>
       </main>
     );
   const page = route.page;
@@ -130,6 +134,7 @@ export function App() {
   );
 }
 function AuthenticatedApp({ page }: { page: Page }) {
+  useLocale();
   const api = useApi();
   const cache = useQueryClient();
   const transport = useTransport();
@@ -191,9 +196,7 @@ function AuthenticatedApp({ page }: { page: Page }) {
       setDirty(false);
       setScopeBlocked(true);
       setAuthorityVersion((v) => v + 1);
-      setAuthorityMessage(
-        "Your permissions changed. This action is no longer available.",
-      );
+      setAuthorityMessage(translate("yourPermissionsChangedThisActionIsNo"));
       void cache.invalidateQueries();
       if (code === Code.Unauthenticated) {
         setSignedOut(true);
@@ -256,7 +259,9 @@ function AuthenticatedApp({ page }: { page: Page }) {
     return (
       <main className="standalone">
         <ErrorNotice error={session.error} />
-        <Button onClick={() => void session.refetch()}>Try again</Button>
+        <Button onClick={() => void session.refetch()}>
+          {translate("tryAgain")}
+        </Button>
       </main>
     );
   if (!session.data) return null;
@@ -274,7 +279,7 @@ function AuthenticatedApp({ page }: { page: Page }) {
     return session.data.isInstanceOperator ? (
       <>
         <a className="skip-link" href="#main-content">
-          Skip to content
+          {translate("skipToContent")}
         </a>
         <main id="main-content">
           <DirtyContext value={setDirty}>
@@ -284,14 +289,16 @@ function AuthenticatedApp({ page }: { page: Page }) {
       </>
     ) : (
       <main className="standalone">
-        <Notice tone="danger">Instance operator access is required.</Notice>
-        <a href="/overview">Back to organizations</a>
+        <Notice tone="danger">
+          {translate("instanceOperatorAccessIsRequired")}
+        </Notice>
+        <a href="/overview">{translate("backToOrganizations")}</a>
       </main>
     );
   const links = (organization: Organization | undefined) => (
-    <nav aria-label="Main navigation">
-      <p className="nav-label">Personal</p>
-      {personalLinks.map(([id, label]) => (
+    <nav aria-label={translate("mainNavigation")}>
+      <p className="nav-label">{translate("personal")}</p>
+      {personalLinks().map(([id, label]) => (
         <a
           key={id}
           aria-current={page === id ? "page" : undefined}
@@ -305,8 +312,8 @@ function AuthenticatedApp({ page }: { page: Page }) {
         (organization.role === Role.OWNER ||
           organization.role === Role.ADMINISTRATOR) && (
           <>
-            <p className="nav-label">Organization</p>
-            {adminLinks.map(([id, label]) => (
+            <p className="nav-label">{translate("organization")}</p>
+            {adminLinks().map(([id, label]) => (
               <a
                 key={id}
                 aria-current={page === id ? "page" : undefined}
@@ -319,13 +326,13 @@ function AuthenticatedApp({ page }: { page: Page }) {
         )}
       <div className="account-nav">
         <a href={pageHref("account", organization?.id)}>
-          {session.data?.displayName || "Account"}
+          {session.data?.displayName || translate("account")}
         </a>
         {session.data?.isInstanceOperator && (
-          <a href={pageHref("instance")}>Instance console</a>
+          <a href={pageHref("instance")}>{translate("instanceConsole")}</a>
         )}
         <Button variant="ghost" onClick={() => void logout()}>
-          Sign out
+          {translate("signOut")}
         </Button>
       </div>
     </nav>
@@ -334,10 +341,10 @@ function AuthenticatedApp({ page }: { page: Page }) {
     <Button
       className="org-switch"
       onClick={() => setSwitcher(true)}
-      aria-label="Switch organization"
+      aria-label={translate("switchOrganization")}
     >
       <span>
-        {selected?.name ?? "Choose organization"}
+        {selected?.name ?? translate("chooseOrganization")}
         <small>{selected ? roleLabel(selected.role) : ""}</small>
       </span>
       <span aria-hidden="true">⌄</span>
@@ -346,18 +353,21 @@ function AuthenticatedApp({ page }: { page: Page }) {
   return (
     <>
       <a className="skip-link" href="#main">
-        Skip to content
+        {translate("skipToContent")}
       </a>
       <header className="mobile-header">
-        <Button aria-label="Open navigation menu" onClick={() => setMenu(true)}>
-          Menu
+        <Button
+          aria-label={translate("openNavigationMenu")}
+          onClick={() => setMenu(true)}
+        >
+          {translate("menu")}
         </Button>
-        <strong className="brand">AIPRouter</strong>
+        <strong className="brand">{translate("aiprouter")}</strong>
         {switchButton}
       </header>
       <aside className="sidebar">
         <a href={pageHref("overview", selected?.id)} className="brand">
-          AIPRouter
+          {translate("aiprouter")}
         </a>
         {switchButton}
         {links(selected)}
@@ -373,8 +383,7 @@ function AuthenticatedApp({ page }: { page: Page }) {
         <ErrorNotice error={logoutError} />
         {!online && (
           <Notice tone="warning">
-            You are offline. Reconnect to confirm the current state before
-            making changes.
+            {translate("youAreOfflineReconnectToConfirmThe")}
           </Notice>
         )}
         {authorityMessage && <Notice tone="warning">{authorityMessage}</Notice>}
@@ -402,19 +411,19 @@ function AuthenticatedApp({ page }: { page: Page }) {
           </DirtyContext>
         ) : !selected ? (
           <Card>
-            <h1>Choose your organization</h1>
-            <p>Your previous organization is no longer available.</p>
+            <h1>{translate("chooseYourOrganization")}</h1>
+            <p>{translate("yourPreviousOrganizationIsNoLongerAvailable")}</p>
             {switchButton}
           </Card>
         ) : scopeBlocked ? (
           <Card>
-            <h1>Refresh your permissions</h1>
-            <p>Previously scoped data and editors have been cleared.</p>
+            <h1>{translate("refreshYourPermissions")}</h1>
+            <p>{translate("previouslyScopedDataAndEditorsHaveBeen")}</p>
             <a
               className="button primary"
               href={pageHref("overview", selected.id)}
             >
-              Return to your workspace
+              {translate("returnToYourWorkspace")}
             </a>
           </Card>
         ) : (
@@ -433,8 +442,11 @@ function AuthenticatedApp({ page }: { page: Page }) {
         )}
       </main>
       {switcher && (
-        <Dialog title="Switch organization" onClose={() => setSwitcher(false)}>
-          <Field label="Find an organization">
+        <Dialog
+          title={translate("switchOrganization")}
+          onClose={() => setSwitcher(false)}
+        >
+          <Field label={translate("findAnOrganization")}>
             <input
               type="search"
               autoFocus
@@ -463,28 +475,27 @@ function AuthenticatedApp({ page }: { page: Page }) {
               ))}
             {organizations.data?.every(
               (o) => !o.name.toLowerCase().includes(search.toLowerCase()),
-            ) && <p>No memberships match your search.</p>}
+            ) && <p>{translate("noMembershipsMatchYourSearch")}</p>}
           </div>
           <a className="button" href={pageHref("create")}>
-            Create organization
+            {translate("createOrganization")}
           </a>
-          <p>Each organization has separate personal settings.</p>
+          <p>{translate("eachOrganizationHasSeparatePersonalSettings")}</p>
         </Dialog>
       )}
       {menu && (
-        <Dialog title="Navigation" onClose={() => setMenu(false)}>
+        <Dialog title={translate("navigation")} onClose={() => setMenu(false)}>
           {links(selected)}
         </Dialog>
       )}
       {pendingScope && (
         <ConfirmDialog
-          title="Discard unsaved changes?"
-          confirmLabel="Discard and switch"
+          title={translate("discardUnsavedChanges")}
+          confirmLabel={translate("discardAndSwitch")}
           onClose={() => setPendingScope(undefined)}
           onConfirm={() => changeScope(pendingScope)}
         >
-          Your unsaved form changes will be discarded. Providers, pools,
-          routing, and keys are not copied to the next organization.
+          {translate("yourUnsavedFormChangesWillBeDiscarded")}
         </ConfirmDialog>
       )}
     </>
@@ -499,6 +510,7 @@ function OrganizationContent({
   session: GetSessionResponse;
   page: Page;
 }) {
+  useLocale();
   const cache = useQueryClient();
   const current = useQuery(
     OrganizationService.method.getOrganization,
@@ -541,19 +553,25 @@ function OrganizationContent({
     return (
       <>
         <ErrorNotice error={current.error} />
-        <Button onClick={() => void current.refetch()}>Try again</Button>
+        <Button onClick={() => void current.refetch()}>
+          {translate("tryAgain")}
+        </Button>
       </>
     );
   if (current.isPending) return <Loading />;
   const org = current.data?.organization;
   if (!org)
-    return <Notice tone="danger">This organization is unavailable.</Notice>;
+    return (
+      <Notice tone="danger">
+        {translate("thisOrganizationIsUnavailable")}
+      </Notice>
+    );
   const props = { organization: org, session };
-  if (adminLinks.some(([id]) => id === page)) {
+  if (adminLinks().some(([id]) => id === page)) {
     if (org.role !== Role.OWNER && org.role !== Role.ADMINISTRATOR)
       return (
         <Notice tone="danger">
-          Your permissions changed. This action is no longer available.
+          {translate("yourPermissionsChangedThisActionIsNo")}
         </Notice>
       );
     return <AdminPage section={page} {...props} />;

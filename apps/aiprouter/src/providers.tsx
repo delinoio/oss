@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale, formatNumber, enumLabel } from "./i18n";
 import { pageHref } from "./routes";
 import { useEffect, useState } from "react";
 import { HostedHelpers } from "./hosted";
@@ -41,19 +42,36 @@ import {
   Pagination,
 } from "./ui";
 export const connectionLabel: Record<number, string> = {
-  [ConnectionState.UNSPECIFIED]: "Unknown status",
-  [ConnectionState.READY]: "Connected",
-  [ConnectionState.AUTHORIZATION_REQUIRED]: "Reconnect required",
-  [ConnectionState.DISABLED]: "Not connected",
-  [ConnectionState.COOLDOWN]: "Cooling down",
-  [ConnectionState.ERROR]: "Connection failed",
+  get [ConnectionState.UNSPECIFIED]() {
+    return translate("unknownStatus");
+  },
+  get [ConnectionState.READY]() {
+    return translate("connected");
+  },
+  get [ConnectionState.AUTHORIZATION_REQUIRED]() {
+    return translate("reconnectRequired");
+  },
+  get [ConnectionState.DISABLED]() {
+    return translate("notConnected");
+  },
+  get [ConnectionState.COOLDOWN]() {
+    return translate("coolingDown");
+  },
+  get [ConnectionState.ERROR]() {
+    return translate("connectionFailed");
+  },
 };
 export const authLabel: Record<number, string> = {
-  [ProviderAuthKind.API_KEY]: "API key",
+  get [ProviderAuthKind.API_KEY]() {
+    return translate("apiKey");
+  },
   [ProviderAuthKind.OAUTH]: "OAuth",
-  [ProviderAuthKind.NO_AUTH]: "No authentication",
+  get [ProviderAuthKind.NO_AUTH]() {
+    return translate("noAuthentication");
+  },
 };
 export function ProvidersPage({ organization }: PageProps) {
+  useLocale();
   const api = useApi();
   const action = useAction();
   const [token, setToken] = useState("");
@@ -80,26 +98,23 @@ export function ProvidersPage({ organization }: PageProps) {
   return (
     <>
       <PageHeader
-        title="Your providers"
-        description={`Only yours in ${organization.name}.`}
+        title={translate("yourProviders")}
+        description={translate("onlyYoursIn", { value0: organization.name })}
         action={
           <Button variant="primary" onClick={() => setEdit(true)}>
-            Connect provider
+            {translate("connectProvider")}
           </Button>
         }
       />
-      <Notice>
-        Private to you. Your providers and routing are separate in every
-        organization.
-      </Notice>
+      <Notice>{translate("privateToYouYourProvidersAndRouting")}</Notice>
       <div className="actions">
         <a className="button" href={pageHref("pools", organization.id)}>
-          Manage account pools
+          {translate("manageAccountPools")}
         </a>
       </div>
       <HostedHelpers organizationId={organization.id} />
       {action.feedback}
-      <Field label="Search your connections">
+      <Field label={translate("searchYourConnections")}>
         <input
           type="search"
           value={search}
@@ -112,15 +127,19 @@ export function ProvidersPage({ organization }: PageProps) {
       ) : records?.length === 0 ? (
         <EmptyState
           title={
-            search ? "No matching connections" : "Connect your first provider"
+            search
+              ? translate("noMatchingConnections")
+              : translate("connectYourFirstProvider")
           }
           action={
             search ? (
-              <Button onClick={() => setSearch("")}>Clear filters</Button>
+              <Button onClick={() => setSearch("")}>
+                {translate("clearFilters")}
+              </Button>
             ) : undefined
           }
         >
-          Only you can use these provider accounts.
+          {translate("onlyYouCanUseTheseProviderAccounts")}
         </EmptyState>
       ) : (
         <div className="grid">
@@ -147,16 +166,28 @@ export function ProvidersPage({ organization }: PageProps) {
                       : "warning"
                 }
               >
-                {connectionLabel[c.state] ?? "Unknown status"}
+                {connectionLabel[c.state] ?? translate("unknownStatus")}
               </Badge>
-              <p>{authLabel[c.authKind]} · Personal account</p>
-              <p>Added {formatDate(c.createdAt)}</p>
+              <p>
+                {translate("personalAccount_938eac", {
+                  value0: authLabel[c.authKind],
+                })}
+              </p>
+              <p>{translate("added", { value0: formatDate(c.createdAt) })}</p>
               {c.cooldownUntil && (
-                <p>Cooling down until {formatDate(c.cooldownUntil)}</p>
+                <p>
+                  {translate("coolingDownUntil", {
+                    value0: formatDate(c.cooldownUntil),
+                  })}
+                </p>
               )}
               <div className="actions">
-                <Button onClick={() => setEdit(c)}>Edit connection</Button>
-                <Button onClick={() => setModels(c)}>View models</Button>
+                <Button onClick={() => setEdit(c)}>
+                  {translate("editConnection")}
+                </Button>
+                <Button onClick={() => setModels(c)}>
+                  {translate("viewModels")}
+                </Button>
                 {c.authKind === ProviderAuthKind.OAUTH && (
                   <Button
                     disabled={action.pending}
@@ -168,11 +199,11 @@ export function ProvidersPage({ organization }: PageProps) {
                       })
                     }
                   >
-                    Reconnect
+                    {translate("reconnect")}
                   </Button>
                 )}
                 <Button variant="danger" onClick={() => setRemove(c)}>
-                  Disconnect
+                  {translate("disconnect")}
                 </Button>
               </div>
             </Card>
@@ -232,7 +263,7 @@ export function ProvidersPage({ organization }: PageProps) {
                 setEdit(undefined);
                 setOauth(authorization);
               },
-              "Connection saved.",
+              translate("connectionSaved"),
             );
           }}
         />
@@ -270,7 +301,7 @@ export function ProvidersPage({ organization }: PageProps) {
                 );
                 setOauthSetup(undefined);
               },
-              "Authorization started.",
+              translate("authorizationStarted"),
             );
           }}
         />
@@ -285,8 +316,8 @@ export function ProvidersPage({ organization }: PageProps) {
       )}
       {remove && (
         <ConfirmDialog
-          title={`Disconnect ${remove.name}?`}
-          confirmLabel="Disconnect provider"
+          title={translate("disconnect_51710a", { value0: remove.name })}
+          confirmLabel={translate("disconnectProvider")}
           onClose={() => setRemove(undefined)}
           pending={action.pending}
           error={action.error}
@@ -298,38 +329,42 @@ export function ProvidersPage({ organization }: PageProps) {
                   connectionId: remove.id,
                 }),
               () => setRemove(undefined),
-              "Provider disconnected.",
+              translate("providerDisconnected"),
             );
           }}
         >
-          Future requests can no longer use this connection. Your external
-          provider account is not deleted. Affected pools:{" "}
-          {pools.data
-            ?.filter((p) => p.members.some((m) => m.connectionId === remove.id))
-            .map((p) => p.name)
-            .join(", ") ||
-            (pools.isPending || routes.isPending
-              ? "Checking dependencies…"
-              : "None")}
-          . Direct routes:{" "}
-          {routes.data
-            ?.filter((r) =>
-              r.targets.some(
-                (t) =>
-                  t.target.case === "connectionId" &&
-                  t.target.value === remove.id,
-              ),
-            )
-            .map((r) => r.modelId)
-            .join(", ") ||
-            (pools.isPending || routes.isPending
-              ? "Checking dependencies…"
-              : "None")}
-          . Routes through these pools also need review.{" "}
-          {(pools.error || routes.error) &&
-            "Dependencies could not be loaded. Review routing before disconnecting. "}
-          <a href={pageHref("routing", organization.id)}>Review routing</a>{" "}
-          before disconnecting.
+          {translate("futureRequestsCanNoLongerUseThis", {
+            value0:
+              pools.data
+                ?.filter((p) =>
+                  p.members.some((m) => m.connectionId === remove.id),
+                )
+                .map((p) => p.name)
+                .join(", ") ||
+              (pools.isPending || routes.isPending
+                ? translate("message_8bf7d8fc28")
+                : translate("message_dc937b5989")),
+            value1:
+              routes.data
+                ?.filter((r) =>
+                  r.targets.some(
+                    (t) =>
+                      t.target.case === "connectionId" &&
+                      t.target.value === remove.id,
+                  ),
+                )
+                .map((r) => r.modelId)
+                .join(", ") ||
+              (pools.isPending || routes.isPending
+                ? translate("message_8bf7d8fc28")
+                : translate("message_dc937b5989")),
+            value2:
+              (pools.error || routes.error) && translate("message_0ff7c2b8d6"),
+          })}
+          <a href={pageHref("routing", organization.id)}>
+            {translate("reviewRouting")}
+          </a>
+          {translate("beforeDisconnecting")}
         </ConfirmDialog>
       )}
     </>
@@ -357,6 +392,7 @@ function ConnectionEditor({
   pending: boolean;
   error: unknown;
 }) {
+  useLocale();
   const [configuration, setConfiguration] = useState(() =>
     configurationDraft(connection),
   );
@@ -373,7 +409,9 @@ function ConnectionEditor({
   const provider = providers.find((p) => p.id === providerId);
   return (
     <Dialog
-      title={connection ? "Edit connection" : "Connect provider"}
+      title={
+        connection ? translate("editConnection") : translate("connectProvider")
+      }
       onClose={onClose}
     >
       <form
@@ -394,14 +432,14 @@ function ConnectionEditor({
             setValidationError(
               error instanceof Error
                 ? error.message
-                : "Check the connection settings.",
+                : translate("checkTheConnectionSettings"),
             );
           }
         }}
       >
         {!connection && (
           <>
-            <Field label="Find a provider">
+            <Field label={translate("findAProvider")}>
               <input
                 type="search"
                 autoFocus
@@ -409,7 +447,7 @@ function ConnectionEditor({
                 onChange={(e) => setSearch(e.target.value)}
               />
             </Field>
-            <Field label="Provider">
+            <Field label={translate("provider")}>
               <select
                 required
                 value={providerId}
@@ -420,7 +458,9 @@ function ConnectionEditor({
                   setAuth(p?.authKinds[0] ?? ProviderAuthKind.UNSPECIFIED);
                 }}
               >
-                <option value="">Choose a supported provider</option>
+                <option value="">
+                  {translate("chooseASupportedProvider")}
+                </option>
                 {providers
                   .filter(
                     (p) =>
@@ -436,14 +476,14 @@ function ConnectionEditor({
                   ))}
               </select>
             </Field>
-            <Field label="Authentication">
+            <Field label={translate("authentication")}>
               <select
                 required
                 value={authKind}
                 onChange={(e) => setAuth(Number(e.target.value))}
               >
                 {!provider && (
-                  <option value={0}>Choose a provider first</option>
+                  <option value={0}>{translate("chooseAProviderFirst")}</option>
                 )}
                 {provider?.authKinds.map((k) => (
                   <option key={k} value={k}>
@@ -454,7 +494,7 @@ function ConnectionEditor({
             </Field>
           </>
         )}
-        <Field label="Account label">
+        <Field label={translate("accountLabel")}>
           <input
             required
             autoFocus={!!connection}
@@ -464,8 +504,8 @@ function ConnectionEditor({
         </Field>
         {authKind !== ProviderAuthKind.OAUTH && (
           <Field
-            label="Base URL (optional)"
-            hint="Leave empty to use the provider default. Private or local destinations require operator approval."
+            label={translate("baseUrlOptional")}
+            hint={translate("leaveEmptyToUseTheProviderDefault")}
           >
             <input
               type="url"
@@ -477,8 +517,12 @@ function ConnectionEditor({
         {authKind === ProviderAuthKind.API_KEY && (
           <>
             <Field
-              label={connection ? "Replacement API key (optional)" : "API key"}
-              hint="Stored secrets are never shown again."
+              label={
+                connection
+                  ? translate("replacementApiKeyOptional")
+                  : translate("apiKey")
+              }
+              hint={translate("storedSecretsAreNeverShownAgain")}
             >
               <input
                 type={reveal ? "text" : "password"}
@@ -489,14 +533,13 @@ function ConnectionEditor({
               />
             </Field>
             <Button aria-pressed={reveal} onClick={() => setReveal((v) => !v)}>
-              {reveal ? "Hide key" : "Reveal key"}
+              {reveal ? translate("hideKey") : translate("revealKey")}
             </Button>
           </>
         )}
         {authKind === ProviderAuthKind.OAUTH && !connection ? (
           <Notice>
-            After authorization, edit this connection to configure API formats,
-            policies, or headers.
+            {translate("afterAuthorizationEditThisConnectionToConfigure")}
           </Notice>
         ) : (
           <ConfigurationFields
@@ -509,17 +552,17 @@ function ConnectionEditor({
         {validationError && <Notice tone="danger">{validationError}</Notice>}
         <ErrorNotice error={error} />
         <div className="actions">
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{translate("cancel")}</Button>
           <Button
             type="submit"
             variant="primary"
             disabled={pending || !providerId || !name.trim() || !authKind}
           >
             {pending
-              ? "Saving…"
+              ? translate("message_23e39291d6")
               : authKind === ProviderAuthKind.OAUTH && !connection
-                ? "Continue with OAuth"
-                : "Save connection"}
+                ? translate("continueWithOauth")
+                : translate("saveConnection")}
           </Button>
         </div>
       </form>
@@ -537,6 +580,7 @@ function OAuthDialog({
   method?: ProviderOAuthMethod;
   onClose: () => void;
 }) {
+  useLocale();
   const api = useApi();
   const refresh = useRefresh();
   const action = useAction();
@@ -583,11 +627,12 @@ function OAuthDialog({
   }
 
   return (
-    <Dialog title="Provider authorization" onClose={onClose}>
-      <Badge>{OAuthState[auth.state]?.toLowerCase() ?? "Unknown status"}</Badge>
+    <Dialog title={translate("providerAuthorization")} onClose={onClose}>
+      <Badge>{enumLabel(OAuthState[auth.state])}</Badge>
       <p>
-        Expires {formatDate(auth.expiresAt)}. Closing this dialog does not
-        cancel authorization.
+        {translate("expiresClosingThisDialogDoesNotCancel", {
+          value0: formatDate(auth.expiresAt),
+        })}
       </p>
       {pending && (
         <>
@@ -598,12 +643,13 @@ function OAuthDialog({
               target="_blank"
               rel="noopener noreferrer"
             >
-              Open provider sign-in
+              {translate("openProviderSignIn")}
             </a>
           )}
           {auth.userCode && (
             <p>
-              Enter this code at the provider: <strong>{auth.userCode}</strong>
+              {translate("enterThisCodeAtTheProvider")}
+              <strong>{auth.userCode}</strong>
             </p>
           )}
           {!pollFlow && (
@@ -618,16 +664,12 @@ function OAuthDialog({
                       ...oauthCompletion(code, method, callbackState),
                     }),
                   onClose,
-                  "Provider connected.",
+                  translate("providerConnected"),
                 );
               }}
             >
-              <p>
-                Paste the authorization code, token, or full callback URL
-                returned by your provider. This server does not open a local
-                callback listener.
-              </p>
-              <Field label="Authorization code, token, or callback URL">
+              <p>{translate("pasteTheAuthorizationCodeTokenOrFull")}</p>
+              <Field label={translate("authorizationCodeTokenOrCallbackUrl")}>
                 <input
                   type="password"
                   value={code}
@@ -636,7 +678,7 @@ function OAuthDialog({
                 />
               </Field>
               {!auth.callbackState && (
-                <Field label="Authorization state">
+                <Field label={translate("authorizationState")}>
                   <input
                     value={state}
                     autoComplete="off"
@@ -649,14 +691,13 @@ function OAuthDialog({
                 variant="primary"
                 disabled={action.pending || !code || !callbackState}
               >
-                Complete authorization
+                {translate("completeAuthorization")}
               </Button>
             </form>
           )}
           {pollFlow && (
             <Notice>
-              Waiting for provider approval. This page checks the provider at
-              its current polling interval.
+              {translate("waitingForProviderApprovalThisPageChecks")}
             </Notice>
           )}
           <Button
@@ -669,17 +710,17 @@ function OAuthDialog({
                     authorizationId: auth.id,
                   }),
                 onClose,
-                "Authorization canceled.",
+                translate("authorizationCanceled"),
               );
             }}
           >
-            Cancel authorization
+            {translate("cancelAuthorization")}
           </Button>
         </>
       )}
       {auth.state === OAuthState.COMPLETED && auth.connectionId && (
         <Notice tone="success">
-          Provider connected. Your connection is ready in this organization.
+          {translate("providerConnectedYourConnectionIsReadyIn")}
         </Notice>
       )}
       {action.feedback}
@@ -691,7 +732,7 @@ function OAuthDialog({
             onClose();
           }}
         >
-          Done
+          {translate("done")}
         </Button>
       )}
     </Dialog>
@@ -707,6 +748,7 @@ function ModelsDialog({
   connection: ProviderConnection;
   onClose: () => void;
 }) {
+  useLocale();
   const [search, setSearch] = useState("");
   const query = useQuery(ProviderService.method.listProviderModels, {
     organizationId,
@@ -716,8 +758,11 @@ function ModelsDialog({
     `${m.id} ${m.displayName}`.toLowerCase().includes(search.toLowerCase()),
   );
   return (
-    <Dialog title={`Models from ${connection.name}`} onClose={onClose}>
-      <Field label="Find a model">
+    <Dialog
+      title={translate("modelsFrom", { value0: connection.name })}
+      onClose={onClose}
+    >
+      <Field label={translate("findAModel")}>
         <input
           autoFocus
           type="search"
@@ -729,7 +774,7 @@ function ModelsDialog({
       {query.isPending ? (
         <Loading />
       ) : models?.length === 0 ? (
-        <p>No matching models.</p>
+        <p>{translate("noMatchingModels")}</p>
       ) : (
         <ul>
           {models?.map((m) => (
@@ -738,15 +783,17 @@ function ModelsDialog({
               <br />
               <code>{m.id}</code>
               <p>
-                Context: {m.contextLimit?.toString() ?? "Unknown"} · Output:{" "}
-                {m.outputLimit?.toString() ?? "Unknown"}
+                {translate("contextOutput", {
+                  value0: formatNumber(m.contextLimit),
+                  value1: formatNumber(m.outputLimit),
+                })}
               </p>
             </li>
           ))}
         </ul>
       )}
-      <p>Use a model ID when configuring a route for this connection.</p>
-      <Button onClick={onClose}>Done</Button>
+      <p>{translate("useAModelIdWhenConfiguringA")}</p>
+      <Button onClick={onClose}>{translate("done")}</Button>
     </Dialog>
   );
 }
@@ -766,11 +813,21 @@ type OAuthOptions = Pick<
   | "clientId"
 >;
 const oauthMethodLabels: Record<number, string> = {
-  [ProviderOAuthMethod.PKCE]: "Browser sign-in (PKCE)",
-  [ProviderOAuthMethod.DEVICE]: "Device code",
-  [ProviderOAuthMethod.BROWSER_POLL]: "Browser approval",
-  [ProviderOAuthMethod.EXPLICIT_TOKEN]: "Provider token",
-  [ProviderOAuthMethod.NATIVE_CALLBACK]: "Native callback",
+  get [ProviderOAuthMethod.PKCE]() {
+    return translate("browserSignInPkce");
+  },
+  get [ProviderOAuthMethod.DEVICE]() {
+    return translate("deviceCode");
+  },
+  get [ProviderOAuthMethod.BROWSER_POLL]() {
+    return translate("browserApproval");
+  },
+  get [ProviderOAuthMethod.EXPLICIT_TOKEN]() {
+    return translate("providerToken");
+  },
+  get [ProviderOAuthMethod.NATIVE_CALLBACK]() {
+    return translate("nativeCallback");
+  },
 };
 function OAuthSetup({
   provider,
@@ -785,24 +842,27 @@ function OAuthSetup({
   onClose: () => void;
   onSave: (options: OAuthOptions) => void;
 }) {
+  useLocale();
   const [method, setMethod] = useState<ProviderOAuthMethod | undefined>();
   const [values, setValues] = useState<Record<string, string>>({});
   const update = (key: string, value: string) =>
     setValues((old) => ({ ...old, [key]: value }));
   const fields = [
-    ["loginProvider", "Login provider"],
-    ["ssoRegion", "SSO region"],
-    ["apiRegion", "API region"],
-    ["startUrl", "Start URL"],
-    ["baseUrl", "API base URL"],
-    ["authBaseUrl", "Authentication base URL"],
-    ["portalUrl", "Portal URL"],
-    ["registerUrl", "Registration URL"],
-    ["clientId", "Client ID"],
+    ["loginProvider", translate("loginProvider")],
+    ["ssoRegion", translate("ssoRegion")],
+    ["apiRegion", translate("apiRegion")],
+    ["startUrl", translate("startUrl")],
+    ["baseUrl", translate("apiBaseUrl")],
+    ["authBaseUrl", translate("authenticationBaseUrl")],
+    ["portalUrl", translate("portalUrl")],
+    ["registerUrl", translate("registrationUrl")],
+    ["clientId", translate("clientId")],
   ] as const;
   return (
     <Dialog
-      title={`Authorize ${provider?.displayName ?? "provider"}`}
+      title={translate("authorize", {
+        value0: provider?.displayName ?? "provider",
+      })}
       onClose={onClose}
     >
       <form
@@ -816,31 +876,30 @@ function OAuthSetup({
         }}
       >
         <Notice>
-          Use the callback and regional settings required by your provider.
-          Leave optional settings empty to use the provider defaults.
+          {translate("useTheCallbackAndRegionalSettingsRequired")}
         </Notice>
         {!!provider?.oauthMethods.length && (
-          <Field label="Authorization method">
+          <Field label={translate("authorizationMethod")}>
             <select
               value={method ?? ""}
               onChange={(e) =>
                 setMethod(e.target.value ? Number(e.target.value) : undefined)
               }
             >
-              <option value="">Provider default</option>
+              <option value="">{translate("providerDefault")}</option>
               {provider.oauthMethods
                 .filter((m) => m !== ProviderOAuthMethod.UNSPECIFIED)
                 .map((m) => (
                   <option key={m} value={m}>
-                    {oauthMethodLabels[m] ?? "Provider method"}
+                    {oauthMethodLabels[m] ?? translate("providerMethod")}
                   </option>
                 ))}
             </select>
           </Field>
         )}
         <Field
-          label="Callback URI"
-          hint="Required for native callbacks and most PKCE providers. Enter the exact registered callback URI. The server does not start a local listener; paste the resulting callback in the next step."
+          label={translate("callbackUri")}
+          hint={translate("requiredForNativeCallbacksAndMostPkce")}
         >
           <input
             autoFocus
@@ -851,7 +910,7 @@ function OAuthSetup({
           />
         </Field>
         <details>
-          <summary>Regional and advanced provider settings</summary>
+          <summary>{translate("regionalAndAdvancedProviderSettings")}</summary>
           {fields.map(([key, label]) => (
             <Field key={key} label={label}>
               <input
@@ -865,9 +924,11 @@ function OAuthSetup({
         </details>
         <ErrorNotice error={error} />
         <div className="actions">
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{translate("cancel")}</Button>
           <Button type="submit" variant="primary" disabled={pending}>
-            {pending ? "Starting…" : "Start authorization"}
+            {pending
+              ? translate("message_bbe5fc3b9e")
+              : translate("startAuthorization")}
           </Button>
         </div>
       </form>
@@ -894,7 +955,7 @@ export function oauthCompletion(
       const returnedState = callback.searchParams.get("state");
       if (!code || !returnedState || returnedState !== state)
         throw new ConnectError(
-          "Authorization callback does not match this login.",
+          translate("authorizationCallbackDoesNotMatchThisLogin"),
           Code.InvalidArgument,
         );
       return { code, state: returnedState };

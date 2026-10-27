@@ -1,5 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 import {
+  t as translate,
+  useLocale,
+  getLocale,
+  formatDecimal,
+  enumLabel,
+} from "../i18n";
+import {
   createContext,
   useContext,
   useEffect,
@@ -20,8 +27,8 @@ import {
 } from "@aiprouter/client";
 import { timestampDate, type Timestamp } from "@bufbuild/protobuf/wkt";
 
-export const permissionMessage =
-  "Your permissions changed. This action is no longer available.";
+export const permissionMessage = () =>
+  translate("yourPermissionsChangedThisActionIsNo");
 export const AdminAuthority = createContext({
   organizationId: "",
   role: Role.UNSPECIFIED,
@@ -39,26 +46,20 @@ export function canRemove(role: Role, target: Role) {
 }
 export function date(value?: Timestamp) {
   return value
-    ? `${timestampDate(value).toLocaleString()} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`
-    : "Unknown";
+    ? `${timestampDate(value).toLocaleString(getLocale())} (${Intl.DateTimeFormat().resolvedOptions().timeZone})`
+    : translate("unknown");
 }
 export function milliseconds(value?: Timestamp) {
   return value ? timestampDate(value).getTime() : undefined;
 }
 export function money(value?: Money) {
   return value?.decimalAmount !== undefined && value.decimalAmount !== ""
-    ? `${value.currency} ${value.decimalAmount}`
-    : "Unknown";
+    ? `${value.currency} ${formatDecimal(value.decimalAmount)}`
+    : translate("unknown");
 }
-export function label(value: string | undefined) {
-  return value
-    ? value
-        .toLowerCase()
-        .replaceAll("_", " ")
-        .replace(/^./, (c) => c.toUpperCase())
-    : "Unknown";
-}
+export const label = enumLabel;
 export function useNow() {
+  useLocale();
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const timer = setInterval(() => setNow(Date.now()), 1000);
@@ -73,48 +74,55 @@ export function ErrorNotice({
   error: unknown;
   retry?: () => void;
 }) {
+  useLocale();
   if (!error) return null;
   const e = ConnectError.from(error);
   const detail = e.findDetails(ErrorDetailSchema)[0];
   const message =
     e.code === Code.Unimplemented
-      ? "This capability is not available on this server yet."
+      ? translate("thisCapabilityIsNotAvailableOnThis")
       : e.code === Code.PermissionDenied
-        ? permissionMessage
+        ? permissionMessage()
         : e.code === Code.Unauthenticated
-          ? "Your session expired. Sign in again before continuing."
+          ? translate("yourSessionExpiredSignInAgainBefore")
           : e.code === Code.Unavailable
-            ? "The service is unavailable. No change is confirmed. Try again when connected."
+            ? translate("theServiceIsUnavailableNoChangeIs")
             : e.code === Code.ResourceExhausted
-              ? "Rate limited. Wait before trying again."
+              ? translate("rateLimitedWaitBeforeTryingAgain")
               : e.code === Code.FailedPrecondition
-                ? "This action is no longer valid. Refresh to check expiry and current state."
+                ? translate("thisActionIsNoLongerValidRefresh")
                 : e.code === Code.Aborted
-                  ? "This record changed. Refresh and review before saving again."
-                  : "The request failed. Your change is not confirmed.";
+                  ? translate("thisRecordChangedRefreshAndReviewBefore")
+                  : translate("theRequestFailedYourChangeIsNot");
   return (
     <div role="alert" className="admin-error">
       <p>{message}</p>
-      {detail?.requestId && <p>Request ID: {detail.requestId}</p>}
-      {detail?.retryAfterSeconds !== undefined && (
-        <p>Retry after {detail.retryAfterSeconds} seconds.</p>
+      {detail?.requestId && (
+        <p>{translate("requestId", { value0: detail.requestId })}</p>
       )}
-      {retry && <button onClick={retry}>Try again</button>}
+      {detail?.retryAfterSeconds !== undefined && (
+        <p>
+          {translate("retryAfterSeconds", { value0: detail.retryAfterSeconds })}
+        </p>
+      )}
+      {retry && <button onClick={retry}>{translate("tryAgain")}</button>}
     </div>
   );
 }
 export function Loading() {
+  useLocale();
   return (
     <div className="admin-card admin-skeleton" role="status" aria-busy="true">
-      Loading…
+      {translate("loading")}
     </div>
   );
 }
 export function Empty({
-  children = "No records yet.",
+  children = translate("noRecordsYet"),
 }: {
   children?: ReactNode;
 }) {
+  useLocale();
   return <p className="admin-empty">{children}</p>;
 }
 export function Pager({
@@ -126,10 +134,15 @@ export function Pager({
   token: string;
   onChange: (token: string) => void;
 }) {
+  useLocale();
   return (
-    <nav aria-label="Record pages" className="admin-actions">
-      {token && <button onClick={() => onChange("")}>First page</button>}
-      {next && <button onClick={() => onChange(next)}>Next page</button>}
+    <nav aria-label={translate("recordPages")} className="admin-actions">
+      {token && (
+        <button onClick={() => onChange("")}>{translate("firstPage")}</button>
+      )}
+      {next && (
+        <button onClick={() => onChange(next)}>{translate("nextPage")}</button>
+      )}
     </nav>
   );
 }
@@ -137,6 +150,7 @@ export function Pager({
 // Preflight checks prevent a stale editor from sending a privileged mutation. The
 // server must still check authority atomically when applying the mutation.
 export function useAction(operator = false) {
+  useLocale();
   const authority = useContext(AdminAuthority);
   const transport = useTransport();
   const cache = useQueryClient();
@@ -167,7 +181,7 @@ export function useAction(operator = false) {
           transport,
         ).getSession({});
         if (!session.isInstanceOperator)
-          throw new ConnectError(permissionMessage, Code.PermissionDenied);
+          throw new ConnectError(permissionMessage(), Code.PermissionDenied);
       } else {
         const current = await createClient(
           OrganizationService,
@@ -179,14 +193,14 @@ export function useAction(operator = false) {
           !isAdmin(role) ||
           (options.owner && role !== Role.OWNER)
         )
-          throw new ConnectError(permissionMessage, Code.PermissionDenied);
+          throw new ConnectError(permissionMessage(), Code.PermissionDenied);
       }
       // A scope switch unmounts the editor, including while preflight is in flight.
       if (!mounted.current) return;
       await action();
       await cache.invalidateQueries();
       if (mounted.current) {
-        setNotice(options.success ?? "Changes saved.");
+        setNotice(options.success ?? translate("changesSaved"));
         options.done?.();
       }
     } catch (cause) {
@@ -215,9 +229,7 @@ export function useAction(operator = false) {
       <>
         <ErrorNotice error={error} />
         <p role="status">
-          {pending
-            ? "Saving… Closing a dialog does not cancel a submitted change."
-            : notice}
+          {pending ? translate("message_238b2274b1") : notice}
         </p>
       </>
     ),
@@ -235,6 +247,7 @@ export function Dialog({
   onClose: () => void;
   initial?: "input" | "cancel";
 }) {
+  useLocale();
   const ref = useRef<HTMLDialogElement>(null);
   const id = useId();
   useEffect(() => {
@@ -285,7 +298,7 @@ export function Dialog({
     >
       <div className="admin-dialog-heading">
         <h2 id={id}>{title}</h2>
-        <button aria-label="Close dialog" onClick={onClose}>
+        <button aria-label={translate("closeDialog")} onClick={onClose}>
           ×
         </button>
       </div>
@@ -308,6 +321,7 @@ export function Confirm({
   pending: boolean;
   onClose: () => void;
 }) {
+  useLocale();
   const [typed, setTyped] = useState("");
   return (
     <Dialog title={title} onClose={onClose} initial="cancel">
@@ -320,7 +334,7 @@ export function Confirm({
         <div>{children}</div>
         {name && (
           <label>
-            Type {name} to confirm
+            {translate("typeToConfirm", { value0: name })}
             <input
               required
               value={typed}
@@ -330,7 +344,7 @@ export function Confirm({
         )}
         <div className="admin-actions">
           <button type="button" data-cancel onClick={onClose}>
-            Cancel
+            {translate("cancel")}
           </button>
           <button
             className="admin-danger"

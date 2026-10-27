@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale } from "../i18n";
 import { pageHref } from "../routes";
 import { useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
@@ -18,16 +19,24 @@ import {
 } from "./shared";
 
 const signInErrors: Record<string, string> = {
-  missing_email:
-    "Your identity provider did not provide an email address. Add an email there, then try again.",
-  unverified_email:
-    "Verify your email address with your identity provider, then try again.",
-  verified_email_required:
-    "Your identity provider must provide a verified email address. Correct this at your identity provider, then try again.",
-  login_denied: "Sign-in was canceled or denied. Try again when you are ready.",
-  login_expired: "This sign-in attempt expired. Start a new sign-in.",
-  authentication_unavailable:
-    "Sign-in is temporarily unavailable. Try again later.",
+  get missing_email() {
+    return translate("yourIdentityProviderDidNotProvideAn");
+  },
+  get unverified_email() {
+    return translate("verifyYourEmailAddressWithYourIdentity");
+  },
+  get verified_email_required() {
+    return translate("yourIdentityProviderMustProvideAVerified");
+  },
+  get login_denied() {
+    return translate("message_d1b41c73b8");
+  },
+  get login_expired() {
+    return translate("thisSignInAttemptExpiredStartA");
+  },
+  get authentication_unavailable() {
+    return translate("message_40ec40dda5");
+  },
 };
 
 export function SignInPage({
@@ -37,27 +46,27 @@ export function SignInPage({
   error?: string;
   returnTo?: string;
 }) {
+  useLocale();
   const params = new URLSearchParams(window.location.search);
   const reason = error ?? params.get("error");
   const destination = returnTo ?? params.get("return_to") ?? "/overview";
   return (
     <AccountSurface
-      title="Sign in to AIPRouter"
-      subtitle="Use your organization's identity provider to continue."
+      title={translate("signInToAiprouter")}
+      subtitle={translate("useYourOrganizationSIdentityProviderTo")}
     >
       <div className="account-card">
         {reason && (
           <p className="account-error" role="alert">
-            {signInErrors[reason] ??
-              "Sign-in could not be completed. Start a new sign-in."}
+            {signInErrors[reason] ?? translate("message_3590afc42f")}
           </p>
         )}
-        <p>Your identity provider must supply a verified email address.</p>
+        <p>{translate("yourIdentityProviderMustSupplyAVerified")}</p>
         <a
           className="account-action account-primary"
           href={signInHref(destination)}
         >
-          Continue with your identity provider
+          {translate("continueWithYourIdentityProvider")}
         </a>
       </div>
     </AccountSurface>
@@ -72,6 +81,7 @@ export function AccountPage({
   session?: GetSessionResponse;
   onSessionChange?: () => void;
 }) {
+  useLocale();
   const cache = useQueryClient();
   const session = useQuery(
     AccountService.method.getSession,
@@ -105,20 +115,24 @@ export function AccountPage({
   if (ended)
     return (
       <AccountSurface
-        title={deletion.isSuccess ? "Account deleted" : "Signed out"}
+        title={
+          deletion.isSuccess
+            ? translate("accountDeleted")
+            : translate("signedOut")
+        }
       >
         <p role="status">
           {deletion.isSuccess
-            ? "Your account has been deleted."
-            : "Your session has ended."}
+            ? translate("yourAccountHasBeenDeleted")
+            : translate("yourSessionHasEnded")}
         </p>
-        <a href={signInHref("/overview")}>Sign in</a>
+        <a href={signInHref("/overview")}>{translate("signIn")}</a>
       </AccountSurface>
     );
   return (
     <AccountSurface
-      title="Account"
-      subtitle="Your identity and account settings."
+      title={translate("account")}
+      subtitle={translate("yourIdentityAndAccountSettings")}
     >
       {!profile && session.isPending && <LoadingAccount />}
       <AccountError
@@ -130,15 +144,15 @@ export function AccountPage({
       {profile && (
         <>
           <div className="account-card">
-            <h2>Profile</h2>
+            <h2>{translate("profile")}</h2>
             <dl className="account-details">
-              <dt>Name</dt>
-              <dd>{profile.displayName || "Not provided"}</dd>
-              <dt>Email</dt>
+              <dt>{translate("name")}</dt>
+              <dd>{profile.displayName || translate("notProvided")}</dd>
+              <dt>{translate("email")}</dt>
               <dd>{profile.email}</dd>
             </dl>
             <p className="account-hint">
-              Manage your name and verified email with your identity provider.
+              {translate("manageYourNameAndVerifiedEmailWith")}
             </p>
             <AccountError error={logout.error} />
             <button
@@ -155,14 +169,16 @@ export function AccountPage({
                 )
               }
             >
-              {logout.isPending ? "Signing out…" : "Sign out"}
+              {logout.isPending
+                ? translate("signingOut")
+                : translate("signOut")}
             </button>
           </div>
           <div className="account-card">
-            <h2>Delete account</h2>
-            <p>First transfer or delete every organization you own.</p>
+            <h2>{translate("deleteAccount")}</h2>
+            <p>{translate("firstTransferOrDeleteEveryOrganizationYou")}</p>
             {organizations.isPending && (
-              <p role="status">Checking owned organizations…</p>
+              <p role="status">{translate("checkingOwnedOrganizations")}</p>
             )}
             <AccountError
               error={organizations.error}
@@ -172,12 +188,12 @@ export function AccountPage({
             />
             {owned.length > 0 && (
               <>
-                <p>These organizations block account deletion:</p>
+                <p>{translate("theseOrganizationsBlockAccountDeletion")}</p>
                 <ul>
                   {owned.map((org) => (
                     <li key={org.id}>
-                      <a href={pageHref("settings", org.id)}>{org.name}</a> —
-                      transfer ownership or delete this organization.
+                      <a href={pageHref("settings", org.id)}>{org.name}</a>{" "}
+                      {translate("transferOwnershipOrDeleteThisOrganization")}
                     </li>
                   ))}
                 </ul>
@@ -186,8 +202,7 @@ export function AccountPage({
             {!complete && (
               <>
                 <p>
-                  The organization list is incomplete. Account deletion is
-                  blocked until all ownership can be checked.
+                  {translate("theOrganizationListIsIncompleteAccountDeletion")}
                 </p>
                 <button
                   type="button"
@@ -196,14 +211,12 @@ export function AccountPage({
                     void organizations.fetchNextPage();
                   }}
                 >
-                  Check more organizations
+                  {translate("checkMoreOrganizations")}
                 </button>
               </>
             )}
             <p>
-              Deletion removes your memberships and personal identity, and
-              anonymizes surviving usage and audit records. Existing backups
-              expire under the operator's policy.
+              {translate("deletionRemovesYourMembershipsAndPersonalIdentity")}
             </p>
             <AccountError error={deletion.error} />
             <button
@@ -212,24 +225,18 @@ export function AccountPage({
               disabled={!canDelete || deletion.isPending || logout.isPending}
               onClick={() => setConfirmDelete(true)}
             >
-              Delete my account
+              {translate("deleteMyAccount")}
             </button>
           </div>
         </>
       )}
       {confirmDelete && (
         <AccountDialog
-          title="Delete your account?"
+          title={translate("deleteYourAccount")}
           onClose={() => setConfirmDelete(false)}
         >
-          <p>
-            This removes all your memberships and personal identity. Surviving
-            usage and audit records are anonymized. Existing backups expire
-            under the operator's policy. This action cannot be undone.
-          </p>
-          <p>
-            New requests stop. Responses already sent to a provider may finish.
-          </p>
+          <p>{translate("thisRemovesAllYourMembershipsAndPersonal")}</p>
+          <p>{translate("newRequestsStopResponsesAlreadySentTo")}</p>
           <AccountError error={deletion.error} />
           <div className="account-actions">
             <button
@@ -237,7 +244,7 @@ export function AccountPage({
               type="button"
               onClick={() => setConfirmDelete(false)}
             >
-              Cancel
+              {translate("cancel")}
             </button>
             <button
               type="button"
@@ -257,7 +264,9 @@ export function AccountPage({
                 )
               }
             >
-              {deletion.isPending ? "Deleting…" : "Delete my account"}
+              {deletion.isPending
+                ? translate("message_43b5894c3e")
+                : translate("deleteMyAccount")}
             </button>
           </div>
         </AccountDialog>

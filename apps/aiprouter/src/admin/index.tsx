@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale } from "../i18n";
 import { pageHref, operatorPaths, operatorSection } from "../routes";
 import { useCallback, useEffect, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
@@ -22,6 +23,7 @@ import { Health, InstanceConfiguration, Prices } from "./operator";
 import "./admin.css";
 
 export function AdminPage(props: PageProps & { section: string }) {
+  useLocale();
   return (
     <OrganizationBoundary
       key={`${props.session.userId}:${props.organization.id}`}
@@ -33,6 +35,7 @@ function OrganizationBoundary({
   organization,
   section,
 }: PageProps & { section: string }) {
+  useLocale();
   const [denied, setDenied] = useState(false);
   const query = useQuery(
     OrganizationService.method.getOrganization,
@@ -53,9 +56,9 @@ function OrganizationBoundary({
   if (denied || !current || !isAdmin(current.role))
     return (
       <div className="admin-workspace">
-        <p role="alert">{permissionMessage}</p>
+        <p role="alert">{permissionMessage()}</p>
         <a href={pageHref("overview", organization.id)}>
-          Back to your workspace
+          {translate("backToYourWorkspace")}
         </a>
       </div>
     );
@@ -68,7 +71,9 @@ function OrganizationBoundary({
       }}
     >
       <div className="admin-workspace" key={`${section}:${current.role}`}>
-        <p className="admin-scope">Organization: {current.name}</p>
+        <p className="admin-scope">
+          {translate("organization_dbeb95", { value0: current.name })}
+        </p>
         {section === "members" ? (
           <Members />
         ) : section === "invitations" ? (
@@ -80,21 +85,23 @@ function OrganizationBoundary({
         ) : section === "settings" ? (
           <Settings organization={current} />
         ) : (
-          <PageHeader title="Organization page unavailable" />
+          <PageHeader title={translate("organizationPageUnavailable")} />
         )}
       </div>
     </AdminAuthority.Provider>
   );
 }
-const operatorSections = [
-  ["health", "Health"],
-  ["limits", "Request limits"],
-  ["retention", "Retention"],
-  ["destinations", "Destinations"],
-  ["prices", "Price overrides"],
-  ["audit", "Audit"],
-] as const;
+const operatorSections = () =>
+  [
+    ["health", translate("health")],
+    ["limits", translate("requestLimits")],
+    ["retention", translate("retention")],
+    ["destinations", translate("destinations")],
+    ["prices", translate("priceOverrides")],
+    ["audit", translate("audit")],
+  ] as const;
 export function OperatorPage({ session }: { session: GetSessionResponse }) {
+  useLocale();
   return (
     <div className="admin-operator-frame">
       <OperatorBoundary key={session.userId} />
@@ -102,6 +109,7 @@ export function OperatorPage({ session }: { session: GetSessionResponse }) {
   );
 }
 function OperatorBoundary() {
+  useLocale();
   const [section, setSection] = useState(() =>
     operatorSection(window.location.pathname),
   );
@@ -114,7 +122,7 @@ function OperatorBoundary() {
       if (next === section) return;
       if (
         dirty &&
-        !window.confirm("Leave this page? Unsaved changes will be lost.")
+        !window.confirm(translate("leaveThisPageUnsavedChangesWillBe"))
       ) {
         // A history event has already changed the URL. Restore the editor's
         // address when the user keeps unsaved changes.
@@ -153,8 +161,8 @@ function OperatorBoundary() {
   if (denied || !session.data?.isInstanceOperator)
     return (
       <div className="admin-workspace">
-        <p role="alert">{permissionMessage}</p>
-        <a href="/overview">Back to organizations</a>
+        <p role="alert">{permissionMessage()}</p>
+        <a href="/overview">{translate("backToOrganizations")}</a>
       </div>
     );
   return (
@@ -163,14 +171,14 @@ function OperatorBoundary() {
     >
       <div className="admin-workspace">
         <header className="admin-instance-heading">
-          <strong>Instance console</strong>
-          <a href="/overview">Back to organizations</a>
+          <strong>{translate("instanceConsole")}</strong>
+          <a href="/overview">{translate("backToOrganizations")}</a>
         </header>
         <p className="admin-banner">
-          Whole-instance health and aggregates only.
+          {translate("wholeInstanceHealthAndAggregatesOnly")}
         </p>
-        <nav className="admin-tabs" aria-label="Instance console">
-          {operatorSections.map(([key, title]) => (
+        <nav className="admin-tabs" aria-label={translate("instanceConsole")}>
+          {operatorSections().map(([key, title]) => (
             <button
               key={key}
               aria-current={section === key ? "page" : undefined}
@@ -179,7 +187,7 @@ function OperatorBoundary() {
                   section !== key &&
                   dirty &&
                   !window.confirm(
-                    "Leave this page? Unsaved changes will be lost.",
+                    translate("leaveThisPageUnsavedChangesWillBe"),
                   )
                 )
                   return;

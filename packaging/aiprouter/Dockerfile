@@ -9,6 +9,7 @@ COPY packages/aiprouter-client/package.json ./packages/aiprouter-client/package.
 RUN pnpm install --filter @aiprouter/console... --frozen-lockfile --ignore-scripts
 COPY apps/aiprouter ./apps/aiprouter
 COPY packages/aiprouter-client ./packages/aiprouter-client
+COPY scripts/localization ./scripts/localization
 COPY scripts/aiprouter/console-notices.mjs ./scripts/aiprouter/console-notices.mjs
 RUN pnpm --dir apps/aiprouter build && test -s apps/aiprouter/dist/index.html
 RUN node scripts/aiprouter/console-notices.mjs /src/node_modules/.pnpm /console-notices

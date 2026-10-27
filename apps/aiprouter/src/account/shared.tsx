@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale, getLocale } from "../i18n";
 import {
   ErrorDetailSchema,
   ErrorReason,
@@ -20,11 +21,12 @@ export function timestampMs(value?: Timestamp): number | undefined {
 export function dateLabel(value?: Timestamp): string {
   const ms = timestampMs(value);
   return ms === undefined
-    ? "Not available"
-    : new Date(ms).toLocaleString("en", { timeZoneName: "short" });
+    ? translate("notAvailable")
+    : new Date(ms).toLocaleString(getLocale(), { timeZoneName: "short" });
 }
 
 export function useNow() {
+  useLocale();
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
@@ -53,45 +55,44 @@ export function AccountError({
   error: unknown;
   retry?: () => void;
 }) {
+  useLocale();
   if (!error) return null;
   const rpc = ConnectError.from(error);
   const detail = rpc.findDetails(ErrorDetailSchema)[0];
-  let message = "The request could not be completed. Try again.";
+  let message = translate("theRequestCouldNotBeCompletedTry");
   if (detail?.reason === ErrorReason.INVITATION_EMAIL_MISMATCH)
-    message = "Sign in with the invited email address.";
+    message = translate("message_3596e6bf6e");
   else if (rpc.code === Code.Unauthenticated)
-    message =
-      "Your session has expired. Sign in again, then review and submit the action.";
+    message = translate("message_38d7e6c12c");
   else if (rpc.code === Code.PermissionDenied)
-    message =
-      "Your permissions changed or this action is not available to your account.";
+    message = translate("message_92374e8fd1");
   else if (rpc.code === Code.Unavailable)
-    message = "The service is unavailable. No change has been confirmed.";
+    message = translate("message_5eace95909");
   else if (rpc.code === Code.NotFound)
-    message = "This link or code is invalid or no longer available.";
+    message = translate("message_34fb745477");
   else if (rpc.code === Code.InvalidArgument)
-    message = "Check the entered value and try again.";
+    message = translate("message_18c27a80d2");
   else if (detail?.reason === ErrorReason.EXPIRED)
-    message = "This request has expired. Start a new request.";
+    message = translate("message_eaf68610b9");
   else if (detail?.reason === ErrorReason.CANCELED)
-    message = "This request was canceled.";
+    message = translate("message_1ccc7a1400");
   else if (detail?.reason === ErrorReason.OWNED_ORGANIZATIONS_REMAIN)
-    message =
-      "Transfer or delete all organizations you own before deleting your account.";
+    message = translate("message_4af227dc42");
   else if (detail?.reason === ErrorReason.CONFLICT)
-    message =
-      "This request has already changed. Refresh its details before continuing.";
+    message = translate("message_f98ec6e0c8");
   return (
     <div className="account-error" role="alert">
       <p>{message}</p>
-      {detail?.requestId && <p>Request ID: {detail.requestId}</p>}
+      {detail?.requestId && (
+        <p>{translate("requestId", { value0: detail.requestId })}</p>
+      )}
       {rpc.code === Code.Unauthenticated ||
       detail?.reason === ErrorReason.INVITATION_EMAIL_MISMATCH ? (
-        <a href={signInHref()}>Sign in again</a>
+        <a href={signInHref()}>{translate("signInAgain")}</a>
       ) : (
         retry && (
           <button type="button" onClick={retry}>
-            Try again
+            {translate("tryAgain")}
           </button>
         )
       )}
@@ -100,6 +101,7 @@ export function AccountError({
 }
 
 export function useOrganizations() {
+  useLocale();
   const query = useInfiniteQuery(
     OrganizationService.method.listOrganizations,
     { page: { pageSize: 100 } },
@@ -120,6 +122,7 @@ export function useOrganizations() {
 }
 
 export function useMyInvitations(enabled = true) {
+  useLocale();
   const query = useInfiniteQuery(
     InvitationService.method.listMyInvitations,
     { page: { pageSize: 100 } },
@@ -148,6 +151,7 @@ export function AccountSurface({
   subtitle?: string;
   children: ReactNode;
 }) {
+  useLocale();
   return (
     <section className="account-surface" aria-label={title}>
       <header>
@@ -160,7 +164,8 @@ export function AccountSurface({
 }
 
 export function LoadingAccount() {
-  return <p role="status">Loading your account…</p>;
+  useLocale();
+  return <p role="status">{translate("loadingYourAccount")}</p>;
 }
 
 export function AccountDialog({
@@ -172,6 +177,7 @@ export function AccountDialog({
   onClose: () => void;
   children: ReactNode;
 }) {
+  useLocale();
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
   useEffect(() => {
@@ -212,8 +218,12 @@ export function AccountDialog({
     >
       <h2 id={titleId}>{title}</h2>
       {children}
-      <button type="button" onClick={onClose} aria-label={`Close ${title}`}>
-        Close
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label={translate("close_312254", { value0: title })}
+      >
+        {translate("close")}
       </button>
     </dialog>
   );

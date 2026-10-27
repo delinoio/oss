@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale } from "./i18n";
 import { pageHref } from "./routes";
 import { useState } from "react";
 import {
@@ -46,6 +47,7 @@ import {
   enumLabel,
 } from "./ui";
 export function PoolsPage({ organization }: PageProps) {
+  useLocale();
   const api = useApi();
   const action = useAction();
   const [token, setToken] = useState("");
@@ -63,25 +65,22 @@ export function PoolsPage({ organization }: PageProps) {
   return (
     <>
       <PageHeader
-        title="Account pools"
-        description={`Only yours in ${organization.name}.`}
+        title={translate("accountPools")}
+        description={translate("onlyYoursIn", { value0: organization.name })}
         action={
           <Button variant="primary" onClick={() => setEdit(true)}>
-            Create pool
+            {translate("createPool")}
           </Button>
         }
       />
-      <Notice>
-        Pools group your own connections. Strategy and provider policies
-        determine which account serves a request.
-      </Notice>
+      <Notice>{translate("poolsGroupYourOwnConnectionsStrategyAnd")}</Notice>
       {action.feedback}
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       {query.isPending ? (
         <Loading />
       ) : query.data?.pools.length === 0 ? (
-        <EmptyState title="Create your first pool">
-          Connect providers before adding them to a pool.
+        <EmptyState title={translate("createYourFirstPool")}>
+          {translate("connectProvidersBeforeAddingThemToA")}
         </EmptyState>
       ) : (
         <div className="records">
@@ -95,18 +94,23 @@ export function PoolsPage({ organization }: PageProps) {
                     .toSorted((a, b) => a.priority - b.priority)
                     .map((m) => (
                       <li key={m.connectionId}>
-                        {accounts.data?.find((c) => c.id === m.connectionId)
-                          ?.name ??
-                          `Unavailable connection (${m.connectionId})`}{" "}
-                        · Weight {m.weight}
+                        {translate("weight", {
+                          value0:
+                            accounts.data?.find((c) => c.id === m.connectionId)
+                              ?.name ??
+                            `Unavailable connection (${m.connectionId})`,
+                          value1: m.weight,
+                        })}
                       </li>
                     ))}
                 </ol>
               </div>
               <div className="actions">
-                <Button onClick={() => setEdit(pool)}>Edit pool</Button>
+                <Button onClick={() => setEdit(pool)}>
+                  {translate("editPool")}
+                </Button>
                 <Button variant="danger" onClick={() => setRemove(pool)}>
-                  Delete
+                  {translate("delete")}
                 </Button>
               </div>
             </Card>
@@ -150,8 +154,8 @@ export function PoolsPage({ organization }: PageProps) {
       )}
       {remove && (
         <ConfirmDialog
-          title={`Delete ${remove.name}?`}
-          confirmLabel="Delete pool"
+          title={translate("delete_3d83de", { value0: remove.name })}
+          confirmLabel={translate("deletePool")}
           onClose={() => setRemove(undefined)}
           pending={action.pending}
           error={action.error}
@@ -163,13 +167,15 @@ export function PoolsPage({ organization }: PageProps) {
                   poolId: remove.id,
                 }),
               () => setRemove(undefined),
-              "Pool deleted.",
+              translate("poolDeleted"),
             );
           }}
         >
-          Connections remain available. Routes using this pool must be repaired
-          before future requests can use them.{" "}
-          <a href={pageHref("routing", organization.id)}>Review routing</a>.
+          {translate("connectionsRemainAvailableRoutesUsingThisPool")}
+          <a href={pageHref("routing", organization.id)}>
+            {translate("reviewRouting")}
+          </a>
+          .
         </ConfirmDialog>
       )}
     </>
@@ -201,6 +207,7 @@ function PoolEditor({
   pending: boolean;
   error: unknown;
 }) {
+  useLocale();
   const [name, setName] = useState(pool?.name ?? "");
   const [nativeOptions, setNativeOptions] = useState(pool?.nativeOptions);
   const [affinityEnabled, setAffinityEnabled] = useState(
@@ -218,7 +225,10 @@ function PoolEditor({
     })) ?? [],
   );
   return (
-    <Dialog title={pool ? "Edit pool" : "Create pool"} onClose={onClose}>
+    <Dialog
+      title={pool ? translate("editPool") : translate("createPool")}
+      onClose={onClose}
+    >
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -231,7 +241,7 @@ function PoolEditor({
           });
         }}
       >
-        <Field label="Pool name">
+        <Field label={translate("poolName")}>
           <input
             required
             autoFocus
@@ -239,7 +249,7 @@ function PoolEditor({
             onChange={(e) => setName(e.target.value)}
           />
         </Field>
-        <Field label="Strategy">
+        <Field label={translate("strategy")}>
           <select
             value={strategy}
             onChange={(e) => setStrategy(Number(e.target.value))}
@@ -261,21 +271,20 @@ function PoolEditor({
             checked={affinityEnabled}
             onChange={(event) => setAffinityEnabled(event.target.checked)}
           />
-          Keep generic OAuth sessions on the same account
+          {translate("keepGenericOauthSessionsOnTheSame")}
         </label>
         <p className="muted">
-          Opt in for providers that support generic OAuth session affinity.
-          Codex and Anthropic retain their provider-specific session rules.
+          {translate("optInForProvidersThatSupportGeneric")}
         </p>
         <fieldset>
-          <legend>Your connections, in priority order</legend>
+          <legend>{translate("yourConnectionsInPriorityOrder")}</legend>
           {members.map((m, i) => (
             <div key={m.connectionId} className="target-row">
               <strong>
                 {accounts.find((a) => a.id === m.connectionId)?.name ??
-                  "Unavailable connection"}
+                  translate("unavailableConnection")}
               </strong>
-              <Field label="Weight">
+              <Field label={translate("weight_81d27e")}>
                 <input
                   type="number"
                   min={1}
@@ -300,18 +309,18 @@ function PoolEditor({
                   })
                 }
               >
-                Move up
+                {translate("moveUp")}
               </Button>
               <Button
                 onClick={() =>
                   setMembers((old) => old.filter((_, j) => j !== i))
                 }
               >
-                Remove
+                {translate("remove")}
               </Button>
             </div>
           ))}
-          <Field label="Add a connection">
+          <Field label={translate("addAConnection")}>
             <select
               value=""
               onChange={(e) => {
@@ -326,7 +335,7 @@ function PoolEditor({
                   ]);
               }}
             >
-              <option value="">Choose your connection</option>
+              <option value="">{translate("chooseYourConnection")}</option>
               {accounts
                 .filter(
                   (a) =>
@@ -351,17 +360,19 @@ function PoolEditor({
         />
         {partial && (
           <Notice tone="warning">
-            Only the first {pageSize} connections are available in this editor.
+            {translate("onlyTheFirstConnectionsAreAvailableIn", {
+              value0: pageSize,
+            })}
           </Notice>
         )}
         <ErrorNotice error={error} />
         {existingNames.includes(name.trim()) && (
           <Notice tone="danger">
-            This name is already in use. Choose a different name.
+            {translate("thisNameIsAlreadyInUseChoose")}
           </Notice>
         )}
         <div className="actions">
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{translate("cancel")}</Button>
           <Button
             type="submit"
             variant="primary"
@@ -380,7 +391,7 @@ function PoolEditor({
               )
             }
           >
-            Save pool
+            {translate("savePool")}
           </Button>
         </div>
       </form>
@@ -388,6 +399,7 @@ function PoolEditor({
   );
 }
 export function RoutingPage({ organization }: PageProps) {
+  useLocale();
   const api = useApi();
   const action = useAction();
   const [token, setToken] = useState("");
@@ -405,25 +417,22 @@ export function RoutingPage({ organization }: PageProps) {
   return (
     <>
       <PageHeader
-        title="Your routing"
-        description={`Only yours in ${organization.name}.`}
+        title={translate("yourRouting")}
+        description={translate("onlyYoursIn", { value0: organization.name })}
         action={
           <Button variant="primary" onClick={() => setEdit(true)}>
-            Create route
+            {translate("createRoute")}
           </Button>
         }
       />
-      <Notice>
-        Model aliases choose your primary and fallback connections. Retry
-        behavior follows each provider's policy.
-      </Notice>
+      <Notice>{translate("modelAliasesChooseYourPrimaryAndFallback")}</Notice>
       {action.feedback}
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       {query.isPending ? (
         <Loading />
       ) : query.data?.routes.length === 0 ? (
-        <EmptyState title="Configure your first model route">
-          Add a provider connection, then map a model alias to it.
+        <EmptyState title={translate("configureYourFirstModelRoute")}>
+          {translate("addAProviderConnectionThenMapA")}
         </EmptyState>
       ) : (
         <div className="records">
@@ -431,7 +440,9 @@ export function RoutingPage({ organization }: PageProps) {
             <Card key={route.id} className="record">
               <div>
                 <h2>{route.modelId}</h2>
-                <Badge>{route.enabled ? "Enabled" : "Disabled"}</Badge>
+                <Badge>
+                  {route.enabled ? translate("enabled") : translate("disabled")}
+                </Badge>
                 <p>
                   {route.strategy === RoutingStrategy.JEV
                     ? "JEV"
@@ -442,20 +453,28 @@ export function RoutingPage({ organization }: PageProps) {
                     .toSorted((a, b) => a.priority - b.priority)
                     .map((t, i) => (
                       <li key={i}>
-                        {t.target.case === "connectionId"
-                          ? (accounts.data?.find((c) => c.id === t.target.value)
-                              ?.name ?? "Unavailable connection")
-                          : (pools.data?.find((p) => p.id === t.target.value)
-                              ?.name ?? "Unavailable pool")}{" "}
-                        → {t.modelId} · Weight {t.weight}
+                        {translate("weight_4e5c69", {
+                          value0:
+                            t.target.case === "connectionId"
+                              ? (accounts.data?.find(
+                                  (c) => c.id === t.target.value,
+                                )?.name ?? translate("unavailableConnection"))
+                              : (pools.data?.find(
+                                  (p) => p.id === t.target.value,
+                                )?.name ?? translate("message_071b530243")),
+                          value1: t.modelId,
+                          value2: t.weight,
+                        })}
                       </li>
                     ))}
                 </ol>
               </div>
               <div className="actions">
-                <Button onClick={() => setEdit(route)}>Edit route</Button>
+                <Button onClick={() => setEdit(route)}>
+                  {translate("editRoute")}
+                </Button>
                 <Button variant="danger" onClick={() => setRemove(route)}>
-                  Delete
+                  {translate("delete")}
                 </Button>
               </div>
             </Card>
@@ -501,8 +520,8 @@ export function RoutingPage({ organization }: PageProps) {
       )}
       {remove && (
         <ConfirmDialog
-          title={`Delete route ${remove.modelId}?`}
-          confirmLabel="Delete route"
+          title={translate("deleteRoute", { value0: remove.modelId })}
+          confirmLabel={translate("deleteRoute_032ad8")}
           onClose={() => setRemove(undefined)}
           pending={action.pending}
           error={action.error}
@@ -514,12 +533,11 @@ export function RoutingPage({ organization }: PageProps) {
                   routeId: remove.id,
                 }),
               () => setRemove(undefined),
-              "Route deleted.",
+              translate("routeDeleted"),
             );
           }}
         >
-          New requests for this alias can no longer use this route. Provider
-          connections and pools remain available.
+          {translate("newRequestsForThisAliasCanNo")}
         </ConfirmDialog>
       )}
     </>
@@ -573,6 +591,7 @@ function RouteEditor({
   onSave: (v: RouteValues) => void;
   decisionRoutes: Route[];
 }) {
+  useLocale();
   const [name, setName] = useState(route?.modelId ?? "");
   const [jev, setJev] = useState(() =>
     create(JevDecisionConfigSchema, route?.jevDecision),
@@ -636,7 +655,7 @@ function RouteEditor({
   );
   return (
     <Dialog
-      title={route ? "Edit routing" : "Create route"}
+      title={route ? translate("editRouting") : translate("createRoute")}
       onClose={onClose}
       wide
     >
@@ -653,7 +672,7 @@ function RouteEditor({
           });
         }}
       >
-        <Field label="Model alias">
+        <Field label={translate("modelAlias")}>
           <input
             autoFocus
             required
@@ -661,7 +680,7 @@ function RouteEditor({
             onChange={(e) => setName(e.target.value)}
           />
         </Field>
-        <Field label="Routing strategy">
+        <Field label={translate("routingStrategy")}>
           <select
             value={strategy}
             onChange={(e) => {
@@ -694,16 +713,13 @@ function RouteEditor({
             checked={enabled}
             onChange={(e) => setEnabled(e.target.checked)}
           />
-          Enabled
+          {translate("enabled")}
         </label>
         {strategy === RoutingStrategy.JEV && (
           <fieldset>
-            <legend>JEV decision settings</legend>
-            <p>
-              Choose an independent personal decision service or an ordinary
-              routing model. Decision routes cannot use JEV chains or cycles.
-            </p>
-            <Field label="Decision source">
+            <legend>{translate("jevDecisionSettings")}</legend>
+            <p>{translate("chooseAnIndependentPersonalDecisionServiceOr")}</p>
+            <Field label={translate("decisionSource")}>
               <select
                 value={decisionSource}
                 onChange={(e) => {
@@ -716,15 +732,17 @@ function RouteEditor({
                   });
                 }}
               >
-                <option value="connection">Connection</option>
-                <option value="route">Route alias</option>
+                <option value="connection">
+                  {translate("connection_639a40")}
+                </option>
+                <option value="route">{translate("routeAlias")}</option>
               </select>
             </Field>
             {decisionSource === "connection" ? (
               <>
                 <Field
-                  label="Decision connection"
-                  hint="Choose a JEV or custom decision-service connection. The server checks eligibility."
+                  label={translate("decisionConnection")}
+                  hint={translate("chooseAJevOrCustomDecisionService")}
                 >
                   <select
                     required
@@ -733,13 +751,13 @@ function RouteEditor({
                       setJev({ ...jev, decisionConnectionId: e.target.value })
                     }
                   >
-                    <option value="">Choose a connection</option>
+                    <option value="">{translate("chooseAConnection")}</option>
                     {jev.decisionConnectionId &&
                       !accounts.some(
                         (a) => a.id === jev.decisionConnectionId,
                       ) && (
                         <option value={jev.decisionConnectionId}>
-                          Saved decision connection unavailable
+                          {translate("savedDecisionConnectionUnavailable")}
                         </option>
                       )}
                     {accounts.map((a) => (
@@ -753,8 +771,8 @@ function RouteEditor({
                   </select>
                 </Field>
                 <Field
-                  label="Decision service model"
-                  hint="Custom SystemOne backend model. The canonical JEV service uses jev-latest."
+                  label={translate("decisionServiceModel")}
+                  hint={translate("customSystemoneBackendModelTheCanonicalJev")}
                 >
                   <input
                     maxLength={512}
@@ -766,7 +784,7 @@ function RouteEditor({
                 </Field>
               </>
             ) : (
-              <Field label="Decision route alias">
+              <Field label={translate("decisionRouteAlias")}>
                 <select
                   required
                   value={jev.decisionModel}
@@ -774,7 +792,9 @@ function RouteEditor({
                     setJev({ ...jev, decisionModel: e.target.value })
                   }
                 >
-                  <option value="">Choose an ordinary personal route</option>
+                  <option value="">
+                    {translate("chooseAnOrdinaryPersonalRoute")}
+                  </option>
                   {jev.decisionModel &&
                     !decisionRoutes.some(
                       (r) =>
@@ -783,7 +803,9 @@ function RouteEditor({
                         r.strategy !== RoutingStrategy.JEV,
                     ) && (
                       <option value={jev.decisionModel}>
-                        Saved route unavailable ({jev.decisionModel})
+                        {translate("savedRouteUnavailable", {
+                          value0: jev.decisionModel,
+                        })}
                       </option>
                     )}
                   {decisionRoutes
@@ -802,8 +824,8 @@ function RouteEditor({
               </Field>
             )}
             <Field
-              label="Decision timeout (ms)"
-              hint="Zero uses 4000 ms. Otherwise 1000–120000 ms."
+              label={translate("decisionTimeoutMs")}
+              hint={translate("zeroUses4000MsOtherwise1000120000")}
             >
               <input
                 type="number"
@@ -817,8 +839,8 @@ function RouteEditor({
               />
             </Field>
             <Field
-              label="Session pin duration (seconds)"
-              hint="Zero disables pinning. Otherwise 60–86400 seconds."
+              label={translate("sessionPinDurationSeconds")}
+              hint={translate("zeroDisablesPinningOtherwise6086400Seconds")}
             >
               <input
                 type="number"
@@ -835,7 +857,7 @@ function RouteEditor({
               />
             </Field>
             <details>
-              <summary>Advisory quota signals</summary>
+              <summary>{translate("advisoryQuotaSignals")}</summary>
               <label className="check">
                 <input
                   type="checkbox"
@@ -843,13 +865,10 @@ function RouteEditor({
                   onChange={(e) =>
                     setJev({ ...jev, decisionQuotaSignals: e.target.checked })
                   }
-                />{" "}
-                Enable advisory quota signals
+                />
+                {translate("enableAdvisoryQuotaSignals")}
               </label>
-              <p>
-                Share available quota signals with the decision service. Unknown
-                quota remains unknown; it is not treated as exhausted.
-              </p>
+              <p>{translate("shareAvailableQuotaSignalsWithTheDecision")}</p>
               <label className="check">
                 <input
                   type="checkbox"
@@ -862,28 +881,28 @@ function RouteEditor({
                         : undefined,
                     })
                   }
-                />{" "}
-                Override quota thresholds
+                />
+                {translate("overrideQuotaThresholds")}
               </label>
               {tiers && (
                 <>
-                  <p>
-                    Thresholds are quota used, in percent. Each tier starts at
-                    its threshold. Overrides alone do not enable signals and
-                    must remain valid when signals are off.
-                  </p>
+                  <p>{translate("thresholdsAreQuotaUsedInPercentEach")}</p>
                   {(
                     [
                       [
                         "moderate",
-                        "Moderate quota used (%)",
-                        "Empty: no moderate tier.",
+                        translate("moderateQuotaUsed"),
+                        translate("emptyNoModerateTier"),
                       ],
-                      ["limited", "Limited quota used (%)", "Empty: 70%."],
+                      [
+                        "limited",
+                        translate("limitedQuotaUsed"),
+                        translate("empty70"),
+                      ],
                       [
                         "nearlyExhausted",
-                        "Nearly exhausted quota used (%)",
-                        "Empty: 90%.",
+                        translate("nearlyExhaustedQuotaUsed"),
+                        translate("empty90"),
                       ],
                     ] as const
                   ).map(([key, label, hint]) => (
@@ -913,26 +932,20 @@ function RouteEditor({
               )}
               {!validQuota && (
                 <Notice tone="warning">
-                  Use finite percentages from 0 to 100, with moderate (if set)
-                  below limited, and limited below nearly exhausted. Empty
-                  limited and nearly exhausted values use 70 and 90.
+                  {translate("useFinitePercentagesFrom0To100")}
                 </Notice>
               )}
             </details>
             {!validJev && (
               <Notice tone="warning">
-                Select a decision source and use the allowed timeout and pin
-                duration.
+                {translate("selectADecisionSourceAndUseThe")}
               </Notice>
             )}
           </fieldset>
         )}
-        <p>
-          Saving replaces the complete route. Changing away from JEV removes its
-          decision configuration.
-        </p>
+        <p>{translate("savingReplacesTheCompleteRouteChangingAway")}</p>
         <details>
-          <summary>Reasoning retention</summary>
+          <summary>{translate("reasoningRetention")}</summary>
           <label>
             <input
               type="checkbox"
@@ -945,9 +958,11 @@ function RouteEditor({
                 )
               }
             />
-            Configure reasoning retention
+            {translate("configureReasoningRetention")}
           </label>
-          <p>Removing this configuration disables retention when saved.</p>
+          <p>
+            {translate("removingThisConfigurationDisablesRetentionWhenSaved")}
+          </p>
           {retention && (
             <>
               <label>
@@ -963,11 +978,11 @@ function RouteEditor({
                     )
                   }
                 />
-                Retain readable reasoning during compaction
+                {translate("retainReadableReasoningDuringCompaction")}
               </label>
               <Field
-                label="Context limit (%)"
-                hint="Empty or zero uses 20% of the model context window."
+                label={translate("contextLimit")}
+                hint={translate("emptyOrZeroUses20OfThe")}
               >
                 <input
                   type="number"
@@ -989,8 +1004,8 @@ function RouteEditor({
                 />
               </Field>
               <Field
-                label="Token limit"
-                hint="Empty or zero uses 100,000 tokens."
+                label={translate("tokenLimit")}
+                hint={translate("emptyOrZeroUses100000Tokens")}
               >
                 <input
                   type="number"
@@ -1013,18 +1028,21 @@ function RouteEditor({
               </Field>
               {!validRetention && (
                 <Notice tone="warning">
-                  Use a percentage from 0 to 100 and a whole token limit from 0
-                  to 4,294,967,295.
+                  {translate("useAPercentageFrom0To100")}
                 </Notice>
               )}
             </>
           )}
         </details>
-        <h3>Ordered targets</h3>
+        <h3>{translate("orderedTargets")}</h3>
         {targets.map((t, i) => (
           <fieldset key={i}>
-            <legend>{i === 0 ? "Primary" : `Fallback ${i}`}</legend>
-            <Field label="Connection or pool">
+            <legend>
+              {i === 0
+                ? translate("message_efe10c80ec")
+                : translate("fallback", { value0: i })}
+            </legend>
+            <Field label={translate("connectionOrPool")}>
               <select
                 value={`${t.target.case}:${t.target.value}`}
                 required
@@ -1045,7 +1063,7 @@ function RouteEditor({
                   );
                 }}
               >
-                <option value="">Choose a target</option>
+                <option value="">{translate("chooseATarget")}</option>
                 {!accounts.some(
                   (a) =>
                     t.target.case === "connectionId" && a.id === t.target.value,
@@ -1056,7 +1074,7 @@ function RouteEditor({
                   ) &&
                   t.target.value && (
                     <option value={`${t.target.case}:${t.target.value}`}>
-                      Unavailable target
+                      {translate("unavailableTarget")}
                     </option>
                   )}
                 {accounts
@@ -1075,12 +1093,12 @@ function RouteEditor({
                   ))}
                 {pools.map((p) => (
                   <option key={p.id} value={`poolId:${p.id}`}>
-                    Pool: {p.name}
+                    {translate("pool", { value0: p.name })}
                   </option>
                 ))}
               </select>
             </Field>
-            <Field label="Provider model ID">
+            <Field label={translate("providerModelId")}>
               <input
                 required
                 value={t.modelId}
@@ -1093,7 +1111,7 @@ function RouteEditor({
                 }
               />
             </Field>
-            <Field label="Weight">
+            <Field label={translate("weight_81d27e")}>
               <input
                 type="number"
                 min={1}
@@ -1109,9 +1127,9 @@ function RouteEditor({
               />
             </Field>
             <details>
-              <summary>Target reasoning and model profile</summary>
+              <summary>{translate("targetReasoningAndModelProfile")}</summary>
               <fieldset>
-                <legend>Allowed reasoning efforts</legend>
+                <legend>{translate("allowedReasoningEfforts")}</legend>
                 {Object.values(JevEffort).map((effort) => (
                   <label className="check" key={effort}>
                     <input
@@ -1139,8 +1157,8 @@ function RouteEditor({
                 ))}
               </fieldset>
               <Field
-                label="Model profile"
-                hint="Optional model description for JEV decisions, up to 512 characters. Do not include credentials or request content."
+                label={translate("modelProfile")}
+                hint={translate("optionalModelDescriptionForJevDecisionsUp")}
               >
                 <textarea
                   maxLength={512}
@@ -1166,14 +1184,14 @@ function RouteEditor({
                   })
                 }
               >
-                Move up
+                {translate("moveUp")}
               </Button>
               <Button
                 onClick={() =>
                   setTargets((old) => old.filter((_, j) => j !== i))
                 }
               >
-                Remove target
+                {translate("removeTarget")}
               </Button>
             </div>
           </fieldset>
@@ -1193,26 +1211,28 @@ function RouteEditor({
             ])
           }
         >
-          Add target
+          {translate("addTarget")}
         </Button>
         {strategy === RoutingStrategy.DIRECT && targets.length !== 1 && (
           <Notice tone="warning">
-            Direct routing needs exactly one target.
+            {translate("directRoutingNeedsExactlyOneTarget")}
           </Notice>
         )}
         {partial && (
           <Notice tone="warning">
-            This editor shows the first {pageSize} connections and pools.
+            {translate("thisEditorShowsTheFirstConnectionsAnd", {
+              value0: pageSize,
+            })}
           </Notice>
         )}
         <ErrorNotice error={error} />
         {existingNames.includes(name.trim()) && (
           <Notice tone="danger">
-            This name is already in use. Choose a different name.
+            {translate("thisNameIsAlreadyInUseChoose")}
           </Notice>
         )}
         <div className="actions">
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{translate("cancel")}</Button>
           <Button
             type="submit"
             variant="primary"
@@ -1233,7 +1253,7 @@ function RouteEditor({
               (strategy === RoutingStrategy.DIRECT && targets.length !== 1)
             }
           >
-            Save routing
+            {translate("saveRouting")}
           </Button>
         </div>
       </form>

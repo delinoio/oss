@@ -62,7 +62,7 @@ Record new implementation status, validation results and unresolved limits in pu
 
 ### aiprouter
 
-- [apps-aiprouter-console-contract.md](apps-aiprouter-console-contract.md)
+- [apps-aiprouter-console-contract.md](apps-aiprouter-console-contract.md) (console behavior, eight-language catalogs and shared ChatGPT-plan translation tooling)
 - [apps-aiprouter-console-design.md](apps-aiprouter-console-design.md)
 - [apps-aiprouter-docs-contract.md](apps-aiprouter-docs-contract.md)
 - [cmds-aiprouter-client-contract.md](cmds-aiprouter-client-contract.md)

@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale } from "./i18n";
 import { create } from "@bufbuild/protobuf";
 import {
   ResponsesItemIdRepairSchema,
@@ -59,10 +60,10 @@ export function configurationValues(draft: ConfigurationDraft) {
     for (const row of draft.models) {
       const id = row.id.trim();
       if (!id || Object.hasOwn(modelWires, id))
-        throw new Error("Model IDs must be nonempty and unique.");
+        throw new Error(translate("modelIdsMustBeNonemptyAndUnique"));
       if (row.wire !== ProviderWire.CHAT && row.wire !== ProviderWire.RESPONSES)
         throw new Error(
-          "Model overrides support only Chat completions or Responses.",
+          translate("modelOverridesSupportOnlyChatCompletionsOr"),
         );
       modelWires[id] = row.wire;
     }
@@ -71,9 +72,7 @@ export function configurationValues(draft: ConfigurationDraft) {
   if (mode === ConfigurationMode.Replace)
     for (const row of draft.serviceTiers) {
       if (!row.id.trim() || modelNames.has(row.id.toLowerCase()))
-        throw new Error(
-          "Service-tier model IDs must be nonempty and unique, ignoring letter case.",
-        );
+        throw new Error(translate("message_36682276f6"));
       modelNames.add(row.id.toLowerCase());
       modelSupportsServiceTier[row.id] = row.supported;
     }
@@ -87,9 +86,7 @@ export function configurationValues(draft: ConfigurationDraft) {
         names.has(name.toLowerCase()) ||
         /[\r\n]/.test(row.value)
       )
-        throw new Error(
-          "Header names must be valid and unique; values cannot contain line breaks.",
-        );
+        throw new Error(translate("headerNamesMustBeValidAndUnique"));
       names.add(name.toLowerCase());
       values[name] = row.value;
     }
@@ -99,9 +96,7 @@ export function configurationValues(draft: ConfigurationDraft) {
     floor &&
     (!/^\d+$/.test(floor) || BigInt(floor) < 1n || BigInt(floor) > 2147483647n)
   )
-    throw new Error(
-      "The Azure output-token floor must be between 1 and 2147483647.",
-    );
+    throw new Error(translate("theAzureOutputTokenFloorMustBe"));
   return {
     configuration:
       mode === ConfigurationMode.Replace
@@ -128,41 +123,46 @@ export function configurationValues(draft: ConfigurationDraft) {
         : create(ProviderCustomHeadersSchema, { values }),
   };
 }
-const wires = [
-  [ProviderWire.CHAT, "Chat completions"],
-  [ProviderWire.RESPONSES, "Responses"],
-  [ProviderWire.ANTHROPIC, "Anthropic"],
-  [ProviderWire.GOOGLE, "Google"],
-  [ProviderWire.JEV_DECISION, "JEV decision service"],
-] as const;
-const policies = [
-  ["foldDeveloperRoleToSystem", "Fold developer role into system"],
-  ["dropResponsesReasoningItems", "Drop Responses reasoning items"],
-  ["preserveResponsesReasoningContent", "Preserve Responses reasoning content"],
+const wires = () =>
   [
-    "requiresAdjacentResponsesToolResults",
-    "Require adjacent Responses tool results",
-  ],
+    [ProviderWire.CHAT, translate("chatCompletions")],
+    [ProviderWire.RESPONSES, "Responses"],
+    [ProviderWire.ANTHROPIC, "Anthropic"],
+    [ProviderWire.GOOGLE, "Google"],
+    [ProviderWire.JEV_DECISION, translate("jevDecisionService")],
+  ] as const;
+const policies = () =>
   [
-    "requiresPairedResponsesToolResults",
-    "Require paired Responses tool results",
-  ],
-  ["statelessResponses", "Stateless Responses"],
-  ["annotateEmptyToolOutputs", "Annotate empty tool outputs"],
-  ["parallelToolCalls", "Parallel tool calls"],
-  ["promptCacheKey", "Prompt cache key"],
-  ["chatServiceTier", "Chat service tier"],
-  ["fastEnabled", "Fast mode policy"],
-  ["supportsServiceTier", "Service tier support"],
-  ["supportsVerbosity", "Verbosity support"],
-  ["supportsResponsesCustomTools", "Responses custom tools"],
-  ["supportsOpenAiWebSearchToolFields", "OpenAI web search fields"],
-  ["showThinkingSummary", "Show thinking summary"],
-  ["escapeBuiltinToolNames", "Escape built-in tool names"],
-] as const satisfies readonly (readonly [
-  keyof ProviderPolicyOverrides,
-  string,
-])[];
+    ["foldDeveloperRoleToSystem", translate("foldDeveloperRoleIntoSystem")],
+    ["dropResponsesReasoningItems", translate("dropResponsesReasoningItems")],
+    [
+      "preserveResponsesReasoningContent",
+      translate("preserveResponsesReasoningContent"),
+    ],
+    [
+      "requiresAdjacentResponsesToolResults",
+      translate("requireAdjacentResponsesToolResults"),
+    ],
+    [
+      "requiresPairedResponsesToolResults",
+      translate("requirePairedResponsesToolResults"),
+    ],
+    ["statelessResponses", translate("statelessResponses")],
+    ["annotateEmptyToolOutputs", translate("annotateEmptyToolOutputs")],
+    ["parallelToolCalls", translate("parallelToolCalls")],
+    ["promptCacheKey", translate("promptCacheKey")],
+    ["chatServiceTier", translate("chatServiceTier")],
+    ["fastEnabled", translate("fastModePolicy")],
+    ["supportsServiceTier", translate("serviceTierSupport")],
+    ["supportsVerbosity", translate("verbositySupport")],
+    ["supportsResponsesCustomTools", translate("responsesCustomTools")],
+    ["supportsOpenAiWebSearchToolFields", translate("openaiWebSearchFields")],
+    ["showThinkingSummary", translate("showThinkingSummary")],
+    ["escapeBuiltinToolNames", translate("escapeBuiltInToolNames")],
+  ] as const satisfies readonly (readonly [
+    keyof ProviderPolicyOverrides,
+    string,
+  ])[];
 export function ConfigurationFields({
   draft,
   onChange,
@@ -174,6 +174,7 @@ export function ConfigurationFields({
   providerId: string;
   connection?: ProviderConnection;
 }) {
+  useLocale();
   const config = draft.configuration;
   const repair = config.policy?.responsesItemIdRepair;
   const update = (patch: Partial<ProviderConfiguration>) =>
@@ -188,8 +189,8 @@ export function ConfigurationFields({
   return (
     <>
       <Field
-        label="API format"
-        hint="Provider default is Chat for custom connections. Specialized providers validate their supported formats."
+        label={translate("apiFormat")}
+        hint={translate("providerDefaultIsChatForCustomConnections")}
       >
         <select
           value={config.wire ?? ""}
@@ -200,8 +201,8 @@ export function ConfigurationFields({
             })
           }
         >
-          <option value="">Provider default</option>
-          {wires.map(([value, label]) => (
+          <option value="">{translate("providerDefault")}</option>
+          {wires().map(([value, label]) => (
             <option key={value} value={value}>
               {label}
             </option>
@@ -209,9 +210,9 @@ export function ConfigurationFields({
         </select>
       </Field>
       <details>
-        <summary>Advanced connection settings</summary>
+        <summary>{translate("advancedConnectionSettings")}</summary>
         {connection && (
-          <Field label="Configuration changes">
+          <Field label={translate("configurationChanges")}>
             <select
               value={draft.mode}
               onChange={(e) =>
@@ -222,31 +223,29 @@ export function ConfigurationFields({
               }
             >
               <option value={ConfigurationMode.Preserve}>
-                Keep saved configuration
+                {translate("keepSavedConfiguration")}
               </option>
               <option value={ConfigurationMode.Replace}>
-                Replace configuration with these values
+                {translate("replaceConfigurationWithTheseValues")}
               </option>
               <option value={ConfigurationMode.Reset}>
-                Reset configuration to provider defaults
+                {translate("resetConfigurationToProviderDefaults")}
               </option>
             </select>
           </Field>
         )}
         {draft.mode === ConfigurationMode.Reset ? (
           <Notice>
-            Reset removes configuration overrides. Custom headers are kept
-            unless you clear them below.
+            {translate("resetRemovesConfigurationOverridesCustomHeadersAre")}
           </Notice>
         ) : (
           <>
             <p>
-              Changing a setting replaces the complete configuration. Unchanged
-              settings shown here are retained.
+              {translate("changingASettingReplacesTheCompleteConfiguration")}
             </p>
             <Field
-              label="Responses endpoint path"
-              hint="Origin-relative path, for example /v1/responses. Empty uses the provider default."
+              label={translate("responsesEndpointPath")}
+              hint={translate("originRelativePathForExampleV1Responses")}
             >
               <input
                 value={config.responsesPath ?? ""}
@@ -255,7 +254,7 @@ export function ConfigurationFields({
                 }
               />
             </Field>
-            <Field label="Chat completions endpoint path">
+            <Field label={translate("chatCompletionsEndpointPath")}>
               <input
                 value={config.chatCompletionsPath ?? ""}
                 onChange={(e) =>
@@ -265,17 +264,12 @@ export function ConfigurationFields({
             </Field>
             {providerId === "google-vertex" && (
               <fieldset>
-                <legend>Vertex AI</legend>
-                <p>
-                  OAuth and service-account credentials require an explicit
-                  project and location. API-key connections may use auto as the
-                  project for authorized discovery. Locations are validated by
-                  the server.
-                </p>
+                <legend>{translate("vertexAi")}</legend>
+                <p>{translate("oauthAndServiceAccountCredentialsRequireAn")}</p>
                 {(
                   [
-                    ["vertexProject", "Vertex project"],
-                    ["vertexLocation", "Vertex location"],
+                    ["vertexProject", translate("vertexProject")],
+                    ["vertexLocation", translate("vertexLocation")],
                   ] as const
                 ).map(([key, label]) => (
                   <div key={key}>
@@ -287,7 +281,7 @@ export function ConfigurationFields({
                           update({ [key]: e.target.checked ? "" : undefined })
                         }
                       />
-                      Override {label.toLowerCase()}
+                      {translate("override", { value0: label.toLowerCase() })}
                     </label>
                     {config[key] !== undefined && (
                       <Field label={label}>
@@ -303,8 +297,8 @@ export function ConfigurationFields({
             )}
             {providerId === "azure" && (
               <Field
-                label="Minimum output-token budget"
-                hint="Optional Azure floor, subject to request limits."
+                label={translate("minimumOutputTokenBudget")}
+                hint={translate("optionalAzureFloorSubjectToRequestLimits")}
               >
                 <input
                   type="number"
@@ -322,12 +316,16 @@ export function ConfigurationFields({
                 />
               </Field>
             )}
-            <h3>Model API formats</h3>
-            <p>Overrides apply to exact model IDs.</p>
+            <h3>{translate("modelApiFormats")}</h3>
+            <p>{translate("overridesApplyToExactModelIds")}</p>
             {draft.models.map((row, index) => (
               <fieldset key={index}>
-                <legend>Model override {index + 1}</legend>
-                <Field label={`Model ID ${index + 1}`}>
+                <legend>
+                  {translate("modelOverride", { value0: index + 1 })}
+                </legend>
+                <Field
+                  label={translate("modelId_64bc8b", { value0: index + 1 })}
+                >
                   <input
                     required
                     value={row.id}
@@ -342,7 +340,7 @@ export function ConfigurationFields({
                     }
                   />
                 </Field>
-                <Field label={`Model format ${index + 1}`}>
+                <Field label={translate("modelFormat", { value0: index + 1 })}>
                   <select
                     value={row.wire}
                     onChange={(e) =>
@@ -357,7 +355,7 @@ export function ConfigurationFields({
                       })
                     }
                   >
-                    {wires
+                    {wires()
                       .filter(
                         ([wire]) =>
                           wire === ProviderWire.CHAT ||
@@ -379,7 +377,7 @@ export function ConfigurationFields({
                     })
                   }
                 >
-                  Remove model override {index + 1}
+                  {translate("removeModelOverride", { value0: index + 1 })}
                 </Button>
               </fieldset>
             ))}
@@ -395,15 +393,12 @@ export function ConfigurationFields({
                 })
               }
             >
-              Add model override
+              {translate("addModelOverride")}
             </Button>
             <details>
-              <summary>Request compatibility policies</summary>
-              <p>
-                Inherit uses the provider default. Disabled is an explicit
-                override.
-              </p>
-              {policies.map(([key, label]) => (
+              <summary>{translate("requestCompatibilityPolicies")}</summary>
+              <p>{translate("inheritUsesTheProviderDefaultDisabledIs")}</p>
+              {policies().map(([key, label]) => (
                 <Field key={key} label={label}>
                   <select
                     value={
@@ -426,27 +421,20 @@ export function ConfigurationFields({
                       })
                     }
                   >
-                    <option value="">Inherit</option>
-                    <option value="true">Enabled</option>
-                    <option value="false">Disabled</option>
+                    <option value="">{translate("inherit")}</option>
+                    <option value="true">{translate("enabled")}</option>
+                    <option value="false">{translate("disabled")}</option>
                   </select>
                 </Field>
               ))}
-              <p>
-                Fast mode requires a supported model and compatible API format.
-                Enabling it does not guarantee faster service. Disabled denies
-                fast mode; Inherit uses the provider policy.
-              </p>
-              <h3>Model service-tier support</h3>
-              <p>
-                Use upstream model IDs, not route aliases. IDs match exactly
-                first, then without regard to letter case. Removing an override
-                inherits the provider policy. Enabled cannot override a
-                provider-wide denial or an unsupported API format.
-              </p>
+              <p>{translate("fastModeRequiresASupportedModelAnd")}</p>
+              <h3>{translate("modelServiceTierSupport")}</h3>
+              <p>{translate("useUpstreamModelIdsNotRouteAliases")}</p>
               {draft.serviceTiers.map((row, index) => (
                 <fieldset key={index}>
-                  <legend>Service-tier override {index + 1}</legend>
+                  <legend>
+                    {translate("serviceTierOverride", { value0: index + 1 })}
+                  </legend>
                   <Field label={`Service-tier model ID ${index + 1}`}>
                     <input
                       required
@@ -477,8 +465,8 @@ export function ConfigurationFields({
                         })
                       }
                     >
-                      <option value="true">Enabled</option>
-                      <option value="false">Disabled</option>
+                      <option value="true">{translate("enabled")}</option>
+                      <option value="false">{translate("disabled")}</option>
                     </select>
                   </Field>
                   <Button
@@ -492,7 +480,9 @@ export function ConfigurationFields({
                       })
                     }
                   >
-                    Remove service-tier override {index + 1}
+                    {translate("removeServiceTierOverride", {
+                      value0: index + 1,
+                    })}
                   </Button>
                 </fieldset>
               ))}
@@ -508,13 +498,13 @@ export function ConfigurationFields({
                   })
                 }
               >
-                Add service-tier override
+                {translate("addServiceTierOverride")}
               </Button>
               <fieldset>
-                <legend>Responses item ID repair</legend>
+                <legend>{translate("responsesItemIdRepair")}</legend>
                 <Field
-                  label="Item ID repair policy"
-                  hint="Inherit uses the provider preset. Replace with empty values selects no repairs."
+                  label={translate("itemIdRepairPolicy")}
+                  hint={translate("inheritUsesTheProviderPresetReplaceWith")}
                 >
                   <select
                     value={repair ? "replace" : "inherit"}
@@ -533,8 +523,12 @@ export function ConfigurationFields({
                       })
                     }
                   >
-                    <option value="inherit">Inherit provider preset</option>
-                    <option value="replace">Replace provider preset</option>
+                    <option value="inherit">
+                      {translate("inheritProviderPreset")}
+                    </option>
+                    <option value="replace">
+                      {translate("replaceProviderPreset")}
+                    </option>
                   </select>
                 </Field>
                 {repair && (
@@ -544,10 +538,10 @@ export function ConfigurationFields({
                         key={key}
                         label={
                           key === "message"
-                            ? "Message placeholder IDs"
-                            : "Reasoning placeholder IDs"
+                            ? translate("messagePlaceholderIds")
+                            : translate("reasoningPlaceholderIds")
                         }
-                        hint="One placeholder ID per line. Empty selects none."
+                        hint={translate("onePlaceholderIdPerLineEmptySelects")}
                       >
                         <textarea
                           value={repair[key].join("\n")}
@@ -576,10 +570,10 @@ export function ConfigurationFields({
                     ))}
                     {(
                       [
-                        ["repairInvalidIds", "Repair invalid IDs"],
+                        ["repairInvalidIds", translate("repairInvalidIds")],
                         [
                           "repairMissingTerminalIds",
-                          "Repair missing terminal IDs",
+                          translate("repairMissingTerminalIds"),
                         ],
                       ] as const
                     ).map(([key, label]) => (
@@ -609,9 +603,9 @@ export function ConfigurationFields({
                             })
                           }
                         >
-                          <option value="">Unspecified</option>
-                          <option value="true">Enabled</option>
-                          <option value="false">Disabled</option>
+                          <option value="">{translate("unspecified")}</option>
+                          <option value="true">{translate("enabled")}</option>
+                          <option value="false">{translate("disabled")}</option>
                         </select>
                       </Field>
                     ))}
@@ -621,35 +615,39 @@ export function ConfigurationFields({
             </details>
           </>
         )}
-        <h3>Custom headers</h3>
+        <h3>{translate("customHeaders")}</h3>
         {!!connection?.customHeaderNames.length && (
           <p>
-            Saved names: {connection.customHeaderNames.join(", ")}. Values are
-            never returned.
+            {translate("savedNamesValuesAreNeverReturned", {
+              value0: connection.customHeaderNames.join(", "),
+            })}
           </p>
         )}
-        <Field label="Header changes">
+        <Field label={translate("headerChanges")}>
           <select
             value={draft.headerMode}
             onChange={(e) =>
               onChange({ ...draft, headerMode: e.target.value as HeaderMode })
             }
           >
-            <option value={HeaderMode.Preserve}>Keep saved headers</option>
-            <option value={HeaderMode.Replace}>Replace all headers</option>
-            <option value={HeaderMode.Clear}>Clear all headers</option>
+            <option value={HeaderMode.Preserve}>
+              {translate("keepSavedHeaders")}
+            </option>
+            <option value={HeaderMode.Replace}>
+              {translate("replaceAllHeaders")}
+            </option>
+            <option value={HeaderMode.Clear}>
+              {translate("clearAllHeaders")}
+            </option>
           </select>
         </Field>
         {draft.headerMode === HeaderMode.Replace && (
           <>
-            <p>
-              Enter every header to retain. Authentication and transport headers
-              are restricted.
-            </p>
+            <p>{translate("enterEveryHeaderToRetainAuthenticationAnd")}</p>
             {draft.headers.map((row, index) => (
               <fieldset key={index}>
-                <legend>Header {index + 1}</legend>
-                <Field label={`Header name ${index + 1}`}>
+                <legend>{translate("header", { value0: index + 1 })}</legend>
+                <Field label={translate("headerName", { value0: index + 1 })}>
                   <input
                     required
                     autoComplete="off"
@@ -664,7 +662,7 @@ export function ConfigurationFields({
                     }
                   />
                 </Field>
-                <Field label={`Header value ${index + 1}`}>
+                <Field label={translate("headerValue", { value0: index + 1 })}>
                   <input
                     type="password"
                     autoComplete="new-password"
@@ -687,7 +685,7 @@ export function ConfigurationFields({
                     })
                   }
                 >
-                  Remove header {index + 1}
+                  {translate("removeHeader", { value0: index + 1 })}
                 </Button>
               </fieldset>
             ))}
@@ -700,7 +698,7 @@ export function ConfigurationFields({
                 })
               }
             >
-              Add header
+              {translate("addHeader")}
             </Button>
           </>
         )}

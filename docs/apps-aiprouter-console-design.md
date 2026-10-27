@@ -4,9 +4,13 @@ This specification defines the approved console design alongside the [console be
 
 ## Surface and visual system
 
-English responsive web console for personal AI provider configuration, organization management, and a separate instance operator workspace. Target desktop 1440×1000, tablet 768×1024, mobile 390×844; support 320 CSS pixels without page-level horizontal scrolling. Treat the boards as concept layouts, not pixel-exact viewport captures.
+Multilingual responsive web console for personal AI provider configuration, organization management, and a separate instance operator workspace. Target desktop 1440×1000, tablet 768×1024, mobile 390×844; support 320 CSS pixels without page-level horizontal scrolling. Treat the boards as concept layouts, not pixel-exact viewport captures.
 
 Use a calm, light, Toss-informed hierarchy: one main task per page, plain action labels, generous spacing and progressive disclosure. Page background #F7F8FA, white cards, primary text #191F28, secondary text #4E5968, blue #1D4ED8 actions, pale blue selected surfaces, red #B42318 destructive actions. Use system sans-serif, 16px body, 14px labels, 28–32px desktop headings and 24px mobile headings, line-height at least 1.5 for body text. Use an 8px spacing rhythm, 12px card corners, 8px control corners, 44px minimum primary control height, and explicit text labels for statuses. Validate actual rendered contrast before acceptance; the raster preview is not accessibility evidence.
+
+## Language selection
+
+The approved language selector and responsive behavior are specified in the [console localization contract](apps-aiprouter-console-contract.md#localization). Place this control above all console surfaces. Keep existing page hierarchy, permission boundaries and destructive-action semantics when localizing content.
 
 ## Navigation and ownership
 

@@ -6,9 +6,11 @@
   "license": "Apache-2.0",
   "scripts": {
     "dev": "rsbuild dev",
-    "build": "rsbuild build",
+    "build": "pnpm i18n:check && rsbuild build",
     "typecheck": "tsc --noEmit",
-    "test": "rstest"
+    "test": "pnpm i18n:check && node --test scripts/*.test.mjs && rstest",
+    "i18n:check": "node scripts/check-localization.mjs",
+    "i18n:translate": "node ../../scripts/localization/cli.mjs translate"
   },
   "dependencies": {
     "@aiprouter/client": "workspace:*",

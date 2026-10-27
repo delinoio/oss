@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale } from "../i18n";
 import { useRef, useState } from "react";
 import { Code, ConnectError } from "@connectrpc/connect";
 import type { PriceOverride } from "@aiprouter/client";
@@ -15,6 +16,7 @@ export function usePriceRevision(
   identity: PriceIdentity,
   action: ReturnType<typeof useAction>,
 ) {
+  useLocale();
   const api = useApi();
   const [revision, setRevision] = useState(initial);
   const [candidate, setReview] = useState<
@@ -50,7 +52,7 @@ export function usePriceRevision(
           (snapshotRevision && snapshotRevision !== page.revision)
         )
           throw new ConnectError(
-            "Collection changed during review",
+            translate("collectionChangedDuringReview"),
             Code.Aborted,
           );
         snapshotRevision = page.revision;
@@ -66,7 +68,7 @@ export function usePriceRevision(
         }
         token = page.page?.nextPageToken ?? "";
         if (token && seen.has(token))
-          throw new ConnectError("Repeated page token", Code.Internal);
+          throw new ConnectError(translate("repeatedPageToken"), Code.Internal);
         seen.add(token);
       } while (token);
       setReview({ revision: snapshotRevision, identityKey });
@@ -80,52 +82,57 @@ export function usePriceRevision(
   const controls = (
     <>
       {conflicted && (
-        <p role="alert">
-          Prices changed since you opened this form. Your entries are preserved.
-          Refresh the current price and review it before saving again.
-        </p>
+        <p role="alert">{translate("pricesChangedSinceYouOpenedThisForm")}</p>
       )}
       <button
         type="button"
         disabled={refreshing || action.pending}
         onClick={() => void refresh()}
       >
-        {refreshing ? "Refreshing prices…" : "Refresh prices for review"}
+        {refreshing
+          ? translate("refreshingPrices")
+          : translate("refreshPricesForReview")}
       </button>
       <ErrorNotice error={error} />
       {review && (
-        <section aria-label="Current price review" className="admin-banner">
-          <h3>Current saved price</h3>
+        <section
+          aria-label={translate("currentPriceReview")}
+          className="admin-banner"
+        >
+          <h3>{translate("currentSavedPrice")}</h3>
           {review.price ? (
             <>
               <p>
                 {review.price.providerId} / {review.price.modelId} ·{" "}
-                {review.price.serviceTier || "Default tier"}
+                {review.price.serviceTier || translate("defaultTier")}
               </p>
-              <p>Currency: {review.price.rates?.currency || "Unknown"}</p>
+              <p>
+                {translate("currency_633895", {
+                  value0: review.price.rates?.currency || translate("unknown"),
+                })}
+              </p>
               {(
                 [
-                  ["input", "Input"],
-                  ["output", "Output"],
-                  ["cacheRead", "Cache read"],
-                  ["cacheWrite", "Cache write"],
-                  ["cacheWriteShort", "Short cache write"],
-                  ["cacheWriteLong", "Long cache write"],
+                  ["input", translate("input")],
+                  ["output", translate("output")],
+                  ["cacheRead", translate("cacheRead")],
+                  ["cacheWrite", translate("cacheWrite")],
+                  ["cacheWriteShort", translate("shortCacheWrite")],
+                  ["cacheWriteLong", translate("longCacheWrite")],
                 ] as const
               ).map(([key, label]) => (
                 <p key={key}>
-                  {label}: {review.price?.rates?.[key] ?? "Unknown"} per million
-                  tokens
+                  {translate("perMillionTokens_21d1dd", {
+                    value0: label,
+                    value1: review.price?.rates?.[key] ?? translate("unknown"),
+                  })}
                 </p>
               ))}
             </>
           ) : (
-            <p>No override exists for this provider, model and tier.</p>
+            <p>{translate("noOverrideExistsForThisProviderModel")}</p>
           )}
-          <p>
-            Your entered rates have not changed. Saving replaces this current
-            price for future requests only.
-          </p>
+          <p>{translate("yourEnteredRatesHaveNotChangedSaving")}</p>
           <button
             type="button"
             onClick={() => {
@@ -134,7 +141,7 @@ export function usePriceRevision(
               action.clearError();
             }}
           >
-            Use reviewed revision
+            {translate("useReviewedRevision")}
           </button>
         </section>
       )}

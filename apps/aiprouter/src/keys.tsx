@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { t as translate, useLocale, enumLabel } from "./i18n";
 import { useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
@@ -27,6 +28,7 @@ import {
   Pagination,
 } from "./ui";
 export function KeysPage({ organization }: PageProps) {
+  useLocale();
   const api = useApi();
   const action = useAction();
   const [token, setToken] = useState("");
@@ -40,22 +42,22 @@ export function KeysPage({ organization }: PageProps) {
   return (
     <>
       <PageHeader
-        title="API keys"
-        description={`Your keys in ${organization.name}.`}
+        title={translate("apiKeys")}
+        description={translate("yourKeysIn", { value0: organization.name })}
         action={
           <Button variant="primary" onClick={() => setCreate(true)}>
-            Create API key
+            {translate("createApiKey")}
           </Button>
         }
       />
-      <Notice>New keys are shown only once. Store them securely.</Notice>
+      <Notice>{translate("newKeysAreShownOnlyOnceStore")}</Notice>
       {action.feedback}
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       {query.isPending ? (
         <Loading />
       ) : query.data?.keys.length === 0 ? (
-        <EmptyState title="Create your first API key">
-          Keys connect your clients to your personal routing.
+        <EmptyState title={translate("createYourFirstApiKey")}>
+          {translate("keysConnectYourClientsToYourPersonal")}
         </EmptyState>
       ) : (
         <div className="records">
@@ -65,23 +67,29 @@ export function KeysPage({ organization }: PageProps) {
                 <h2>{key.name}</h2>
                 <code>{key.prefix}••••</code>
                 <p>
-                  {key.kind === KeyKind.CLI ? "CLI" : "Personal"} · Created{" "}
-                  {formatDate(key.createdAt)}
+                  {translate("created", {
+                    value0:
+                      key.kind === KeyKind.CLI ? "CLI" : translate("personal"),
+                    value1: formatDate(key.createdAt),
+                  })}
                 </p>
                 <p>
-                  Expires:{" "}
-                  {key.expiresAt ? formatDate(key.expiresAt) : "No expiry"}
+                  {translate("expires", {
+                    value0: key.expiresAt
+                      ? formatDate(key.expiresAt)
+                      : translate("noExpiry"),
+                  })}
                 </p>
               </div>
               <div className="actions">
                 <Badge
                   tone={key.state === KeyState.ACTIVE ? "success" : "neutral"}
                 >
-                  {KeyState[key.state]?.toLowerCase() ?? "Unknown"}
+                  {enumLabel(KeyState[key.state])}
                 </Badge>
                 {key.state === KeyState.ACTIVE && (
                   <Button variant="danger" onClick={() => setRevoke(key)}>
-                    Revoke
+                    {translate("revoke")}
                   </Button>
                 )}
               </div>
@@ -114,29 +122,29 @@ export function KeysPage({ organization }: PageProps) {
                 setCreate(false);
                 setRaw(result.rawKey);
               },
-              "API key created.",
+              translate("apiKeyCreated"),
             );
           }}
         />
       )}
       {raw && (
-        <Dialog title="Your new API key" onClose={() => setRaw("")}>
-          <Notice tone="warning">This key is shown only once.</Notice>
-          <Field label="API key">
+        <Dialog title={translate("yourNewApiKey")} onClose={() => setRaw("")}>
+          <Notice tone="warning">{translate("thisKeyIsShownOnlyOnce")}</Notice>
+          <Field label={translate("apiKey")}>
             <input readOnly value={raw} autoFocus />
           </Field>
-          <CopyButton value={raw} label="Copy API key" />
+          <CopyButton value={raw} label={translate("copyApiKey")} />
           <div className="actions">
             <Button variant="primary" onClick={() => setRaw("")}>
-              Done
+              {translate("done")}
             </Button>
           </div>
         </Dialog>
       )}
       {revoke && (
         <ConfirmDialog
-          title={`Revoke ${revoke.name}?`}
-          confirmLabel="Revoke key"
+          title={translate("revoke_c771c3", { value0: revoke.name })}
+          confirmLabel={translate("revokeKey")}
           onClose={() => setRevoke(undefined)}
           pending={action.pending}
           error={action.error}
@@ -148,12 +156,13 @@ export function KeysPage({ organization }: PageProps) {
                   keyId: revoke.id,
                 }),
               () => setRevoke(undefined),
-              "Key revoked.",
+              translate("keyRevoked"),
             );
           }}
         >
-          Revoke this key in {organization.name}. New requests stop immediately.
-          Responses already sent to a provider may finish.
+          {translate("revokeThisKeyInNewRequestsStop", {
+            value0: organization.name,
+          })}
         </ConfirmDialog>
       )}
     </>
@@ -170,17 +179,18 @@ function CreateKey({
   pending: boolean;
   error: unknown;
 }) {
+  useLocale();
   const [name, setName] = useState("");
   const [days, setDays] = useState(30);
   return (
-    <Dialog title="Create API key" onClose={onClose}>
+    <Dialog title={translate("createApiKey")} onClose={onClose}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
           onSave(name.trim(), days);
         }}
       >
-        <Field label="Name">
+        <Field label={translate("name")}>
           <input
             autoFocus
             required
@@ -189,26 +199,28 @@ function CreateKey({
             onChange={(e) => setName(e.target.value)}
           />
         </Field>
-        <Field label="Expiry">
+        <Field label={translate("expiry")}>
           <select
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
           >
-            <option value={7}>7 days</option>
-            <option value={30}>30 days</option>
-            <option value={90}>90 days</option>
-            <option value={0}>No expiry</option>
+            <option value={7}>{translate("message7Days")}</option>
+            <option value={30}>{translate("message30Days")}</option>
+            <option value={90}>{translate("message90Days")}</option>
+            <option value={0}>{translate("noExpiry")}</option>
           </select>
         </Field>
         <ErrorNotice error={error} />
         <div className="actions">
-          <Button onClick={onClose}>Cancel</Button>
+          <Button onClick={onClose}>{translate("cancel")}</Button>
           <Button
             type="submit"
             variant="primary"
             disabled={pending || !name.trim()}
           >
-            {pending ? "Creating…" : "Create API key"}
+            {pending
+              ? translate("message_c79ed9492e")
+              : translate("createApiKey")}
           </Button>
         </div>
       </form>

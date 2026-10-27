@@ -2,7 +2,7 @@
 
 ## Scope
 
-Owns `apps/aiprouter`, the responsive English web console. This is a separate build component from the service and public documentation.
+Owns `apps/aiprouter`, the responsive multilingual web console. This is a separate build component from the service and public documentation.
 
 ## Runtime and Language
 
@@ -18,7 +18,7 @@ Members, owners, administrators, and instance operators, with distinct authority
 
 Web requirements:
 
-- English only.
+- English is the source and default language. Support Korean (`ko`), Japanese (`ja`), Simplified Chinese (`zh-Hans`), Spanish (`es`), French (`fr`), German (`de`), and Brazilian Portuguese (`pt-BR`).
 - Responsive desktop/mobile support.
 - WCAG 2.2 AA.
 - Follow repository requirements for focus on a single critical form input and Escape dismissal of dialogs.
@@ -36,6 +36,14 @@ Standalone flows use `/sign-in`, `/device`, `/invitation`, and `/ownership`; pre
 Only canonical pathname routes are supported. Reject `?page=` navigation, `org` workspace selectors, and `organization_id` workspace selectors on authenticated pages. The former aliases `/`, `/organizations`, `/connect-client`, `/invitations/accept`, `/instance`, and `/instance/usage` are not console routes. Unknown or retired routes must not render the overview. Internal navigation and default OIDC return targets use `/overview`. The service console allowlist and OIDC return targets must enforce the same route rules as the frontend.
 
 Omit an empty `organization` workspace selector from canonical console addresses. For example, `/keys?organization=` normalizes to `/keys`; a selected organization uses `/keys?organization=<id>`. Keep standalone flow parameters, including ownership acceptance's `organization_id`, unchanged.
+
+### Localization
+
+The console owns `i18n/locales.json`, `i18n/messages/<lang>.json`, and `i18n/state.json`. Source catalog keys are stable. Translate console-owned copy, accessible labels, status/enum displays, and validation notices. Preserve technical identifiers, commands, URLs, provider names, user-entered values, and service data. Format display dates and numbers with the selected locale; keep date timezones explicit and preserve decimal cost precision.
+
+A labeled native language selector appears above every page, including sign-in, standalone approval flows, and the instance console. Use native language names, a 44px minimum control height, visible focus, keyboard selection and native Escape dismissal. Align the selector right on desktop; wrap at 320 CSS pixels. Use the existing console tokens. Language changes preserve component identity, unsaved inputs, routes, query parameters, organization scope and pending actions. Update the HTML language attribute to the content language. Default to English without browser-language redirects. Save only the locale in versioned browser storage; denied storage falls back to in-memory selection. Load committed target catalogs on demand; retain the current language on load failure and show retry guidance. Target catalog generation is deferred: if a selected locale has no catalog yet, keep English text and HTML language while formatting dates and numbers with the selected locale. Announce loading and errors accessibly.
+
+Reuse the local ChatGPT-plan authentication, generation and offline structural validation in `scripts/localization`, under the [shared tooling contract](apps-labs-localization-contract.md#authentication-and-inference). Run root `pnpm i18n:login` and `pnpm i18n:models`, then `pnpm --dir apps/aiprouter i18n:translate` (optionally append a language). These commands require eligible plan consent; no API key or copied Codex session is used. Review translations before commit. Console `pnpm i18n:check`, tests and builds report wholly unstarted languages as deferred without account access. Once a catalog or state entry exists, require complete, current translations with protected placeholders; do not treat partial output or removal of a tracked catalog as deferred work. Keep unstarted languages out of generated state instead of fabricating translations or fingerprints. Root translation/check commands include this workspace. Never translate internal contracts or bundle authentication modules or tokens in the console.
 
 ## Storage
 
