@@ -1311,7 +1311,7 @@ test("AIPRouter shared Go libraries and fixtures select Go validation", () => {
 test("Labs docs own their app and force external build inputs on all CI events", () => {
   const id = "node-labs-docs-test";
   for (const event of Object.values(Event)) {
-    const local = planJobs(event, ["apps/labs-docs/docs/index.md"]);
+    const local = planJobs(event, ["apps/labs-docs/docs/en/index.md"]);
     assert.equal(local.jobs[id], true);
     assert.equal(local.forced[id], false);
     for (const path of [
@@ -1328,5 +1328,21 @@ test("Labs docs own their app and force external build inputs on all CI events",
       false,
     );
     assert.equal(planJobs(event, ["docs/project-rustia.md"]).jobs[id], false);
+  }
+});
+
+test("shared Labs localization inputs force both app checks on every eligible event", () => {
+  for (const event of Object.values(Event)) {
+    for (const path of [
+      "scripts/localization/chatgpt.mjs",
+      "scripts/localization/catalog.mjs",
+      "docs/apps-labs-localization-contract.md",
+    ]) {
+      const plan = planJobs(event, [path]);
+      for (const app of ["labs-docs", "labs-site"]) {
+        assert.equal(plan.jobs[`node-${app}-test`], true);
+        assert.equal(plan.forced[`node-${app}-test`], true);
+      }
+    }
   }
 });

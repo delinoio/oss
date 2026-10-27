@@ -339,7 +339,9 @@
       "turbo.json",
       "scripts/run-rsbuild-dev.mjs",
       "scripts/spawn-dev-server.mjs",
-      "scripts/dev-environment/process.mjs"
+      "scripts/dev-environment/process.mjs",
+      "scripts/localization/**",
+      "docs/apps-labs-localization-contract.md"
     ],
     "workspace": "labs-site",
     "workspacePaths": ["apps/labs-site/**"]
@@ -357,7 +359,9 @@
       "package.json",
       "pnpm-lock.yaml",
       "pnpm-workspace.yaml",
-      "turbo.json"
+      "turbo.json",
+      "scripts/localization/**",
+      "docs/apps-labs-localization-contract.md"
     ],
     "workspace": "labs-docs",
     "workspacePaths": ["apps/labs-docs/**"]

@@ -12,15 +12,19 @@ Provide a static documentation site for Delino Labs at `https://docs.labs.delino
 
 - apps: `apps/labs-docs` owns the standalone documentation app and its public content.
 
+- `scripts/localization`: shared local translation generation and offline validation.
+
 ## Domain Contract Documents
 
 - [Labs documentation foundation](apps-labs-docs-foundation.md)
+
+- [Shared Labs localization](apps-labs-localization-contract.md)
 
 ## Cross-Domain Invariants
 
 - The canonical production origin is `https://docs.labs.delino.io` with base `/`.
 - This app is independent of the consolidated `public-docs` publisher and site registry.
-- Public pages use the default Rspress theme and English text. Internal contracts remain in `docs/`.
+- Public pages use the default Rspress theme and English source text with registered translations. Internal contracts remain in `docs/`.
 - TypeScript configuration and Markdown content use Rspress, with Cloudflare Pages as the deployment target, following repository defaults.
 
 ## Change Policy

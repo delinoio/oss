@@ -6,7 +6,9 @@
       "dependsOn": ["build:frontend"],
       "inputs": [
         "$TURBO_DEFAULT$",
-        "$TURBO_ROOT$/docs/apps-labs-docs-foundation.md"
+        "$TURBO_ROOT$/docs/apps-labs-docs-foundation.md",
+        "$TURBO_ROOT$/scripts/localization/**",
+        "$TURBO_ROOT$/docs/apps-labs-localization-contract.md"
       ],
       "outputs": [],
       "env": ["CI_CACHE_CONTEXT"]
@@ -17,6 +19,20 @@
     },
     "test": {
       "cache": false
+    },
+    "build": {
+      "inputs": [
+        "$TURBO_EXTENDS$",
+        "$TURBO_ROOT$/scripts/localization/**",
+        "$TURBO_ROOT$/docs/apps-labs-localization-contract.md"
+      ]
+    },
+    "build:frontend": {
+      "inputs": [
+        "$TURBO_EXTENDS$",
+        "$TURBO_ROOT$/scripts/localization/**",
+        "$TURBO_ROOT$/docs/apps-labs-localization-contract.md"
+      ]
     }
   }
 }

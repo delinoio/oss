@@ -115,6 +115,8 @@ Record new implementation status, validation results and unresolved limits in pu
 - [Project index](project-labs-site.md)
 - [Marketing site foundation](apps-labs-site-foundation.md) (`apps/labs-site`, canonical URL `https://labs.delino.io`)
 
+- [Labs localization](apps-labs-localization-contract.md) (shared ChatGPT plan translation tooling, catalogs and localized routes)
+
 ### labs-docs
 
 - [Project index](project-labs-docs.md)

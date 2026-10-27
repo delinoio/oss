@@ -20,6 +20,8 @@
 
 ## Owning contracts
 
+- [Shared Labs localization](../docs/apps-labs-localization-contract.md)
+
 - [labs-site marketing foundation](../docs/apps-labs-site-foundation.md)
 
 - [Labs documentation foundation](../docs/apps-labs-docs-foundation.md)
