@@ -4,6 +4,20 @@
 
 The supplied installation uses a single-host Docker Compose deployment with the web console served from the same origin as the API. A production-ready release, published image coordinates, and an end-to-end installation verification are not established by these guides. Use only the versioned distribution and its matching configuration instructions when they become available. Do not substitute guessed image tags or install an unrelated similarly named package.
 
+## Try locally from source
+
+With Node.js 24, pnpm 10.26.2 and Docker Compose installed, start Docker Desktop or the Docker daemon. In a complete source checkout, run:
+
+```sh
+pnpm dev:aiprouter
+```
+
+The command builds and starts the console, API, PostgreSQL and a local test login/mail service. It generates local configuration and migrates the database automatically. Open `http://127.0.0.1:8080` and select sign-in to log in as the synthetic Alice user without a password. The first build can take several minutes. Keep loopback ports 8080 and 18090 free.
+
+Containers continue running in the background. Use `pnpm dev:aiprouter:logs` to view logs and `pnpm dev:aiprouter:stop` to stop the local installation while keeping its data and keys. Running the start command again reuses that state.
+
+This mode is for local evaluation. Do not expose the test login publicly. Mail is discarded, no real AI provider is preconfigured, and generated image/video storage requires real R2 configuration. Production deployment still requires the services and checks below.
+
 ## Prepare the host
 
 1. Choose Linux x86_64 or ARM64 for the server. Docker Desktop on macOS and Windows is for development or evaluation.

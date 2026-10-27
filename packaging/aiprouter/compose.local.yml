@@ -1,0 +1,48 @@
+# SPDX-License-Identifier: Apache-2.0
+# Local evaluation only. Never expose the synthetic identity provider publicly.
+services:
+  postgres:
+    image: postgres:17.6-bookworm
+    environment:
+      POSTGRES_DB: aiprouter
+      POSTGRES_USER: aiprouter
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Use the local launcher}
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U aiprouter -d aiprouter"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  fixtures:
+    build:
+      context: ../..
+      dockerfile: packaging/aiprouter/Dockerfile.fixture
+    command: [-listen, "0.0.0.0:18090", -smtp, "0.0.0.0:1025"]
+    ports:
+      - 127.0.0.1:8080:8080
+      - 127.0.0.1:18090:18090
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+  aiprouter:
+    build:
+      context: ../..
+      dockerfile: packaging/aiprouter/Dockerfile
+    # Browser and service must resolve the same loopback OIDC issuer.
+    network_mode: service:fixtures
+    env_file: ${AIPROUTER_LOCAL_ENV_FILE:?Use the local launcher}
+    environment:
+      AIPROUTER_LISTEN_ADDR: 0.0.0.0:8080
+      AIPROUTER_DATABASE_URL: postgres://aiprouter:${POSTGRES_PASSWORD:?Use the local launcher}@postgres:5432/aiprouter?sslmode=disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+      fixtures:
+        condition: service_started
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+volumes:
+  postgres:

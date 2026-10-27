@@ -2,6 +2,20 @@
 
 The [operations contract](../../docs/servers-aiprouter-operations-contract.md) owns these assets. Public operator guidance belongs to the documentation application. These commands describe the packaging interface for maintainers.
 
+## Local evaluation
+
+With Docker Desktop or a Docker daemon running, run from the repository root:
+
+```sh
+pnpm dev:aiprouter
+```
+
+Open `http://127.0.0.1:8080` and select sign-in. The synthetic identity provider logs in as Alice without a password; Alice is a local instance operator. The launcher builds the console and API, starts PostgreSQL and local OIDC/SMTP fixtures, generates private configuration and runs migrations. Node.js 24 and the root-pinned pnpm are required; Go and frontend dependencies are built inside Docker. The first build can take several minutes. Ports 8080 and 18090 must be free.
+
+Containers run in the background. Use `pnpm dev:aiprouter:logs` to follow logs and `pnpm dev:aiprouter:stop` to stop them. Repeated starts retain the database and encryption keys under `.dev-environment/aiprouter/.env`; keep that private file with its database. The launcher never reads deployment `.env` files or inherited application credentials. Each checkout uses its own Compose project, but fixed ports permit only one local instance at a time.
+
+This is local evaluation: mail is discarded, no real provider is preconfigured, and image/video storage needs real R2 configuration in the generated private environment file. The synthetic login must never be exposed publicly. For source development with frontend reload and configured external dependencies, use `pnpm dev:aiprouter:source`; see the [environment contract](../../docs/repository-environment-contract.md#local-development).
+
 ## Compose
 
 Linux amd64 and arm64 are server targets. Docker Desktop on macOS and Windows is for development/evaluation. Run Compose from this directory. Copy `.env.example` to `.env`, restrict it to mode 600, and replace every placeholder. Generate each encryption key with `openssl rand -base64 32`. Keep database passwords URL-safe. Store master keys and database backups separately.
