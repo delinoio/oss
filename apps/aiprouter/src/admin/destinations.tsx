@@ -13,7 +13,7 @@ import {
 import { t as translate, useLocale } from "../i18n";
 import { Card } from "../ui";
 import { useDirtyForm } from "../api";
-import { Confirm, ErrorNotice, useAction } from "./common";
+import { Confirm, ConfirmTone, ErrorNotice, useAction } from "./common";
 
 // Derived state of the policy draft. It is computed from the reviewed snapshot,
 // the draft and the editor inputs; it is never stored as a server fact.
@@ -93,6 +93,276 @@ export function DestinationPolicyNotice() {
       <p>{translate("additionalApprovalsPermitPrecisePrivateOrLocal")}</p>
       <p>{translate("aNonemptyCidrListAppliesToEveryResolved")}</p>
     </section>
+  );
+}
+
+// Change of a draft rule relative to the saved snapshot, matched by stable ID.
+// Values are stable identifiers; display text comes from the message catalog.
+enum RuleChange {
+  Added = "added",
+  Changed = "changed",
+  Unchanged = "unchanged",
+}
+function ruleChangeLabel(change: RuleChange) {
+  return change === RuleChange.Added
+    ? translate("ruleAdded")
+    : change === RuleChange.Changed
+      ? translate("ruleChanged")
+      : translate("unchanged");
+}
+interface ReviewRule {
+  // Local render key only. New rules have empty server IDs.
+  key: string;
+  rule: AllowedDestination;
+  change: RuleChange;
+  saved?: AllowedDestination;
+}
+interface PolicyReview {
+  result: ReviewRule[];
+  removed: AllowedDestination[];
+}
+
+function sameCidrs(a: readonly string[], b: readonly string[]) {
+  return a.length === b.length && a.every((cidr, i) => cidr === b[i]);
+}
+
+// Compares the complete draft with the saved snapshot by retained stable ID.
+// Nothing here is sent to the server; it only labels the review.
+export function reviewPolicy(
+  saved: readonly AllowedDestination[],
+  draft: readonly AllowedDestination[],
+): PolicyReview {
+  const savedById = new Map<string, AllowedDestination>();
+  for (const rule of saved) if (rule.id) savedById.set(rule.id, rule);
+  const retained = new Set<string>();
+  const result = draft.map((rule, index): ReviewRule => {
+    const previous = rule.id ? savedById.get(rule.id) : undefined;
+    if (!previous) {
+      return { key: `new:${index}`, rule, change: RuleChange.Added };
+    }
+    retained.add(rule.id);
+    const changed =
+      previous.origin !== rule.origin ||
+      !sameCidrs(previous.allowedCidrs, rule.allowedCidrs);
+    return {
+      key: `saved:${rule.id}`,
+      rule,
+      change: changed ? RuleChange.Changed : RuleChange.Unchanged,
+      saved: previous,
+    };
+  });
+  return {
+    result,
+    removed: saved.filter((rule) => !rule.id || !retained.has(rule.id)),
+  };
+}
+
+function CidrLines({ cidrs }: { cidrs: readonly string[] }) {
+  return (
+    <ul className="admin-cidr-list">
+      {cidrs.map((cidr, i) => (
+        <li key={`${cidr}:${i}`}>{cidr}</li>
+      ))}
+    </ul>
+  );
+}
+
+// Complete resulting rule with its network scope.
+function RuleScope({
+  cidrs,
+  listed = true,
+}: {
+  cidrs: readonly string[];
+  // False when the After block already lists the proposed networks.
+  listed?: boolean;
+}) {
+  useLocale();
+  return cidrs.length > 0 ? (
+    <>
+      <p className="admin-destination-scope">
+        {translate("restrictedNetworksHeading")}
+      </p>
+      {listed && <CidrLines cidrs={cidrs} />}
+      <p>{translate("allResolvedAddressesMustMatchAddressesOutside")}</p>
+    </>
+  ) : (
+    <p className="admin-destination-scope">
+      {translate("exactOriginApprovalNoCidrNarrowing")}
+    </p>
+  );
+}
+
+function DestinationReview({
+  saved,
+  draft,
+  pending,
+  error,
+  onClose,
+  onSave,
+}: {
+  saved: readonly AllowedDestination[];
+  draft: readonly AllowedDestination[];
+  pending: boolean;
+  error: unknown;
+  onClose: () => void;
+  onSave: () => void;
+}) {
+  useLocale();
+  const ids = useId();
+  const { result, removed } = reviewPolicy(saved, draft);
+  const code = error ? ConnectError.from(error).code : undefined;
+  return (
+    <Confirm
+      title={translate("saveDestinationPolicy")}
+      tone={ConfirmTone.Primary}
+      pending={pending}
+      pendingLabel={translate("message_23e39291d6")}
+      onClose={onClose}
+      action={onSave}
+      footerNote={translate("nothingChangesUntilTheServerConfirmsThe")}
+    >
+      <div className="admin-destination-review">
+        <p>{translate("reviewTheCompletePolicyBeforeSaving")}</p>
+        <p>
+          <span className="admin-policy-state">
+            {translate("draftNotSaved")}
+          </span>
+        </p>
+        <section
+          className="admin-destination-notice"
+          aria-labelledby={`${ids}-default`}
+        >
+          <h3 id={`${ids}-default`}>
+            {translate("defaultPolicyRemainsActive")}
+          </h3>
+          <p>{translate("publicHttpsIsAllowedByDefaultAnExplicit")}</p>
+        </section>
+        <section aria-labelledby={`${ids}-result`}>
+          <h3 id={`${ids}-result`}>
+            {translate("additionalDestinationsAfterSave")}
+          </h3>
+          {result.length === 0 ? (
+            <p className="admin-destination-clear">
+              {translate("noAdditionalDestinationsWillRemainApprovedPublic")}
+            </p>
+          ) : (
+            <ul className="admin-destination-review-list">
+              {result.map(({ key, rule, change, saved: previous }) => {
+                const cleared =
+                  !!previous &&
+                  previous.allowedCidrs.length > 0 &&
+                  rule.allowedCidrs.length === 0;
+                const networksChanged =
+                  !!previous &&
+                  !sameCidrs(previous.allowedCidrs, rule.allowedCidrs);
+                return (
+                  <li key={key} data-change={change}>
+                    <p className="admin-destination-origin">
+                      <strong>{rule.origin}</strong>{" "}
+                      <span className="admin-diff-badge">
+                        {ruleChangeLabel(change)}
+                      </span>
+                    </p>
+                    {previous && previous.origin !== rule.origin && (
+                      <p>
+                        {translate("previouslyValue", {
+                          value0: previous.origin,
+                        })}
+                      </p>
+                    )}
+                    {networksChanged && previous ? (
+                      <div className="admin-diff-blocks">
+                        <div>
+                          <p className="admin-destination-scope">
+                            {translate("before")}
+                          </p>
+                          {previous.allowedCidrs.length > 0 ? (
+                            <CidrLines cidrs={previous.allowedCidrs} />
+                          ) : (
+                            <p>{translate("noCidrNarrowingBare")}</p>
+                          )}
+                        </div>
+                        <div>
+                          <p className="admin-destination-scope">
+                            {translate("after")}
+                          </p>
+                          {rule.allowedCidrs.length > 0 ? (
+                            <CidrLines cidrs={rule.allowedCidrs} />
+                          ) : (
+                            <p>{translate("noCidrNarrowingBare")}</p>
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+                    <RuleScope
+                      cidrs={rule.allowedCidrs}
+                      listed={!networksChanged}
+                    />
+                    {cleared && (
+                      <p className="admin-destination-warning">
+                        {translate(
+                          "networkRestrictionsRemovedClearingPreviousNetworksBroadens",
+                        )}
+                      </p>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </section>
+        {removed.length > 0 && (
+          <section
+            className="admin-destination-removals"
+            aria-labelledby={`${ids}-removed`}
+          >
+            <h3 id={`${ids}-removed`}>{translate("approvalsToRemove")}</h3>
+            <p>{translate("futureConnectionsThatRequireThisApprovalWill")}</p>
+            <ul className="admin-destination-review-list">
+              {removed.map((rule, index) => (
+                <li key={`${rule.id}:${index}`}>
+                  <p className="admin-destination-origin">
+                    <strong>{rule.origin}</strong>{" "}
+                    <span className="admin-diff-badge">
+                      {translate("ruleRemoved")}
+                    </span>
+                  </p>
+                  {rule.allowedCidrs.length > 0 ? (
+                    <>
+                      <p className="admin-destination-scope">
+                        {translate("previousNetworks")}
+                      </p>
+                      <CidrLines cidrs={rule.allowedCidrs} />
+                      {rule.origin.startsWith("https://") && (
+                        <p>
+                          {translate("removingACidrRestrictionOnAPublicHttps")}
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    <p className="admin-destination-scope">
+                      {translate(
+                        "previousScopeExactOriginApprovalNoCidrNarrowing",
+                      )}
+                    </p>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </div>
+      <p role="status" className="admin-destination-pending">
+        {pending ? translate("message_238b2274b1") : ""}
+      </p>
+      <ErrorNotice error={error} />
+      {code === Code.InvalidArgument && (
+        <p>{translate("checkTheExactOriginsAndCidrPrefixes")}</p>
+      )}
+      {code === Code.Aborted && (
+        <p>{translate("yourDraftAndNetworkEntriesArePreservedWhile")}</p>
+      )}
+    </Confirm>
   );
 }
 
@@ -485,45 +755,14 @@ export function DestinationPolicyForm({
         </div>
       </form>
       {review && (
-        <Confirm
-          title={translate("saveDestinationPolicy")}
+        <DestinationReview
+          saved={settings.allowedDestinations}
+          draft={draft.allowedDestinations}
           pending={action.pending}
+          error={action.error}
           onClose={() => setReview(false)}
-          action={save}
-        >
-          <>
-            <p>
-              {translate("onlyTheseAdditionalDestinationsWillRemainApproved")}
-            </p>
-            <ul>
-              {draft.allowedDestinations.map((d, i) => (
-                <li key={d.id || i}>
-                  <strong>{d.origin}</strong> —{" "}
-                  {d.allowedCidrs.length
-                    ? translate(
-                        "restrictedToAddressesOutsideTheseNetworksAre",
-                        {
-                          value0: d.allowedCidrs.join(", "),
-                        },
-                      )
-                    : translate("message_c6474071b6")}
-                </li>
-              ))}
-            </ul>
-            <p>
-              {translate("removingApprovalBlocksFutureConnectionsThatRequire")}
-            </p>
-          </>
-          <ErrorNotice error={action.error} />
-          {!!action.error &&
-            ConnectError.from(action.error).code === Code.InvalidArgument && (
-              <p>{translate("checkTheExactOriginsAndCidrPrefixes")}</p>
-            )}
-          {!!action.error &&
-            ConnectError.from(action.error).code === Code.Aborted && (
-              <p>{translate("yourDraftAndNetworkEntriesArePreserved")}</p>
-            )}
-        </Confirm>
+          onSave={save}
+        />
       )}
     </Card>
   );
