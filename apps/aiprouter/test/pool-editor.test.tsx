@@ -345,7 +345,7 @@ describe("connection member cards", () => {
         connections: [
           ready("a", "First"),
           ready("b", "Second"),
-          { id: "c", name: "Broken", state: ConnectionState.DISCONNECTED },
+          { id: "c", name: "Broken", state: ConnectionState.DISABLED },
         ],
       });
       const dialog = await openCreate(user);
@@ -371,7 +371,7 @@ describe("connection member cards", () => {
       const user = userEvent.setup();
       mount({
         connections: [
-          { id: "c", name: "Broken", state: ConnectionState.DISCONNECTED },
+          { id: "c", name: "Broken", state: ConnectionState.DISABLED },
         ],
       });
       const dialog = await openCreate(user);
