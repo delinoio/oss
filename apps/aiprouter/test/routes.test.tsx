@@ -31,6 +31,10 @@ describe("console route compatibility", () => {
     },
   );
   it.each([
+    ["/?organization=&page=keys", "/keys", "keys"],
+    ["/keys?organization=", "/keys", "keys"],
+    ["/?organization_id=&page=providers", "/providers", "providers"],
+    ["/?org=&page=routing", "/routing", "routing"],
     ["/?org=studio&page=keys", "/keys?organization=studio", "keys"],
     [
       "/providers?organization_id=studio&page=organization-usage",
@@ -70,6 +74,7 @@ describe("console route compatibility", () => {
       "/keys?organization=studio+%26+other",
     );
     expect(pageHref("account")).toBe("/account");
+    expect(pageHref("keys", "")).toBe("/keys");
   });
   it("rejects unknown paths instead of showing overview", () => {
     expect(resolveRoute(url("/missing?page=keys"))).toBeUndefined();
@@ -126,6 +131,13 @@ function mount(path: string) {
   );
 }
 describe("page entry and navigation", () => {
+  it("replaces a legacy empty-scope URL without adding history entries", () => {
+    window.history.replaceState(null, "", "/?organization=&page=keys");
+    const historyLength = window.history.length;
+    mount("/?organization=&page=keys");
+    expect(window.location.pathname + window.location.search).toBe("/keys");
+    expect(window.history.length).toBe(historyLength);
+  });
   it("opens invitation acceptance through the server alias", async () => {
     mount("/invitations/accept");
     expect(

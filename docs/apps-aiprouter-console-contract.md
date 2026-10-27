@@ -35,6 +35,8 @@ Standalone flows use `/sign-in`, `/device`, `/invitation`, and `/ownership`; pre
 
 Keep existing `?page=` links and `org`/`organization_id` workspace selectors compatible, normalizing them to canonical addresses without adding browser history entries. Preserve `/`, `/organizations`, `/connect-client`, `/invitations/accept`, `/instance`, and `/instance/usage` as aliases for overview, overview, connect, invitation acceptance, instance health, and instance health respectively. Unknown paths must not render the overview. The service console allowlist and OIDC return targets must support the same routes as the frontend.
 
+Omit an empty workspace selector from canonical console addresses. For example, `/?organization=&page=keys` normalizes to `/keys`; a selected organization uses `/keys?organization=<id>`. Keep standalone flow parameters unchanged.
+
 ## Storage
 
 PostgreSQL through server APIs is authoritative. React Query caches must respect organization/user boundaries and invalidate affected views after logout, organization changes, deletion, and permission changes. Temporary UI state must not become durable secret/content storage.

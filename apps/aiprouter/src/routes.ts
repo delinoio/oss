@@ -84,8 +84,8 @@ export function resolveRoute(url: URL) {
   if (!standalone) {
     canonical.searchParams.delete("organization_id");
     canonical.searchParams.delete("org");
-    if (organization !== null)
-      canonical.searchParams.set("organization", organization);
+    if (organization) canonical.searchParams.set("organization", organization);
+    else canonical.searchParams.delete("organization");
   }
   return { page, url: canonical };
 }
