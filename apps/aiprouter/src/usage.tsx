@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale, formatNumber } from "./i18n";
-import { useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import {
@@ -103,19 +103,61 @@ export function SummaryCards({
     </>
   );
 }
+/** Viewport query at which the filters render inline instead of in a dialog. */
+export const INLINE_FILTERS_QUERY = "(min-width: 1024px)";
+const DAY_MS = 86400000;
+
+/** Default Last 7 days range: today (UTC) minus six days through today (UTC). */
+export function defaultUsageRange(now = Date.now()) {
+  return {
+    start: new Date(now - 6 * DAY_MS).toISOString().slice(0, 10),
+    end: new Date(now).toISOString().slice(0, 10),
+  };
+}
+
+function useMediaQuery(query: string) {
+  return useSyncExternalStore(
+    (notify) => {
+      const list = window.matchMedia?.(query);
+      list?.addEventListener?.("change", notify);
+      return () => list?.removeEventListener?.("change", notify);
+    },
+    () => window.matchMedia?.(query).matches ?? true,
+    () => true,
+  );
+}
+
+/** What the "Usage filters" dialog focuses when it opens. */
+enum FilterDialogFocus {
+  Heading = "heading",
+  InvalidDate = "invalid-date",
+}
+
 export function UsagePage({ organization, session }: PageProps) {
   useLocale();
-  const [range, setRange] = useState(() => ({
-    start: new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10),
-    end: new Date().toISOString().slice(0, 10),
-  }));
+  const [range, setRange] = useState(() => defaultUsageRange());
   const [model, setModel] = useState("");
   const [provider, setProvider] = useState("");
   const [outcome, setOutcome] = useState<RequestOutcome | -1>(-1);
   const [token, setToken] = useState("");
   const [detail, setDetail] = useState<UsageRecord>();
-  const [filters, setFilters] = useState(false);
-  const valid = !!range.start && !!range.end && range.start <= range.end;
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [dialogFocus, setDialogFocus] = useState(FilterDialogFocus.Heading);
+  const inlineFilters = useMediaQuery(INLINE_FILTERS_QUERY);
+  // The dialog only exists below the inline breakpoint; drop its open state
+  // when the viewport grows so it does not reappear after a later shrink.
+  useEffect(() => {
+    if (inlineFilters) setFiltersOpen(false);
+  }, [inlineFilters]);
+  const startError = range.start ? undefined : translate("enterAStartDate");
+  const endError = !range.end
+    ? translate("enterAnEndDate")
+    : range.start > range.end
+      ? translate("theEndDateMustBeOnOrAfterTheStartDate")
+      : undefined;
+  const valid = !startError && !endError;
+  const filterCount =
+    Number(!!model) + Number(!!provider) + Number(outcome !== -1);
   const input = {
     organizationId: organization.id,
     userId: session.userId,
@@ -138,10 +180,7 @@ export function UsagePage({ organization, session }: PageProps) {
     enabled: valid,
   });
   const reset = () => {
-    setRange({
-      start: new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10),
-      end: new Date().toISOString().slice(0, 10),
-    });
+    setRange(defaultUsageRange());
     setModel("");
     setProvider("");
     setOutcome(-1);
@@ -149,7 +188,7 @@ export function UsagePage({ organization, session }: PageProps) {
   };
   const filterForm = (
     <>
-      <Field label={translate("startDateUtc")}>
+      <Field label={translate("startDateUtc")} error={startError}>
         <input
           type="date"
           required
@@ -160,7 +199,7 @@ export function UsagePage({ organization, session }: PageProps) {
           }}
         />
       </Field>
-      <Field label={translate("endDateUtc")}>
+      <Field label={translate("endDateUtc")} error={endError}>
         <input
           type="date"
           required
@@ -214,9 +253,14 @@ export function UsagePage({ organization, session }: PageProps) {
           ))}
         </select>
       </Field>
-      <Button onClick={reset}>{translate("clearFilters")}</Button>
     </>
   );
+  const openFilters = () => {
+    setDialogFocus(
+      valid ? FilterDialogFocus.Heading : FilterDialogFocus.InvalidDate,
+    );
+    setFiltersOpen(true);
+  };
   const visible = records.data?.records;
   return (
     <>
@@ -227,22 +271,39 @@ export function UsagePage({ organization, session }: PageProps) {
         })}
       />
       <Notice>{translate("costsAreEstimatesNotBillingUnknownUsage")}</Notice>
-      <div className="desktop-filters filters">{filterForm}</div>
-      <Button className="mobile-filters" onClick={() => setFilters(true)}>
-        {translate("filters", {
-          value0: Number(!!model) + Number(outcome !== -1) + Number(!!provider),
-        })}
-      </Button>
-      {filters && (
-        <Dialog
-          title={translate("usageFilters")}
-          onClose={() => setFilters(false)}
+      {inlineFilters ? (
+        <div
+          className="usage-filters"
+          role="group"
+          aria-label={translate("usageFilters")}
         >
           {filterForm}
-          <Button variant="primary" onClick={() => setFilters(false)}>
-            {translate("done")}
+          <Button onClick={reset}>{translate("clearFilters")}</Button>
+        </div>
+      ) : (
+        <>
+          <Button className="usage-filters-trigger" onClick={openFilters}>
+            {translate("filters", { value0: filterCount })}
           </Button>
-        </Dialog>
+          {filtersOpen && (
+            <Dialog
+              title={translate("usageFilters")}
+              className="usage-filters-dialog"
+              focusHeading={dialogFocus === FilterDialogFocus.Heading}
+              initialFocus='input[aria-invalid="true"]'
+              onClose={() => setFiltersOpen(false)}
+            >
+              <p>{translate("changesUpdateYourUsageImmediatelyDatesAre")}</p>
+              {filterForm}
+              <div className="actions">
+                <Button onClick={reset}>{translate("clearFilters")}</Button>
+                <Button variant="primary" onClick={() => setFiltersOpen(false)}>
+                  {translate("done")}
+                </Button>
+              </div>
+            </Dialog>
+          )}
+        </>
       )}
       {!valid && (
         <Notice tone="danger">
@@ -272,7 +333,7 @@ export function UsagePage({ organization, session }: PageProps) {
       <ErrorNotice error={records.error} retry={() => void records.refetch()} />
       {records.isPending && valid ? (
         <Loading />
-      ) : visible?.length === 0 ? (
+      ) : valid && visible?.length === 0 ? (
         <EmptyState
           title={translate("noMatchingRequests")}
           action={<Button onClick={reset}>{translate("clearFilters")}</Button>}
@@ -318,6 +379,7 @@ export function UsagePage({ organization, session }: PageProps) {
         onNext={setToken}
         onFirst={() => setToken("")}
         hasPrevious={!!token}
+        pending={!valid}
       />
       {detail && (
         <Dialog

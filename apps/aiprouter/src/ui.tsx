@@ -77,10 +77,13 @@ export function Field({
   label,
   children,
   hint,
+  error,
 }: {
   label: string;
   children: ReactNode;
   hint?: ReactNode;
+  /** Field-associated error text; marks the control invalid and describes it. */
+  error?: ReactNode;
 }) {
   useLocale();
   const id = useId();
@@ -88,18 +91,30 @@ export function Field({
     ? (children as ReactElement<Record<string, unknown>>)
     : undefined;
   const inputId = String(child?.props.id ?? id);
+  const describedBy =
+    [
+      child?.props["aria-describedby"],
+      hint ? `${id}-hint` : undefined,
+      error ? `${id}-error` : undefined,
+    ]
+      .filter(Boolean)
+      .join(" ") || undefined;
   return (
     <div className="field">
       <label htmlFor={inputId}>{label}</label>
       {child
         ? cloneElement(child, {
             id: inputId,
-            "aria-describedby": hint
-              ? `${id}-hint`
-              : child.props["aria-describedby"],
+            "aria-describedby": describedBy,
+            ...(error ? { "aria-invalid": true } : {}),
           })
         : children}
       {hint && <small id={`${id}-hint`}>{hint}</small>}
+      {error && (
+        <small id={`${id}-error`} className="field-error">
+          {error}
+        </small>
+      )}
     </div>
   );
 }
