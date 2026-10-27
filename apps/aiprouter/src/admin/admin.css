@@ -766,3 +766,79 @@
     transition: none;
   }
 }
+
+/* Organization settings: stacked cards, status-first ownership and danger card. */
+.admin-settings {
+  display: grid;
+  gap: 24px;
+  width: 100%;
+  max-width: 1080px;
+  min-width: 0;
+}
+.admin-settings .page-heading {
+  margin-bottom: 0;
+}
+.admin-settings .page-heading h1 {
+  font-size: 32px;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+.admin-settings .admin-settings-card {
+  margin: 0;
+  padding: 24px;
+}
+.admin-settings .admin-danger-card {
+  border-color: #e7b1ab;
+}
+.admin-status-block {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 16px;
+  border-radius: 8px;
+  background: #f7f8fa;
+}
+.admin-status-block dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.admin-status-block dl > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.admin-status-block dt {
+  min-width: 96px;
+  color: #4e5968;
+  font-size: 14px;
+}
+.admin-status-block dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-weight: 600;
+}
+.admin-status-block > button {
+  justify-self: start;
+}
+.admin-helper {
+  margin: -8px 0 16px;
+  color: #4e5968;
+  font-size: 14px;
+}
+.admin-dialog-status {
+  margin: 0;
+  color: #4e5968;
+}
+.admin-dialog.admin-dialog-wide {
+  width: min(600px, calc(100vw - 32px));
+}
+@media (max-width: 600px) {
+  .admin-settings .page-heading h1 {
+    font-size: 24px;
+  }
+  .admin-settings .admin-settings-card {
+    padding: 16px;
+  }
+}

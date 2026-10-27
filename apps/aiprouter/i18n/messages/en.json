@@ -1183,5 +1183,20 @@
   "routesThroughPoolsNeedReview": "Routes through these pools also need review.",
   "disconnectDoesNotRepairRouting": "Disconnecting does not remove or repair dependent routing.",
   "disconnecting": "Disconnecting…",
-  "closingDoesNotCancelSubmittedChange": "Closing this dialog does not cancel a submitted change."
+  "closingDoesNotCancelSubmittedChange": "Closing this dialog does not cancel a submitted change.",
+  "message_85d815948f": "Transfer ownership or delete this organization before leaving as sole owner.",
+  "deletionRemovesCredentialsSettingsTemporaryState": "Deletion removes credentials, settings, temporary state, usage and organization audit records. Existing backups expire under operator policy.",
+  "theNameMustMatchExactly": "The name must match exactly.",
+  "permanentlyDelete": "Permanently delete {value0}?",
+  "message_8d8d0be9ef": "Nominee",
+  "status": "Status",
+  "loadingMembers": "Loading members…",
+  "noEligibleMembersOnThisPage": "No eligible members on this page.",
+  "nominateAsOwnerOf": "Nominate {value0} as owner of {value1}?",
+  "thePreviousRequestForBecomesInvalid": "The previous request for {value0} becomes invalid.",
+  "anyPreviousRequestBecomesInvalid": "Any previous request becomes invalid.",
+  "ownershipChangesOnlyAfterAcceptsBecomes": "Ownership changes only after {value0} accepts. {value0} becomes owner and you become an administrator. You remain owner until acceptance. This nomination expires after seven days.",
+  "keepTransfer": "Keep transfer",
+  "cancelTheOwnershipTransferTo": "Cancel the ownership transfer to {value0}?",
+  "theNomineeWillNoLongerBe": "The nominee will no longer be able to accept this transfer. You remain the owner of {value0}."
 }

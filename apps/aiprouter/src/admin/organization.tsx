@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale, getLocale } from "../i18n";
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useId, useState } from "react";
 import { useMutation, useQuery, useTransport } from "@connectrpc/connect-query";
 import { createClient, Code, ConnectError } from "@connectrpc/connect";
 import {
@@ -20,7 +20,10 @@ import { useDirtyForm } from "../api";
 import {
   AdminAuthority,
   Confirm,
+  ConfirmFocus,
+  ConfirmTone,
   Dialog,
+  DialogSize,
   Empty,
   ErrorNotice,
   Loading,
@@ -466,29 +469,34 @@ export function Invitations() {
 export function Settings({ organization }: { organization: Organization }) {
   useLocale();
   const { organizationId, role } = useContext(AdminAuthority);
+  // The draft is local state: refetches, failed saves and owner dialogs never
+  // replace it, and a save never overwrites text typed while it was in flight.
   const [name, setName] = useState(organization.name);
   const [deleting, setDeleting] = useState(false);
+  const errorId = useId();
   const dirty = useDirtyForm();
   useEffect(() => {
     dirty(name !== organization.name);
     return () => dirty(false);
   }, [dirty, name, organization.name]);
-  const action = useAction();
+  const saveAction = useAction();
+  const deleteAction = useAction();
   const update = useMutation(OrganizationService.method.updateOrganization);
   const remove = useMutation(OrganizationService.method.deleteOrganization);
   return (
-    <>
+    <div className="admin-settings">
       <PageHeader
         title={translate("organizationSettings")}
         description={translate("manage", { value0: organization.name })}
       />
-      {action.feedback}
-      <Card>
+      <Card className="admin-settings-card">
         <h2>{translate("organizationName")}</h2>
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            void action.run(() => update.mutateAsync({ organizationId, name }));
+            void saveAction.run(() =>
+              update.mutateAsync({ organizationId, name }),
+            );
           }}
         >
           <label>
@@ -497,13 +505,16 @@ export function Settings({ organization }: { organization: Organization }) {
               autoFocus
               required
               value={name}
+              aria-invalid={saveAction.error ? true : undefined}
+              aria-describedby={saveAction.error ? errorId : undefined}
               onChange={(e) => setName(e.target.value)}
             />
           </label>
+          <div id={errorId}>{saveAction.feedback}</div>
           <button
             className="admin-primary"
             disabled={
-              action.pending || !name.trim() || name === organization.name
+              saveAction.pending || !name.trim() || name === organization.name
             }
           >
             {translate("saveName")}
@@ -512,10 +523,14 @@ export function Settings({ organization }: { organization: Organization }) {
       </Card>
       {role === Role.OWNER && (
         <>
-          <Ownership />
-          <Card>
+          <Ownership organizationName={organization.name} />
+          <Card className="admin-settings-card admin-danger-card">
             <h2>{translate("deleteOrganization")}</h2>
-            <p>{translate("asTheSoleOwnerTransferOwnershipOr")}</p>
+            <p>{translate("message_85d815948f")}</p>
+            <p>
+              {translate("deletionRemovesCredentialsSettingsTemporaryState")}
+            </p>
+            {deleteAction.feedback}
             <button
               className="admin-danger-outline"
               onClick={() => setDeleting(true)}
@@ -529,35 +544,52 @@ export function Settings({ organization }: { organization: Organization }) {
         <Confirm
           title={translate("deleteOrganization")}
           name={organization.name}
-          pending={action.pending}
+          helper={translate("theNameMustMatchExactly")}
+          initialFocus={ConfirmFocus.Input}
+          size={DialogSize.Wide}
+          pendingStatus
+          pending={deleteAction.pending}
           onClose={() => setDeleting(false)}
           action={() =>
-            void action.run(() => remove.mutateAsync({ organizationId }), {
-              owner: true,
-              done: () => setDeleting(false),
-              success: translate("organizationDeleted"),
-            })
+            void deleteAction.run(
+              () => remove.mutateAsync({ organizationId }),
+              {
+                owner: true,
+                done: () => setDeleting(false),
+                success: translate("organizationDeleted"),
+              },
+            )
           }
         >
+          <p>
+            <strong>
+              {translate("permanentlyDelete", { value0: organization.name })}
+            </strong>
+          </p>
           <p>
             {translate("thisPermanentlyDeletesSCredentialsSettingsTemporary", {
               value0: organization.name,
             })}
           </p>
           <p>{translate("newRequestsStopImmediatelyResponsesAlreadySent")}</p>
-          <ErrorNotice error={action.error} />
+          <ErrorNotice error={deleteAction.error} />
         </Confirm>
       )}
-    </>
+    </div>
   );
 }
-function Ownership() {
+function Ownership({ organizationName }: { organizationName: string }) {
   useLocale();
   const { organizationId } = useContext(AdminAuthority);
   const [nominee, setNominee] = useState("");
   const [token, setToken] = useState("");
   const [confirm, setConfirm] = useState(false);
-  const [cancel, setCancel] = useState(false);
+  // The transfer shown when Cancel transfer was clicked. Retaining it keeps a
+  // later replacement nomination from being canceled by accident.
+  const [cancelTarget, setCancelTarget] = useState<{
+    id: string;
+    nominee: string;
+  }>();
   const now = useNow();
   const action = useAction();
   const members = useQuery(MembershipService.method.listMembers, {
@@ -571,66 +603,103 @@ function Ownership() {
   );
   const nominate = useMutation(OwnershipService.method.nominateOwner),
     remove = useMutation(OwnershipService.method.cancelOwnershipTransfer);
-  const transfer = query.data?.transfer;
+  // NotFound means there is no transfer. Any other failure means the state is
+  // unknown, which must never be presented as an empty state.
+  const notFound =
+    !!query.error && ConnectError.from(query.error).code === Code.NotFound;
+  const unknown = !!query.error && !notFound;
+  const transfer = notFound ? undefined : query.data?.transfer;
+  const undetermined = query.isPending || unknown;
   const pending = transfer?.state === LifecycleState.PENDING;
   const expired =
     !!transfer &&
     (transfer.state === LifecycleState.EXPIRED ||
       (milliseconds(transfer.expiresAt) ?? Infinity) <= now);
+  const replacing = pending && !expired;
   const person = members.data?.members.find(
     (m) => m.userId === transfer?.toUserId,
   );
-  const selected = members.data?.members.find((m) => m.userId === nominee);
+  const nomineeName = person?.displayName || transfer?.toUserId || "";
+  const eligible =
+    members.data?.members.filter((m) => m.role !== Role.OWNER) ?? [];
+  const selected = eligible.find((m) => m.userId === nominee);
+  const selectedName = selected ? selected.displayName || selected.email : "";
+  const nominationTitle = replacing
+    ? translate("replaceNomination")
+    : translate("nominateOwner");
   return (
-    <Card>
+    <Card className="admin-settings-card">
       <h2>{translate("ownershipTransfer")}</h2>
       {action.feedback}
       {query.isPending ? (
-        <Loading />
-      ) : query.error &&
-        ConnectError.from(query.error).code !== Code.NotFound ? (
+        <Loading label={translate("loadingOwnershipTransfer")} />
+      ) : unknown ? (
         <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       ) : transfer ? (
-        <div>
-          <p>
-            {translate("nominee", {
-              value0: person?.displayName || transfer.toUserId,
-            })}
-          </p>
-          <p>
-            {translate("expires_5f50e1", {
-              value0: expired
-                ? translate("message_fa90c49b8b")
-                : pending
-                  ? translate("message_1dc7bfd9c5")
-                  : label(LifecycleState[transfer.state]),
-              value1: date(transfer.expiresAt),
-            })}
-          </p>
-          {pending && !expired && (
-            <button onClick={() => setCancel(true)}>
+        <div className="admin-status-block">
+          <dl>
+            <div>
+              <dt>{translate("message_8d8d0be9ef")}</dt>
+              <dd>{nomineeName}</dd>
+            </div>
+            <div>
+              <dt>{translate("status")}</dt>
+              <dd>
+                {expired
+                  ? translate("message_fa90c49b8b")
+                  : pending
+                    ? translate("message_1dc7bfd9c5")
+                    : transfer.state === LifecycleState.UNSPECIFIED ||
+                        LifecycleState[transfer.state] === undefined
+                      ? translate("unknown")
+                      : label(LifecycleState[transfer.state])}
+              </dd>
+            </div>
+            <div>
+              <dt>{translate("expires_f6725f")}</dt>
+              <dd>{date(transfer.expiresAt)}</dd>
+            </div>
+          </dl>
+          {replacing && (
+            <button
+              onClick={() =>
+                setCancelTarget({ id: transfer.id, nominee: nomineeName })
+              }
+            >
               {translate("cancelTransfer")}
             </button>
           )}
         </div>
       ) : (
-        <p>{translate("noPendingTransfer")}</p>
+        <p className="admin-status-block">{translate("noPendingTransfer")}</p>
       )}
       <p>{translate("youRemainOwnerUntilTheNomineeAccepts")}</p>
-      <ErrorNotice error={members.error} />
+      {members.isPending ? (
+        <Loading label={translate("loadingMembers")} />
+      ) : (
+        <ErrorNotice
+          error={members.error}
+          retry={() => void members.refetch()}
+        />
+      )}
       <label>
         {translate("nominateAnExistingMember")}
-        <select value={nominee} onChange={(e) => setNominee(e.target.value)}>
+        <select
+          value={nominee}
+          disabled={!members.data}
+          onChange={(e) => setNominee(e.target.value)}
+        >
           <option value="">{translate("chooseAMember")}</option>
-          {members.data?.members
-            .filter((m) => m.role !== Role.OWNER)
-            .map((m) => (
-              <option key={m.userId} value={m.userId}>
-                {m.displayName || m.email}
-              </option>
-            ))}
+          {eligible.map((m) => (
+            <option key={m.userId} value={m.userId}>
+              {m.displayName || m.email}
+            </option>
+          ))}
         </select>
       </label>
+      {members.data && eligible.length === 0 && (
+        <p>{translate("noEligibleMembersOnThisPage")}</p>
+      )}
       <Pager
         token={token}
         next={members.data?.page?.nextPageToken}
@@ -639,30 +708,33 @@ function Ownership() {
           setNominee("");
         }}
       />
-      <button
-        disabled={
-          !selected ||
-          action.pending ||
-          !!(
-            query.error && ConnectError.from(query.error).code !== Code.NotFound
-          )
-        }
-        onClick={() => setConfirm(true)}
-      >
-        {pending && !expired
-          ? translate("replaceNomination")
-          : translate("nominateOwner")}
-      </button>
+      <div className="admin-actions">
+        <button
+          className="admin-primary"
+          disabled={!selected || action.pending || undetermined}
+          onClick={() => setConfirm(true)}
+        >
+          {nominationTitle}
+        </button>
+      </div>
       {confirm && selected && (
         <Confirm
-          title={translate("nominateOwner")}
+          title={nominationTitle}
+          tone={ConfirmTone.Primary}
+          size={DialogSize.Wide}
+          pendingStatus
           pending={action.pending}
           onClose={() => setConfirm(false)}
           action={() =>
             void action.run(
-              () => nominate.mutateAsync({ organizationId, userId: nominee }),
+              () =>
+                nominate.mutateAsync({
+                  organizationId,
+                  userId: selected.userId,
+                }),
               {
                 owner: true,
+                refetchOnConflict: true,
                 done: () => setConfirm(false),
                 success: translate("ownershipNominationSent"),
               },
@@ -670,31 +742,60 @@ function Ownership() {
           }
         >
           <p>
-            {translate("nominateAnyPreviousRequestBecomesInvalidOwnership", {
-              value0: selected.displayName || selected.email,
+            {translate("nominateAsOwnerOf", {
+              value0: selectedName,
+              value1: organizationName,
+            })}
+          </p>
+          <p>
+            {replacing && person
+              ? translate("thePreviousRequestForBecomesInvalid", {
+                  value0: person.displayName || person.email,
+                })
+              : translate("anyPreviousRequestBecomesInvalid")}
+          </p>
+          <p>
+            {translate("ownershipChangesOnlyAfterAcceptsBecomes", {
+              value0: selectedName,
             })}
           </p>
           <ErrorNotice error={action.error} />
         </Confirm>
       )}
-      {cancel && transfer && (
+      {cancelTarget && (
         <Confirm
           title={translate("cancelTransfer")}
+          cancelLabel={translate("keepTransfer")}
+          size={DialogSize.Standard}
+          pendingStatus
           pending={action.pending}
-          onClose={() => setCancel(false)}
+          onClose={() => setCancelTarget(undefined)}
           action={() =>
             void action.run(
               () =>
-                remove.mutateAsync({ organizationId, transferId: transfer.id }),
+                remove.mutateAsync({
+                  organizationId,
+                  transferId: cancelTarget.id,
+                }),
               {
                 owner: true,
-                done: () => setCancel(false),
+                refetchOnConflict: true,
+                done: () => setCancelTarget(undefined),
                 success: translate("ownershipTransferCanceled"),
               },
             )
           }
         >
-          <p>{translate("theNomineeWillNoLongerBeAble")}</p>
+          <p>
+            {translate("cancelTheOwnershipTransferTo", {
+              value0: cancelTarget.nominee,
+            })}
+          </p>
+          <p>
+            {translate("theNomineeWillNoLongerBe", {
+              value0: organizationName,
+            })}
+          </p>
           <ErrorNotice error={action.error} />
         </Confirm>
       )}
