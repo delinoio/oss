@@ -15,6 +15,7 @@ import { type PageProps, pageSize } from "./api";
 import {
   PageHeader,
   Button,
+  Badge,
   Card,
   Field,
   Dialog,
@@ -133,6 +134,144 @@ enum FilterDialogFocus {
   InvalidDate = "invalid-date",
 }
 
+/** Display model for a recorded request outcome; unknown values stay Unknown. */
+export function outcomeDisplay(outcome: RequestOutcome): {
+  label: string;
+  tone: "neutral" | "success" | "warning" | "danger";
+} {
+  switch (outcome) {
+    case RequestOutcome.SUCCEEDED:
+      return { label: enumLabel(RequestOutcome[outcome]), tone: "success" };
+    case RequestOutcome.UPSTREAM_ERROR:
+    case RequestOutcome.GATEWAY_ERROR:
+      return { label: enumLabel(RequestOutcome[outcome]), tone: "danger" };
+    case RequestOutcome.CANCELED:
+      return { label: enumLabel(RequestOutcome[outcome]), tone: "neutral" };
+    case RequestOutcome.RATE_LIMITED:
+      return { label: enumLabel(RequestOutcome[outcome]), tone: "warning" };
+    default:
+      return { label: translate("unknown"), tone: "neutral" };
+  }
+}
+
+/** Label for the recorded price source; anything unrecognized is Unknown. */
+export function priceSourceLabel(source?: PriceSource) {
+  switch (source) {
+    case PriceSource.BUNDLED:
+      return translate("bundledSnapshot");
+    case PriceSource.OPERATOR_OVERRIDE:
+      return enumLabel(PriceSource[source]);
+    default:
+      return translate("unknown");
+  }
+}
+
+function tokenText(usage?: UsageRecord["usage"]) {
+  return translate("tokensInOut", {
+    value0: formatNumber(usage?.inputTokens),
+    value1: formatNumber(usage?.outputTokens),
+  });
+}
+
+/** One recorded request; the estimate action names its row for assistive tech. */
+function RecordRow({
+  record,
+  onView,
+}: {
+  record: UsageRecord;
+  onView: (trigger: HTMLButtonElement) => void;
+}) {
+  useLocale();
+  const outcome = outcomeDisplay(record.outcome);
+  return (
+    <Card className="record usage-record">
+      <div className="usage-record-body">
+        <h3>{record.modelId || translate("unknownModel")}</h3>
+        <p className="usage-record-meta">
+          <span>{formatDate(record.occurredAt)}</span>
+          <Badge tone={outcome.tone}>{outcome.label}</Badge>
+        </p>
+        <p>{tokenText(record.usage)}</p>
+        <p>
+          {translate("estimatedCost", {
+            value0: formatMoney(record.estimatedCost),
+          })}
+        </p>
+        <small>
+          {translate("requestId", {
+            value0: record.requestId || translate("unknown"),
+          })}
+        </small>
+      </div>
+      <Button
+        aria-label={translate("viewEstimateForRequest", {
+          value0: record.modelId || translate("unknownModel_d04431"),
+          value1: record.requestId || translate("withUnknownId"),
+        })}
+        onClick={(event) => onView(event.currentTarget)}
+      >
+        {translate("viewEstimate")}
+      </Button>
+    </Card>
+  );
+}
+
+/** Read-only snapshot of the price recorded on the request; never repriced. */
+function EstimateDialog({
+  record,
+  onClose,
+}: {
+  record: UsageRecord;
+  onClose: () => void;
+}) {
+  useLocale();
+  const price = record.appliedPrice;
+  return (
+    <Dialog
+      title={translate("requestEstimate")}
+      className="usage-estimate-dialog"
+      focusHeading
+      onClose={onClose}
+    >
+      <dl className="usage-estimate-facts">
+        <div>
+          <dt>{translate("requestId_d561f5")}</dt>
+          <dd>{record.requestId || translate("unknown")}</dd>
+        </div>
+      </dl>
+      <div className="usage-estimate-cost">
+        <p>{translate("estimatedCost_9ccba2")}</p>
+        <strong>{formatMoney(record.estimatedCost)}</strong>
+      </div>
+      <h3>{translate("appliedPrice")}</h3>
+      <dl className="usage-estimate-facts">
+        <div>
+          <dt>{translate("priceSource_6ac363")}</dt>
+          <dd>{priceSourceLabel(price?.source)}</dd>
+        </div>
+        <div>
+          <dt>{translate("priceRevision_7583ef")}</dt>
+          <dd>{price?.sourceRevision || translate("unknown")}</dd>
+        </div>
+        <div>
+          <dt>{translate("appliedUtc")}</dt>
+          <dd>{formatDate(price?.appliedAt)}</dd>
+        </div>
+        <div>
+          <dt>{translate("serviceTier_e9cf60")}</dt>
+          <dd>{price?.serviceTier || translate("unknown")}</dd>
+        </div>
+      </dl>
+      <Notice>{translate("theAppliedPriceAndEstimateAreFixed")}</Notice>
+      <div className="actions">
+        <Button variant="primary" onClick={onClose}>
+          {translate("done")}
+        </Button>
+      </div>
+    </Dialog>
+  );
+}
+
 export function UsagePage({ organization, session }: PageProps) {
   useLocale();
   const [range, setRange] = useState(() => defaultUsageRange());
@@ -141,6 +280,7 @@ export function UsagePage({ organization, session }: PageProps) {
   const [outcome, setOutcome] = useState<RequestOutcome | -1>(-1);
   const [token, setToken] = useState("");
   const [detail, setDetail] = useState<UsageRecord>();
+  const [detailKey, setDetailKey] = useState("");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [dialogFocus, setDialogFocus] = useState(FilterDialogFocus.Heading);
   const inlineFilters = useMediaQuery(INLINE_FILTERS_QUERY);
@@ -179,6 +319,20 @@ export function UsagePage({ organization, session }: PageProps) {
   const summary = useQuery(UsageService.method.getUsageSummary, input, {
     enabled: valid,
   });
+  // Identifies the collection the open estimate belongs to. Any change of
+  // scope, filter or page replaces that collection and closes the detail.
+  const collectionKey = JSON.stringify([
+    organization.id,
+    session.userId,
+    range,
+    model,
+    provider,
+    outcome,
+    token,
+  ]);
+  useEffect(() => {
+    setDetail(undefined);
+  }, [collectionKey]);
   const reset = () => {
     setRange(defaultUsageRange());
     setModel("");
@@ -330,99 +484,61 @@ export function UsagePage({ organization, session }: PageProps) {
           outcome={input.outcome}
         />
       )}
-      <ErrorNotice error={records.error} retry={() => void records.refetch()} />
-      {records.isPending && valid ? (
-        <Loading />
-      ) : valid && visible?.length === 0 ? (
-        <EmptyState
-          title={translate("noMatchingRequests")}
-          action={<Button onClick={reset}>{translate("clearFilters")}</Button>}
-        >
-          {translate("requestsAppearAfterAClientUsesYour")}
-        </EmptyState>
-      ) : valid ? (
-        <div className="records">
-          {visible?.map((r) => (
-            <Card key={r.id} className="record">
-              <div>
-                <h2>{r.modelId}</h2>
-                <p>
-                  {formatDate(r.occurredAt)} ·{" "}
-                  {enumLabel(RequestOutcome[r.outcome])}
-                </p>
-                <p>
-                  {translate("tokensInOut", {
-                    value0: formatNumber(r.usage?.inputTokens),
-                    value1: formatNumber(r.usage?.outputTokens),
-                  })}
-                </p>
-                <p>
-                  {translate("estimatedCost", {
-                    value0: formatMoney(r.estimatedCost),
-                  })}
-                </p>
-                <small>
-                  {translate("requestId", {
-                    value0: r.requestId || translate("unknown"),
-                  })}
-                </small>
-              </div>
-              <Button onClick={() => setDetail(r)}>
-                {translate("viewEstimate")}
-              </Button>
-            </Card>
-          ))}
-        </div>
-      ) : null}
-      <Pagination
-        next={records.data?.page?.nextPageToken}
-        onNext={setToken}
-        onFirst={() => setToken("")}
-        hasPrevious={!!token}
-        pending={!valid}
-      />
-      {detail && (
-        <Dialog
-          title={translate("requestEstimate")}
-          onClose={() => setDetail(undefined)}
-        >
-          <p>{translate("requestId", { value0: detail.requestId })}</p>
-          <p>
-            {translate("estimatedCost", {
-              value0: formatMoney(detail.estimatedCost),
-            })}
-          </p>
-          <p>
-            {translate("priceSource", {
-              value0: enumLabel(
-                detail.appliedPrice
-                  ? PriceSource[detail.appliedPrice.source]
-                  : undefined,
-              ),
-            })}
-          </p>
-          <p>
-            {translate("priceRevision", {
-              value0:
-                detail.appliedPrice?.sourceRevision || translate("unknown"),
-            })}
-          </p>
-          <p>
-            {translate("applied", {
-              value0: formatDate(detail.appliedPrice?.appliedAt),
-            })}
-          </p>
-          <p>
-            {translate("serviceTier", {
-              value0: detail.appliedPrice?.serviceTier || translate("unknown"),
-            })}
-          </p>
-          <Notice>{translate("theAppliedPriceAndEstimateAreFixed")}</Notice>
-          <Button onClick={() => setDetail(undefined)}>
-            {translate("done")}
-          </Button>
-        </Dialog>
-      )}
+      <section className="usage-requests" aria-labelledby="usage-requests">
+        <h2 id="usage-requests">{translate("requests")}</h2>
+        <ErrorNotice
+          error={valid ? records.error : undefined}
+          retry={() => void records.refetch()}
+        />
+        {valid && (
+          <RefreshStatus
+            updating={
+              records.isFetching && !records.isPending && !records.isError
+            }
+            failed={records.isError && records.data !== undefined}
+          />
+        )}
+        {records.isPending && valid ? (
+          <Loading label={translate("loadingRequests")} />
+        ) : valid && visible?.length === 0 ? (
+          <EmptyState
+            title={translate("noMatchingRequests")}
+            action={
+              <Button onClick={reset}>{translate("clearFilters")}</Button>
+            }
+          >
+            {translate("requestsAppearAfterAClientUsesYour")}
+          </EmptyState>
+        ) : valid && visible ? (
+          <div className="records">
+            {visible.map((r) => (
+              <RecordRow
+                key={r.id}
+                record={r}
+                onView={() => {
+                  setDetailKey(collectionKey);
+                  setDetail(r);
+                }}
+              />
+            ))}
+          </div>
+        ) : null}
+        <Pagination
+          next={valid ? records.data?.page?.nextPageToken : undefined}
+          onNext={setToken}
+          onFirst={() => setToken("")}
+          hasPrevious={!!token}
+          pending={!valid || (records.isFetching && !records.data)}
+        />
+      </section>
+      {detail &&
+        detailKey === collectionKey &&
+        visible?.some((r) => r.id === detail.id) && (
+          <EstimateDialog
+            record={detail}
+            onClose={() => setDetail(undefined)}
+          />
+        )}
     </>
   );
 }
