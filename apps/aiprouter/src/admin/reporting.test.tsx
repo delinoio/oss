@@ -259,8 +259,12 @@ describe("server-side reporting filters", () => {
         getInstanceUsage: () => ({}),
       }),
     );
+    const block = (await screen.findByText("Usage recording")).closest("div");
+    expect(within(block as HTMLElement).getByText(label)).toBeTruthy();
     expect(
-      await screen.findByText(new RegExp(`Usage recording health: ${label}`)),
+      screen.getByText(
+        "Recording failures can leave request totals incomplete.",
+      ),
     ).toBeTruthy();
   });
 });
