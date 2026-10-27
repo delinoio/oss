@@ -1473,5 +1473,8 @@
   "noOrganizationWasCreatedTryAgain": "No organization was created. Try again.",
   "anOrganizationIsCreatedOnlyWhen": "An organization is created only when you submit this form.",
   "yourSetupGuide": "Your setup guide",
-  "currentStep": "Current step"
+  "currentStep": "Current step",
+  "originalDeadlineLabel": "Original deadline",
+  "yourCliKeyWillBelongTo": "Your CLI key will belong to this organization.",
+  "loadingOrganizations": "Loading organizations…"
 }

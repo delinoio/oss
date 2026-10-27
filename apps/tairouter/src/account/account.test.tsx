@@ -1,4 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
+import { readFileSync } from "node:fs";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
@@ -197,6 +198,578 @@ describe("browser device authorization", () => {
     expect(approve).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("private diagnostic")).toBeNull();
     expect(screen.queryByText("Approved — waiting for CLI storage")).toBeNull();
+  });
+});
+
+const accountCss = () => readFileSync("src/account/account.css", "utf8");
+
+describe("device approval layout", () => {
+  afterEach(() => window.history.replaceState(null, "", "/"));
+
+  type Authorization = ReturnType<typeof device>;
+  function mountDevice(
+    options: {
+      authorization?: Partial<Omit<Authorization, "expiresAt">> & {
+        expiresAt?: undefined;
+      };
+      organizations?: () => unknown;
+      inspect?: (request: { userCode: string }) => unknown;
+      approve?: (request: Record<string, unknown>) => unknown;
+      deny?: (request: Record<string, unknown>) => unknown;
+      initialCode?: string;
+    } = {},
+  ) {
+    const inspect = rs.fn(
+      options.inspect ??
+        (() => ({ authorization: { ...device(), ...options.authorization } })),
+    );
+    const approve = rs.fn(
+      options.approve ??
+        ((request: Record<string, unknown>) => ({
+          authorization: {
+            ...device(),
+            organizationId: request.organizationId,
+            state: State.APPROVED,
+          },
+        })),
+    );
+    const deny = rs.fn(options.deny ?? (() => ({})));
+    const organizations = rs.fn(
+      options.organizations ?? (() => ({ organizations: [org] })),
+    );
+    const view = mount(
+      <DevicePage initialCode={options.initialCode} />,
+      (router) => {
+        router.service(DeviceApprovalService, {
+          getDeviceAuthorization: inspect as never,
+          approveDeviceAuthorization: approve as never,
+          denyDeviceAuthorization: deny as never,
+        });
+        router.service(OrganizationService, {
+          listOrganizations: organizations as never,
+        });
+      },
+    );
+    return { ...view, inspect, approve, deny, organizations };
+  }
+  const approveButton = () =>
+    screen.getByRole("button", {
+      name: /Approv(e connection|ing…)/,
+    }) as HTMLButtonElement;
+  const denyButton = () =>
+    screen.getByRole("button", { name: /Den(y|ying…)$/ }) as HTMLButtonElement;
+  const resetButton = () =>
+    screen.getByRole("button", {
+      name: "Enter another code",
+    }) as HTMLButtonElement;
+  const gate = () => {
+    let release: () => void = () => {};
+    const promise = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return { promise, release: () => release() };
+  };
+
+  it("keeps the heading and subtitle outside the review card", async () => {
+    const { container } = mountDevice({ initialCode: "ABCD-EFGH" });
+    await screen.findByText("SSH workstation");
+    const heading = screen.getByRole("heading", {
+      level: 1,
+      name: "Connect this device?",
+    });
+    expect(heading.closest(".device-card")).toBeNull();
+    expect(
+      screen
+        .getByText(
+          "Verify the details below and approve only a connection you started.",
+        )
+        .closest(".device-card"),
+    ).toBeNull();
+    expect(
+      container.querySelector(".device-surface .device-card"),
+    ).not.toBeNull();
+  });
+
+  it("orders details, code panel, deadline, form and Enter another code", async () => {
+    const { container } = mountDevice({ initialCode: "ABCD-EFGH" });
+    await screen.findByText("SSH workstation");
+    const parts = [
+      ".device-details",
+      ".device-code-panel",
+      ".device-deadline",
+      ".device-form",
+      ".device-reset",
+    ].map((selector) => container.querySelector(selector) as Element);
+    parts.forEach((part) => expect(part).not.toBeNull());
+    for (let index = 1; index < parts.length; index += 1)
+      expect(
+        parts[index - 1].compareDocumentPosition(parts[index]) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    expect(container.querySelector(".device-reset")?.textContent).toBe(
+      "Enter another code",
+    );
+  });
+
+  describe("entry form", () => {
+    it("has one autofocused labelled input with helper text and only inspects the trimmed code", async () => {
+      const user = userEvent.setup();
+      const { inspect, approve, deny } = mountDevice();
+      const input = screen.getByLabelText(
+        "Connection code",
+      ) as HTMLInputElement;
+      expect(document.activeElement).toBe(input);
+      expect(screen.getAllByRole("textbox")).toHaveLength(1);
+      expect(input.required).toBe(true);
+      expect(input.maxLength).toBe(64);
+      expect(input.getAttribute("autocomplete")).toBe("off");
+      expect(input.getAttribute("spellcheck")).toBe("false");
+      expect(input.getAttribute("autocapitalize")).toBe("characters");
+      const helper = screen.getByText(
+        "Enter the one-time code shown by your CLI.",
+      );
+      expect(input.getAttribute("aria-describedby")).toBe(helper.id);
+      await user.type(input, "  abcd-efgh  ");
+      expect(input.value).toBe("  abcd-efgh  ");
+      await user.click(
+        screen.getByRole("button", { name: "Review connection" }),
+      );
+      await screen.findByText("SSH workstation");
+      expect(inspect).toHaveBeenCalledTimes(1);
+      expect(inspect.mock.calls[0][0]).toMatchObject({ userCode: "abcd-efgh" });
+      expect(approve).not.toHaveBeenCalled();
+      expect(deny).not.toHaveBeenCalled();
+    });
+
+    it("never inspects a blank or whitespace-only code", async () => {
+      const user = userEvent.setup();
+      const { inspect, approve } = mountDevice();
+      await user.type(screen.getByLabelText("Connection code"), "   ");
+      fireEvent.submit(
+        screen
+          .getByRole("button", { name: "Review connection" })
+          .closest("form")!,
+      );
+      expect(inspect).not.toHaveBeenCalled();
+      expect(approve).not.toHaveBeenCalled();
+      expect(screen.getByLabelText("Connection code")).not.toBeNull();
+    });
+
+    it("prefers initialCode over user_code and reviews without approving", async () => {
+      window.history.replaceState(null, "", "/device?user_code=FROM-URL");
+      const first = mountDevice();
+      await screen.findByText("SSH workstation");
+      expect(first.inspect.mock.calls[0][0]).toMatchObject({
+        userCode: "FROM-URL",
+      });
+      expect(first.approve).not.toHaveBeenCalled();
+      expect(window.location.pathname + window.location.search).toBe(
+        "/device?user_code=FROM-URL",
+      );
+      first.unmount();
+      const second = mountDevice({ initialCode: "FROM-PROP" });
+      await screen.findByText("SSH workstation");
+      expect(second.inspect.mock.calls[0][0]).toMatchObject({
+        userCode: "FROM-PROP",
+      });
+      expect(second.approve).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("code comparison panel", () => {
+    it("shows the unchanged code in monospace with the confirmation note and no copy action", async () => {
+      const { container } = mountDevice({ initialCode: "  abcd-1234_ef  " });
+      await screen.findByText("SSH workstation");
+      const panel = container.querySelector(
+        ".device-code-panel",
+      ) as HTMLElement;
+      expect(panel.textContent).toContain("Connection code");
+      const code = panel.querySelector(".device-code") as HTMLElement;
+      expect(code.textContent).toBe("abcd-1234_ef");
+      expect(panel.textContent).toContain(
+        "Confirm this code matches your CLI. Approve only a connection you started.",
+      );
+      expect(screen.queryByRole("button", { name: /copy/i })).toBeNull();
+      const css = accountCss();
+      const start = css.indexOf(".device-code-panel .device-code {");
+      expect(start).toBeGreaterThan(-1);
+      const rule = css.slice(start, css.indexOf("}", start));
+      expect(rule).toContain("monospace");
+      expect(rule).toContain("text-transform: none");
+      expect(rule).toContain("overflow-wrap: anywhere");
+    });
+
+    it("keeps long unbroken codes and server values as plain text", async () => {
+      const longCode = "A".repeat(64);
+      const longServer = `https://${"s".repeat(120)}.example.test`;
+      const { container } = mountDevice({
+        initialCode: longCode,
+        authorization: { serverAddress: longServer },
+      });
+      await screen.findByText(longServer);
+      expect(container.querySelector(".device-code")?.textContent).toBe(
+        longCode,
+      );
+      expect(screen.queryByRole("link", { name: longServer })).toBeNull();
+    });
+  });
+
+  describe("deadline block", () => {
+    it("labels the original deadline and the remaining lifetime separately", async () => {
+      const { container } = mountDevice({ initialCode: "CODE" });
+      await screen.findByText("SSH workstation");
+      const block = container.querySelector(".device-deadline") as HTMLElement;
+      expect(block.textContent).toContain("Original deadline");
+      const remaining = screen.getByText(/^Code expires in \d+:\d{2}$/);
+      expect(remaining.getAttribute("aria-live")).toBe("off");
+      expect(block.contains(remaining)).toBe(true);
+      expect(block.contains(screen.getByLabelText("Key expiry"))).toBe(false);
+    });
+
+    it("shows Not available and blocks approval when no deadline is known", async () => {
+      const user = userEvent.setup();
+      const { approve } = mountDevice({
+        initialCode: "CODE",
+        inspect: () => ({
+          authorization: { ...device(), expiresAt: undefined },
+        }),
+      });
+      await screen.findByText("SSH workstation");
+      expect(
+        screen.getByText("Not available", { exact: false }),
+      ).not.toBeNull();
+      expect(screen.queryByText(/Code expires in/)).toBeNull();
+      await user.selectOptions(screen.getByLabelText("Organization"), org.id);
+      expect(approveButton().disabled).toBe(true);
+      fireEvent.submit(approveButton().closest("form")!);
+      expect(approve).not.toHaveBeenCalled();
+    });
+
+    it("rechecks the deadline with a fresh clock at submit time", async () => {
+      const user = userEvent.setup();
+      const { approve } = mountDevice({ initialCode: "CODE" });
+      await screen.findByText("SSH workstation");
+      await user.selectOptions(screen.getByLabelText("Organization"), org.id);
+      expect(approveButton().disabled).toBe(false);
+      const spy = rs.spyOn(Date, "now").mockReturnValue(Date.now() + 700000);
+      try {
+        fireEvent.submit(approveButton().closest("form")!);
+      } finally {
+        spy.mockRestore();
+      }
+      expect(approve).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("pending form", () => {
+    it("starts with no organization chosen and explains key ownership", async () => {
+      mountDevice({ initialCode: "CODE" });
+      await screen.findByText("SSH workstation");
+      await screen.findByRole("option", { name: "Studio" });
+      const select = screen.getByLabelText("Organization") as HTMLSelectElement;
+      expect(select.value).toBe("");
+      expect(Array.from(select.options).map((option) => option.text)).toEqual([
+        "Choose an organization",
+        "Studio",
+      ]);
+      const helper = screen.getByText(
+        "Your CLI key will belong to this organization.",
+      );
+      expect(select.getAttribute("aria-describedby")).toBe(helper.id);
+      expect(approveButton().disabled).toBe(true);
+      expect(denyButton().disabled).toBe(false);
+    });
+
+    it("offers 30 days by default, 90 days and No expiry", async () => {
+      mountDevice({ initialCode: "CODE" });
+      await screen.findByText("SSH workstation");
+      const expiry = screen.getByLabelText("Key expiry") as HTMLSelectElement;
+      expect(expiry.value).toBe("30");
+      expect(Array.from(expiry.options).map((option) => option.text)).toEqual([
+        "30 days",
+        "90 days",
+        "No expiry",
+      ]);
+    });
+
+    it.each([
+      ["30", 30],
+      ["90", 90],
+    ])(
+      "computes the %s day key expiry at submit time",
+      async (choice, days) => {
+        const user = userEvent.setup();
+        const { approve } = mountDevice({ initialCode: "CODE" });
+        await screen.findByText("SSH workstation");
+        await user.selectOptions(screen.getByLabelText("Organization"), org.id);
+        await user.selectOptions(screen.getByLabelText("Key expiry"), choice);
+        const before = Date.now();
+        await user.click(approveButton());
+        await waitFor(() => expect(approve).toHaveBeenCalledTimes(1));
+        const after = Date.now();
+        const request = approve.mock.calls[0][0] as {
+          keyExpiresAt: { seconds: bigint };
+        };
+        const ms = Number(request.keyExpiresAt.seconds) * 1000;
+        expect(ms).toBeGreaterThanOrEqual(
+          Math.floor((before + days * 86400000) / 1000) * 1000,
+        );
+        expect(ms).toBeLessThanOrEqual(after + days * 86400000);
+      },
+    );
+
+    it("omits keyExpiresAt for No expiry", async () => {
+      const user = userEvent.setup();
+      const { approve } = mountDevice({ initialCode: "CODE" });
+      await screen.findByText("SSH workstation");
+      await user.selectOptions(screen.getByLabelText("Organization"), org.id);
+      await user.selectOptions(screen.getByLabelText("Key expiry"), "none");
+      await user.click(approveButton());
+      await waitFor(() => expect(approve).toHaveBeenCalledTimes(1));
+      expect(approve.mock.calls[0][0].keyExpiresAt).toBeUndefined();
+    });
+
+    it("loads organizations 100 at a time with the next token and keeps the earlier choice", async () => {
+      const user = userEvent.setup();
+      const seen: Array<{ pageSize: number; pageToken: string }> = [];
+      const first = Array.from({ length: 100 }, (_, index) => ({
+        id: `org-${index}`,
+        name: `Org ${index}`,
+        role: Role.MEMBER,
+      }));
+      mount(<DevicePage initialCode="CODE" />, (router) => {
+        router.service(DeviceApprovalService, {
+          getDeviceAuthorization: () => ({ authorization: device() }),
+        });
+        router.service(OrganizationService, {
+          listOrganizations: (request) => {
+            seen.push({
+              pageSize: request.page?.pageSize ?? 0,
+              pageToken: request.page?.pageToken ?? "",
+            });
+            return seen.length === 1
+              ? { organizations: first, page: { nextPageToken: "token-2" } }
+              : {
+                  organizations: [
+                    { id: "org-last", name: "Last org", role: Role.MEMBER },
+                  ],
+                };
+          },
+        });
+      });
+      await screen.findByText("SSH workstation");
+      await screen.findByRole("option", { name: "Org 99" });
+      await user.selectOptions(screen.getByLabelText("Organization"), "org-5");
+      await user.click(
+        screen.getByRole("button", { name: "Load more organizations" }),
+      );
+      await screen.findByRole("option", { name: "Last org" });
+      expect(
+        (screen.getByLabelText("Organization") as HTMLSelectElement).value,
+      ).toBe("org-5");
+      expect(
+        screen.queryByRole("button", { name: "Load more organizations" }),
+      ).toBeNull();
+      expect(seen).toEqual([
+        { pageSize: 100, pageToken: "" },
+        { pageSize: 100, pageToken: "token-2" },
+      ]);
+    });
+
+    it("shows the no-organization link with the deadline note and blocks approval", async () => {
+      const { approve } = mountDevice({
+        initialCode: "CODE",
+        organizations: () => ({ organizations: [] }),
+      });
+      await screen.findByText("SSH workstation");
+      const link = await screen.findByRole("link", {
+        name: "Create an organization or accept an invitation",
+      });
+      expect(link.getAttribute("href")).toBe("/overview");
+      expect(link.parentElement?.textContent).toContain(
+        ", then return to this code before its deadline.",
+      );
+      expect(approveButton().disabled).toBe(true);
+      expect(approve).not.toHaveBeenCalled();
+    });
+
+    it("announces organization loading with a named status", async () => {
+      const wait = gate();
+      mountDevice({
+        initialCode: "CODE",
+        organizations: async () => {
+          await wait.promise;
+          return { organizations: [org] };
+        },
+      });
+      await screen.findByText("SSH workstation");
+      expect(
+        screen.getByText("Loading organizations…").getAttribute("role"),
+      ).toBe("status");
+      expect(approveButton().disabled).toBe(true);
+      wait.release();
+      await screen.findByRole("option", { name: "Studio" });
+      expect(screen.queryByText("Loading organizations…")).toBeNull();
+    });
+
+    it("blocks approval but not denial when organizations fail to load", async () => {
+      const user = userEvent.setup();
+      const { approve, deny } = mountDevice({
+        initialCode: "CODE",
+        organizations: () => {
+          throw new ConnectError("private", Code.Unavailable);
+        },
+      });
+      await screen.findByText("SSH workstation");
+      await screen.findByText(
+        "The service is unavailable. No change has been confirmed.",
+      );
+      expect(approveButton().disabled).toBe(true);
+      expect(denyButton().disabled).toBe(false);
+      await user.click(denyButton());
+      await screen.findByText("Connection denied");
+      expect(deny).toHaveBeenCalledTimes(1);
+      expect(deny.mock.calls[0][0]).toMatchObject({ userCode: "CODE" });
+      expect(approve).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("decision row", () => {
+    it("puts Approve connection before a red-text Deny in one actions row", async () => {
+      const { container } = mountDevice({ initialCode: "CODE" });
+      await screen.findByText("SSH workstation");
+      const row = container.querySelector(".device-actions") as HTMLElement;
+      const buttons = Array.from(row.querySelectorAll("button"));
+      expect(buttons.map((button) => button.textContent)).toEqual([
+        "Approve connection",
+        "Deny",
+      ]);
+      expect(buttons[0].className).toContain("account-primary");
+      expect(buttons[1].className).toContain("device-deny");
+      expect(row.closest(".device-reset")).toBeNull();
+      const css = accountCss();
+      expect(css).toMatch(
+        /\.account-surface \.device-deny \{\s*color: #b42318;/,
+      );
+      expect(css).toMatch(
+        /@media \(max-width: 479px\) \{[^@]*\.device-surface \.device-actions \{\s*flex-direction: column;/,
+      );
+    });
+
+    it("disables both decisions, the form and Enter another code while approving, and sends one request", async () => {
+      const user = userEvent.setup();
+      const wait = gate();
+      const { approve, deny } = mountDevice({
+        initialCode: "CODE",
+        approve: async (request) => {
+          await wait.promise;
+          return {
+            authorization: {
+              ...device(),
+              organizationId: request.organizationId,
+              state: State.APPROVED,
+            },
+          };
+        },
+      });
+      await screen.findByText("SSH workstation");
+      await user.selectOptions(screen.getByLabelText("Organization"), org.id);
+      await user.click(approveButton());
+      await screen.findByRole("button", { name: "Approving…" });
+      await user.click(approveButton());
+      expect(approve).toHaveBeenCalledTimes(1);
+      expect(approveButton().disabled).toBe(true);
+      expect(denyButton().disabled).toBe(true);
+      expect(
+        (screen.getByLabelText("Organization") as HTMLSelectElement).disabled,
+      ).toBe(true);
+      expect(
+        (screen.getByLabelText("Key expiry") as HTMLSelectElement).disabled,
+      ).toBe(true);
+      expect(resetButton().disabled).toBe(true);
+      wait.release();
+      await screen.findByText("Approved — waiting for CLI storage");
+      expect(deny).not.toHaveBeenCalled();
+    });
+
+    it("shows Denying… and disables every control while a denial is pending", async () => {
+      const user = userEvent.setup();
+      const wait = gate();
+      const { approve, deny } = mountDevice({
+        initialCode: "CODE",
+        deny: async () => {
+          await wait.promise;
+          return {};
+        },
+      });
+      await screen.findByText("SSH workstation");
+      await user.selectOptions(screen.getByLabelText("Organization"), org.id);
+      await user.click(denyButton());
+      await screen.findByRole("button", { name: "Denying…" });
+      expect(deny).toHaveBeenCalledTimes(1);
+      expect(approveButton().disabled).toBe(true);
+      expect(denyButton().disabled).toBe(true);
+      expect(
+        (screen.getByLabelText("Key expiry") as HTMLSelectElement).disabled,
+      ).toBe(true);
+      expect(resetButton().disabled).toBe(true);
+      wait.release();
+      await screen.findByText("Connection denied");
+      expect(approve).not.toHaveBeenCalled();
+    });
+
+    it("never replays a failed approval from Try again and keeps the selections", async () => {
+      const user = userEvent.setup();
+      const { approve, inspect } = mountDevice({
+        initialCode: "CODE",
+        approve: () => {
+          throw new ConnectError("private", Code.Unavailable);
+        },
+      });
+      await screen.findByText("SSH workstation");
+      await user.selectOptions(screen.getByLabelText("Organization"), org.id);
+      await user.selectOptions(screen.getByLabelText("Key expiry"), "90");
+      await user.click(approveButton());
+      await user.click(
+        await screen.findByRole("button", { name: "Try again" }),
+      );
+      await waitFor(() => expect(inspect).toHaveBeenCalledTimes(2));
+      expect(approve).toHaveBeenCalledTimes(1);
+      expect(
+        (screen.getByLabelText("Organization") as HTMLSelectElement).value,
+      ).toBe(org.id);
+      expect(
+        (screen.getByLabelText("Key expiry") as HTMLSelectElement).value,
+      ).toBe("90");
+    });
+  });
+
+  it("scopes the device layout away from other AccountSurface consumers", async () => {
+    const { container } = mount(
+      <InvitationPage token="invitation-token" />,
+      (router) => {
+        router.service(AccountService, { getSession: () => session });
+        router.service(InvitationService, {
+          getInvitation: () => ({
+            invitation: {
+              id: "invite",
+              organizationName: "Studio",
+              email: session.email,
+              state: LifecycleState.PENDING,
+              expiresAt: future(),
+              role: Role.MEMBER,
+            },
+          }),
+        });
+      },
+    );
+    await screen.findByText("Studio");
+    expect(container.querySelector(".device-surface")).toBeNull();
+    expect(container.querySelector(".device-card")).toBeNull();
+    const selectors = accountCss()
+      .split("\n")
+      .filter((line) => /^[.@]/.test(line) && line.includes("device"));
+    expect(selectors.length).toBeGreaterThan(0);
   });
 });
 

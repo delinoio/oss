@@ -722,3 +722,142 @@
     margin-top: 16px;
   }
 }
+
+/* Device approval layout. All rules are scoped to .device-surface and
+   .device-card so the other AccountSurface consumers keep their geometry. */
+.standalone:has(> .device-surface) {
+  max-width: none;
+  margin: 48px auto 0;
+  padding: 0 24px 48px;
+}
+.account-surface.device-surface {
+  width: min(100%, 600px);
+}
+.device-surface > header {
+  margin-bottom: 24px;
+}
+.device-surface > header h1 {
+  margin-bottom: 8px;
+}
+.device-surface .device-card {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 32px;
+  border-color: #d5dbe3;
+}
+.device-card > :first-child {
+  margin-top: 0;
+}
+.device-surface .device-entry label {
+  margin: 0 0 8px;
+}
+.device-surface .device-helper {
+  margin: 8px 0 16px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.device-surface .device-review {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+}
+.device-details {
+  margin: 0 0 24px;
+}
+.device-details dd {
+  font-weight: 600;
+}
+.device-code-panel {
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid #d5dbe3;
+  border-radius: 8px;
+  background: #f2f4f6;
+}
+.device-code-panel p {
+  margin: 0;
+}
+.device-code-panel .device-code-label {
+  color: #4e5968;
+  font-size: 14px;
+}
+.device-code-panel .device-code {
+  margin: 8px 0;
+  padding: 8px 0;
+  background: transparent;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-align: left;
+  text-transform: none;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.device-code-panel .device-code-note {
+  font-size: 14px;
+}
+.device-deadline {
+  margin: 0 0 24px;
+}
+.device-deadline p {
+  margin: 0 0 4px;
+}
+.device-deadline .device-deadline-label {
+  display: block;
+  color: #4e5968;
+  font-size: 14px;
+}
+.device-deadline .device-deadline-remaining {
+  font-weight: 600;
+}
+.device-form {
+  padding-top: 24px;
+  border-top: 1px solid #d5dbe3;
+}
+.device-surface .device-form label {
+  margin: 0 0 8px;
+}
+.device-form .device-no-organization {
+  margin: 0 0 16px;
+}
+.device-surface .device-load-more {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 16px;
+}
+.device-surface .device-actions {
+  flex-wrap: nowrap;
+  margin: 24px 0 0;
+}
+.device-surface .device-actions > button {
+  flex: 1 1 0;
+}
+.account-surface .device-deny {
+  color: #b42318;
+}
+.device-reset {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #d5dbe3;
+}
+@media (max-width: 767px) {
+  .device-surface .device-card {
+    padding: 24px;
+  }
+}
+@media (max-width: 479px) {
+  .standalone:has(> .device-surface) {
+    padding: 0 16px 32px;
+  }
+  .device-surface .device-card {
+    padding: 16px;
+  }
+  .device-surface .device-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .device-surface .device-actions > button,
+  .device-surface .device-reset > button {
+    width: 100%;
+  }
+}
