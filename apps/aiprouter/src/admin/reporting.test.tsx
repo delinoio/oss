@@ -190,7 +190,7 @@ describe("server-side reporting filters", () => {
       });
       const user = userEvent.setup();
       await screen.findByText(
-        operator ? /No audit records match/ : "No audit events available.",
+        operator ? "No audit records yet." : "No audit events available.",
       );
       await user.type(
         screen.getByRole("textbox", { name: "Actor ID" }),
@@ -237,7 +237,7 @@ describe("server-side reporting filters", () => {
       });
     },
   );
-  it("keeps instance audit rows unchanged", async () => {
+  it("renders instance audit rows with text outcome badges", async () => {
     const org = rs.fn();
     mount(<Audit operator />, (router) => {
       router.service(AuditService, {
@@ -260,8 +260,12 @@ describe("server-side reporting filters", () => {
     expect(
       await screen.findByRole("heading", { level: 1, name: "Instance audit" }),
     ).toBeTruthy();
-    for (const outcome of ["Unknown", "Succeeded", "Failed", "Denied"])
-      expect(await screen.findByText(`Outcome: ${outcome}`)).toBeTruthy();
+    await screen.findAllByRole("article");
+    expect(
+      Array.from(document.querySelectorAll(".admin-outcome")).map(
+        (badge) => badge.textContent,
+      ),
+    ).toEqual(["Unknown", "Succeeded", "Failed", "Denied"]);
     expect(screen.queryByRole("table")).toBeNull();
     expect(org).not.toHaveBeenCalled();
   });

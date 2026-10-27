@@ -841,186 +841,170 @@ export function OrganizationUsage() {
 export function Audit({ operator = false }: { operator?: boolean }) {
   return operator ? <InstanceAudit /> : <OrganizationAudit />;
 }
+// Instance audit presentation (operator workspace only). It keeps the original
+// request semantics: only listInstanceAudit is called, the server filters and orders
+// records, any filter change resets the cursor and the client never re-filters rows.
 function InstanceAudit() {
   useLocale();
+  const ids = useId();
   const [token, setToken] = useState("");
-  const [actor, setActor] = useState("");
-  const [action, setAction] = useState("");
-  const [outcome, setOutcome] = useState("");
-  const [dates, setDates] = useState({ start: "", end: "" });
-  const valid =
-    (!dates.start && !dates.end) ||
-    (!!dates.start && !!dates.end && dates.start <= dates.end);
-  const range =
-    dates.start && valid ? timeRange(dates.start, dates.end) : undefined;
-  const filters = {
-    page: { pageSize: 100, pageToken: token },
-    timeRange: range,
-    action: action === "" ? undefined : (Number(action) as AuditAction),
-    actorUserId: actor || undefined,
-    outcome: outcome === "" ? undefined : (Number(outcome) as AuditOutcome),
+  const [filters, setFilters] = useState<AuditFilterState>(emptyAuditFilters);
+  const { actor, action, outcome, start, end } = filters;
+  const valid = (!start && !end) || (!!start && !!end && start <= end);
+  const range = start && valid ? timeRange(start, end) : undefined;
+  const query = useQuery(
+    OperatorService.method.listInstanceAudit,
+    {
+      page: { pageSize: 100, pageToken: token },
+      timeRange: range,
+      action: action === "" ? undefined : (Number(action) as AuditAction),
+      actorUserId: actor || undefined,
+      outcome: outcome === "" ? undefined : (Number(outcome) as AuditOutcome),
+    },
+    { enabled: valid },
+  );
+  const change = (patch: Partial<AuditFilterState>) => {
+    setFilters((current) => ({ ...current, ...patch }));
+    setToken("");
   };
-  const query = useQuery(OperatorService.method.listInstanceAudit, filters, {
-    enabled: valid,
-  });
+  const clear = () => {
+    setFilters(emptyAuditFilters);
+    setToken("");
+  };
+  const rangeErrorId = `${ids}-range-error`;
+  const filtersId = `${ids}-filters`;
+  const recordsId = `${ids}-records`;
   const records = query.data?.records ?? [];
+  const next = query.data?.page?.nextPageToken;
+  const unfilteredFirstPage = activeFilterCount(filters) === 0 && token === "";
+
+  function results() {
+    // Invalid dates, errors and pending states never show records from another query.
+    if (!valid)
+      return (
+        <p role="alert" id={rangeErrorId} className="admin-danger-text">
+          {translate("chooseBothDatesWithTheEndOn")}
+        </p>
+      );
+    if (query.error)
+      return (
+        <ErrorNotice error={query.error} retry={() => void query.refetch()} />
+      );
+    if (!query.data) {
+      if (query.fetchStatus === "paused")
+        return (
+          <div role="status" className="admin-error">
+            <p>{translate("instanceAuditUnavailableOffline")}</p>
+            <button onClick={() => void query.refetch()}>
+              {translate("tryAgain")}
+            </button>
+          </div>
+        );
+      return <Loading />;
+    }
+    const updating = query.isFetching;
+    return (
+      <>
+        {updating && (
+          <p role="status" className="admin-audit-helper">
+            {translate("instanceAuditUpdating")}
+          </p>
+        )}
+        {records.length > 0 ? (
+          <div className="admin-instance-audit-records" aria-busy={updating}>
+            {records.map((record) => (
+              <InstanceAuditRecord key={record.id} record={record} />
+            ))}
+          </div>
+        ) : unfilteredFirstPage ? (
+          <Empty>
+            <strong>{translate("instanceAuditNoRecords")}</strong>
+            <span className="admin-empty-detail">
+              {translate("instanceAuditNoRecordsDetail")}
+            </span>
+          </Empty>
+        ) : (
+          <Empty>{translate("noAuditRecordsMatchClearFiltersOr")}</Empty>
+        )}
+        {!(records.length === 0 && unfilteredFirstPage && !next) && (
+          <Pager token={token} next={next} onChange={setToken} />
+        )}
+      </>
+    );
+  }
+
   return (
     <>
       <PageHeader
         title={translate("instanceAudit")}
-        description={translate(
-          "permissionLifecycleAndConfigurationEventsSafeMetadata",
-        )}
+        description={translate("instanceAuditDescription")}
       />
-      <Card>
-        <details open className="admin-filters">
-          <summary>{translate("filters_546ebb")}</summary>
-          <div className="admin-form-grid">
-            <label>
-              {translate("actorId")}
-              <input
-                value={actor}
-                onChange={(e) => {
-                  setActor(e.target.value);
-                  setToken("");
-                }}
-              />
-            </label>
-            <label>
-              {translate("action")}
-              <select
-                value={action}
-                onChange={(e) => {
-                  setAction(e.target.value);
-                  setToken("");
-                }}
-              >
-                <option value="">{translate("allActions")}</option>
-                {Object.values(AuditAction)
-                  .filter((v) => typeof v === "number")
-                  .map((v) => (
-                    <option key={v} value={v}>
-                      {label(AuditAction[v as number])}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label>
-              {translate("outcome")}
-              <select
-                value={outcome}
-                onChange={(e) => {
-                  setOutcome(e.target.value);
-                  setToken("");
-                }}
-              >
-                <option value="">{translate("allOutcomes")}</option>
-                {Object.values(AuditOutcome)
-                  .filter((v) => typeof v === "number")
-                  .map((value) => (
-                    <option key={value} value={value}>
-                      {value === AuditOutcome.UNSPECIFIED
-                        ? translate("unknown")
-                        : label(AuditOutcome[value as number])}
-                    </option>
-                  ))}
-              </select>
-            </label>
-            <label>
-              {translate("fromUtc")}
-              <input
-                type="date"
-                value={dates.start}
-                onChange={(e) => {
-                  setDates({ ...dates, start: e.target.value });
-                  setToken("");
-                }}
-              />
-            </label>
-            <label>
-              {translate("throughUtc")}
-              <input
-                type="date"
-                value={dates.end}
-                onChange={(e) => {
-                  setDates({ ...dates, end: e.target.value });
-                  setToken("");
-                }}
-              />
-            </label>
-          </div>
-          <button
-            onClick={() => {
-              setActor("");
-              setAction("");
-              setOutcome("");
-              setDates({ start: "", end: "" });
-              setToken("");
-            }}
-          >
-            {translate("clearFilters")}
-          </button>
-        </details>
-        {!valid ? (
-          <p role="alert">{translate("chooseBothDatesWithTheEndOn")}</p>
-        ) : query.isPending ? (
-          <Loading />
-        ) : query.error ? (
-          <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-        ) : (
-          <>
-            <div className="admin-records">
-              {records.map((record) => (
-                <AuditRow key={record.id} record={record} />
-              ))}
-            </div>
-            {!records.length && (
-              <Empty>{translate("noAuditRecordsMatchClearFiltersOr")}</Empty>
-            )}
-            <Pager
-              token={token}
-              next={query.data?.page?.nextPageToken}
-              onChange={setToken}
+      <p className="admin-instance-audit-scope">
+        {translate("instanceAuditScope")}
+      </p>
+      <Card
+        className="admin-instance-audit-filters"
+        aria-labelledby={filtersId}
+      >
+        <details open>
+          <summary id={filtersId}>{translate("filters_546ebb")}</summary>
+          <div className="admin-instance-audit-filter-grid">
+            <AuditFilterFields
+              filters={filters}
+              onChange={change}
+              invalid={!valid}
+              describedBy={rangeErrorId}
             />
-          </>
-        )}
+          </div>
+          <p className="admin-audit-helper">
+            {translate("instanceAuditDatesHelper")}
+          </p>
+          <div className="admin-instance-audit-clear">
+            <button type="button" onClick={clear}>
+              {translate("clearFilters")}
+            </button>
+          </div>
+        </details>
+      </Card>
+      <Card aria-labelledby={recordsId}>
+        <h2 id={recordsId}>{translate("auditRecords")}</h2>
+        {results()}
       </Card>
     </>
   );
 }
-function AuditRow({ record }: { record: AuditRecord }) {
+function InstanceAuditRecord({ record }: { record: AuditRecord }) {
   useLocale();
+  const headingId = useId();
   return (
-    <article className="admin-record">
-      <div>
-        <h2>
-          {record.action === AuditAction.UNSPECIFIED
-            ? translate("unknownAction")
-            : label(AuditAction[record.action])}
-        </h2>
-        <p>{date(record.occurredAt)}</p>
-        <p>
-          {translate("actor", {
-            value0: record.actorUserId || translate("message_152bc3aa4e"),
-          })}
-        </p>
-        <p>
-          {translate("target", {
-            value0: record.resourceId || translate("unknown"),
-          })}
-        </p>
-        <p>
-          {translate("outcome_3bacad", {
-            value0:
-              record.outcome === AuditOutcome.UNSPECIFIED
-                ? translate("unknown")
-                : label(AuditOutcome[record.outcome]),
-          })}
-        </p>
-        {record.requestId && (
-          <p>{translate("requestId", { value0: record.requestId })}</p>
-        )}
+    <article
+      className="admin-instance-audit-record"
+      aria-labelledby={headingId}
+    >
+      <div className="admin-instance-audit-record-head">
+        <h3 id={headingId}>{auditActionLabel(record.action)}</h3>
+        <OutcomeBadge outcome={record.outcome} />
       </div>
+      <dl className="admin-instance-audit-meta">
+        <div>
+          <dt>{translate("auditTimeColumn")}</dt>
+          <dd>{date(record.occurredAt)}</dd>
+        </div>
+        <div>
+          <dt>{translate("auditActorColumn")}</dt>
+          <dd>{record.actorUserId || translate("message_152bc3aa4e")}</dd>
+        </div>
+        <div>
+          <dt>{translate("instanceAuditTarget")}</dt>
+          <dd>{record.resourceId || translate("unknown")}</dd>
+        </div>
+        {record.requestId && (
+          <div>
+            <dt>{translate("requestId_d561f5")}</dt>
+            <dd>{record.requestId}</dd>
+          </div>
+        )}
+      </dl>
     </article>
   );
 }
@@ -1044,6 +1028,13 @@ interface AuditFilterState {
   end: string;
 }
 
+const emptyAuditFilters: AuditFilterState = {
+  actor: "",
+  action: "",
+  outcome: "",
+  start: "",
+  end: "",
+};
 function auditActionLabel(action: AuditAction) {
   return action === AuditAction.UNSPECIFIED
     ? translate("unknownAction")
