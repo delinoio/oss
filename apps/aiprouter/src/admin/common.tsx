@@ -312,6 +312,7 @@ export function Confirm({
   children,
   action,
   pending,
+  pendingLabel,
   onClose,
 }: {
   title: string;
@@ -319,6 +320,8 @@ export function Confirm({
   children: ReactNode;
   action: () => void;
   pending: boolean;
+  // Optional action label shown while the submitted change is pending.
+  pendingLabel?: string;
   onClose: () => void;
 }) {
   useLocale();
@@ -350,7 +353,7 @@ export function Confirm({
             className="admin-danger"
             disabled={pending || (!!name && typed !== name)}
           >
-            {title}
+            {pending && pendingLabel ? pendingLabel : title}
           </button>
         </div>
       </form>
