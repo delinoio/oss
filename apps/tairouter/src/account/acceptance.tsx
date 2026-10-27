@@ -13,6 +13,7 @@ import {
   Role,
   type Organization,
 } from "@tairouter/client";
+import { Code, ConnectError } from "@connectrpc/connect";
 import {
   AccountError,
   AccountSurface,
@@ -255,6 +256,21 @@ const transferStates: Partial<Record<LifecycleState, string>> = {
   },
 };
 
+/**
+ * Query failures that mean the caller may no longer be authorized to see the
+ * reviewed transfer. Retained cached details are dropped for these codes so a
+ * stale payload is never presented as current authority.
+ */
+function revokesReviewContext(error: unknown): boolean {
+  if (!error) return false;
+  const code = ConnectError.from(error).code;
+  return (
+    code === Code.Unauthenticated ||
+    code === Code.PermissionDenied ||
+    code === Code.NotFound
+  );
+}
+
 export function OwnershipAcceptancePage({
   organizationId: suppliedId,
   onAccepted,
@@ -290,13 +306,27 @@ export function OwnershipAcceptancePage({
   });
   const cache = useQueryClient();
   const now = useNow();
-  const nomination = transfer.data?.transfer;
+  // A confirmed acceptance is tracked by the mutation alone, so later empty or
+  // NotFound transfer polls can neither hide it nor re-enable submission.
+  const accepted = accept.isSuccess;
+  const contextRevoked = [session, organization, transfer].some(
+    (query) => query.isError && revokesReviewContext(query.error),
+  );
+  const nomination = contextRevoked ? undefined : transfer.data?.transfer;
+  const reviewedOrganization = contextRevoked
+    ? undefined
+    : organization.data?.organization;
   const deadline = timestampMs(nomination?.expiresAt);
   const replaced =
     requestedTransfer && nomination && requestedTransfer !== nomination.id;
+  const pendingState = nomination?.state === LifecycleState.PENDING;
   const expired = deadline !== undefined && deadline <= now;
+  const locallyExpired = pendingState && expired;
+  const wrongNominee =
+    pendingState && nomination.toUserId !== session.data?.userId;
   const eligible =
-    nomination?.state === LifecycleState.PENDING &&
+    !accepted &&
+    pendingState &&
     nomination.toUserId === session.data?.userId &&
     deadline !== undefined &&
     !expired &&
@@ -304,97 +334,168 @@ export function OwnershipAcceptancePage({
     !transfer.isError &&
     !organization.isError &&
     !session.isError;
+  const loading =
+    !accepted &&
+    Boolean(organizationId) &&
+    (transfer.isPending || organization.isPending || session.isPending);
+  // The role outcomes only describe a transfer that can still be reviewed.
+  const reviewable = pendingState && !replaced && !locallyExpired;
+  const showDetails =
+    !accepted && !loading && Boolean(nomination && reviewedOrganization);
+  let statusMessage = "";
+  if (accepted) statusMessage = translate("ownershipAcceptedYouAreNowTheOwner");
+  else if (loading) statusMessage = translate("loadingOwnershipTransfer");
+  else if (showDetails && nomination && !replaced) {
+    if (locallyExpired)
+      statusMessage = translate("thisOwnershipTransferHasExpired");
+    else if (!pendingState)
+      statusMessage =
+        transferStates[nomination.state] ??
+        translate("ownershipTransferStatusIsUnavailable");
+  } else if (
+    !nomination &&
+    transfer.isSuccess &&
+    !transfer.isError &&
+    !contextRevoked
+  )
+    statusMessage = translate("noPendingOwnershipTransferIsAvailable");
+  const organizationName =
+    (accepted ? accept.data?.organization?.name : undefined) ??
+    reviewedOrganization?.name;
+  const showReturn = accepted || Boolean(reviewedOrganization);
   return (
     <AccountSurface
       title={translate("acceptOrganizationOwnership")}
       subtitle={translate("reviewTheChangeBeforeAccepting")}
+      className="ownership-surface"
+      focusHeading
     >
-      <div className="account-card">
+      <div className="ownership-card">
         {!organizationId && (
-          <p role="alert">{translate("thisLinkIsMissingItsOrganizationAsk")}</p>
+          <p role="alert" className="ownership-alert">
+            {translate("thisLinkIsMissingItsOrganizationAsk")}
+          </p>
         )}
-        {organizationId &&
-          (transfer.isPending ||
-            organization.isPending ||
-            session.isPending) && (
-            <p role="status">{translate("loadingOwnershipTransfer")}</p>
-          )}
-        <AccountError
-          error={session.error ?? organization.error ?? transfer.error}
-          retry={() => {
-            void session.refetch();
-            void organization.refetch();
-            void transfer.refetch();
-          }}
-        />
-        {nomination && organization.data?.organization && (
+        {/* Always mounted so state changes, not polls, are announced once. */}
+        <p role="status" className="ownership-status">
+          {statusMessage}
+        </p>
+        {loading && (
+          <div className="ownership-skeleton" aria-hidden="true">
+            <span className="ownership-skeleton-line ownership-skeleton-short" />
+            <span className="ownership-skeleton-line ownership-skeleton-title" />
+            <span className="ownership-skeleton-line" />
+            <span className="ownership-skeleton-line" />
+          </div>
+        )}
+        {!accepted && (
+          <AccountError
+            error={session.error ?? organization.error ?? transfer.error}
+            retry={() => {
+              void session.refetch();
+              void organization.refetch();
+              void transfer.refetch();
+            }}
+          />
+        )}
+        {(showDetails || accepted) && organizationName !== undefined && (
+          <header className="ownership-organization">
+            <p className="ownership-label">{translate("organization")}</p>
+            <h2>{organizationName}</h2>
+            {eligible && (
+              <p className="ownership-badge">
+                {translate("pendingAcceptance")}
+              </p>
+            )}
+          </header>
+        )}
+        {showDetails && nomination && (
           <>
-            <h2>{organization.data.organization.name}</h2>
-            <p>{translate("youWillBecomeTheOwnerThePrevious")}</p>
-            <p>
-              {translate("expires", {
-                value0: dateLabel(nomination.expiresAt),
-              })}
-            </p>
-            {replaced ? (
-              <p role="alert">{translate("thisRequestWasReplacedByANewer")}</p>
-            ) : expired ? (
-              <p role="status">
-                {translate("thisOwnershipTransferHasExpired")}
+            {replaced && (
+              <p role="alert" className="ownership-alert">
+                {translate("thisRequestWasReplacedByANewer")}
               </p>
-            ) : nomination.state !== LifecycleState.PENDING ? (
-              <p role="status">
-                {transferStates[nomination.state] ??
-                  translate("ownershipTransferStatusIsUnavailable")}
-              </p>
-            ) : (
-              nomination.toUserId !== session.data?.userId && (
-                <p role="alert">
-                  {translate("onlyTheNominatedMemberCanAcceptThis")}
+            )}
+            {reviewable && (
+              <section className="ownership-section">
+                <h3>{translate("whatWillChange")}</h3>
+                <dl className="ownership-facts">
+                  <div>
+                    <dt>{translate("you")}</dt>
+                    <dd>{translate("becomeOwner")}</dd>
+                  </div>
+                  <div>
+                    <dt>{translate("previousOwner")}</dt>
+                    <dd>{translate("becomeAdministrator")}</dd>
+                  </div>
+                </dl>
+              </section>
+            )}
+            {!replaced && (
+              <section className="ownership-section">
+                <dl className="ownership-facts">
+                  <div>
+                    <dt>{translate("expires_f6725f")}</dt>
+                    <dd>{dateLabel(nomination.expiresAt)}</dd>
+                  </div>
+                </dl>
+                <p className="account-hint">
+                  {translate("transferRequestsAreValidFor7")}
                 </p>
-              )
+              </section>
             )}
-            <AccountError error={accept.error} />
-            {accept.isSuccess ? (
-              <p role="status">
-                {translate("ownershipAcceptedYouAreNowTheOwner")}
+            {wrongNominee && !replaced && (
+              <p role="alert" className="ownership-alert">
+                {translate("onlyTheNominatedMemberCanAcceptThis")}
               </p>
-            ) : (
-              <button
-                type="button"
-                className="account-primary"
-                disabled={!eligible || accept.isPending}
-                onClick={() => {
-                  if (!eligible || !nomination) return;
-                  accept.mutate(
-                    { organizationId, transferId: nomination.id },
-                    {
-                      onSuccess: (response) => {
-                        void cache.invalidateQueries();
-                        if (response.organization)
-                          onAccepted?.(response.organization);
-                      },
-                      onError: () => {
-                        void transfer.refetch();
-                      },
-                    },
-                  );
-                }}
-              >
-                {accept.isPending
-                  ? translate("message_a168fd64e9")
-                  : translate("acceptOwnership")}
-              </button>
             )}
-            <p>
-              <a href={pageHref("overview", organizationId)}>
-                {translate("backToOrganization")}
-              </a>
-            </p>
+            {reviewable && (
+              <p className="ownership-note">
+                {translate("ownershipDoesNotChangeUntilYou")}
+              </p>
+            )}
           </>
         )}
-        {transfer.isSuccess && !nomination && (
-          <p>{translate("noPendingOwnershipTransferIsAvailable")}</p>
+        <AccountError error={accept.error} />
+        {showDetails && nomination && pendingState && (
+          <button
+            type="button"
+            className="account-primary ownership-accept"
+            disabled={!eligible || accept.isPending}
+            onClick={() => {
+              if (!eligible || !nomination || accept.isPending || accepted)
+                return;
+              accept.mutate(
+                { organizationId, transferId: nomination.id },
+                {
+                  onSuccess: (response) => {
+                    void cache.invalidateQueries();
+                    if (response.organization)
+                      onAccepted?.(response.organization);
+                  },
+                  onError: () => {
+                    void transfer.refetch();
+                  },
+                },
+              );
+            }}
+          >
+            {accept.isPending
+              ? translate("message_a168fd64e9")
+              : translate("acceptOwnership")}
+          </button>
+        )}
+        {showReturn && (
+          <p className="ownership-return">
+            <a href={pageHref("overview", organizationId)}>
+              {translate("backToOrganization")}
+            </a>
+          </p>
+        )}
+        {showDetails && reviewable && (
+          <p className="ownership-quiet">
+            {translate("leavingThisPageDoesNotCancel")}
+          </p>
         )}
       </div>
     </AccountSurface>
