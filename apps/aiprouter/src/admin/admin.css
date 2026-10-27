@@ -367,3 +367,92 @@
     width: 100%;
   }
 }
+
+/* Retention: saved-value captions, comparison dialog and conflict recovery. */
+.admin-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.admin-retention-card .admin-limit-control > p {
+  margin-top: 8px;
+}
+.admin-retention-conflict {
+  margin-top: 16px;
+}
+.admin-retention-conflict p {
+  margin: 0 0 8px;
+}
+.admin-dialog .admin-retention-table {
+  width: 100%;
+  margin: 0 0 16px;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.admin-dialog .admin-retention-table th,
+.admin-dialog .admin-retention-table td {
+  padding: 12px 8px;
+  border-bottom: 1px solid #d8dde5;
+  text-align: left;
+  vertical-align: top;
+}
+.admin-dialog .admin-retention-table thead th {
+  color: #4e5968;
+  font-weight: 600;
+}
+.admin-dialog .admin-retention-table .admin-retention-reduced {
+  color: #b42318;
+  font-weight: 600;
+}
+.admin-dialog .admin-retention-warning {
+  margin: 0 0 8px;
+  padding: 0 12px;
+  border-left: 4px solid #b42318;
+}
+.admin-dialog .admin-retention-warning p {
+  margin: 8px 0;
+}
+.admin-dialog:has(.admin-retention-table) {
+  width: min(640px, calc(100vw - 32px));
+}
+@media (max-width: 600px) {
+  .admin-dialog .admin-retention-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+  .admin-dialog .admin-retention-table,
+  .admin-dialog .admin-retention-table tbody,
+  .admin-dialog .admin-retention-table tr,
+  .admin-dialog .admin-retention-table th,
+  .admin-dialog .admin-retention-table td {
+    display: block;
+  }
+  .admin-dialog .admin-retention-table tr {
+    padding: 8px 0;
+    border-bottom: 1px solid #d8dde5;
+  }
+  .admin-dialog .admin-retention-table th,
+  .admin-dialog .admin-retention-table td {
+    border-bottom: 0;
+    padding: 4px 0;
+  }
+  .admin-dialog .admin-retention-table td::before {
+    content: attr(data-label) ": ";
+    color: #4e5968;
+    font-weight: 600;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .admin-retention-card * {
+    transition: none;
+  }
+}

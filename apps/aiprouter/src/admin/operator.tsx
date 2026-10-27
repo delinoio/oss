@@ -27,6 +27,7 @@ import {
 } from "./common";
 import { Summary, timeRange } from "./reporting";
 import { RequestLimitsForm } from "./limits";
+import { RetentionForm } from "./retention";
 import { usePriceRevision, type PriceSnapshot } from "./price-revision";
 
 export function Health() {
@@ -156,9 +157,14 @@ export function InstanceConfiguration({
         description={
           section === "limits"
             ? translate("appliedPerUserWithinEachOrganization")
-            : translate("manageInstancePolicy")
+            : section === "retention"
+              ? translate("setHowLongInstanceRecordsRemainAvailable")
+              : translate("manageInstancePolicy")
         }
       />
+      {section === "retention" && (
+        <p className="admin-scope">{translate("instancePolicy")}</p>
+      )}
       {query.isPending ? (
         <Loading />
       ) : query.error ? (
@@ -166,6 +172,12 @@ export function InstanceConfiguration({
       ) : query.data?.settings ? (
         section === "limits" ? (
           <RequestLimitsForm key={section} settings={query.data.settings} />
+        ) : section === "retention" ? (
+          query.data.settings.retention ? (
+            <RetentionForm key={section} settings={query.data.settings} />
+          ) : (
+            <Unavailable retry={() => void query.refetch()} />
+          )
         ) : (
           <ConfigurationForm
             key={section}
@@ -173,9 +185,24 @@ export function InstanceConfiguration({
             section={section}
           />
         )
+      ) : section === "retention" ? (
+        <Unavailable retry={() => void query.refetch()} />
       ) : (
         <Empty>{translate("instanceSettingsAreUnavailable")}</Empty>
       )}
+    </>
+  );
+}
+// Retention never falls back to defaults or editable zero fields when the
+// saved values are missing.
+function Unavailable({ retry }: { retry: () => void }) {
+  useLocale();
+  return (
+    <>
+      <Empty>{translate("instanceSettingsAreUnavailable")}</Empty>
+      <div className="admin-actions">
+        <button onClick={retry}>{translate("tryAgain")}</button>
+      </div>
     </>
   );
 }
@@ -184,7 +211,7 @@ function ConfigurationForm({
   section,
 }: {
   settings: InstanceSettings;
-  section: "retention" | "destinations";
+  section: "destinations";
 }) {
   useLocale();
   // Keep the reviewed snapshot across background refetches. A new revision
@@ -227,15 +254,8 @@ function ConfigurationForm({
       },
     );
   }
-  const reduced =
-    !!draft.retention &&
-    !!settings.retention &&
-    (draft.retention.requestDays < settings.retention.requestDays ||
-      draft.retention.aggregateDays < settings.retention.aggregateDays ||
-      draft.retention.auditDays < settings.retention.auditDays);
   function submit() {
-    if (reduced || section === "destinations") setReview(true);
-    else save();
+    setReview(true);
   }
   return (
     <Card>
@@ -246,64 +266,6 @@ function ConfigurationForm({
           submit();
         }}
       >
-        {section === "retention" && draft.retention && (
-          <>
-            {(
-              [
-                {
-                  field: "requestDays",
-                  name: translate("requestMetadata"),
-                  min: 1,
-                  max: 90,
-                  default: 30,
-                },
-                {
-                  field: "aggregateDays",
-                  name: translate("dailyAggregates"),
-                  min: 30,
-                  max: 730,
-                  default: 365,
-                },
-                {
-                  field: "auditDays",
-                  name: translate("auditRecords"),
-                  min: 30,
-                  max: 365,
-                  default: 90,
-                },
-              ] as const
-            ).map((item) => (
-              <label key={item.field}>
-                {translate("days", { value0: item.name })}
-                <input
-                  type="number"
-                  required
-                  min={item.min}
-                  max={item.max}
-                  step={1}
-                  value={draft.retention![item.field]}
-                  onChange={(e) => {
-                    setDraft({
-                      ...draft,
-                      retention: {
-                        ...draft.retention!,
-                        [item.field]: Number(e.target.value),
-                      },
-                    });
-                    setChanged(true);
-                  }}
-                />
-                <small>
-                  {translate("daysDefault", {
-                    value0: item.min,
-                    value1: item.max,
-                    value2: item.default,
-                  })}
-                </small>
-              </label>
-            ))}
-          </>
-        )}
         {section === "destinations" && (
           <>
             <p>{translate("publicHttpsDestinationsAreAllowedByDefault")}</p>
@@ -454,48 +416,34 @@ function ConfigurationForm({
       </form>
       {review && (
         <Confirm
-          title={
-            section === "destinations"
-              ? translate("saveDestinationPolicy")
-              : translate("reduceRetention")
-          }
+          title={translate("saveDestinationPolicy")}
           pending={action.pending}
           onClose={() => setReview(false)}
           action={save}
         >
-          {section === "destinations" ? (
-            <>
-              <p>
-                {translate("onlyTheseAdditionalDestinationsWillRemainApproved")}
-              </p>
-              <ul>
-                {draft.allowedDestinations.map((d, i) => (
-                  <li key={d.id || i}>
-                    <strong>{d.origin}</strong> —{" "}
-                    {d.allowedCidrs.length
-                      ? translate(
-                          "restrictedToAddressesOutsideTheseNetworksAre",
-                          { value0: d.allowedCidrs.join(", ") },
-                        )
-                      : translate("message_c6474071b6")}
-                  </li>
-                ))}
-              </ul>
-              <p>
-                {translate(
-                  "removingApprovalBlocksFutureConnectionsThatRequire",
-                )}
-              </p>
-            </>
-          ) : (
+          <>
             <p>
-              {translate("recordsOlderThanTheNewLimitsBecome", {
-                value0: draft.retention?.requestDays,
-                value1: draft.retention?.aggregateDays,
-                value2: draft.retention?.auditDays,
-              })}
+              {translate("onlyTheseAdditionalDestinationsWillRemainApproved")}
             </p>
-          )}
+            <ul>
+              {draft.allowedDestinations.map((d, i) => (
+                <li key={d.id || i}>
+                  <strong>{d.origin}</strong> —{" "}
+                  {d.allowedCidrs.length
+                    ? translate(
+                        "restrictedToAddressesOutsideTheseNetworksAre",
+                        {
+                          value0: d.allowedCidrs.join(", "),
+                        },
+                      )
+                    : translate("message_c6474071b6")}
+                </li>
+              ))}
+            </ul>
+            <p>
+              {translate("removingApprovalBlocksFutureConnectionsThatRequire")}
+            </p>
+          </>
           <ErrorNotice error={action.error} />
           {!!action.error &&
             section === "destinations" &&
