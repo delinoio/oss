@@ -1351,5 +1351,6 @@
   "chooseAuthentication": "Choose an authentication method.",
   "enterAnAccountLabel": "Enter an account label.",
   "enterAFullUrlSuchAsHttps": "Enter a full URL, such as https://api.example.com.",
-  "enterAnApiKey": "Enter an API key."
+  "enterAnApiKey": "Enter an API key.",
+  "endpointsAndProviderSettings": "Endpoints and provider settings"
 }

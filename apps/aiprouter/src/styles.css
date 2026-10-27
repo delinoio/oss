@@ -1642,3 +1642,22 @@ dialog.connection-editor {
     width: 100%;
   }
 }
+.advanced-settings > .advanced-disclosure {
+  margin-top: 8px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.advanced-disclosure[open] {
+  padding-bottom: 12px;
+}
+.advanced-disclosure > summary {
+  margin: 0 -12px;
+  padding: 10px 12px;
+  font-weight: 600;
+}
+.advanced-disclosure > summary:focus-visible,
+.advanced-settings > summary:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: -2px;
+}
