@@ -112,20 +112,6 @@ const pnportPages = [
   { text: "Releases and Rollback", link: "/pnport/releases" },
 ];
 
-const bundlewhyPages = [
-  { text: "Overview", link: "/bundlewhy/", activeMatch: "^/bundlewhy/$" },
-  { text: "Installation", link: "/bundlewhy/installation" },
-  { text: "Getting Started", link: "/bundlewhy/getting-started" },
-  { text: "Supported Engines", link: "/bundlewhy/supported-engines" },
-  {
-    text: "Interpreting Diagnostics",
-    link: "/bundlewhy/interpreting-diagnostics",
-  },
-  { text: "Privacy and Export", link: "/bundlewhy/privacy-and-export" },
-  { text: "Limitations", link: "/bundlewhy/limitations" },
-  { text: "Troubleshooting", link: "/bundlewhy/troubleshooting" },
-];
-
 const projectPages = [
   { text: "Runmoor", link: "/runmoor/", activeMatch: "^/runmoor" },
   { text: "Nodeup", link: "/nodeup/", activeMatch: "^/nodeup" },
@@ -137,11 +123,6 @@ const projectPages = [
   },
   { text: "clibox", link: "/clibox/", activeMatch: "^/clibox(?:/|$)" },
   { text: "pnport", link: "/pnport/", activeMatch: "^/pnport(?:/|$)" },
-  {
-    text: "bundlewhy",
-    link: "/bundlewhy/",
-    activeMatch: "^/bundlewhy(?:/|$)",
-  },
 ];
 
 export default defineConfig({
@@ -175,7 +156,6 @@ export default defineConfig({
       ],
       "/clibox/": [{ text: "clibox", items: cliboxPages }],
       "/pnport/": [{ text: "pnport", items: pnportPages }],
-      "/bundlewhy/": [{ text: "bundlewhy", items: bundlewhyPages }],
       "/runmoor/": [{ text: "Runmoor", items: runmoorPages }],
       "/nodeup/": [{ text: "Nodeup", items: nodeupPages }],
       "/binpm/": [{ text: "binpm", items: binpmPages }],

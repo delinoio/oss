@@ -12,5 +12,4 @@
 
 ## Owning contracts
 
-- [bundlewhy v1 protocol contract](../docs/protos-bundlewhy-v1-contract.md)
 - [async-commit-hook v1 protocol contract](../docs/protos-async-commit-hook-v1-contract.md)

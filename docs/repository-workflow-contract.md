@@ -49,9 +49,9 @@ run; record that distinction in change summaries.
 
 ### Git LFS assets
 
-One tracked asset uses an exact-path entry in root `.gitattributes`: the Forge Noto Sans KR font. It meets the 512 KiB threshold. Imported assets retain their source and license records beside the files. Future repository assets at or above this threshold require an explicit LFS entry and hydration in every build, test or packaging job that consumes them. Attribute changes force every event-eligible CI job; pull requests still defer native packaging.
+No current repository assets require LFS tracking. Future repository assets at or above the 512 KiB threshold require an exact-path LFS entry and hydration in every build, test or packaging job that consumes them. Imported assets retain their source and license records beside the files. Attribute changes force every event-eligible CI job; pull requests still defer native packaging.
 
-CI and release jobs that consume these assets enable `actions/checkout` LFS downloading before building. Forge builds must receive the hydrated font before compilation or rendering. Validate migrated files against their original SHA-256 values, inspect committed pointer blobs, and run `git lfs fsck` before publishing a branch. The originating change migrated the six font/ROAM/removal assets with a new commit without rewriting historical commits or tags; their older Git blobs remain in history. `async-commit-hook` intentionally rejects LFS repositories, so this repository is no longer a supported execution source for that tool; its existing product contract is unchanged.
+CI and release jobs that consume these assets enable `actions/checkout` LFS downloading before building. Validate migrated files against their original SHA-256 values, inspect committed pointer blobs, and run `git lfs fsck` before publishing a branch. The originating change migrated the six font/ROAM/removal assets with a new commit without rewriting historical commits or tags; their older Git blobs remain in history. `async-commit-hook` intentionally rejects LFS repositories, so this repository is no longer a supported execution source for that tool; its existing product contract is unchanged.
 
 The schema-only `scripts/check-proto-breaking.sh` command scopes
 `GIT_LFS_SKIP_SMUDGE=1` to `pnpm exec buf breaking`. Buf creates a temporary local
@@ -70,7 +70,7 @@ pushed revision. Manual main runs use `HEAD^`; PR and manual non-main runs use
 validation, including the manually dispatched async-commit-hook release
 workflow. The release workflow uses `HEAD^`; all of these jobs fetch full
 history, and the breaking leaf retains its existing environment pass-through.
-A revision without prior Buf configuration establishes the initial baseline. Retired schemas are excluded from the baseline projection; checks remain active for owned packages.
+A revision without prior Buf configuration establishes the initial baseline. Retired and transferred schemas, including `bundlewhy.v1`, are excluded from the baseline projection; checks remain active for owned packages.
 Workflow graph assertions and a temporary Git fixture cover the event rules,
 compatible additions, deleted fields and multi-commit pushes without
 downloading unrelated LFS assets.
@@ -204,10 +204,6 @@ CI never builds a signed private candidate and never publishes.
 
 Changes to the shared checksum generator select `release-contracts`, which runs the portable release fixtures on affected PRs and main pushes.
 
-Forge uses `forge-test` on Linux and Windows for its three private Rust crates, DSL, preservation, state and official MCP-client tests. `forge-render` installs LibreOffice Impress and Poppler on Linux and explicitly runs the normally ignored renderer integration test, retaining PNG/PDF evidence for seven days. Both jobs participate in central path selection and `CI Result`; neither publishes packages or artifacts outside the workflow run.
-
-Both Forge jobs are selected for root `rust-toolchain` changes on pull requests and main pushes. The alternate `rust-toolchain.toml` filename remains covered for a future toolchain configuration migration.
-
 Rustfmt-only changes to `.rustfmt.toml` or `rustfmt.toml` select `rust-fmt` on
 pull requests and main pushes. This applies at the root and to nested package or
 source-directory overrides, even when a broad package rule would otherwise
@@ -284,7 +280,7 @@ PR comparisons use the merge-base of the event's base and head commits. Main pus
 
 PR validation runs through `turbo run` using the committed common runner. Apps and packages own their validation leaves and dependencies; the private `@delinoio/ci` workspace in `scripts/ci` owns repository-wide Go, Rust, workflow, environment and protocol checks. Actions owns tool installation, job selection, platform matrices, temporary PostgreSQL lifecycle, artifact retention and `CI Result`. Release and deployment workflows retain their existing entrypoints. Main currently has no `vp run` execution layer to remove; Vitest and the imported fspy sources remain required.
 
-Root `turbo.json`, `package.json`, `pnpm-lock.yaml` and `pnpm-workspace.yaml` changes select `rust-fmt`, `forge-test` and `forge-render` on PRs and main pushes through their job-specific path rules. These checks use the shared Node/Turbo runner and retain their complete native commands with `FORCE_RUN: 'true'`. The root inputs do not add global forcing or change event-specific packaging eligibility. `CI Result` requires each selected check to succeed.
+Root `turbo.json`, `package.json`, `pnpm-lock.yaml` and `pnpm-workspace.yaml` changes select `rust-fmt` on PRs and main pushes through the job-specific path rules. This check uses the shared Node/Turbo runner and retains its complete native command with `FORCE_RUN: 'true'`. The root inputs do not add global forcing or change event-specific packaging eligibility. `CI Result` requires each selected check to succeed.
 
 Go setup exports resolved `GOCACHE` and `GOPATH` through task-local pass-through entries so Windows cache discovery does not require general user-profile environment access.
 
@@ -461,14 +457,11 @@ Coverage expectations:
 
 - `node-clibox-test`: runs `cargo test --locked -p clibox -p clibox-config -p clibox-fspy -p clibox-system -p clibox-transform -p clibox-wait` for native utility/configuration/process/adapter and file-access behavior, including isolated Windows Ctrl+C/Ctrl+Break readiness cancellation and Node launcher result preservation. Native CLI consumer installation and launcher/distribution tests run on Linux and Windows, selected by shared CI planning and required by `CI Result`.
 
-- `node-bundlewhy-test`: runs the bundlewhy web UI tests (type checking, component tests, single-file build output), the collector adapter tests (adapters live in `crates/bundlewhy/adapters`, so Rust jobs select only the `bundlewhy` crate when they change) against real Vite and Rspack fixture builds and the npm launcher tests on affected PRs and main pushes. Rust rules, storage and server tests run in `rust-test`; end-to-end fixture acceptance remains a local `test:acceptance` command.
 - `node-pnport-test`: checks launcher and package contracts, version synchronization, immutable artifacts, installer rollback, and fail-closed release publication on affected PRs and main pushes.
 
 - `pnport-native`: on affected main pushes, runs the two glibc Linux x64/arm64 native targets for 0.1.0, installed npm/Yarn PnP consumers, TypeScript conformance, archive packaging, and direct-installer smoke. Each installed binary must also pass native hidden-cache conformance and the prepared offline default-config Vitest suite in inline/split form before benchmarking. PRs skip this native matrix; the pnport tag workflow independently requires the same four targets before publication. The package-owned development matrix also selects native Windows x64/arm64 hosts on those affected main pushes. Windows runs source and installed-development-archive filesystem, process and cache tests through scripts/ci/pnport-windows.ps1; it does not emit complete-release evidence or bypass pending npm/Yarn, PowerShell, watch/loader, benchmark and minimum-OS acceptance. PRs and affected manual runs retain their existing native-job exclusion. Windows x64/arm64 retains the complete acceptance requirements for 0.2.0.
 
 - `node-public-docs-test`: runs `pnpm install --frozen-lockfile --ignore-scripts` and `pnpm --filter public-docs test`.
-
-- `forge-test` and `forge-render`: validate the three private Forge crates on Linux/Windows, including official stdio MCP interoperability, and mandatory Linux LibreOffice/Poppler rendering. Both follow central change planning and remain required in `CI Result`; optional local renderers do not make the selected render job optional.
 
 - `ci-contracts`: validates workflow syntax and the repository CI contract with the checked-in Go `actionlint` tool and Node fixtures on Linux. Its Windows row runs the uncached installed-Buf launcher fixtures through `ci:proto:launcher`; Linux covers those fixtures in the full contract suite.
 
@@ -490,7 +483,7 @@ Change-scoped execution rules:
 
 - Node workspace jobs use `scripts/ci/run-affected.mjs` to invoke the installed Turbo Node entry point directly with `turbo run <task> --affected --filter <workspace>` arguments, without a shell or package-manager shim, and with the planner's exact `TURBO_SCM_BASE` and `TURBO_SCM_HEAD`. External inputs and forced runs omit `--affected`; an otherwise empty affected set is a successful no-op.
 
-- Because `public-docs` builds seven project content roots directly, changes under `apps/public-docs/docs/{async-commit-hook,binpm,nodeup,runmoor,clibox,pnport,bundlewhy}` select and force `node-public-docs-test`.
+- Because `public-docs` builds six project content roots directly, changes under `apps/public-docs/docs/{async-commit-hook,binpm,nodeup,runmoor,clibox,pnport}` select and force `node-public-docs-test`.
 
 - Central path rules cover Go, Rust, every Node workspace, packaging, public docs, and package/release/review workflows.
 
@@ -578,7 +571,7 @@ Release automation baseline:
 
 - Affected Go discovery uses native `go list -mod=readonly -test -json` and retains only original package owners. Match resolved production/internal-test/external-test embed files against every consumer before narrowing testdata ownership; production embeds propagate to callers and test embeds select tests only. Preserve import and subprocess/frontend edges, native checkout identity, discovery failures and conservative deletion/move fallbacks.
 
-- Root `turbo.json`, `package.json`, `pnpm-lock.yaml` and `pnpm-workspace.yaml` changes select `rust-fmt`, `forge-test` and `forge-render` through their job-specific path rules. Preserve the existing native `FORCE_RUN` commands and event eligibility; these root inputs do not globally force unrelated jobs.
+- Root `turbo.json`, `package.json`, `pnpm-lock.yaml` and `pnpm-workspace.yaml` changes select `rust-fmt` through its job-specific path rules. Preserve the existing native `FORCE_RUN` commands and event eligibility; these root inputs do not globally force unrelated jobs.
 
 - Preserve the central validated Rust package selection. `run-rust.mjs` selects an explicit uncached Turbo graph with only the selected owners' build prerequisites; it must not expand the Cargo package list or bypass empty-selection rejection.
 

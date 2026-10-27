@@ -64,8 +64,6 @@
 
 ## Canonical Directory Map
 
-- `docs/project-bundlewhy.md`: bundlewhy bundler optimization debugger project index (Rust core, web UI, protocol, adapters).
-
 - `docs/README.md`: Canonical docs catalog and naming rules.
 - `docs/repository-defaults.md`: Repository-wide default technology choices.
 - `docs/repository-environment-contract.md`: Repository configuration classification, local development modes, secret ownership, and orchestration contract.

@@ -21,10 +21,8 @@ This catalog summarizes the projects in this repository. Status does not establi
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------- | -------------------------------------------------------- |
 | `async-commit-hook` | Asynchronous repository checks against committed source, with durable receipts shared by humans and coding agents.                                                              | `active` | [Documentation](https://oss.delino.io/async-commit-hook) |
 | `binpm`             | Rust-based, Node-free binary package manager for installing and running command-line tools from release assets.                                                                 | `active` | [Documentation](https://oss.delino.io/binpm)             |
-| `bundlewhy`         | Local diagnostic build and web UI that explain missed bundler and minifier optimizations without changing project source.                                                       | `active` | [Documentation](https://oss.delino.io/bundlewhy)         |
 | `cargo-mono`        | Cargo subcommand for Rust monorepo lifecycle management, including version bump and publish orchestration.                                                                      | `active` | [Documentation](https://oss.delino.io/cargo-mono)        |
 | `clibox`            | Rust CLI pinned through npm for portable execution, configuration, system utilities, transformations, and readiness checks.                                                     | `active` | [Documentation](https://oss.delino.io/clibox)            |
-| `forge`             | Local Rust CLI and stdio MCP server for typed document authoring and preservation-aware PPTX editing.                                                                           | `active` | —                                                        |
 | `nodeup`            | Rust-based Node.js version manager with deterministic channel resolution, shell completions, and shim execution.                                                                | `active` | [Documentation](https://oss.delino.io/nodeup)            |
 | `pnport`            | Run PnP-unaware subprocesses against Yarn 4 dependency graphs; stable macOS/glibc Linux distribution retains acceptance limits, and Windows release acceptance remains pending. | `active` | [Documentation](https://oss.delino.io/pnport)            |
 | `public-docs`       | Rspress-based public documentation site for user-facing product and platform content.                                                                                           | `active` | [Documentation](https://oss.delino.io)                   |
@@ -41,5 +39,7 @@ This catalog summarizes the projects in this repository. Status does not establi
 - Start from [docs/README.md](docs/README.md) for the canonical documentation catalog.
 
 Delcore, DeliDev, and DeliTools are maintained in [delino-apps](https://github.com/delinoio/delino-apps).
+
+Bundlewhy is maintained in [delinoio/bundlewhy](https://github.com/delinoio/bundlewhy).
 
 Typeopt is maintained in [delinoio/typeopt](https://github.com/delinoio/typeopt).

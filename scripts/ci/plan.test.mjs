@@ -140,7 +140,7 @@ test("ordinary paths retain the existing ownership pattern semantics", () => {
       "README.md",
       "unrelated/file.ts",
 
-      "crates/forge-test/src/file.rs",
+      "crates/fixture-test/src/file.rs",
     ]);
   for (const pattern of patterns) {
     for (const path of paths.filter(
@@ -219,26 +219,8 @@ test("Go report runner changes select native Go tests without widening other job
   }
 });
 
-test("root Rust toolchain and shared package changes select Forge validation and rendering", () => {
-  for (const event of [Event.PullRequest, Event.Push]) {
-    for (const path of [
-      "rust-toolchain",
-      "rust-toolchain.toml",
-      "crates/forge-package/src/lib.rs",
-    ]) {
-      for (const id of ["forge-test", "forge-render"]) {
-        assert.equal(
-          planJobs(event, [path]).jobs[id],
-          true,
-          `${event}: ${path}: ${id}`,
-        );
-      }
-    }
-  }
-});
-
 test("root Turbo inputs select native checks without global forcing or PR packaging", () => {
-  const ids = ["rust-fmt", "forge-test", "forge-render"];
+  const ids = ["rust-fmt"];
   for (const event of [Event.PullRequest, Event.Push]) {
     for (const path of [
       "turbo.json",
@@ -282,7 +264,7 @@ test("root Turbo input native checks must succeed in CI Result", () => {
       "pnpm-workspace.yaml",
     ]) {
       assert.equal(validateResults(results(event, [path])), true);
-      for (const id of ["rust-fmt", "forge-test", "forge-render"]) {
+      for (const id of ["rust-fmt"]) {
         for (const result of ["failure", "cancelled", "skipped", undefined]) {
           const needs = results(event, [path]);
           needs[id].result = result;
@@ -849,22 +831,22 @@ test("deleted and renamed paths retain both owners, including unusual filenames"
   const f = fixture(t);
   f.write("apps/public-docs/old name.ts", "original\n");
   const base = f.commit();
-  mkdirSync(join(f.cwd, "apps/bundlewhy-web"), { recursive: true });
+  mkdirSync(join(f.cwd, "apps/async-commit-hook"), { recursive: true });
   renameSync(
     join(f.cwd, "apps/public-docs/old name.ts"),
-    join(f.cwd, "apps/bundlewhy-web/new\nname.ts"),
+    join(f.cwd, "apps/async-commit-hook/new\nname.ts"),
   );
   rmSync(join(f.cwd, "README.md"));
   const head = f.commit();
   const { paths } = changedFiles(Event.Push, { before: base }, head, f.cwd);
   assert.deepEqual(paths, [
     "README.md",
-    "apps/bundlewhy-web/new\nname.ts",
+    "apps/async-commit-hook/new\nname.ts",
     "apps/public-docs/old name.ts",
   ]);
   const jobs = selected(Event.Push, paths);
   assert.ok(jobs.includes("node-public-docs-test"));
-  assert.ok(jobs.includes("node-bundlewhy-test"));
+  assert.ok(jobs.includes("async-commit-hook"));
 });
 
 test("missing, malformed, and unavailable revisions fail rather than skip checks", (t) => {
@@ -916,7 +898,6 @@ function results(event, paths, mode = Mode.Affected) {
       result: "success",
       outputs: {
         mode,
-        forge_matrix: JSON.stringify(matrices.forgeMatrix),
         clibox_matrix: JSON.stringify(matrices.cliboxMatrix),
         pnport_matrix: JSON.stringify(matrices.pnportMatrix),
         jobs: JSON.stringify(jobs),
@@ -1163,7 +1144,7 @@ test("path-rule edits force only changed eligible jobs", () => {
     "scripts/ci/native-matrices.json",
   ]) {
     const plan = planJobs(Event.Push, [path]);
-    assert.equal(plan.jobs["forge-test"], true, path);
+    assert.equal(plan.jobs["rust-test"], true, path);
   }
 });
 
@@ -1283,7 +1264,7 @@ test("CI Result rejects missing modes, native execution on affected manual CI, a
     needs.changes.outputs.mode = mode;
     assert.throws(() => validateResults(needs));
   }
-  for (const output of ["forge_matrix", "clibox_matrix", "pnport_matrix"]) {
+  for (const output of ["clibox_matrix", "pnport_matrix"]) {
     for (const value of [undefined, "{", "{}", "null", "[]"]) {
       const needs = results(Event.Manual, []);
       needs.changes.outputs[output] = value;

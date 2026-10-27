@@ -40,7 +40,6 @@ describe("DocsSiteSwitcher", () => {
       "async-commit-hook",
       "clibox",
       "pnport",
-      "bundlewhy",
     ]);
     expect(menu.getAttribute("id")).toBe(trigger.getAttribute("aria-controls"));
     expect(items[1]?.getAttribute("aria-current")).toBe("page");
@@ -52,7 +51,6 @@ describe("DocsSiteSwitcher", () => {
       "/async-commit-hook/",
       "/clibox/",
       "/pnport/",
-      "/bundlewhy/",
     ]);
   });
 
@@ -162,41 +160,5 @@ describe("DocsSiteSwitcher", () => {
       expect(destination.origin).toBe(window.location.origin);
       expect(destination.pathname).toBe(DOCUMENTATION_SITES[index].href);
     }
-  });
-
-  it.each([
-    "/bundlewhy",
-    "/bundlewhy/",
-    "/bundlewhy/supported-engines",
-    "/bundlewhy/troubleshooting/",
-  ])("selects bundlewhy for %s", (pathname) => {
-    renderSwitcher(getDocumentationSiteForPathname(pathname));
-    fireEvent.click(screen.getByRole("button", { name: "bundlewhy" }));
-    const selected = screen.getByRole("menuitem", { name: "bundlewhy" });
-    expect(selected.getAttribute("aria-current")).toBe("page");
-    expect(document.activeElement).toBe(selected);
-  });
-
-  it.each(["/bundlewhy-extra", "/bundlewhyish/limitations"])(
-    "does not select bundlewhy for unrelated path %s",
-    (pathname) =>
-      expect(getDocumentationSiteForPathname(pathname)).toBe(
-        DocumentationSiteId.PublicDocs,
-      ),
-  );
-
-  it("reaches bundlewhy at the end and restores its trigger on Escape", () => {
-    renderSwitcher(DocumentationSiteId.Bundlewhy);
-    const trigger = screen.getByRole("button", { name: "bundlewhy" });
-    fireEvent.keyDown(trigger, { key: "ArrowUp" });
-    const item = screen.getByRole("menuitem", { name: "bundlewhy" });
-    expect(document.activeElement).toBe(item);
-    fireEvent.keyDown(item, { key: "Home" });
-    expect(document.activeElement).toBe(screen.getAllByRole("menuitem")[0]);
-    fireEvent.keyDown(document.activeElement!, { key: "End" });
-    expect(document.activeElement).toBe(item);
-    fireEvent.keyDown(item, { key: "Escape" });
-    expect(screen.queryByRole("menu")).toBeNull();
-    expect(document.activeElement).toBe(trigger);
   });
 });

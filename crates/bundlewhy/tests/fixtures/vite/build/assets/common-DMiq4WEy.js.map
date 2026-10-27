@@ -1,1 +1,0 @@
-{"version":3,"file":"common-DMiq4WEy.js","names":["common","label"],"sources":["/__bundlewhy_project__/src/lazy/common.js"],"sourcesContent":["// Shared by two async chunks.\nexport function common(label) {\n  return `common for ${label}`;\n}\n"],"mappings":"AACA,SAAgBA,EAAO,EAAO,CAC5B,MAAO,cAAcC,GACvB"}
