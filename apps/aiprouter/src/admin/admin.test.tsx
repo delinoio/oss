@@ -77,8 +77,17 @@ function fixture(
     updateGate: Promise<void> | undefined;
     cancelError: Code | undefined;
     memberPages:
-      | { userId: string; displayName: string; email: string; role: Role }[][]
+      | {
+          userId: string;
+          displayName: string;
+          email: string;
+          role: Role;
+          joinedAt?: ReturnType<typeof timestampFromDate>;
+        }[][]
       | undefined;
+    removeError: Code | undefined;
+    removeGate: Promise<void> | undefined;
+    roleGate: Promise<void> | undefined;
     invitations: Invitation[] | undefined;
     inviteError: Code | undefined;
     inviteGate: Promise<void> | undefined;
@@ -97,6 +106,9 @@ function fixture(
     updateGate: undefined,
     cancelError: undefined,
     memberPages: undefined,
+    removeError: undefined,
+    removeGate: undefined,
+    roleGate: undefined,
     invitations: undefined,
     inviteError: undefined,
     inviteGate: undefined,
@@ -106,6 +118,7 @@ function fixture(
   const mutations = {
     remove: rs.fn(),
     role: rs.fn(),
+    listMembers: rs.fn(),
     invite: rs.fn(),
     resend: rs.fn(),
     delete: rs.fn(),
@@ -138,6 +151,7 @@ function fixture(
     });
     router.service(MembershipService, {
       listMembers: (req) => {
+        mutations.listMembers(req.page?.pageToken ?? "", req.page?.pageSize);
         if (state.memberPages) {
           const index = Number(req.page?.pageToken || "0");
           return {
@@ -171,12 +185,20 @@ function fixture(
           ],
         };
       },
-      removeMember: () => {
-        mutations.remove();
+      removeMember: async (req) => {
+        mutations.remove(req);
+        await state.removeGate;
+        if (state.removeError !== undefined)
+          throw new ConnectError("remove failed", state.removeError);
+        if (state.memberPages)
+          state.memberPages = state.memberPages.map((page) =>
+            page.filter((m) => m.userId !== req.userId),
+          );
         return {};
       },
-      setMemberRole: () => {
-        mutations.role();
+      setMemberRole: async (req) => {
+        mutations.role(req);
+        await state.roleGate;
         return {};
       },
     });
@@ -1453,14 +1475,392 @@ describe("organization settings owner dialogs", () => {
       organizationId: "org-a",
     });
   });
-  it("leaves the shared Members removal dialog at its original size", async () => {
-    fixture();
+  it("keeps the shared Confirm default width for other consumers", async () => {
+    fixture({ section: "settings" });
     const user = userEvent.setup();
     await user.click(
-      await screen.findByRole("button", { name: "Remove Member person" }),
+      await screen.findByRole("button", { name: "Delete organization" }),
     );
     expect(screen.getByRole("dialog").className).not.toContain(
-      "admin-dialog-wide",
+      "admin-dialog-large",
     );
+  });
+});
+
+const joined = timestampFromDate(new Date("2026-10-08T09:00:00Z"));
+const alex = {
+  userId: "alex",
+  displayName: "Alex Rivera",
+  email: "alex@example.test",
+  role: Role.MEMBER,
+  joinedAt: joined,
+};
+const jordan = {
+  userId: "jordan",
+  displayName: "Jordan Kim",
+  email: "jordan@example.test",
+  role: Role.ADMINISTRATOR,
+};
+const morgan = {
+  userId: "morgan",
+  displayName: "Morgan Lee",
+  email: "morgan@example.test",
+  role: Role.OWNER,
+};
+function membersFixture(
+  pages: Omit<typeof alex, "joinedAt">[][] | (typeof alex)[][],
+  options: { role?: Role } = {},
+) {
+  const f = fixture({ role: options.role, section: "members" });
+  f.state.memberPages = pages as NonNullable<typeof f.state.memberPages>;
+  return f;
+}
+describe("members page body", () => {
+  it("renders the hierarchy, scoped context, search and one card", async () => {
+    const f = membersFixture([[morgan, jordan, alex]]);
+    await f.client.invalidateQueries();
+    expect(
+      await screen.findByRole("heading", { level: 1, name: "Members" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Manage membership. Personal credentials and request content stay private.",
+      ),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Organization members in Test organization"),
+    ).toBeTruthy();
+    const search = screen.getByRole("searchbox", { name: "Search this page" });
+    expect(search.getAttribute("placeholder")).toBe("Search name or email");
+    expect(search.getAttribute("aria-describedby")).toBeTruthy();
+    expect(
+      screen.getByText("Search applies only to the loaded page."),
+    ).toBeTruthy();
+    expect(document.querySelectorAll(".admin-members-card").length).toBe(1);
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "First page" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Next page" })).toBeNull();
+    expect(f.mutations.listMembers).toHaveBeenCalledWith("", 100);
+  });
+  it("aligns identity, role, joined and actions per record", async () => {
+    const f = membersFixture([
+      [
+        morgan,
+        alex,
+        {
+          userId: "mail",
+          displayName: "",
+          email: "x@e.test",
+          role: Role.MEMBER,
+        },
+      ],
+    ]);
+    await f.client.invalidateQueries();
+    const record = (
+      await screen.findByRole("heading", { level: 2, name: "Alex Rivera" })
+    ).closest("article") as HTMLElement;
+    expect(within(record).getByText("alex@example.test")).toBeTruthy();
+    expect(within(record).getByText("Member")).toBeTruthy();
+    expect(within(record).getByText("Joined")).toBeTruthy();
+    expect(record.textContent).toContain(
+      `(${Intl.DateTimeFormat().resolvedOptions().timeZone})`,
+    );
+    const owner = screen
+      .getByRole("heading", { level: 2, name: "Morgan Lee" })
+      .closest("article") as HTMLElement;
+    expect(within(owner).getByText("Unknown")).toBeTruthy();
+    expect(within(owner).queryAllByRole("button")).toHaveLength(0);
+    // The email is the only identity when no display name exists.
+    const fallback = screen
+      .getByRole("heading", { level: 2, name: "x@e.test" })
+      .closest("article") as HTMLElement;
+    expect(within(fallback).getAllByText("x@e.test")).toHaveLength(1);
+  });
+  it("offers the exact owner and administrator actions with target names", async () => {
+    const f = membersFixture([[morgan, jordan, alex]]);
+    await f.client.invalidateQueries();
+    expect(
+      await screen.findByRole("button", { name: "Make member: Jordan Kim" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Make administrator: Alex Rivera" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Remove Jordan Kim" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: "Remove Alex Rivera" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Morgan Lee/ })).toBeNull();
+    expect(screen.getAllByRole("button", { name: /^Make / })).toHaveLength(2);
+  });
+  it("shows administrators only ordinary-member removal", async () => {
+    const f = membersFixture([[morgan, jordan, alex]], {
+      role: Role.ADMINISTRATOR,
+    });
+    await f.client.invalidateQueries();
+    expect(
+      await screen.findByRole("button", { name: "Remove Alex Rivera" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Jordan Kim/ })).toBeNull();
+    expect(screen.queryByRole("button", { name: /^Make / })).toBeNull();
+  });
+  it("changes a role directly with the enum request and Changes saved", async () => {
+    const f = membersFixture([[morgan, jordan, alex]]);
+    await f.client.invalidateQueries();
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", {
+        name: "Make administrator: Alex Rivera",
+      }),
+    );
+    await screen.findByText("Changes saved.");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(f.mutations.role).toHaveBeenCalledTimes(1);
+    expect(f.mutations.role.mock.calls[0][0]).toMatchObject({
+      organizationId: "org-a",
+      userId: "alex",
+      role: Role.ADMINISTRATOR,
+    });
+  });
+  it("blocks a role change when the target became protected", async () => {
+    const f = membersFixture([[morgan, jordan, alex]]);
+    await f.client.invalidateQueries();
+    const user = userEvent.setup();
+    const button = await screen.findByRole("button", {
+      name: "Make administrator: Alex Rivera",
+    });
+    f.state.memberPages = [[morgan, jordan, { ...alex, role: Role.OWNER }]];
+    await user.click(button);
+    await screen.findByText(
+      "Your permissions changed. This action is no longer available.",
+    );
+    expect(f.mutations.role).not.toHaveBeenCalled();
+  });
+  it("filters only the loaded page without trimming and keeps search across paging", async () => {
+    const f = membersFixture([[morgan, alex], [jordan]]);
+    await f.client.invalidateQueries();
+    const user = userEvent.setup();
+    const search = await screen.findByRole("searchbox", {
+      name: "Search this page",
+    });
+    await user.type(search, "ALEX@EXAMPLE");
+    expect(screen.getByRole("heading", { name: "Alex Rivera" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Morgan Lee" })).toBeNull();
+    // A trailing space is not trimmed: no concatenated value ends with "test ".
+    await user.clear(search);
+    await user.type(search, "example.test ");
+    expect(screen.queryByRole("heading", { name: "Alex Rivera" })).toBeNull();
+    const calls = f.mutations.listMembers.mock.calls.length;
+    await user.clear(search);
+    await user.type(search, "zzz");
+    expect(
+      screen.getByText(
+        "No members match this page. Clear filters or check another page.",
+      ),
+    ).toBeTruthy();
+    // Paging stays available on a filtered-empty page.
+    await user.click(screen.getByRole("button", { name: "Next page" }));
+    await waitFor(() =>
+      expect(f.mutations.listMembers).toHaveBeenCalledWith("1", 100),
+    );
+    expect(f.mutations.listMembers.mock.calls.length).toBeGreaterThan(calls);
+    expect((search as HTMLInputElement).value).toBe("zzz");
+    await user.click(await screen.findByRole("button", { name: "First page" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Next page" })).toBeTruthy(),
+    );
+    expect(screen.queryByRole("button", { name: "First page" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Clear filters" }));
+    expect(
+      await screen.findByRole("heading", { name: "Alex Rivera" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Clear filters" })).toBeNull();
+  });
+  it("distinguishes an empty page from a failed request", async () => {
+    const f = membersFixture([[]]);
+    await f.client.invalidateQueries();
+    expect(await screen.findByText("No members available.")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+});
+describe("remove member dialog", () => {
+  const open = async (f: ReturnType<typeof fixture>) => {
+    await f.client.invalidateQueries();
+    const user = userEvent.setup();
+    const trigger = await screen.findByRole("button", {
+      name: "Remove Alex Rivera",
+    });
+    await user.click(trigger);
+    return { user, trigger, dialog: screen.getByRole("dialog") };
+  };
+  const submit = (dialog: HTMLElement) =>
+    within(dialog).getByRole("button", {
+      name: "Remove member",
+    }) as HTMLButtonElement;
+  it("shows the specified copy at 640px with Cancel focused", async () => {
+    const f = membersFixture([[morgan, alex]]);
+    const { dialog } = await open(f);
+    const view = within(dialog);
+    expect(dialog.className).toContain("admin-dialog-large");
+    expect(view.getByRole("heading", { name: "Remove member" })).toBeTruthy();
+    expect(view.getByRole("button", { name: "Close dialog" })).toBeTruthy();
+    expect(view.getByText("alex@example.test")).toBeTruthy();
+    expect(
+      view.getByText(
+        "Remove Alex Rivera? Their organization keys stop working immediately. Personal providers, configuration and temporary state are deleted. Rejoining requires configuration again.",
+      ),
+    ).toBeTruthy();
+    expect(
+      view.getByText(
+        "Usage remains subject to retention. Already-dispatched responses may finish.",
+      ),
+    ).toBeTruthy();
+    const input = view.getByRole("textbox", {
+      name: "Type Alex Rivera to confirm",
+    });
+    expect(input.getAttribute("aria-describedby")).toBeTruthy();
+    expect(view.getByText("The name must match exactly.")).toBeTruthy();
+    expect(document.activeElement).toBe(
+      view.getByRole("button", { name: "Cancel" }),
+    );
+    expect(submit(dialog).disabled).toBe(true);
+    expect(submit(dialog).className).toContain("admin-danger");
+  });
+  it("requires an exact case-sensitive untrimmed match", async () => {
+    const f = membersFixture([[morgan, alex]]);
+    const { user, dialog } = await open(f);
+    const input = within(dialog).getByRole("textbox");
+    for (const wrong of ["", "alex rivera", "Alex Rivera ", "Alex"]) {
+      await user.clear(input);
+      if (wrong) await user.type(input, wrong);
+      expect(submit(dialog).disabled).toBe(true);
+    }
+    await user.clear(input);
+    await user.type(input, "Alex Rivera");
+    expect(submit(dialog).disabled).toBe(false);
+  });
+  it("uses the email as the confirmation name when there is no display name", async () => {
+    const f = membersFixture([
+      [
+        {
+          userId: "bare",
+          displayName: "",
+          email: "bare@example.test",
+          role: Role.MEMBER,
+        },
+      ],
+    ]);
+    await f.client.invalidateQueries();
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: "Remove bare@example.test" }),
+    );
+    const dialog = screen.getByRole("dialog");
+    expect(
+      within(dialog).getByRole("textbox", {
+        name: "Type bare@example.test to confirm",
+      }),
+    ).toBeTruthy();
+    expect(within(dialog).getAllByText("bare@example.test").length).toBe(1);
+  });
+  it("announces success only after the RPC resolves and falls back to the heading", async () => {
+    const f = membersFixture([[morgan, alex]]);
+    let release!: () => void;
+    f.state.removeGate = new Promise<void>((resolve) => (release = resolve));
+    const { user, dialog } = await open(f);
+    await user.type(within(dialog).getByRole("textbox"), "Alex Rivera");
+    await user.click(submit(dialog));
+    await screen.findAllByText(
+      "Saving… Closing a dialog does not cancel a submitted change.",
+    );
+    expect(submit(dialog).disabled).toBe(true);
+    expect(screen.queryByText("Member removed.")).toBeNull();
+    release();
+    await screen.findByText("Member removed.");
+    expect(f.mutations.remove).toHaveBeenCalledTimes(1);
+    expect(f.mutations.remove.mock.calls[0][0]).toMatchObject({
+      organizationId: "org-a",
+      userId: "alex",
+    });
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(
+      screen.queryByRole("heading", { level: 2, name: "Alex Rivera" }),
+    ).toBeNull();
+    expect(document.activeElement).toBe(
+      screen.getByRole("heading", { level: 1, name: "Members" }),
+    );
+  });
+  it("retains the input after a failure with one announced error", async () => {
+    const f = membersFixture([[morgan, alex]]);
+    f.state.removeError = Code.Unavailable;
+    const { user, dialog } = await open(f);
+    const input = within(dialog).getByRole("textbox") as HTMLInputElement;
+    await user.type(input, "Alex Rivera");
+    await user.click(submit(dialog));
+    await waitFor(() => expect(f.mutations.remove).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(submit(dialog).disabled).toBe(false));
+    expect(screen.queryByText("Member removed.")).toBeNull();
+    expect(input.value).toBe("Alex Rivera");
+    expect(
+      screen.getAllByText(
+        "The service is unavailable. No change is confirmed. Try again when connected.",
+      ),
+    ).toHaveLength(1);
+    expect(screen.getAllByRole("alert")).toHaveLength(1);
+  });
+  it("traps Tab, dismisses with Escape, X and Cancel, and returns focus", async () => {
+    const f = membersFixture([[morgan, alex]]);
+    const { user, trigger, dialog } = await open(f);
+    const view = within(dialog);
+    await user.type(view.getByRole("textbox"), "Alex Rivera");
+    submit(dialog).focus();
+    await user.tab();
+    expect(document.activeElement).toBe(
+      view.getByRole("button", { name: "Close dialog" }),
+    );
+    await user.tab({ shift: true });
+    expect(document.activeElement).toBe(submit(dialog));
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(trigger);
+    await user.click(trigger);
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Close dialog",
+      }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await user.click(trigger);
+    await user.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: "Cancel",
+      }),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(f.mutations.remove).not.toHaveBeenCalled();
+  });
+  it("closes and clears identities when the organization scope switches", async () => {
+    const f = membersFixture([[morgan, alex]]);
+    const { dialog } = await open(f);
+    expect(dialog).toBeTruthy();
+    f.view.rerender(
+      <ApiProvider
+        rpcTransport={createRouterTransport(() => {})}
+        queryClient={f.client}
+      >
+        <AdminPage
+          organization={create(OrganizationSchema, {
+            id: "org-b",
+            name: "Other",
+            role: Role.OWNER,
+          })}
+          session={session}
+          section="members"
+        />
+      </ApiProvider>,
+    );
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(screen.queryByText("Alex Rivera")).toBeNull();
   });
 });

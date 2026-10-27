@@ -67,6 +67,7 @@ function OrganizationBoundary({
       value={{
         organizationId: current.id,
         role: current.role,
+        organizationName: current.name,
         onDenied: () => setDenied(true),
       }}
     >

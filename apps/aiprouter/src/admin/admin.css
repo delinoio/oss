@@ -884,3 +884,106 @@
     min-height: 44px;
   }
 }
+
+/* Members: aligned Member, Role, Joined and Actions columns. */
+.admin-members-context {
+  margin: -16px 0 0;
+}
+.admin-members-card .admin-helper {
+  margin: -8px 0 16px;
+}
+.admin-members-columns,
+.admin-member {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1.2fr) minmax(0, 2fr) minmax(
+      0,
+      3fr
+    );
+  align-items: start;
+  gap: 16px 24px;
+}
+.admin-members-columns {
+  margin-top: 16px;
+  padding-bottom: 8px;
+  color: #4e5968;
+  font-size: 14px;
+  font-weight: 600;
+}
+.admin-members-columns + .admin-members-list {
+  margin-top: 0;
+}
+.admin-member > div {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.admin-member-identity h2 {
+  font-size: 17px;
+  margin: 0;
+}
+.admin-member .admin-actions {
+  margin: 0;
+}
+/* Metadata labels are exposed to assistive technology at every width and are
+   shown visually only when the record stacks. */
+.admin-member-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.admin-member-summary {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 16px;
+  overflow-wrap: anywhere;
+}
+.admin-member-summary span {
+  color: #4e5968;
+}
+.admin-consequences {
+  margin-bottom: 16px;
+  padding: 16px;
+  border-radius: 8px;
+  background: #f7f8fa;
+}
+.admin-consequences p {
+  margin: 0 0 8px;
+}
+.admin-consequences p:last-child {
+  margin-bottom: 0;
+}
+.admin-dialog.admin-dialog-large {
+  width: min(640px, calc(100vw - 32px));
+}
+@media (max-width: 900px) {
+  .admin-members-columns {
+    display: none;
+  }
+  .admin-member {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .admin-member-identity,
+  .admin-member-actions {
+    grid-column: 1 / -1;
+  }
+  .admin-member-label {
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip-path: none;
+    display: block;
+    color: #4e5968;
+    font-size: 14px;
+  }
+}
+@media (max-width: 600px) {
+  .admin-member {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .admin-member-actions > button {
+    flex: 1 1 100%;
+  }
+}
