@@ -359,6 +359,7 @@ export function ProvidersPage({ organization }: PageProps) {
           pools={pools}
           routes={routes}
           pending={action.pending && attempted === remove.id}
+          busy={action.pending}
           error={attempted === remove.id ? action.error : undefined}
           onClose={() => setRemove(undefined)}
           onConfirm={() => {

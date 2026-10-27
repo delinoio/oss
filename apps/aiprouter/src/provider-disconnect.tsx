@@ -117,6 +117,7 @@ export function DisconnectDialog({
   pools,
   routes,
   pending,
+  busy,
   error,
   onClose,
   onConfirm,
@@ -127,7 +128,10 @@ export function DisconnectDialog({
   organizationName: string;
   pools: DependencyQuery<Pool>;
   routes: DependencyQuery<Route>;
+  /** True only while this connection's own disconnect is outstanding; scopes the label and status. */
   pending: boolean;
+  /** True while any shared action is outstanding; keeps confirmation disabled so a submit cannot be dropped. */
+  busy: boolean;
   error: unknown;
   onClose: () => void;
   onConfirm: () => void;
@@ -206,7 +210,7 @@ export function DisconnectDialog({
         <Button data-cancel onClick={onClose}>
           {translate("cancel")}
         </Button>
-        <Button variant="danger" disabled={pending} onClick={onConfirm}>
+        <Button variant="danger" disabled={pending || busy} onClick={onConfirm}>
           {pending
             ? translate("disconnecting")
             : translate("disconnectProvider")}

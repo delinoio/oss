@@ -517,6 +517,49 @@ describe("provider disconnect confirmation", () => {
     expect(within(second).queryByRole("alert")).toBeNull();
   });
 
+  it("keeps another connection's confirmation disabled while a dismissed disconnect is outstanding", async () => {
+    const user = userEvent.setup();
+    let fail: (() => void) | undefined;
+    const deleteProviderConnection = rs.fn(
+      (_request: unknown) =>
+        new Promise<object>((_done, reject) => {
+          fail = () => reject(new ConnectError("denied", Code.Unavailable));
+        }),
+    );
+    mount({ deleteProviderConnection });
+    const first = await openDisconnect(user);
+    await user.click(
+      within(first).getByRole("button", { name: "Disconnect provider" }),
+    );
+    await within(first).findByRole("button", { name: "Disconnecting…" });
+    // Dismiss while the request keeps running, then open the other connection.
+    fireEvent(first, new Event("cancel", { cancelable: true }));
+    expect(screen.queryByRole("dialog")).toBeNull();
+    const buttons = screen.getAllByRole("button", { name: "Disconnect" });
+    await user.click(buttons[1]!);
+    const second = screen.getByRole("dialog");
+    expect(within(second).getByText("Connection ID: c2")).toBeTruthy();
+    // The shared action is still busy, so confirmation must not be accepted.
+    const confirm = within(second).getByRole("button", {
+      name: "Disconnect provider",
+    }) as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    expect(
+      within(second).queryByRole("button", { name: "Disconnecting…" }),
+    ).toBeNull();
+    fireEvent.click(confirm);
+    expect(deleteProviderConnection).toHaveBeenCalledTimes(1);
+    // The first request's failure is never attributed to the second connection.
+    await act(async () => fail?.());
+    await waitFor(() => expect(confirm.disabled).toBe(false));
+    expect(within(second).queryByRole("alert")).toBeNull();
+    await user.click(confirm);
+    expect(deleteProviderConnection).toHaveBeenCalledTimes(2);
+    expect(deleteProviderConnection.mock.calls[1]![0]).toMatchObject({
+      connectionId: "c2",
+    });
+  });
+
   it("closes the confirmation when the organization changes", async () => {
     const user = userEvent.setup();
     const deleteProviderConnection = rs.fn(() => ({}));
