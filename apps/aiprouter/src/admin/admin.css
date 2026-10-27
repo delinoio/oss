@@ -1347,3 +1347,18 @@
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 }
+
+/* Organization usage: daily and request records */
+.admin-usage-table {
+  table-layout: auto;
+}
+.admin-usage-table td button {
+  white-space: normal;
+}
+.admin-usage-card-action {
+  width: 100%;
+  margin-top: 16px;
+}
+.admin-usage-summary + .admin-empty {
+  margin: 0;
+}

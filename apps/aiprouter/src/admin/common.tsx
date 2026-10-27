@@ -142,19 +142,30 @@ export function Pager({
   next,
   token,
   onChange,
+  label,
+  nextLabel,
 }: {
   next?: string;
   token: string;
   onChange: (token: string) => void;
+  // Opt-in names for pages that show several independent pagers. The defaults
+  // keep the output of every other consumer unchanged.
+  label?: string;
+  nextLabel?: string;
 }) {
   useLocale();
   return (
-    <nav aria-label={translate("recordPages")} className="admin-actions">
+    <nav
+      aria-label={label ?? translate("recordPages")}
+      className="admin-actions"
+    >
       {token && (
         <button onClick={() => onChange("")}>{translate("firstPage")}</button>
       )}
       {next && (
-        <button onClick={() => onChange(next)}>{translate("nextPage")}</button>
+        <button onClick={() => onChange(next)}>
+          {nextLabel ?? translate("nextPage")}
+        </button>
       )}
     </nav>
   );
