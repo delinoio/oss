@@ -55,6 +55,7 @@ JSON, JSON5, YAML, TOML, active profile stores, source-preserving merges, and cl
 - Provide a local HTTP relay only for clients that need it to connect to the remote service.
 - Install as a user background service that starts at login, with status, stop, and removal support.
 - Bind only to loopback.
+- Forward hosted search at `/v1/alpha/search` and artifact retrieval below `/v1/aiprouter/artifacts/` and `/v1/opencodex/artifacts/`; refuse management RPC routes and obsolete inference aliases.
 - Do not require separate local authentication: other processes on the same computer can call it under the explicitly selected policy.
 - Do not turn this relay into a local provider execution agent.
 

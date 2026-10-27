@@ -14,10 +14,10 @@ import (
 
 func inferencePath(path string) bool {
 	switch path {
-	case "/v1/responses", "/v1/responses/compact", "/v1/chat/completions", "/v1/messages", "/v1/messages/count_tokens", "/v1/models", "/v1/images/generations", "/v1/images/edits", "/v1/search":
+	case "/v1/responses", "/v1/responses/compact", "/v1/chat/completions", "/v1/messages", "/v1/messages/count_tokens", "/v1/models", "/v1/images/generations", "/v1/images/edits", "/v1/alpha/search":
 		return true
 	}
-	return strings.HasPrefix(path, "/v1/models/") || strings.HasPrefix(path, "/v1/images/artifacts/")
+	return strings.HasPrefix(path, "/v1/models/") || strings.HasPrefix(path, "/v1/aiprouter/artifacts/") || strings.HasPrefix(path, "/v1/opencodex/artifacts/")
 }
 func RelayHandler(p Profile, store Credentials, transport http.RoundTripper) (http.Handler, error) {
 	target, err := serverURL(p.Server)
