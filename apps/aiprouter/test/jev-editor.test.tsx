@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, rs } from "@rstest/core";
 import { createRouterTransport, ConnectError, Code } from "@connectrpc/connect";
@@ -468,6 +474,34 @@ describe("Reasoning retention group", () => {
         "Context limit must be a percentage from 0 to 100.",
       ),
     );
+    expect(document.activeElement).toBe(
+      screen.getByLabelText("Context limit (%)"),
+    );
+  });
+
+  it("reopens a collapsed disclosure when its error link is followed", async () => {
+    const user = userEvent.setup();
+    mount(
+      create(RouteSchema, {
+        ...configured,
+        reasoningRetention: create(ReasoningRetentionConfigSchema, {
+          maxTokens: 4294967295,
+          maxContextPercent: 500,
+        }),
+      }),
+      () => ({}),
+    );
+    await edit();
+    const details = screen.getByText("Reasoning retention").closest("details")!;
+    expect(details.open).toBe(true);
+    await user.click(screen.getByText("Reasoning retention"));
+    await waitFor(() => expect(details.open).toBe(false));
+    await user.click(
+      within(screen.getByTestId("error-summary")).getByText(
+        "Context limit must be a percentage from 0 to 100.",
+      ),
+    );
+    await waitFor(() => expect(details.open).toBe(true));
     expect(document.activeElement).toBe(
       screen.getByLabelText("Context limit (%)"),
     );

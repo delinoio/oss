@@ -132,6 +132,17 @@ export type ErrorSummaryItem = {
   /** DOM id of the control that owns the error; the item links to it. */
   fieldId?: string;
 };
+/**
+ * Focuses a form control by id. Collapsed ancestor disclosures are opened first
+ * because a control inside a closed details element cannot take focus.
+ */
+function focusField(fieldId: string) {
+  const target = document.getElementById(fieldId);
+  for (let node = target?.parentElement; node; node = node.parentElement) {
+    if (node instanceof HTMLDetailsElement) node.open = true;
+  }
+  target?.focus();
+}
 export function ErrorSummary({
   errors,
   title,
@@ -160,7 +171,7 @@ export function ErrorSummary({
                 href={`#${item.fieldId}`}
                 onClick={(event) => {
                   event.preventDefault();
-                  document.getElementById(item.fieldId!)?.focus();
+                  focusField(item.fieldId!);
                 }}
               >
                 {item.message}
