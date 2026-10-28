@@ -1033,7 +1033,7 @@ describe("provider OAuth setup dialog", () => {
     });
     if (options.reconnect) {
       await user.click(
-        await screen.findByRole("button", { name: "Reconnect" }),
+        await screen.findByRole("button", { name: /^Reconnect/ }),
       );
     } else {
       await user.click(

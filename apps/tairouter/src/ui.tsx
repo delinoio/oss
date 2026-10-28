@@ -7,6 +7,7 @@ import {
   useId,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
   type Ref,
   type ReactElement,
@@ -16,6 +17,22 @@ import type { Timestamp } from "@bufbuild/protobuf/wkt";
 import { ErrorDetailSchema, type Money } from "@tairouter/client";
 import { ConnectError } from "@connectrpc/connect";
 import { errorMessage, useDirtyForm } from "./api";
+function subscribeOnline(notify: () => void) {
+  window.addEventListener("online", notify);
+  window.addEventListener("offline", notify);
+  return () => {
+    window.removeEventListener("online", notify);
+    window.removeEventListener("offline", notify);
+  };
+}
+/** Browser connectivity, kept current from the online and offline events. */
+export function useOnline() {
+  return useSyncExternalStore(
+    subscribeOnline,
+    () => navigator.onLine,
+    () => true,
+  );
+}
 export function Button({
   variant = "secondary",
   className = "",
@@ -209,9 +226,12 @@ export function Notice({
 export function ErrorNotice({
   error,
   retry,
+  retryLabel,
 }: {
   error: unknown;
   retry?: () => void;
+  /** Overrides the default "Try again" action label. */
+  retryLabel?: string;
 }) {
   useLocale();
   if (!error) return null;
@@ -229,7 +249,9 @@ export function ErrorNotice({
           })}
         </p>
       )}
-      {retry && <Button onClick={retry}>{translate("tryAgain")}</Button>}
+      {retry && (
+        <Button onClick={retry}>{retryLabel ?? translate("tryAgain")}</Button>
+      )}
     </Notice>
   );
 }
