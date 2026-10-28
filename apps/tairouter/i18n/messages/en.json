@@ -1463,5 +1463,15 @@
   "reviewYourInvitationBeforeJoining": "Review your invitation before joining.",
   "joiningDoesNotCopyProviderCredentials": "Joining does not copy provider credentials or settings from other organizations.",
   "thisInvitationHasNotBeenFound": "This invitation has not been found in the invitations checked so far.",
-  "youJoinOnlyAfterYouAccept": "You join only after you accept."
+  "youJoinOnlyAfterYouAccept": "You join only after you accept.",
+  "oneMoreInvitationLoaded": "1 more invitation loaded.",
+  "moreInvitationsLoaded": "{value0} more invitations loaded.",
+  "reviewInvitationFor": "Review invitation for {value0}",
+  "noPendingInvitations": "No pending invitations.",
+  "loadingMoreInvitations": "Loading more invitations…",
+  "upToCharacters": "Up to {value0} characters.",
+  "noOrganizationWasCreatedTryAgain": "No organization was created. Try again.",
+  "anOrganizationIsCreatedOnlyWhen": "An organization is created only when you submit this form.",
+  "yourSetupGuide": "Your setup guide",
+  "currentStep": "Current step"
 }
