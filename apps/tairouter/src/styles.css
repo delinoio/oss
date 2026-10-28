@@ -1437,11 +1437,82 @@ dialog.disconnect-dialog {
     flex: 1 1 100%;
   }
 }
-/* Provider authorization dialog. Scoped so other dialogs are unchanged. */
+/* Provider OAuth setup and authorization dialogs. Scoped so other dialogs are unchanged. */
+dialog.oauth-setup,
 dialog.oauth-dialog {
   width: min(640px, calc(100% - 32px));
   padding: 24px;
   border-radius: 12px;
+}
+.oauth-setup .dialog-heading {
+  margin-bottom: 8px;
+}
+.oauth-intro {
+  margin: 0 0 16px;
+  overflow-wrap: anywhere;
+}
+.oauth-group {
+  margin: 0 0 16px;
+  padding: 0;
+  border: 0;
+}
+.oauth-group legend {
+  padding: 0;
+  margin-bottom: 12px;
+  font-size: 17px;
+  color: #191f28;
+}
+.oauth-callback input {
+  border-width: 2px;
+}
+.oauth-field-error {
+  display: block;
+  margin-top: 4px;
+  color: #922014;
+  font-weight: 600;
+}
+.oauth-before {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #f7f8fa;
+  overflow-wrap: anywhere;
+}
+.oauth-before p {
+  margin: 4px 0 0;
+}
+.oauth-advanced {
+  margin: 0 0 16px;
+}
+.oauth-advanced summary {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 4px 0;
+}
+.oauth-advanced summary small {
+  color: var(--secondary);
+}
+.oauth-setup-footer {
+  justify-content: flex-end;
+  margin-top: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.oauth-setup-footer .button {
+  margin: 0;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 .oauth-dialog .dialog-heading {
   margin-bottom: 8px;
@@ -1497,9 +1568,18 @@ dialog.oauth-dialog {
   justify-content: flex-end;
 }
 @media (max-width: 767px) {
+  dialog.oauth-setup,
   dialog.oauth-dialog {
     width: calc(100% - 32px);
     padding: 16px;
+  }
+  .oauth-setup-footer {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+  .oauth-setup-footer > .button {
+    flex: 1 1 100%;
+    width: 100%;
   }
   .oauth-footer > .button,
   .oauth-step > .button {
