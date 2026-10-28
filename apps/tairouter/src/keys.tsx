@@ -237,17 +237,37 @@ function CreateKey({
   error: unknown;
 }) {
   useLocale();
+  const errorId = useId();
   const [name, setName] = useState("");
   const [days, setDays] = useState(30);
+  // The shared action state can hold a pending or failed revoke from before this dialog opened.
+  // Only surface state that belongs to a submission made from this form instance.
+  const [submitted, setSubmitted] = useState(false);
+  const submitting = submitted && pending;
+  const visibleError = submitted && !pending ? error : undefined;
   return (
-    <Dialog title={translate("createApiKey")} onClose={onClose}>
+    <Dialog
+      title={translate("createApiKey")}
+      onClose={onClose}
+      className="create-key-dialog"
+    >
+      <p className="create-key-guidance">
+        {translate("createKeyNameGuidance")}
+      </p>
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          onSave(name.trim(), days);
+          const trimmed = name.trim();
+          if (pending || !trimmed) return;
+          setSubmitted(true);
+          onSave(trimmed, days);
         }}
       >
-        <Field label={translate("name")}>
+        <Field
+          label={translate("name")}
+          hint={translate("createKeyNameHelper")}
+          describedBy={visibleError ? errorId : undefined}
+        >
           <input
             autoFocus
             required
@@ -256,7 +276,10 @@ function CreateKey({
             onChange={(e) => setName(e.target.value)}
           />
         </Field>
-        <Field label={translate("expiry")}>
+        <Field
+          label={translate("expiry")}
+          hint={translate("createKeyExpiryHelper")}
+        >
           <select
             value={days}
             onChange={(e) => setDays(Number(e.target.value))}
@@ -267,15 +290,23 @@ function CreateKey({
             <option value={0}>{translate("noExpiry")}</option>
           </select>
         </Field>
-        <ErrorNotice error={error} />
-        <div className="actions">
+        <p className="create-key-guidance">
+          {translate("createKeyRevokeGuidance")}
+        </p>
+        <div id={errorId} className="create-key-error">
+          <ErrorNotice error={visibleError} />
+        </div>
+        <p className="create-key-status" role="status">
+          {submitting ? translate("createKeyPendingStatus") : ""}
+        </p>
+        <div className="actions create-key-actions">
           <Button onClick={onClose}>{translate("cancel")}</Button>
           <Button
             type="submit"
             variant="primary"
             disabled={pending || !name.trim()}
           >
-            {pending
+            {submitting
               ? translate("message_c79ed9492e")
               : translate("createApiKey")}
           </Button>

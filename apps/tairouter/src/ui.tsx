@@ -83,11 +83,14 @@ export function Field({
   label,
   children,
   hint,
+  describedBy: extraDescribedBy,
   error,
 }: {
   label: string;
   children: ReactNode;
   hint?: ReactNode;
+  /** Extra element ids (for example an error summary) appended to the control description. */
+  describedBy?: string;
   /** Field-associated error text; marks the control invalid and describes it. */
   error?: ReactNode;
 }) {
@@ -102,6 +105,7 @@ export function Field({
       child?.props["aria-describedby"],
       hint ? `${id}-hint` : undefined,
       error ? `${id}-error` : undefined,
+      extraDescribedBy,
     ]
       .filter(Boolean)
       .join(" ") || undefined;
@@ -314,6 +318,7 @@ export function Dialog({
   size?: DialogSize;
   /** Focus the dialog heading on open instead of the first form control. */
   focusHeading?: boolean;
+  /** Optional scoped class so one consumer can style its dialog without changing others. */
   className?: string;
   describedBy?: string;
 }) {
