@@ -136,6 +136,8 @@ Use this environment for the agreed development, CI, integration, and reproducib
 
 Record source revision, commands, results, and unperformed checks. Exclude secrets and real user content. Follow the repository's applicable tests, including frontend `pnpm test` after frontend changes and root `cargo test` if Rust is changed. Preserve the prohibition on adding macOS runners to PR, main-push, and affected manual CI; native verification is not a release gate here.
 
+Schema-only Compose validation uses the committed `.env.example` for interpolation and service environment-file references. It must run without a deployment `.env`, must not create or read one, and must not print the resolved environment. This validation-only override does not change deployment or recovery fixture configuration.
+
 ### Publication
 
 Use standalone Go binaries with checksums and the `@delino/aiprouter` npm installer for matching platform binaries. An earlier public npm lookup returned HTTP 404; this proves neither scope ownership nor name reservation nor publishing permission. Verify authority before publication. Include Apache-2.0 terms and all imported licenses/notices in distributions. No publication is authorized by documentation onboarding.
