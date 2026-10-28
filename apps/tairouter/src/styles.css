@@ -1071,6 +1071,127 @@ dialog.key-result {
     flex: 1 1 100%;
   }
 }
+/* Connect a client page. Scoped classes only; no sticky positioning and no fixed heights. */
+.connect-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px 32px;
+  margin: 0 0 24px;
+  padding: 16px 24px;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.connect-context > div {
+  min-width: 0;
+  flex: 1 1 240px;
+}
+.connect-context dt {
+  font-size: 14px;
+  color: var(--secondary);
+}
+.connect-context dd {
+  margin: 0;
+  font-weight: 650;
+  overflow-wrap: anywhere;
+}
+.connect-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+.connect-layout > .card {
+  margin: 0;
+}
+.connect-step-one {
+  grid-column: 1;
+  grid-row: 1;
+}
+.connect-step-two {
+  grid-column: 1;
+  grid-row: 2;
+}
+.connect-recovery {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+}
+.connect-step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin-right: 12px;
+  border: 2px solid var(--primary);
+  border-radius: 50%;
+  color: var(--primary);
+  font-size: 16px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+.connect-page pre {
+  font-size: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.connect-copy {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.connect-page .notice h3 {
+  margin-bottom: 8px;
+  font-size: 16px;
+}
+.connect-page .notice p {
+  color: inherit;
+  margin-bottom: 0;
+}
+.connect-recovery section {
+  border-top: 1px solid var(--border);
+  padding-top: 16px;
+  margin-top: 16px;
+}
+.connect-recovery h3 {
+  font-size: 16px;
+}
+.connect-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+@media (max-width: 768px) {
+  .connect-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+  .connect-step-one,
+  .connect-step-two,
+  .connect-recovery {
+    grid-column: 1;
+    grid-row: auto;
+  }
+}
+@media (max-width: 767px) {
+  .connect-page .page-heading h1 {
+    font-size: 24px;
+  }
+}
+@media (max-width: 480px) {
+  .connect-layout {
+    gap: 16px;
+  }
+  .connect-layout > .card {
+    padding: 16px;
+  }
+  .connect-context {
+    padding: 16px;
+  }
+}
 /* Provider disconnect confirmation. Scoped so other ConfirmDialog consumers are unchanged. */
 .providers-list:focus {
   outline: none;

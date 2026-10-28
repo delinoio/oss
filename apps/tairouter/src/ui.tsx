@@ -485,11 +485,13 @@ export function Pagination({
 export function CopyButton({
   value,
   label = translate("copy"),
+  variant = "secondary",
   statusId,
   className,
 }: {
   value: string;
   label?: string;
+  variant?: ComponentProps<typeof Button>["variant"];
   /** Optional id for the status region; the button is described by it. */
   statusId?: string;
   /** Optional extra class for the button. */
@@ -500,6 +502,7 @@ export function CopyButton({
   return (
     <>
       <Button
+        variant={variant}
         className={className}
         aria-describedby={statusId}
         onClick={() => {
@@ -511,7 +514,12 @@ export function CopyButton({
       >
         {label}
       </Button>
-      <span role="status" id={statusId} className="copy-status">
+      <span
+        role="status"
+        aria-live="polite"
+        id={statusId}
+        className="copy-status"
+      >
         {message}
       </span>
     </>
