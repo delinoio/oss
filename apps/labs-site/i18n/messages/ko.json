@@ -49,5 +49,20 @@
   "startDocs": "문서로 시작하기",
   "licenseLink": "GitHub의 Apache-2.0",
   "releaseNote": "배포 전 릴리스 제공 여부와 호환성 안내를 확인하세요. 실제 제공업체 연동과 프로덕션 환경의 검증은 별도로 필요합니다.",
-  "compatibility": "호환성"
+  "compatibility": "호환성",
+  "homeEyebrow": "오픈 소스. Delino가 만듭니다.",
+  "homeDescription": "TaiRouter는 Delino Labs가 만드는 오픈 소스 자체 호스팅 Team AI Router입니다.",
+  "homeProducts": "제품",
+  "homeOpen": "처음부터 오픈 소스로",
+  "homeWorkflows": "실제 작업을 위한 도구",
+  "homeSource": "소스 살펴보기",
+  "homeFeatured": "대표 제품",
+  "homeRouterTagline": "우리 팀의 AI, 우리 팀의 방식으로.",
+  "homeRouterDescription": "개인별 제공자 인증 정보와 워크스페이스 라우팅을 지원하는 자체 호스팅 Team AI Router.",
+  "homeRouterExplore": "TaiRouter 살펴보기",
+  "homeRoutingAlt": "Alice와 Bob은 각자의 제공자 인증 정보를 사용합니다. TaiRouter는 각 사용자의 요청을 해당 사용자의 제공자 연결로 라우팅합니다.",
+  "homeRoutingNote": "개념 설명용 그림입니다. 인증 정보와 제공자 연결은 구성원별로 분리됩니다.",
+  "homeDocumentation": "문서",
+  "homeClosingTitle": "열린 소스로 함께 만듭니다.",
+  "homeClosingDescription": "코드와 문서를 살펴보고, 나만의 방식으로 활용하세요."
 }

@@ -49,5 +49,20 @@
   "startDocs": "Empieza con la documentación",
   "licenseLink": "Apache-2.0 en GitHub",
   "releaseNote": "Consulta la disponibilidad de la versión y la compatibilidad antes de desplegar. La aceptación con proveedores reales y en producción requiere comprobaciones separadas.",
-  "compatibility": "Compatibilidad"
+  "compatibility": "Compatibilidad",
+  "homeEyebrow": "Código abierto. Creado en Delino.",
+  "homeDescription": "TaiRouter es un Team AI Router de código abierto y autoalojado de Delino Labs.",
+  "homeProducts": "Productos",
+  "homeOpen": "Código abierto desde el diseño",
+  "homeWorkflows": "Herramientas para flujos reales",
+  "homeSource": "Explorar el código",
+  "homeFeatured": "Producto destacado",
+  "homeRouterTagline": "Tu equipo. Tu IA. Tus reglas.",
+  "homeRouterDescription": "Un Team AI Router autoalojado con credenciales personales de proveedores y enrutamiento por espacio de trabajo.",
+  "homeRouterExplore": "Explorar TaiRouter",
+  "homeRoutingAlt": "Alice y Bob usan sus propias credenciales de proveedor. TaiRouter dirige las solicitudes de cada persona a sus propias conexiones de proveedores.",
+  "homeRoutingNote": "Ilustración conceptual. Las credenciales y las conexiones de proveedores son personales para cada miembro.",
+  "homeDocumentation": "Documentación",
+  "homeClosingTitle": "Creado en abierto.",
+  "homeClosingDescription": "Explora el código, lee la documentación y adáptalo a tus necesidades."
 }

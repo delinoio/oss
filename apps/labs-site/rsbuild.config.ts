@@ -3,10 +3,11 @@ import { defineConfig } from "@rsbuild/core";
 import { readFileSync } from "node:fs";
 import registry from "./i18n/locales.json";
 
-const languages = registry.locales.map((locale) => ({
-  ...locale,
-  path: `${locale.lang === registry.sourceLang ? "" : `/${locale.lang}`}/tairouter/`,
-}));
+const languages = (product: boolean) =>
+  registry.locales.map((locale) => ({
+    ...locale,
+    path: `${locale.lang === registry.sourceLang ? "" : `/${locale.lang}`}/${product ? "tairouter/" : ""}`,
+  }));
 
 const escapeHtml = (value: string) =>
   value.replace(
@@ -54,9 +55,10 @@ export default defineConfig({
       return {
         language: entry.lang,
         canonical: `https://labs.delino.io${entry.path}`,
-        productPath: entry.path,
+        homePath: `/${entry.lang === registry.sourceLang ? "" : `${entry.lang}/`}`,
+        productPath: `/${entry.lang === registry.sourceLang ? "" : `${entry.lang}/`}tairouter/`,
         languageLabel: entry.label,
-        languages,
+        languages: languages(entry.product),
         t: (key: string) => {
           const message = entry.messages[key];
           if (!message)
