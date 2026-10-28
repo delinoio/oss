@@ -2700,3 +2700,167 @@ dialog.models-dialog {
     display: none;
   }
 }
+
+/* Routing list: full-width route cards with a numbered, labeled target grid. Scoped so shared .record consumers stay unchanged. */
+.route-list {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 16px;
+}
+.route-list > li {
+  min-width: 0;
+}
+.route-card {
+  margin: 0;
+  padding: 24px;
+}
+.route-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.route-card-identity {
+  min-width: 0;
+  flex: 1 1 240px;
+}
+.route-card-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.route-card-title h2 {
+  margin: 0;
+  min-width: 0;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+.route-card-strategy {
+  margin: 4px 0 0;
+  color: #4e5968;
+}
+.route-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.route-card h2:focus-visible,
+.route-empty h2:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 4px;
+}
+.route-targets-empty {
+  margin: 20px 0 0;
+  color: #4e5968;
+}
+.route-targets-header,
+.route-target {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) minmax(0, 1fr) 80px;
+  gap: 8px 16px;
+  align-items: start;
+}
+.route-targets-header {
+  margin-top: 20px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e0e5ec;
+  color: #4e5968;
+  font-size: 14px;
+  font-weight: 600;
+}
+.route-targets {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.route-target {
+  padding: 12px;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+.route-target + .route-target {
+  border-top: 1px solid #e0e5ec;
+}
+.route-target > div {
+  min-width: 0;
+}
+.route-target-order {
+  font-weight: 600;
+}
+.route-target-weight {
+  font-size: 14px;
+  font-weight: 600;
+}
+.route-target-name {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+.route-target-type,
+.route-target-muted {
+  color: #4e5968;
+  font-size: 14px;
+}
+.route-target-warning {
+  color: #b42318;
+  font-weight: 600;
+}
+.route-target-missing {
+  background: #fff2f0;
+  border-top-color: transparent;
+}
+.route-target-retry {
+  margin-top: 4px;
+}
+/* On desktop the column header names the fields; the per-item labels stay available to assistive technology. */
+.route-target-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.route-skeletons {
+  display: grid;
+  gap: 16px;
+}
+.route-skeletons .skeleton {
+  height: 140px;
+}
+@media (max-width: 767px) {
+  .route-card {
+    padding: 16px;
+  }
+  .route-targets-header {
+    display: none;
+  }
+  .route-target {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .route-target > div {
+    display: grid;
+    gap: 2px;
+  }
+  .route-target-label {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+    color: #4e5968;
+    font-size: 14px;
+  }
+  .route-card-actions .button {
+    flex: 1 1 140px;
+  }
+}
