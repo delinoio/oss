@@ -1811,3 +1811,37 @@ dialog.connection-editor {
 .member-card .actions {
   justify-content: flex-start;
 }
+
+.native-group {
+  border: 1px solid #d5dbe3;
+  border-radius: 12px;
+  padding: 16px;
+  margin: 12px 0;
+  min-width: 0;
+}
+.native-group > legend {
+  padding: 0 8px;
+  font-weight: 600;
+}
+.rule-card .rule-connections {
+  margin: 0 0 12px;
+  padding: 0 0 0 24px;
+}
+.rule-card .rule-connections > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+}
+.rule-card .rule-connection-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.rule-card .rule-connections .actions {
+  margin: 0;
+}
+.native-member-card > legend {
+  overflow-wrap: anywhere;
+}
