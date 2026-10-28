@@ -14,7 +14,7 @@
   "readDocs": "Dokumentation lesen",
   "viewSource": "Auf GitHub ansehen",
   "byLabs": "Ein Open-Source-Produkt von Delino Labs.",
-  "diagramCaption": "Persönliche Zugangsdaten. Getrennte Arbeitsbereiche.",
+  "diagramCaption": "Persönliche Zugangsdaten. Nach Arbeitsbereich getrennt.",
   "diagramAlt": "Alice, Bob und Carol nutzen jeweils eigene Zugangsdaten und Kontopools. TaiRouter leitet ihre Anfragen innerhalb der gewählten Organisation an KI-Anbieter weiter.",
   "yourTeam": "Dein Team",
   "personalCredentials": "Eigene Zugangsdaten",
