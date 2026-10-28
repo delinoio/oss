@@ -37,6 +37,7 @@ import {
   Card,
   Field,
   Dialog,
+  DialogSize,
   ConfirmDialog,
   ErrorNotice,
   Loading,
@@ -489,6 +490,7 @@ export function RoutingPage({ organization }: PageProps) {
       />
       {edit && (
         <RouteEditor
+          organizationName={organization.name}
           decisionRoutes={routes.data ?? []}
           route={edit === true ? undefined : edit}
           existingNames={(routes.data ?? [])
@@ -569,6 +571,7 @@ type RouteValues = {
   enabled: boolean;
 };
 function RouteEditor({
+  organizationName,
   decisionRoutes,
   existingNames,
   route,
@@ -590,6 +593,7 @@ function RouteEditor({
   onClose: () => void;
   onSave: (v: RouteValues) => void;
   decisionRoutes: Route[];
+  organizationName: string;
 }) {
   useLocale();
   const [name, setName] = useState(route?.modelId ?? "");
@@ -656,8 +660,9 @@ function RouteEditor({
   return (
     <Dialog
       title={route ? translate("editRouting") : translate("createRoute")}
+      subtitle={translate("onlyYoursIn", { value0: organizationName })}
       onClose={onClose}
-      wide
+      size={DialogSize.Large}
     >
       <form
         onSubmit={(e) => {

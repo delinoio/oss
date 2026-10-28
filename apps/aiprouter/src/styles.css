@@ -401,6 +401,36 @@ nav a:hover {
 .field small {
   font-weight: 400;
 }
+.field small.field-error {
+  color: #b42318;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.field [aria-invalid="true"] {
+  border-color: #b42318;
+}
+.error-summary {
+  border: 1px solid #f0c6c0;
+  border-radius: 8px;
+  background: #fff2f0;
+  color: #922014;
+  padding: 16px 20px;
+  margin: 16px 0;
+  overflow-wrap: anywhere;
+}
+.error-summary ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+.error-summary a {
+  color: inherit;
+  text-decoration: underline;
+}
+.field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+}
 .check {
   display: flex;
   align-items: center;
@@ -496,6 +526,10 @@ dialog {
 dialog.wide {
   width: min(720px, calc(100% - 32px));
 }
+dialog.large {
+  width: min(880px, calc(100% - 32px));
+  padding: 32px;
+}
 dialog::backdrop {
   background: #16233f66;
 }
@@ -512,6 +546,16 @@ dialog .actions {
 .dialog-heading h2 {
   margin: 0;
   font-size: 22px;
+}
+.dialog-heading-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.dialog-subtitle {
+  margin: 4px 0 0;
+  color: #4e5968;
+  font-size: 14px;
+  line-height: 1.5;
 }
 .dialog-heading button {
   font-size: 24px;
@@ -748,6 +792,22 @@ li {
   }
   .target-row > strong {
     width: 100%;
+  }
+}
+@media (max-width: 1000px) {
+  dialog.large {
+    padding: 24px;
+  }
+}
+@media (max-width: 767px) {
+  dialog.large {
+    width: calc(100% - 16px);
+    padding: 16px;
+  }
+}
+@media (max-width: 599px) {
+  .field-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (prefers-reduced-motion: reduce) {
