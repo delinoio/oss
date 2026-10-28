@@ -198,7 +198,12 @@ function mount(path: string) {
       }),
     });
     router.service(OrganizationService, {
-      listOrganizations: () => ({ organizations: [organization] }),
+      listOrganizations: () => ({
+        organizations: [
+          organization,
+          { ...organization, id: "other", name: "Other" },
+        ],
+      }),
       getOrganization: () => ({ organization }),
     });
   });
@@ -214,6 +219,52 @@ function mount(path: string) {
   );
 }
 describe("page entry and navigation", () => {
+  it("keeps the sidebar across internal links and restores organization scope on history", async () => {
+    mount("/connect?organization=studio");
+    await screen.findByRole("heading", { name: "Connect a client" });
+    const sidebar = document.querySelector(".sidebar");
+    const navigation = within(
+      screen.getByRole("navigation", { name: "Main navigation" }),
+    );
+    const push = rs.spyOn(window.history, "pushState");
+    await userEvent.click(navigation.getByRole("link", { name: "API keys" }));
+    await screen.findByRole("heading", { name: "API keys" });
+    expect(window.location.pathname + window.location.search).toBe(
+      "/keys?organization=studio",
+    );
+    expect(document.querySelector(".sidebar")).toBe(sidebar);
+    expect(push).toHaveBeenCalledTimes(1);
+    act(() => {
+      window.history.replaceState(null, "", "/connect?organization=other");
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await screen.findByRole("heading", { name: "Connect a client" });
+    expect(document.querySelector(".sidebar")).toBe(sidebar);
+    expect(
+      document.querySelector(".sidebar .org-switch")?.textContent,
+    ).toContain("Other");
+    expect(
+      navigation.getByRole("link", { name: "API keys" }).getAttribute("href"),
+    ).toBe("/keys?organization=other");
+  });
+  it("protects unsaved operator edits on internal links and allows confirmed navigation", async () => {
+    mount("/instance/settings");
+    const input = await screen.findByRole("spinbutton", {
+      name: "Requests per minute",
+    });
+    await userEvent.clear(input);
+    await userEvent.type(input, "200");
+    const confirm = rs.spyOn(window, "confirm").mockReturnValue(false);
+    const back = screen.getByRole("link", { name: "Back to organizations" });
+    await userEvent.click(back);
+    expect(window.location.pathname).toBe("/instance/settings");
+    expect((input as HTMLInputElement).value).toBe("200");
+    confirm.mockReturnValue(true);
+    await userEvent.click(back);
+    await screen.findByRole("heading", { name: "Your workspace" });
+    expect(window.location.pathname).toBe("/overview");
+    expect(confirm).toHaveBeenCalledTimes(2);
+  });
   it("removes an empty workspace selector without adding history entries", () => {
     window.history.replaceState(null, "", "/keys?organization=");
     const historyLength = window.history.length;
