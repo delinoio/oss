@@ -271,7 +271,12 @@ describe("server-side reporting filters", () => {
 function priceFixture({
   revisionMissing = false,
   pageConflict = false,
-}: { revisionMissing?: boolean; pageConflict?: boolean } = {}) {
+  overrides,
+}: {
+  revisionMissing?: boolean;
+  pageConflict?: boolean;
+  overrides?: Record<string, unknown>[];
+} = {}) {
   let revision = "1";
   const set = rs.fn(),
     remove = rs.fn(),
@@ -290,7 +295,9 @@ function priceFixture({
         if (pageConflict && request.page?.pageToken)
           throw new ConnectError("Stale cursor", Code.InvalidArgument);
         return {
-          overrides: [{ ...price, rates: { ...price.rates, input: revision } }],
+          overrides: overrides ?? [
+            { ...price, rates: { ...price.rates, input: revision } },
+          ],
           revision: revisionMissing ? "" : revision,
           page: { nextPageToken: pageConflict ? "next" : "" },
         };
@@ -324,7 +331,9 @@ describe("price collection compare-and-swap", () => {
     const f = priceFixture();
     const user = userEvent.setup();
     await user.click(
-      await screen.findByRole("button", { name: "Edit override" }),
+      await screen.findByRole("button", {
+        name: /^Edit override for provider-a/,
+      }),
     );
     const dialog = screen.getByRole("dialog");
     const input = within(dialog).getByRole("textbox", { name: "Input" });
@@ -370,7 +379,9 @@ describe("price collection compare-and-swap", () => {
     const f = priceFixture();
     const user = userEvent.setup();
     await user.click(
-      await screen.findByRole("button", { name: "Delete override" }),
+      await screen.findByRole("button", {
+        name: /^Delete override for provider-a/,
+      }),
     );
     const dialog = screen.getByRole("dialog");
     await user.type(within(dialog).getByRole("textbox"), "model-a");
@@ -406,7 +417,9 @@ describe("price collection compare-and-swap", () => {
   it("sends the list revision when adding an override", async () => {
     const f = priceFixture();
     const user = userEvent.setup();
-    await screen.findByRole("button", { name: "Edit override" });
+    await screen.findByRole("button", {
+      name: /^Edit override for provider-a/,
+    });
     await user.click(
       screen.getByRole("button", { name: "Add price override" }),
     );
@@ -427,10 +440,12 @@ describe("price collection compare-and-swap", () => {
   });
   it("blocks mutations when the server did not supply a revision", async () => {
     priceFixture({ revisionMissing: true });
-    await screen.findByRole("button", { name: "Edit override" });
+    await screen.findByRole("button", {
+      name: /^Edit override for provider-a/,
+    });
     for (const name of [
-      "Edit override",
-      "Delete override",
+      /^Edit override for provider-a/,
+      /^Delete override for provider-a/,
       "Add price override",
     ])
       expect(
@@ -443,7 +458,147 @@ describe("price collection compare-and-swap", () => {
     await user.click(await screen.findByRole("button", { name: "Next page" }));
     await screen.findByRole("alert");
     await user.click(screen.getByRole("button", { name: "Try again" }));
-    await screen.findByRole("button", { name: "Edit override" });
+    await screen.findByRole("button", {
+      name: /^Edit override for provider-a/,
+    });
     expect(f.list.mock.lastCall?.[0].page.pageToken).toBe("");
+  });
+});
+describe("price override list presentation", () => {
+  const rates = (extra: Record<string, string> = {}) => ({
+    currency: "USD",
+    ...extra,
+  });
+  it("shows the page header, scope note and a record with all six rates", async () => {
+    priceFixture({
+      overrides: [
+        {
+          id: "o1",
+          providerId: "provider-with-a-very-long-identifier-that-must-wrap",
+          modelId: "model-x",
+          serviceTier: "",
+          rates: rates({ input: "0", output: "0.000001234567890123456789" }),
+        },
+      ],
+    });
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Price overrides" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Common prices in currency units per million tokens."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Applies to new requests only. Historical estimates remain unchanged.",
+      ),
+    ).toBeTruthy();
+    const record = (
+      await screen.findByRole("heading", { level: 2, name: "model-x" })
+    ).closest("article") as HTMLElement;
+    expect(
+      within(record).getByText(
+        "Provider ID: provider-with-a-very-long-identifier-that-must-wrap",
+      ),
+    ).toBeTruthy();
+    expect(within(record).getByText("All tiers (fallback)")).toBeTruthy();
+    expect(within(record).getByText("Currency: USD")).toBeTruthy();
+    expect(
+      within(record).getByText("Provenance: Instance operator override"),
+    ).toBeTruthy();
+    expect(within(record).getByText("USD per million tokens")).toBeTruthy();
+    const value = (name: string) =>
+      within(record).getByText(name).closest("div")?.querySelector("dd")
+        ?.textContent;
+    expect(value("Input")).toBe("0");
+    expect(value("Output")).toBe("0.000001234567890123456789");
+    for (const name of [
+      "Cache read",
+      "Cache write",
+      "Short cache write",
+      "Long cache write",
+    ])
+      expect(value(name)).toBe("Unknown");
+    for (const dd of record.querySelectorAll("dd"))
+      expect(dd.getAttribute("aria-describedby")).toBeTruthy();
+  });
+  it("distinguishes empty, literal default and named tiers", async () => {
+    priceFixture({
+      overrides: [
+        { id: "a", providerId: "p", modelId: "m-all", serviceTier: "" },
+        {
+          id: "b",
+          providerId: "p",
+          modelId: "m-default",
+          serviceTier: "default",
+        },
+        {
+          id: "c",
+          providerId: "p",
+          modelId: "m-priority",
+          serviceTier: "priority",
+        },
+      ],
+    });
+    const tier = async (model: string) =>
+      (
+        (await screen.findByRole("heading", { name: model })).closest(
+          "article",
+        ) as HTMLElement
+      ).textContent;
+    expect(await tier("m-all")).toContain("All tiers (fallback)");
+    expect(await tier("m-default")).toContain("Tier: default");
+    expect(await tier("m-default")).not.toContain("All tiers");
+    expect(await tier("m-priority")).toContain("Tier: priority");
+  });
+  it("shows Unknown for an absent currency and names actions per record", async () => {
+    priceFixture({
+      overrides: [
+        { id: "a", providerId: "p1", modelId: "m1", serviceTier: "priority" },
+        { id: "b", providerId: "p2", modelId: "m2", serviceTier: "" },
+      ],
+    });
+    const first = (await screen.findByRole("heading", { name: "m1" })).closest(
+      "article",
+    ) as HTMLElement;
+    expect(within(first).getByText("Currency: Unknown")).toBeTruthy();
+    expect(within(first).getByText("Unknown per million tokens")).toBeTruthy();
+    expect(
+      within(first).getByRole("button", {
+        name: "Edit override for p1 / m1 (Tier: priority)",
+      }),
+    ).toBeTruthy();
+    expect(
+      screen.getByRole("button", {
+        name: "Delete override for p2 / m2 (All tiers (fallback))",
+      }),
+    ).toBeTruthy();
+  });
+  it("keeps Add available with the empty state when a revision is present", async () => {
+    priceFixture({ overrides: [] });
+    expect(
+      await screen.findByText(
+        "No price overrides. Bundled prices apply where available.",
+      ),
+    ).toBeTruthy();
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Add price override",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false),
+    );
+  });
+  it("shows paging controls only when tokens exist and sends page size 100", async () => {
+    const f = priceFixture({ pageConflict: true });
+    const user = userEvent.setup();
+    expect(screen.queryByRole("button", { name: "First page" })).toBeNull();
+    await user.click(await screen.findByRole("button", { name: "Next page" }));
+    expect(f.list.mock.calls[0][0].page).toMatchObject({ pageSize: 100 });
+    expect(f.list.mock.lastCall?.[0].page).toMatchObject({
+      pageSize: 100,
+      pageToken: "next",
+    });
   });
 });
