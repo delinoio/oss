@@ -914,3 +914,160 @@
     width: 100%;
   }
 }
+
+/* Account profile and deletion page. All rules are scoped to .account-page so
+   the other AccountSurface consumers keep their geometry. */
+.main:has(.account-page) {
+  padding: 32px;
+}
+.account-surface.account-page {
+  width: min(100%, 720px);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.account-page > header {
+  margin-bottom: 0;
+}
+.account-page > header h1 {
+  margin-bottom: 8px;
+}
+.account-page > header p {
+  margin: 0;
+}
+.account-page .account-card {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 24px;
+}
+.account-page .account-card > h2 {
+  margin-bottom: 16px;
+}
+.account-page .account-card h3 {
+  font-size: 16px;
+  line-height: 1.5;
+  margin: 0 0 8px;
+}
+.account-page .account-details {
+  margin: 0 0 16px;
+}
+.account-page .account-signout {
+  margin-top: 8px;
+  background: #fff;
+}
+.account-page .account-ownership-status:empty {
+  display: none;
+}
+.account-page .account-ownership-status p,
+.account-page .account-ownership-panel p {
+  margin: 0;
+}
+.account-page .account-ownership-panel {
+  background: #f7f8fa;
+  border: 1px solid #d4d8df;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+}
+.account-page .account-owner-section {
+  margin: 16px 0;
+}
+.account-page .account-owner-section > p {
+  margin: 0 0 8px;
+}
+.account-page .account-owner-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.account-page .account-owner {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid #d4d8df;
+  border-radius: 8px;
+}
+.account-page .account-owner-name {
+  font-weight: 600;
+}
+.account-page .account-owner-role {
+  font-size: 14px;
+  color: #4e5968;
+  border: 1px solid #d4d8df;
+  border-radius: 8px;
+  padding: 0 8px;
+}
+.account-page .account-owner-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.account-page .account-owner-help {
+  font-size: 14px;
+  color: #4e5968;
+}
+.account-page .account-check-more {
+  margin: 8px 0 16px;
+}
+.account-page .account-consequences {
+  margin: 24px 0 16px;
+}
+.account-page .account-consequences ul {
+  margin: 0;
+  padding-left: 22px;
+}
+.account-page .account-delete > .account-danger {
+  display: block;
+}
+.account-page .account-delete > .account-hint {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+.account-skeleton {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+.account-skeleton-line {
+  display: block;
+  height: 16px;
+  border-radius: 4px;
+  background: #e5e8eb;
+  animation: account-skeleton-pulse 1.4s ease-in-out infinite;
+}
+.account-skeleton-title {
+  width: 60%;
+  height: 24px;
+}
+.account-skeleton-short {
+  width: 30%;
+}
+@keyframes account-skeleton-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-skeleton-line {
+    animation: none;
+  }
+}
+@media (max-width: 767px) {
+  .main:has(.account-page) {
+    padding: 16px;
+  }
+}
+@media (max-width: 420px) {
+  .account-page .account-card {
+    padding: 16px;
+  }
+  .account-page .account-signout,
+  .account-page .account-check-more,
+  .account-page .account-delete > .account-danger {
+    width: 100%;
+  }
+}
