@@ -1,6 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
 import { readFileSync } from "node:fs";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, rs } from "@rstest/core";
 import {
@@ -36,6 +42,7 @@ import {
   OwnershipAcceptancePage,
   SignInPage,
 } from "./index";
+import { AccountDialog, AccountDialogClosePlacement } from "./shared";
 
 function mount(ui: ReactNode, routes: (router: ConnectRouter) => void) {
   const cache = new QueryClient({
@@ -3849,6 +3856,323 @@ describe("account page redesign", () => {
     });
   });
 
+  describe("deletion dialog", () => {
+    const openDialog = async (user: ReturnType<typeof userEvent.setup>) => {
+      await waitFor(() => expect(entryButton().disabled).toBe(false));
+      const trigger = entryButton();
+      await user.click(trigger);
+      return { trigger, dialog: screen.getByRole("dialog") };
+    };
+    const finalButton = (dialog: HTMLElement) =>
+      dialog.querySelector<HTMLButtonElement>("button.account-danger")!;
+    const dismiss = (dialog: HTMLElement) =>
+      fireEvent(
+        dialog,
+        new Event("cancel", { bubbles: true, cancelable: true }),
+      );
+
+    it("opens without a mutation and renders the specified content in order", async () => {
+      const user = userEvent.setup();
+      const deleteAccount = rs.fn(() => ({}));
+      mountAccount({ account: { deleteAccount } });
+      const { dialog } = await openDialog(user);
+      expect(deleteAccount).not.toHaveBeenCalled();
+      expect(dialog.className).toContain("account-dialog-review");
+      expect(
+        within(dialog).getByRole("heading", {
+          level: 2,
+          name: "Delete your account?",
+        }),
+      ).toBeTruthy();
+      expect(dialog.getAttribute("aria-labelledby")).toBeTruthy();
+      const text = dialog.textContent ?? "";
+      const order = [
+        "Delete your account?",
+        "This action cannot be undone.",
+        "What will happen",
+        "Removes all your memberships and personal identity.",
+        "Surviving usage and audit records are anonymized.",
+        "Existing backups expire under the operator's policy.",
+        "New requests stop. Responses already sent to a provider may finish.",
+        "Cancel",
+        "Delete my account",
+      ].map((part) => text.indexOf(part));
+      expect(order.every((index) => index >= 0)).toBe(true);
+      expect([...order].sort((a, b) => a - b)).toEqual(order);
+      expect(within(dialog).getAllByRole("listitem")).toHaveLength(3);
+      expect(
+        within(dialog).getByRole("heading", {
+          level: 3,
+          name: "What will happen",
+        }),
+      ).toBeTruthy();
+      // No typed confirmation or extra consent control.
+      expect(dialog.querySelector("input,textarea,select")).toBeNull();
+      expect(within(dialog).queryByRole("checkbox")).toBeNull();
+    });
+
+    it("puts a named Close in the header, focuses Cancel and orders Cancel before the red action", async () => {
+      const user = userEvent.setup();
+      mountAccount();
+      const { dialog } = await openDialog(user);
+      const header = dialog.querySelector("header.account-dialog-header")!;
+      const close = within(dialog).getByRole("button", {
+        name: "Close Delete your account?",
+      });
+      expect(header.contains(close)).toBe(true);
+      expect(
+        header.contains(within(dialog).getByRole("heading", { level: 2 })),
+      ).toBe(true);
+      // The legacy trailing Close button is not rendered in the header variant.
+      expect(
+        within(dialog).queryByRole("button", { name: "Close" }),
+      ).toBeNull();
+      const cancel = within(dialog).getByRole("button", { name: "Cancel" });
+      expect(document.activeElement).toBe(cancel);
+      const footer = dialog.querySelector(".account-dialog-actions")!;
+      const buttons = Array.from(footer.querySelectorAll("button"));
+      expect(buttons.map((button) => button.textContent)).toEqual([
+        "Cancel",
+        "Delete my account",
+      ]);
+      expect(buttons[1].classList.contains("account-danger")).toBe(true);
+      expect(cancel.classList.contains("account-danger")).toBe(false);
+    });
+
+    it("traps Tab and Shift+Tab inside the dialog", async () => {
+      const user = userEvent.setup();
+      mountAccount();
+      const { dialog } = await openDialog(user);
+      const close = within(dialog).getByRole("button", {
+        name: "Close Delete your account?",
+      });
+      const final = finalButton(dialog);
+      final.focus();
+      await user.tab();
+      expect(document.activeElement).toBe(close);
+      await user.tab({ shift: true });
+      expect(document.activeElement).toBe(final);
+    });
+
+    it.each(["Escape", "Close", "Cancel"])(
+      "dismisses with %s, restores focus to the trigger and never deletes",
+      async (how) => {
+        const user = userEvent.setup();
+        const deleteAccount = rs.fn(() => ({}));
+        mountAccount({ account: { deleteAccount } });
+        const { trigger, dialog } = await openDialog(user);
+        if (how === "Escape") dismiss(dialog);
+        else if (how === "Close")
+          await user.click(
+            within(dialog).getByRole("button", {
+              name: "Close Delete your account?",
+            }),
+          );
+        else
+          await user.click(
+            within(dialog).getByRole("button", { name: "Cancel" }),
+          );
+        expect(screen.queryByRole("dialog")).toBeNull();
+        expect(document.activeElement).toBe(trigger);
+        expect(deleteAccount).not.toHaveBeenCalled();
+      },
+    );
+
+    it("sends one empty DeleteAccount request and shows Deleting… with Cancel and Close still available", async () => {
+      const user = userEvent.setup();
+      let finish!: () => void;
+      const deleteAccount = rs.fn(
+        () =>
+          new Promise<Record<string, never>>((resolve) => {
+            finish = () => resolve({});
+          }),
+      );
+      mountAccount({ account: { deleteAccount } });
+      const { dialog } = await openDialog(user);
+      const final = finalButton(dialog);
+      await user.dblClick(final);
+      await waitFor(() => expect(deleteAccount).toHaveBeenCalledTimes(1));
+      expect(
+        Object.keys(
+          (deleteAccount.mock.calls as unknown as object[][])[0][0],
+        ).filter((key) => key !== "$typeName"),
+      ).toEqual([]);
+      await waitFor(() => expect(final.textContent).toBe("Deleting…"));
+      expect(final.disabled).toBe(true);
+      expect(
+        (
+          within(dialog).getByRole("button", {
+            name: "Cancel",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false);
+      expect(
+        (
+          within(dialog).getByRole("button", {
+            name: "Close Delete your account?",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false);
+      // The open dialog owns the pending status; the page region stays empty.
+      const statuses = screen
+        .getAllByRole("status")
+        .filter((node) =>
+          (node.textContent ?? "").includes("Deleting your account…"),
+        );
+      expect(statuses).toHaveLength(1);
+      expect(dialog.contains(statuses[0])).toBe(true);
+      finish();
+      await screen.findByRole("heading", { name: "Account deleted" });
+      expect(deleteAccount).toHaveBeenCalledTimes(1);
+    });
+
+    it("keeps reporting an in-flight deletion on the page after dismissal and then focuses the terminal heading", async () => {
+      const user = userEvent.setup();
+      let finish!: () => void;
+      const deleteAccount = rs.fn(
+        () =>
+          new Promise<Record<string, never>>((resolve) => {
+            finish = () => resolve({});
+          }),
+      );
+      const onSessionChange = rs.fn();
+      const { cache } = mountAccount({
+        account: { deleteAccount },
+        props: { onSessionChange },
+      });
+      cache.setQueryData(["private-fixture"], "private");
+      const { dialog } = await openDialog(user);
+      await user.click(finalButton(dialog));
+      await waitFor(() => expect(deleteAccount).toHaveBeenCalledTimes(1));
+      dismiss(dialog);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      const pending = await screen.findByText(
+        "Deleting your account… Closing the dialog does not cancel the request.",
+      );
+      expect(pending.closest("[role='status']")).toBeTruthy();
+      expect(screen.getAllByText(/Deleting your account…/).length).toBe(1);
+      expect(entryButton().disabled).toBe(true);
+      expect(
+        (screen.getByRole("button", { name: "Sign out" }) as HTMLButtonElement)
+          .disabled,
+      ).toBe(true);
+      expect(deleteAccount).toHaveBeenCalledTimes(1);
+      // Nothing is cleared or announced as success before the server answers.
+      expect(cache.getQueryData(["private-fixture"])).toBe("private");
+      expect(onSessionChange).not.toHaveBeenCalled();
+      expect(
+        screen.queryByRole("heading", { name: "Account deleted" }),
+      ).toBeNull();
+      finish();
+      const heading = await screen.findByRole("heading", {
+        name: "Account deleted",
+      });
+      await waitFor(() => expect(onSessionChange).toHaveBeenCalledTimes(1));
+      expect(cache.getQueryData(["private-fixture"])).toBeUndefined();
+      expect(screen.getByText("Your account has been deleted.")).toBeTruthy();
+      expect(screen.getByRole("link", { name: "Sign in" })).toBeTruthy();
+      expect(screen.queryByText("person@example.test")).toBeNull();
+      expect(screen.queryByText("Ownership check complete")).toBeNull();
+      expect(document.activeElement).toBe(heading);
+    });
+
+    it("keeps a failed deletion visible in the dialog and on the page, refreshes ownership and never replays", async () => {
+      const user = userEvent.setup();
+      const listOrganizations = rs.fn(() => ({ organizations: [] }));
+      const deleteAccount = rs.fn(() => {
+        throw new ConnectError("outage", Code.Unavailable);
+      });
+      const onSessionChange = rs.fn();
+      const { cache } = mountAccount({
+        organizations: listOrganizations,
+        account: { deleteAccount },
+        props: { onSessionChange },
+      });
+      cache.setQueryData(["private-fixture"], "private");
+      const { dialog } = await openDialog(user);
+      const before = listOrganizations.mock.calls.length;
+      await user.click(finalButton(dialog));
+      const message =
+        "The service is unavailable. No change has been confirmed.";
+      await within(dialog).findByText(message);
+      await waitFor(() =>
+        expect(listOrganizations.mock.calls.length).toBeGreaterThan(before),
+      );
+      expect(
+        screen.queryByRole("heading", { name: "Account deleted" }),
+      ).toBeNull();
+      expect(cache.getQueryData(["private-fixture"])).toBe("private");
+      expect(onSessionChange).not.toHaveBeenCalled();
+      // The page keeps one visible error after dismissal.
+      dismiss(dialog);
+      expect(screen.queryByRole("dialog")).toBeNull();
+      expect(screen.getAllByText(message)).toHaveLength(1);
+      expect(deleteAccount).toHaveBeenCalledTimes(1);
+      expect(screen.queryByText(/Deleting your account…/)).toBeNull();
+    });
+
+    it("ignores a final click while the ownership check is stale", async () => {
+      const user = userEvent.setup();
+      const deleteAccount = rs.fn(() => ({}));
+      let owners = false;
+      const { cache } = mountAccount({
+        organizations: () => ({
+          organizations: owners ? [owner("o1", "Late Studio")] : [],
+        }),
+        account: { deleteAccount },
+      });
+      const { dialog } = await openDialog(user);
+      owners = true;
+      await cache.refetchQueries();
+      await waitFor(() => expect(finalButton(dialog).disabled).toBe(true));
+      await user.click(finalButton(dialog));
+      expect(deleteAccount).not.toHaveBeenCalled();
+    });
+
+    it("focuses the Signed out heading after a confirmed logout", async () => {
+      const user = userEvent.setup();
+      mountAccount({ account: { logout: () => ({}) } });
+      await user.click(await screen.findByRole("button", { name: "Sign out" }));
+      const heading = await screen.findByRole("heading", {
+        name: "Signed out",
+      });
+      expect(document.activeElement).toBe(heading);
+      expect(screen.getByText("Your session has ended.")).toBeTruthy();
+    });
+
+    it("keeps the legacy footer Close for AccountDialog consumers without the header placement", () => {
+      const view = mount(
+        <AccountDialog title="Legacy" onClose={() => undefined}>
+          <p>Body</p>
+        </AccountDialog>,
+        () => undefined,
+      );
+      const dialog = screen.getByRole("dialog");
+      expect(dialog.className).toBe("account-dialog");
+      expect(dialog.querySelector("header")).toBeNull();
+      const close = within(dialog).getByRole("button", {
+        name: "Close Legacy",
+      });
+      expect(close.textContent).toBe("Close");
+      expect(dialog.lastElementChild).toBe(close);
+      view.unmount();
+      const header = mount(
+        <AccountDialog
+          title="Modern"
+          closePlacement={AccountDialogClosePlacement.Header}
+          className="x"
+          onClose={() => undefined}
+        >
+          <p>Body</p>
+        </AccountDialog>,
+        () => undefined,
+      );
+      expect(
+        header.container.querySelector("dialog.account-dialog.x"),
+      ).toBeTruthy();
+    });
+  });
+
   it("scopes the account page styles away from other account screens", () => {
     const css = readFileSync(new URL("./account.css", import.meta.url), "utf8");
     const start = css.indexOf("Account profile and deletion page");
@@ -3865,7 +4189,7 @@ describe("account page redesign", () => {
       .filter((selector) => !selector.startsWith("@"));
     for (const selector of selectors)
       expect(selector).toMatch(
-        /^(\.main:has\(\.account-page\)|\.account-surface\.account-page|\.account-page|\.account-skeleton)/,
+        /^(\.main:has\(\.account-page\)|\.account-surface\.account-page|\.account-page|\.account-skeleton|\.account-dialog\.account-dialog-review|\.account-dialog-review)/,
       );
   });
 
