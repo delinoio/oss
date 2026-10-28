@@ -1055,6 +1055,21 @@ describe("device approval layout", () => {
       expect(region.getAttribute("aria-live")).toBeNull();
     });
 
+    it("keeps the empty result region exposed and suppresses only its visual chrome", () => {
+      const css = accountCss();
+      const rule = css.match(/\.device-result:empty \{([^}]*)\}/);
+      expect(rule).not.toBeNull();
+      const body = rule?.[1] ?? "";
+      // display: none would remove the live region from the accessibility tree
+      // until its content arrives, so the first announcement could be missed.
+      expect(body).not.toMatch(/display\s*:/);
+      expect(body).not.toMatch(/visibility\s*:/);
+      expect(body).toMatch(/margin:\s*0;/);
+      expect(body).toMatch(/padding:\s*0;/);
+      expect(body).toMatch(/border:\s*0;/);
+      expect(body).toMatch(/background:\s*transparent;/);
+    });
+
     it("announces local expiry once through the status region", async () => {
       const { container, approve } = mountDevice({
         initialCode: "CODE",

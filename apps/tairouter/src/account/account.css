@@ -779,8 +779,13 @@
   border-radius: 8px;
   background: #f2f4f6;
 }
+/* Keep the empty live region exposed to assistive technology so the first
+   result is announced; only suppress its visual spacing and decoration. */
 .device-result:empty {
-  display: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 .device-result[data-state="APPROVED"] {
   border-color: #bfdbfe;
