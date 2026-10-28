@@ -12,6 +12,7 @@ import {
 } from "@tairouter/client";
 import {
   AccountDialog,
+  AccountDialogClosePlacement,
   AccountError,
   AccountSurface,
   LoadingAccount,
@@ -168,6 +169,23 @@ export function AccountPage({
   const checkIncomplete = !organizations.isPending && !complete;
   const checkClear = canDelete;
   const mutationPending = logout.isPending || deletion.isPending;
+  const deletionInFlightAfterDismiss = deletion.isPending && !confirmDelete;
+  const submitDeletion = () => {
+    // Guard with the current eligibility so a stale click never sends a
+    // request, and never start a second request while one is pending.
+    if (!canDelete || mutationPending) return;
+    deletion.mutate(
+      {},
+      {
+        onSuccess: () => {
+          void endSession();
+        },
+        onError: () => {
+          void organizations.refetch();
+        },
+      },
+    );
+  };
   const endSession = async () => {
     setEnded(true);
     setConfirmDelete(false);
@@ -178,6 +196,7 @@ export function AccountPage({
   if (ended)
     return (
       <AccountSurface
+        focusHeading
         title={
           deletion.isSuccess
             ? translate("accountDeleted")
@@ -345,7 +364,14 @@ export function AccountPage({
                 <li>{translate("existingBackupsExpireUnderTheOperator")}</li>
               </ul>
             </div>
-            <AccountError error={deletion.error} />
+            {/* Always mounted so the in-flight notice is announced politely once
+                after the dialog is dismissed; the open dialog owns its own copy. */}
+            <div role="status" className="account-deletion-status">
+              {deletionInFlightAfterDismiss && (
+                <p>{translate("deletingYourAccountClosingTheDialog")}</p>
+              )}
+            </div>
+            {!confirmDelete && <AccountError error={deletion.error} />}
             <button
               className="account-danger"
               type="button"
@@ -366,14 +392,31 @@ export function AccountPage({
       {confirmDelete && (
         <AccountDialog
           title={translate("deleteYourAccount")}
+          className="account-dialog-review"
+          closePlacement={AccountDialogClosePlacement.Header}
           onClose={() => setConfirmDelete(false)}
         >
-          <p>{translate("thisRemovesAllYourMembershipsAndPersonal")}</p>
-          <p>{translate("newRequestsStopResponsesAlreadySentTo")}</p>
+          <p className="account-dialog-lead">
+            {translate("thisActionCannotBeUndone")}
+          </p>
+          <h3>{translate("whatWillHappen")}</h3>
+          <ul className="account-dialog-list">
+            <li>{translate("removesAllYourMembershipsAndPersonal")}</li>
+            <li>{translate("survivingUsageAndAuditRecordsAre")}</li>
+            <li>{translate("existingBackupsExpireUnderTheOperator")}</li>
+          </ul>
+          <p className="account-dialog-notice">
+            {translate("newRequestsStopResponsesAlreadySentTo")}
+          </p>
+          <div role="status" className="account-deletion-status">
+            {deletion.isPending && (
+              <p>{translate("deletingYourAccountClosingTheDialog")}</p>
+            )}
+          </div>
           <AccountError error={deletion.error} />
-          <div className="account-actions">
+          <div className="account-actions account-dialog-actions">
             <button
-              autoFocus
+              data-dialog-initial-focus
               type="button"
               onClick={() => setConfirmDelete(false)}
             >
@@ -382,20 +425,8 @@ export function AccountPage({
             <button
               type="button"
               className="account-danger"
-              disabled={!canDelete || deletion.isPending}
-              onClick={() =>
-                deletion.mutate(
-                  {},
-                  {
-                    onSuccess: () => {
-                      void endSession();
-                    },
-                    onError: () => {
-                      void organizations.refetch();
-                    },
-                  },
-                )
-              }
+              disabled={!canDelete || mutationPending}
+              onClick={submitDeletion}
             >
               {deletion.isPending
                 ? translate("message_43b5894c3e")

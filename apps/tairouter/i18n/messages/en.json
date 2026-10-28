@@ -718,7 +718,6 @@
   "deleteAccount": "Delete account",
   "firstTransferOrDeleteEveryOrganizationYou": "First transfer or delete every organization you own.",
   "deleteMyAccount": "Delete my account",
-  "thisRemovesAllYourMembershipsAndPersonal": "This removes all your memberships and personal identity. Surviving usage and audit records are anonymized. Existing backups expire under the operator's policy. This action cannot be undone.",
   "newRequestsStopResponsesAlreadySentTo": "New requests stop. Responses already sent to a provider may finish.",
   "deleteYourAccount": "Delete your account?",
   "account": "Account",
@@ -1490,5 +1489,10 @@
   "removesYourMembershipsAndPersonalIdentity": "Removes your memberships and personal identity.",
   "anonymizesSurvivingUsageAndAuditRecords": "Anonymizes surviving usage and audit records.",
   "existingBackupsExpireUnderTheOperator": "Existing backups expire under the operator's policy.",
-  "resolveOwnershipAndCompleteTheCheck": "Resolve ownership and complete the check to continue."
+  "resolveOwnershipAndCompleteTheCheck": "Resolve ownership and complete the check to continue.",
+  "deletingYourAccountClosingTheDialog": "Deleting your account… Closing the dialog does not cancel the request.",
+  "thisActionCannotBeUndone": "This action cannot be undone.",
+  "whatWillHappen": "What will happen",
+  "removesAllYourMembershipsAndPersonal": "Removes all your memberships and personal identity.",
+  "survivingUsageAndAuditRecordsAre": "Surviving usage and audit records are anonymized."
 }

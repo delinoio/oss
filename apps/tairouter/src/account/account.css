@@ -1071,3 +1071,78 @@
     width: 100%;
   }
 }
+
+/* Account deletion confirmation. All rules are scoped to .account-dialog-review
+   (or the account page status region) so other AccountDialog consumers keep the
+   base dialog geometry. */
+.account-page .account-deletion-status:empty {
+  display: none;
+}
+.account-page .account-deletion-status p {
+  margin: 16px 0 0;
+}
+.account-dialog.account-dialog-review {
+  box-sizing: border-box;
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+.account-dialog-review .account-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.account-dialog-review .account-dialog-header h2 {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.account-dialog-review .account-dialog-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  padding: 0;
+  border-color: transparent;
+}
+.account-dialog-review .account-dialog-lead {
+  margin: 0 0 16px;
+}
+.account-dialog-review h3 {
+  font-size: 16px;
+  line-height: 1.5;
+  margin: 0 0 8px;
+}
+.account-dialog-review .account-dialog-list {
+  margin: 0 0 16px;
+  padding-left: 22px;
+}
+.account-dialog-review .account-dialog-notice {
+  margin: 0 0 16px;
+  padding: 16px;
+  background: #f7f8fa;
+  border: 1px solid #d4d8df;
+  border-radius: 8px;
+}
+.account-dialog-review .account-deletion-status:empty {
+  display: none;
+}
+.account-dialog-review .account-deletion-status p {
+  margin: 0 0 16px;
+}
+.account-dialog-review .account-dialog-actions {
+  margin: 24px 0 0;
+  justify-content: flex-end;
+}
+@media (max-width: 420px) {
+  .account-dialog.account-dialog-review {
+    padding: 16px;
+  }
+  .account-dialog-review .account-dialog-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+}
