@@ -128,6 +128,42 @@ export function nativePoolError(
       return translate("eachModelRuleNeedsASafeUnique");
   }
 }
+/** Limits for the Codex excluded plan list. */
+enum ExcludedPlanLimit {
+  MaxPlans = 100,
+  MaxLength = 128,
+}
+/**
+ * Field-level explanation for the Codex excluded plans list, or undefined
+ * when valid. Values are checked as typed: nothing is trimmed or case-folded,
+ * and uniqueness ignores case only for comparison.
+ */
+export function excludedPlansError(plans: string[]): string | undefined {
+  if (plans.length > ExcludedPlanLimit.MaxPlans)
+    return translate("useAtMostExcludedPlans", {
+      value0: ExcludedPlanLimit.MaxPlans,
+    });
+  const blank = plans.findIndex((p) => !p.trim());
+  if (blank >= 0)
+    return translate("lineIsBlankRemoveEmptyLines", { value0: blank + 1 });
+  const long = plans.findIndex((p) => p.length > ExcludedPlanLimit.MaxLength);
+  if (long >= 0)
+    return translate("lineIsLongerThanCharacters", {
+      value0: long + 1,
+      value1: ExcludedPlanLimit.MaxLength,
+    });
+  const seen = new Map<string, number>();
+  for (const [i, p] of plans.entries()) {
+    const key = p.toLowerCase();
+    const first = seen.get(key);
+    if (first !== undefined)
+      return translate("lineRepeatsLinePlanNamesAreCompared", {
+        value0: i + 1,
+        value1: first + 1,
+      });
+    seen.set(key, i);
+  }
+}
 /** DOM id of the native settings disclosure summary; error summary target. */
 export const NATIVE_SETTINGS_SUMMARY_ID = "pool-native-settings";
 /** End notes that stay visible whether or not pool-level settings exist. */
@@ -322,13 +358,14 @@ export function NativePoolFields({
               }
             />
             {codex ? (
-              <>
+              <fieldset>
+                <legend>{translate("codexFailoverAndAffinity")}</legend>
                 <OptionalNumber
                   label={translate("upstreamFailoverThreshold")}
                   value={options.upstreamFailoverThreshold}
                   min={0}
                   max={20}
-                  hint={translate("emptyUses3ZeroDisablesUpstreamFailure")}
+                  hint={translate("emptyUses3ZeroDisablesConsecutiveFailure")}
                   onChange={(upstreamFailoverThreshold) =>
                     onChange({ ...options, upstreamFailoverThreshold })
                   }
@@ -336,7 +373,7 @@ export function NativePoolFields({
                 <OptionalBoolean
                   label={translate("failureWindow")}
                   value={options.failureWindow}
-                  hint={translate("defaultEnabledUsesASliding60Second")}
+                  hint={translate("defaultSliding60SecondFailureRatioSteering")}
                   onChange={(failureWindow) =>
                     onChange({ ...options, failureWindow })
                   }
@@ -384,7 +421,8 @@ export function NativePoolFields({
                 />
                 <Field
                   label={translate("excludedPlans")}
-                  hint={translate("onePlanPerLineUpTo100")}
+                  hint={translate("onePlanPerLineUpTo100_2da7f1")}
+                  error={excludedPlansError(options.excludedPlans)}
                 >
                   <textarea
                     value={options.excludedPlans.join("\n")}
@@ -398,7 +436,7 @@ export function NativePoolFields({
                     }
                   />
                 </Field>
-              </>
+              </fieldset>
             ) : (
               <>
                 <Field label={translate("nativeQuotaWindow")}>
