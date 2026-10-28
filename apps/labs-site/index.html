@@ -3,11 +3,89 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="robots" content="noindex" />
+    <meta name="description" content="<%= t('homeDescription') %>" />
+    <meta property="og:title" content="<%= t('title') %>" />
+    <meta property="og:description" content="<%= t('homeDescription') %>" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="<%= canonical %>" />
     <link rel="canonical" href="<%= canonical %>" />
+    <% for (const locale of languages) { %>
+    <link rel="alternate" hreflang="<%= locale.lang %>" href="https://labs.delino.io<%= locale.path %>" />
+    <% } %>
+    <link rel="alternate" hreflang="x-default" href="https://labs.delino.io/" />
   </head>
-  <body>
-    <!-- Add approved static marketing content here. -->
-    <main id="main-content"></main>
+  <body class="home-page">
+    <a class="skip-link" href="#main-content"><%= t('skip') %></a>
+    <header class="site-header wrap">
+      <a class="brand" href="<%= homePath %>"><span class="brand-dot" aria-hidden="true"></span>Delino Labs</a>
+      <nav aria-label="<%= t('navigation') %>">
+        <a href="#products"><%= t('homeProducts') %></a>
+        <a href="https://docs.labs.delino.io/"><%= t('docs') %></a>
+        <a href="https://github.com/delinoio/oss">GitHub <span aria-hidden="true">↗</span></a>
+        <details class="languages">
+          <summary><%= languageLabel %> <span aria-hidden="true">⌄</span></summary>
+          <ul>
+            <% for (const locale of languages) { %>
+            <li><a href="<%= locale.path %>" lang="<%= locale.lang %>" hreflang="<%= locale.lang %>" <%= locale.lang === language ? 'aria-current="page"' : '' %>><%= locale.label %></a></li>
+            <% } %>
+          </ul>
+        </details>
+      </nav>
+    </header>
+    <main id="main-content" class="wrap">
+      <section class="home-hero" aria-labelledby="home-title">
+        <div class="home-copy">
+          <p class="eyebrow"><%= t('homeEyebrow') %></p>
+          <h1 id="home-title"><span><%= t('homeHeadline') %></span><span class="home-accent"><%= t('homeHeadlineAccent') %></span></h1>
+          <p class="home-description"><%= t('homeDescription') %></p>
+          <div class="actions">
+            <a class="button primary" href="#products"><%= t('homeExplore') %> <span aria-hidden="true">→</span></a>
+            <a class="button secondary" href="https://github.com/delinoio/oss"><%= t('viewSource') %> <span aria-hidden="true">↗</span></a>
+          </div>
+        </div>
+        <div class="product-map" aria-hidden="true">
+          <svg class="map-lines" viewBox="0 0 500 400" preserveAspectRatio="none"><path d="M125 100H210Q250 100 250 140V260Q250 300 290 300H375M375 100H290Q250 100 250 140M125 300H210Q250 300 250 260" /></svg>
+          <div class="map-node"><span class="tool-symbol">⑂</span><strong>TaiRouter</strong><small><%= t('homeMapRouter') %></small><span class="map-detail"></span></div>
+          <div class="map-node"><span class="tool-symbol">◇</span><strong>binpm</strong><small><%= t('homeMapBinpm') %></small><span class="map-detail"></span></div>
+          <div class="map-node"><span class="tool-symbol">⬡</span><strong>nodeup</strong><small><%= t('homeMapNodeup') %></small><span class="map-detail"></span></div>
+          <div class="map-node"><span class="tool-symbol">▱</span><strong>cargo-mono</strong><small><%= t('homeMapCargo') %></small><span class="map-detail"></span></div>
+          <span class="map-center"></span>
+        </div>
+      </section>
+      <div class="home-principles"><span><%= t('homeOpen') %></span><span><%= t('homeWorkflows') %></span><a href="https://github.com/delinoio/oss"><%= t('homeSource') %> <span aria-hidden="true">↗</span></a></div>
+      <section id="products" class="home-featured" aria-labelledby="featured-title">
+        <div class="home-featured-copy">
+          <p class="eyebrow"><%= t('homeFeatured') %></p>
+          <h2 id="featured-title">TaiRouter</h2>
+          <p class="featured-tagline"><%= t('homeRouterTagline') %></p>
+          <p class="home-description"><%= t('homeRouterDescription') %></p>
+          <div class="actions"><a class="button primary" href="<%= productPath %>"><%= t('homeRouterExplore') %> <span aria-hidden="true">→</span></a><a class="button secondary" href="https://docs.labs.delino.io/tairouter/"><%= t('readDocs') %> <span aria-hidden="true">→</span></a></div>
+        </div>
+        <figure class="home-routing">
+          <div class="home-routing-flow" role="img" aria-label="<%= t('homeRoutingAlt') %>">
+            <div class="routing-person"><span class="person-symbol" aria-hidden="true">♙</span><strong>Alice</strong><small><%= t('personalCredentials') %></small></div>
+            <span class="routing-arrow" aria-hidden="true">→</span>
+            <div class="routing-hub"><span class="tool-symbol" aria-hidden="true">⑂</span><strong>TaiRouter</strong><small>Team AI Router</small></div>
+            <span class="routing-arrow" aria-hidden="true">→</span>
+            <div class="routing-provider"><span aria-hidden="true">◇</span><strong><%= t('providerA') %></strong></div>
+            <div class="routing-person"><span class="person-symbol" aria-hidden="true">♙</span><strong>Bob</strong><small><%= t('personalCredentials') %></small></div>
+            <span class="routing-arrow" aria-hidden="true">→</span>
+            <span class="routing-arrow" aria-hidden="true">→</span>
+            <div class="routing-provider"><span aria-hidden="true">◇</span><strong><%= t('providerB') %></strong></div>
+          </div>
+          <figcaption><%= t('homeRoutingNote') %></figcaption>
+        </figure>
+      </section>
+      <section class="home-tools" aria-labelledby="tools-title">
+        <div class="home-section-heading"><p class="eyebrow"><%= t('homeToolsEyebrow') %></p><h2 id="tools-title"><%= t('homeToolsTitle') %></h2><p><%= t('homeToolsDescription') %></p></div>
+        <div class="tool-grid">
+          <% for (const tool of tools) { %>
+          <article class="tool-card"><span class="tool-symbol" aria-hidden="true"><%= tool.symbol %></span><h3><%= tool.name %></h3><p><%= t(tool.description) %></p><a class="text-link" href="<%= tool.href %>"><%= t('homeDocumentation') %><span class="sr-only"> — <%= tool.name %></span> <span aria-hidden="true">→</span></a></article>
+          <% } %>
+        </div>
+      </section>
+      <section class="home-closing" aria-labelledby="home-closing-title"><div><h2 id="home-closing-title"><%= t('homeClosingTitle') %></h2><p><%= t('homeClosingDescription') %></p></div><a class="button primary" href="https://github.com/delinoio/oss"><%= t('viewSource') %> <span aria-hidden="true">↗</span></a></section>
+    </main>
+    <footer class="site-footer wrap"><a class="brand" href="<%= homePath %>"><span class="brand-dot" aria-hidden="true"></span>Delino Labs</a><a href="https://docs.labs.delino.io/"><%= t('homeDocumentation') %></a><a href="https://github.com/delinoio/oss">GitHub <span aria-hidden="true">↗</span></a><a href="https://github.com/delinoio/oss/blob/main/LICENSE">Apache-2.0</a></footer>
   </body>
 </html>

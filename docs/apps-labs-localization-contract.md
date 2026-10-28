@@ -9,7 +9,7 @@ English (`en`) is the source language. Both apps register Korean (`ko`), Japanes
 (`de`) and Brazilian Portuguese (`pt-BR`). English URLs remain unprefixed;
 other languages use `/<lang>/`. Language selection is explicit, with no browser
 language redirect. Rspress owns documentation navigation, search, language
-selection and HTML language metadata. The marketing root scaffold remains blank and non-indexable. The TaiRouter
+selection and HTML language metadata. The marketing root and its language variants publish an indexable Delino Labs product landing page with localized catalog text and explicit language selection. The TaiRouter
 product page uses `/tairouter/` and `/<lang>/tairouter/`, localized catalog text
 and an explicit language menu; its product routes permit indexing.
 

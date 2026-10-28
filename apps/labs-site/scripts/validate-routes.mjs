@@ -20,8 +20,26 @@ for (const { lang } of registry.locales) {
   assert.ok(html.includes(`lang="${lang}"`));
   assert.ok(html.includes(`<title>${messages.title}</title>`));
   assert.ok(html.includes(`href="https://labs.delino.io/${prefix}"`));
-  assert.match(html, /name="robots" content="noindex"/);
-  assert.match(html, /<main id="main-content"><\/main>/);
+  assert.doesNotMatch(html, /name="robots" content="noindex"/);
+  assert.ok(html.includes('id="home-title"'));
+  assert.ok(html.includes('id="products"'));
+  assert.ok(html.includes('id="tools-title"'));
+  assert.ok(html.includes('href="#products"'));
+  assert.ok(html.includes(`href="/${prefix}tairouter/"`));
+  assert.ok(html.includes('href="https://docs.labs.delino.io/"'));
+  assert.ok(html.includes('href="https://docs.labs.delino.io/tairouter/"'));
+  assert.ok(html.includes('href="https://github.com/delinoio/oss"'));
+  for (const tool of ["binpm", "nodeup", "cargo-mono"]) {
+    assert.ok(html.includes(`href="https://oss.delino.io/${tool}/"`));
+  }
+  assert.ok(
+    html.includes('hreflang="x-default" href="https://labs.delino.io/"'),
+  );
+  assert.ok(
+    html.includes(
+      'property="og:url" content="https://labs.delino.io/' + prefix + '"',
+    ),
+  );
   assert.doesNotMatch(html, /api\.openai\.com|accessToken|refreshToken/);
   const product = await readFile(
     new URL(`../dist/${prefix}tairouter/index.html`, import.meta.url),
@@ -64,9 +82,40 @@ for (const { lang } of registry.locales) {
       `${lang}: missing ${message}`,
     );
   }
+  for (const message of [
+    "homeHeadline",
+    "homeHeadlineAccent",
+    "homeDescription",
+    "homeRouterDescription",
+    "homeBinpmDescription",
+    "homeNodeupDescription",
+    "homeCargoDescription",
+    "homeClosingTitle",
+  ]) {
+    assert.ok(
+      html.includes(escapeHtml(messages[message])),
+      `${lang}: missing landing message ${message}`,
+    );
+  }
+  assert.ok(
+    html.includes(
+      `name="description" content="${escapeHtml(messages.homeDescription)}"`,
+    ),
+  );
   for (const alternate of registry.locales) {
     const localePrefix =
       alternate.lang === registry.sourceLang ? "" : `${alternate.lang}/`;
+    assert.ok(
+      html.includes(
+        `hreflang="${alternate.lang}" href="https://labs.delino.io/${localePrefix}"`,
+      ),
+    );
+    // Language selection must stay on the home page, including without JavaScript.
+    assert.ok(
+      html.includes(
+        `href="/${localePrefix}" lang="${alternate.lang}" hreflang="${alternate.lang}"`,
+      ),
+    );
     assert.ok(
       product.includes(
         `hreflang="${alternate.lang}" href="https://labs.delino.io/${localePrefix}tairouter/"`,
@@ -85,4 +134,9 @@ for (const { lang } of registry.locales) {
 assert.match(
   await readFile(new URL("../dist/404.html", import.meta.url), "utf8"),
   /404/,
+);
+
+assert.equal(
+  await readFile(new URL("../dist/robots.txt", import.meta.url), "utf8"),
+  "User-agent: *\nAllow: /\n",
 );
