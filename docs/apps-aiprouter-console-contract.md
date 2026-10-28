@@ -27,6 +27,12 @@ Web requirements:
 
 Use generated TypeScript management clients from `packages/aiprouter-client`. Support organization/member/key/provider/usage/operator flows and browser device approval. Onboarding is choose organization → connect personal providers → configure models/routing → issue API key → connect client. Users without organizations choose creation or invitation acceptance; do not create one automatically.
 
+### Installable web app
+
+Expose a same-origin web app manifest on every console page, with stable ID and start URL `/overview`, root scope, standalone display, and AIPRouter name. Supply 192px and 512px PNG icons with maskable safe padding and a 180px Apple touch icon. Use the console primary and background colors for installation metadata.
+
+Installation uses the browser's native install or Add to Home Screen controls. Require HTTPS outside loopback evaluation. The installed console uses the existing OIDC session and route rules and requires network access. Do not register a service worker, add offline response caches, or persist credentials or management content for installation. Browser/OS installation and OIDC acceptance require separate platform verification.
+
 ### Page routes
 
 Console navigation uses absolute pathname routes and the `organization` query parameter for workspace scope. Personal pages use `/overview`, `/providers`, `/pools`, `/routing`, `/keys`, `/usage`, and `/connect`. Organization administration uses `/members`, `/invitations`, `/organization-usage`, `/audit`, and `/settings`. Account and creation use `/account` and `/onboarding`.

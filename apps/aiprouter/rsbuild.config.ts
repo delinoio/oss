@@ -3,7 +3,32 @@ import { defineConfig } from "@rsbuild/core";
 import { pluginReact } from "@rsbuild/plugin-react";
 export default defineConfig({
   plugins: [pluginReact()],
-  html: { title: "AIPRouter", lang: "en" },
+  html: {
+    title: "AIPRouter",
+    lang: "en",
+    meta: {
+      "theme-color": "#1d4ed8",
+      "apple-mobile-web-app-title": "AIPRouter",
+    },
+    tags: [
+      {
+        tag: "link",
+        attrs: { rel: "manifest", href: "/manifest.webmanifest" },
+        head: true,
+        publicPath: false,
+      },
+      {
+        tag: "link",
+        attrs: {
+          rel: "apple-touch-icon",
+          sizes: "180x180",
+          href: "/assets/aiprouter-180.png",
+        },
+        head: true,
+        publicPath: false,
+      },
+    ],
+  },
   server: {
     host: "127.0.0.1",
     port: 4173,

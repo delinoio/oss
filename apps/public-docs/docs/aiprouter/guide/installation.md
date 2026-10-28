@@ -18,6 +18,14 @@ Containers continue running in the background. Use `pnpm dev:aiprouter:logs` to 
 
 This mode is for local evaluation. Do not expose the test login publicly. Mail is discarded, no real AI provider is preconfigured, and generated image/video storage requires real R2 configuration. Production deployment still requires the services and checks below.
 
+## Install the console as an app
+
+Open `/overview` on your AIPRouter instance over HTTPS. Loopback HTTP addresses can be used for local evaluation. In a supported browser, use its **Install app** control or menu command. On iPhone or iPad, open the console in Safari, choose **Share → Add to Home Screen**, and enable **Open as Web App** if offered. Menu names and installation availability depend on the browser and operating system.
+
+Launch AIPRouter from the installed app icon. It opens the overview in a standalone window and uses the same instance and sign-in flow. Sign in when prompted. Installation does not grant permissions or install the server or CLI. The console requires a network connection; offline management is unavailable.
+
+Browser and device installation, including sign-in through an external identity provider, requires verification on your target platforms. A source build alone does not establish those results.
+
 ## Prepare the host
 
 1. Choose Linux x86_64 or ARM64 for the server. Docker Desktop on macOS and Windows is for development or evaluation.

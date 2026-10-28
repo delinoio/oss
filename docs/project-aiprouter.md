@@ -59,6 +59,10 @@ The requested product is a multi-tenant/multi-user version of [opencodex](https:
 
 Later upstream revisions require a separate scope decision. The explicit AIPRouter decisions and exclusions below take precedence over reference behavior.
 
+### Console installation
+
+The console supports browser-managed PWA installation with a stable `/overview` launch route. Installation metadata is owned by the [console contract](apps-aiprouter-console-contract.md#installable-web-app), and static serving is owned by the [service contract](servers-aiprouter-service-contract.md#console-route-integration). Installation requires a secure context and does not provide offline management.
+
 ### Product and compatibility boundary
 
 Include the pinned reference's public inference APIs, provider/authentication integrations, protocol translation, streaming, tool calling, continuation, model routing, account pools, OAuth, combination routing, and usage dashboard functionality, subject to the explicit exceptions below.
