@@ -7,6 +7,7 @@ import {
   useRef,
   useState,
   type ReactNode,
+  type RefObject,
 } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
@@ -27,6 +28,7 @@ import { Card, PageHeader } from "../ui";
 import {
   AdminAuthority,
   Dialog,
+  DialogSize,
   Empty,
   ErrorNotice,
   FilterSheet,
@@ -123,6 +125,7 @@ function UsageRegion<T>({
   retryLabel,
   query,
   className = "",
+  headingRef,
   children,
 }: {
   title: string;
@@ -130,6 +133,8 @@ function UsageRegion<T>({
   retryLabel: string;
   query: RegionQuery<T>;
   className?: string;
+  // Makes the heading programmatically focusable so a dialog can return focus to it.
+  headingRef?: RefObject<HTMLHeadingElement | null>;
   children: (data: T) => ReactNode;
 }) {
   useLocale();
@@ -178,7 +183,14 @@ function UsageRegion<T>({
   }
   return (
     <Card aria-labelledby={headingId} className={className}>
-      <h2 id={headingId}>{title}</h2>
+      <h2
+        id={headingId}
+        ref={headingRef}
+        tabIndex={headingRef ? -1 : undefined}
+        className={headingRef ? "admin-focus-target" : undefined}
+      >
+        {title}
+      </h2>
       {content}
     </Card>
   );
@@ -472,6 +484,68 @@ function UsageFilterFields({
     </>
   );
 }
+// Read-only detail of one returned usage record. It opens from the selected
+// record without another request, so it can never reprice a historical estimate.
+function RequestEstimateDialog({
+  record,
+  onClose,
+  returnFocusFallback,
+}: {
+  record: UsageRecord;
+  onClose: () => void;
+  returnFocusFallback: RefObject<HTMLElement | null>;
+}) {
+  useLocale();
+  const descriptionId = useId();
+  const price = record.appliedPrice;
+  return (
+    <Dialog
+      title={translate("requestEstimate")}
+      onClose={onClose}
+      initial="cancel"
+      size={DialogSize.Wide}
+      describedBy={descriptionId}
+      returnFocusFallback={returnFocusFallback}
+    >
+      <div className="admin-estimate-cost">
+        <span>{translate("estimatedCost_9ccba2")}</span>
+        <strong>{money(record.estimatedCost)}</strong>
+      </div>
+      <dl className="admin-estimate-details">
+        <div>
+          <dt>{translate("requestId_d561f5")}</dt>
+          <dd>{record.requestId || translate("unknown")}</dd>
+        </div>
+        <div>
+          <dt>{translate("estimatePriceProvenance")}</dt>
+          <dd>
+            {price ? label(PriceSource[price.source]) : translate("unknown")}
+          </dd>
+        </div>
+        <div>
+          <dt>{translate("estimateRevision")}</dt>
+          <dd>{price?.sourceRevision || translate("unknown")}</dd>
+        </div>
+        <div>
+          <dt>{translate("serviceTier_e9cf60")}</dt>
+          <dd>{price?.serviceTier || translate("unknown")}</dd>
+        </div>
+        <div>
+          <dt>{translate("estimateErrorCode")}</dt>
+          <dd>{record.errorCode || translate("message_ffcae7fc61")}</dd>
+        </div>
+      </dl>
+      <p id={descriptionId} className="admin-estimate-note">
+        {translate("thisEstimateWasFixedWhenTheRequest")}
+      </p>
+      <div className="admin-actions">
+        <button data-cancel onClick={onClose}>
+          {translate("close")}
+        </button>
+      </div>
+    </Dialog>
+  );
+}
 export function OrganizationUsage() {
   useLocale();
   const { organizationId } = useContext(AdminAuthority);
@@ -488,6 +562,7 @@ export function OrganizationUsage() {
   const [outcome, setOutcome] = useState("");
   const [token, setToken] = useState("");
   const [detail, setDetail] = useState<UsageRecord>();
+  const requestHeadingRef = useRef<HTMLHeadingElement>(null);
   const valid = !!dates.start && !!dates.end && dates.start <= dates.end;
   const filters = {
     organizationId,
@@ -707,6 +782,7 @@ export function OrganizationUsage() {
           </UsageRegion>
           <UsageRegion
             title={translate("requestMetadata")}
+            headingRef={requestHeadingRef}
             loadingLabel={translate("loadingRequests")}
             retryLabel={translate("tryAgainLoadingRequests")}
             query={query}
@@ -753,45 +829,11 @@ export function OrganizationUsage() {
         </>
       )}
       {detail && (
-        <Dialog
-          title={translate("requestEstimate")}
+        <RequestEstimateDialog
+          record={detail}
           onClose={() => setDetail(undefined)}
-          initial="cancel"
-        >
-          <p>{translate("requestId", { value0: detail.requestId })}</p>
-          <p>
-            {translate("estimatedCost", {
-              value0: money(detail.estimatedCost),
-            })}
-          </p>
-          <p>
-            {translate("priceProvenance", {
-              value0: detail.appliedPrice
-                ? label(PriceSource[detail.appliedPrice.source])
-                : translate("unknown"),
-            })}
-          </p>
-          <p>
-            {translate("revision", {
-              value0:
-                detail.appliedPrice?.sourceRevision || translate("unknown"),
-            })}
-          </p>
-          <p>
-            {translate("serviceTier", {
-              value0: detail.appliedPrice?.serviceTier || translate("unknown"),
-            })}
-          </p>
-          <p>{translate("thisEstimateWasFixedWhenTheRequest")}</p>
-          <p>
-            {translate("errorCode", {
-              value0: detail.errorCode || translate("message_ffcae7fc61"),
-            })}
-          </p>
-          <button data-cancel onClick={() => setDetail(undefined)}>
-            {translate("close")}
-          </button>
-        </Dialog>
+          returnFocusFallback={requestHeadingRef}
+        />
       )}
     </>
   );

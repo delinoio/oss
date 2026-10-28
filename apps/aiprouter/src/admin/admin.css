@@ -1362,3 +1362,61 @@
 .admin-usage-summary + .admin-empty {
   margin: 0;
 }
+
+/* Request estimate dialog. */
+.admin-focus-target:focus {
+  outline: none;
+}
+.admin-focus-target:focus-visible {
+  outline: 3px solid #1d4ed8;
+  outline-offset: 3px;
+}
+.admin-estimate-cost {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 16px;
+}
+.admin-estimate-cost span {
+  color: #4e5968;
+  font-size: 14px;
+}
+.admin-estimate-cost strong {
+  font-size: 28px;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+.admin-estimate-details {
+  display: grid;
+  gap: 0;
+  margin: 0 0 16px;
+}
+.admin-estimate-details > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(0, 2fr);
+  gap: 8px 16px;
+  padding: 12px 0;
+  border-top: 1px solid #e5e8eb;
+}
+.admin-estimate-details dt {
+  color: #4e5968;
+  font-size: 14px;
+}
+.admin-estimate-details dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+.admin-estimate-note {
+  margin: 0 0 16px;
+  color: #4e5968;
+  font-size: 14px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  background: #f7f8fa;
+  line-height: 1.5;
+}
+@media (max-width: 480px) {
+  .admin-estimate-details > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
