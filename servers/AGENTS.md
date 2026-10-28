@@ -14,5 +14,5 @@
 
 - [Repository Environment Contract](../docs/repository-environment-contract.md)
 
-- [AIPRouter](../docs/project-aiprouter.md)
-- [AIPRouter domain contract](../docs/servers-aiprouter-service-contract.md), including internal package ownership and dependency boundaries for `servers/aiprouter/internal`.
+- [TaiRouter](../docs/project-tairouter.md)
+- [TaiRouter domain contract](../docs/servers-tairouter-service-contract.md), including internal package ownership and dependency boundaries for `servers/tairouter/internal`.

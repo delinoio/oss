@@ -16,5 +16,5 @@
 - [pnport npm and native distribution](../docs/packages-pnport-distribution-contract.md)
 - [pnport](../docs/project-pnport.md)
 
-- [AIPRouter](../docs/project-aiprouter.md)
-- [AIPRouter domain contract](../docs/packages-aiprouter-libraries-contract.md)
+- [TaiRouter](../docs/project-tairouter.md)
+- [TaiRouter domain contract](../docs/packages-tairouter-libraries-contract.md)

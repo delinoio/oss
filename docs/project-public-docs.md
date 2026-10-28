@@ -57,4 +57,4 @@ The canonical public-docs production origin is `https://oss.delino.io`.
 
 The Cloudflare Pages `public-docs` project deploys `main` automatically with the build and custom-domain settings recorded in `apps-public-docs-foundation.md`. The project is the only production documentation publisher for the consolidated root and subpaths.
 
-AIPRouter adds an owned content root at `apps/public-docs/docs/aiprouter`, published at `/aiprouter` with ten `/aiprouter/guide/*` routes. The shared route catalog and site selector include these routes. This extends the existing project lists above; the single publisher, clean URLs, fixed port and validation rules also apply to AIPRouter. See [AIPRouter public documentation](apps-aiprouter-docs-contract.md).
+TaiRouter adds an owned content root at `apps/public-docs/docs/tairouter`, published at `/tairouter` with ten `/tairouter/guide/*` routes. The shared route catalog and site selector include these routes. This extends the existing project lists above; the single publisher, clean URLs, fixed port and validation rules also apply to TaiRouter. See [TaiRouter public documentation](apps-tairouter-docs-contract.md).

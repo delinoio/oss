@@ -18,7 +18,7 @@ const selectorDestinations = [
   "/async-commit-hook/",
   "/clibox/",
   "/pnport/",
-  "/aiprouter/",
+  "/tairouter/",
 ];
 const projectSecuritySlugs = new Set([
   "runmoor",

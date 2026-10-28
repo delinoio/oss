@@ -1,0 +1,10 @@
+FROM golang:1.26.10-bookworm AS build
+WORKDIR /src
+COPY scripts/tairouter/fixture ./fixture
+RUN CGO_ENABLED=0 go build -trimpath -o /fixture ./fixture/main.go
+FROM debian:bookworm-slim
+COPY --from=build /fixture /usr/local/bin/tairouter-fixture
+COPY LICENSE NOTICE /usr/share/doc/tairouter/
+COPY --from=build /usr/local/go/LICENSE /usr/share/doc/tairouter/GO-LICENSE
+USER 65532:65532
+ENTRYPOINT ["tairouter-fixture"]

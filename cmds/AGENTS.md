@@ -34,5 +34,5 @@
 - [Runmoor command foundation](../docs/cmds-runmoor-foundation.md)
 - [Linux Package Repository Contract](../docs/repository-linux-packages-contract.md)
 
-- [AIPRouter](../docs/project-aiprouter.md)
-- [AIPRouter domain contract](../docs/cmds-aiprouter-client-contract.md)
+- [TaiRouter](../docs/project-tairouter.md)
+- [TaiRouter domain contract](../docs/cmds-tairouter-client-contract.md)
