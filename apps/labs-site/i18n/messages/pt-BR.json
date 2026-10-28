@@ -14,7 +14,7 @@
   "readDocs": "Ler a documentação",
   "viewSource": "Ver no GitHub",
   "byLabs": "Um produto de código aberto da Delino Labs.",
-  "diagramCaption": "Credenciais pessoais. Espaços separados.",
+  "diagramCaption": "Credenciais pessoais. Separadas por espaço de trabalho.",
   "diagramAlt": "Alice, Bob e Carol usam suas próprias credenciais e pools de contas. O TaiRouter encaminha suas solicitações a provedores de IA dentro da organização selecionada.",
   "yourTeam": "Sua equipe",
   "personalCredentials": "Credenciais pessoais",

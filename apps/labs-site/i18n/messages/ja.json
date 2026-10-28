@@ -1,7 +1,7 @@
 {
   "title": "Delino Labs",
   "productTitle": "TaiRouter — Team AI Router | Delino Labs",
-  "description": "TaiRouterはDelino Labsのオープンソースでセルフホスト型のTeam AI Routerです。ワークスペースごとに個人の認証情報、アカウントプール、ルーティングを管理できます。",
+  "description": "TaiRouterはDelino Labsのオープンソースでセルフホスト型のTeam AI Routerです。ワークスペースごとに個人のプロバイダー認証情報、アカウントプール、ルーティングを管理できます。",
   "skip": "本文へ移動",
   "navigation": "メインナビゲーション",
   "product": "製品",
@@ -33,7 +33,7 @@
   "accountsTitle": "自分のアカウントで接続",
   "accountsDescription": "各メンバーが自分のプロバイダーとアカウントプールを接続します。認証情報とルーティングは組織ごとに分離されます。",
   "routingTitle": "ルートを選ぶ",
-  "routingDescription": "モデルの別名を定義し、個人の接続に直接、フォールバック、ラウンドロビン、重み付きルーティングを選べます。",
+  "routingDescription": "モデルの別名を定義し、個人の接続に直接ルーティング、フォールバック、ラウンドロビン、重み付きルーティングのいずれかを選べます。",
   "hostingTitle": "自分の環境で運用",
   "hostingDescription": "自分の環境でTaiRouterをホストできます。組織とIDプロバイダーでチームのアクセスを管理します。",
   "clientsEyebrow": "いつものワークフローで",
