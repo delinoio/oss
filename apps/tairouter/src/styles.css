@@ -1528,6 +1528,74 @@ dialog.disconnect-dialog {
     flex: 1 1 100%;
   }
 }
+/* Route delete confirmation. Scoped so other ConfirmDialog consumers are unchanged. */
+.page-heading h1[tabindex="-1"]:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 4px;
+}
+dialog.route-delete-dialog {
+  width: min(560px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 24px;
+  border-radius: 12px;
+}
+.route-delete-dialog .dialog-heading {
+  margin-bottom: 24px;
+}
+.route-delete-dialog .dialog-heading h2 {
+  font-size: 24px;
+}
+.route-delete-content {
+  display: grid;
+  gap: 16px;
+}
+.route-delete-content p,
+.route-delete-alias {
+  margin: 0;
+}
+.route-delete-content p {
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.route-delete-retained {
+  color: #4e5968;
+}
+.route-delete-alias {
+  display: grid;
+  gap: 4px;
+  padding: 16px;
+  border-radius: 8px;
+  background: #f7f8fa;
+  min-width: 0;
+}
+.route-delete-alias dt {
+  color: #4e5968;
+  font-size: 14px;
+}
+.route-delete-alias dd {
+  margin: 0;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.route-delete-footer {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #d5dbe3;
+  justify-content: flex-end;
+}
+@media (max-width: 480px) {
+  dialog.route-delete-dialog {
+    padding: 16px;
+  }
+  .route-delete-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .route-delete-footer > .button {
+    width: 100%;
+    flex: 1 1 100%;
+  }
+}
 /* Provider OAuth setup and authorization dialogs. Scoped so other dialogs are unchanged. */
 dialog.oauth-setup,
 dialog.oauth-dialog {
