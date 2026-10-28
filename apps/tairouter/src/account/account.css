@@ -1,0 +1,247 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.account-surface {
+  width: min(100%, 640px);
+  margin: 0 auto;
+  color: #191f28;
+  overflow-wrap: anywhere;
+}
+.account-surface > header {
+  margin-bottom: 32px;
+}
+.account-surface h1 {
+  font-size: clamp(24px, 4vw, 32px);
+  line-height: 1.25;
+  margin: 0 0 12px;
+}
+.account-surface h2,
+.account-dialog h2 {
+  font-size: 20px;
+  margin-top: 0;
+}
+.account-surface p,
+.account-dialog p {
+  line-height: 1.6;
+}
+.account-surface header p,
+.account-hint {
+  color: #4e5968;
+}
+.account-card {
+  background: #fff;
+  border: 1px solid #d4d8df;
+  border-radius: 12px;
+  padding: 24px;
+  margin: 20px 0;
+}
+.account-surface label,
+.account-dialog label {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+  font-weight: 600;
+}
+.account-surface input,
+.account-surface select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid #7b8490;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: inherit;
+  min-height: 44px;
+  background: #fff;
+  color: #191f28;
+}
+.account-surface button,
+.account-dialog button,
+.account-action {
+  min-height: 44px;
+  border: 1px solid #7b8490;
+  border-radius: 8px;
+  background: #fff;
+  color: #191f28;
+  padding: 10px 16px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.account-surface button:disabled,
+.account-dialog button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.account-surface a {
+  color: #1d4ed8;
+}
+.account-surface .account-primary,
+.account-dialog .account-primary {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+.account-surface .account-danger,
+.account-dialog .account-danger {
+  background: #b42318;
+  border-color: #b42318;
+  color: #fff;
+}
+.account-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 24px 0 12px;
+}
+.account-error {
+  border: 1px solid #b42318;
+  background: #fff5f4;
+  color: #922016;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+}
+.account-notice {
+  background: #eff6ff;
+  border-radius: 8px;
+  padding: 16px;
+}
+.account-details {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(0, 2fr);
+  gap: 16px;
+}
+.account-details dt {
+  color: #4e5968;
+}
+.account-details dd {
+  margin: 0;
+}
+.account-code {
+  font-family: monospace;
+  font-size: 28px;
+  letter-spacing: 0.08em;
+  display: block;
+  text-align: center;
+  padding: 20px 8px;
+  background: #f2f4f6;
+  border-radius: 8px;
+}
+.account-dialog {
+  width: min(480px, calc(100% - 48px));
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  border: 0;
+  border-radius: 12px;
+  padding: 24px;
+  color: #191f28;
+}
+.account-dialog::backdrop {
+  background: rgb(25 31 40 / 45%);
+}
+.account-surface :focus-visible,
+.account-dialog :focus-visible {
+  outline: 3px solid #1d4ed8;
+  outline-offset: 3px;
+}
+@media (max-width: 420px) {
+  .account-card {
+    padding: 16px;
+  }
+  .account-details {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .account-details dd {
+    margin-bottom: 12px;
+  }
+  .account-actions > * {
+    width: 100%;
+  }
+}
+
+/* Standalone sign-in identity card. All rules are scoped to .sign-in so other
+   AccountSurface consumers keep their geometry. */
+.standalone:has(> .sign-in) {
+  max-width: none;
+  margin: 136px auto 0;
+  padding: 24px;
+}
+.sign-in {
+  width: min(100%, 480px);
+  margin: 0 auto;
+}
+.sign-in-wordmark {
+  margin: 0 0 16px;
+  color: #191f28;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.account-surface.sign-in-card {
+  box-sizing: border-box;
+  width: 100%;
+  background: #fff;
+  border: 1px solid #d5dbe3;
+  border-radius: 12px;
+  padding: 32px;
+}
+.sign-in-card > header {
+  margin-bottom: 24px;
+}
+.sign-in-card h1 {
+  margin: 0 0 8px;
+}
+.sign-in-card h1:focus {
+  outline: none;
+}
+.sign-in-card p {
+  margin: 0 0 24px;
+}
+.sign-in-card > header p {
+  margin: 0;
+}
+.sign-in-card .sign-in-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 0 24px;
+}
+.sign-in-alert-icon {
+  flex: none;
+  margin-top: 2px;
+  color: #b42318;
+}
+.sign-in-card .sign-in-guidance {
+  color: #4e5968;
+}
+.account-surface .sign-in-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  text-align: center;
+  text-decoration: none;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.account-surface .sign-in-action:focus-visible {
+  outline: 3px solid #1d4ed8;
+  outline-offset: 3px;
+}
+@media (max-width: 767px) {
+  .standalone:has(> .sign-in) {
+    margin: 0 auto;
+    padding: 48px 16px 24px;
+  }
+  .account-surface.sign-in-card {
+    padding: 24px;
+  }
+}
+@media (max-width: 320px) {
+  .account-surface.sign-in-card {
+    padding: 16px;
+  }
+}

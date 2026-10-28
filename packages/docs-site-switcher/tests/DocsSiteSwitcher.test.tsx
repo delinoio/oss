@@ -40,7 +40,7 @@ describe("DocsSiteSwitcher", () => {
       "async-commit-hook",
       "clibox",
       "pnport",
-      "AIPRouter",
+      "TaiRouter",
     ]);
     expect(menu.getAttribute("id")).toBe(trigger.getAttribute("aria-controls"));
     expect(items[1]?.getAttribute("aria-current")).toBe("page");
@@ -52,7 +52,7 @@ describe("DocsSiteSwitcher", () => {
       "/async-commit-hook/",
       "/clibox/",
       "/pnport/",
-      "/aiprouter/",
+      "/tairouter/",
     ]);
   });
 

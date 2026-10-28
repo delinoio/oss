@@ -36,4 +36,4 @@
 - Update this contract and `docs/README.md` when a documentation destination, public label, accessibility contract, or package ownership changes.
 - Update `docs/apps-public-docs-foundation.md` when the shared selector changes the consolidated documentation surface.
 
-AIPRouter adds an owned content root at `apps/public-docs/docs/aiprouter`, published at `/aiprouter` with ten `/aiprouter/guide/*` routes. The shared route catalog and site selector include these routes. This extends the existing project lists above; the single publisher, clean URLs, fixed port and validation rules also apply to AIPRouter. See [AIPRouter public documentation](apps-aiprouter-docs-contract.md).
+TaiRouter adds an owned content root at `apps/public-docs/docs/tairouter`, published at `/tairouter` with ten `/tairouter/guide/*` routes. The shared route catalog and site selector include these routes. This extends the existing project lists above; the single publisher, clean URLs, fixed port and validation rules also apply to TaiRouter. See [TaiRouter public documentation](apps-tairouter-docs-contract.md).

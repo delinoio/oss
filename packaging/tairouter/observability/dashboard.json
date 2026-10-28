@@ -1,0 +1,119 @@
+{
+  "uid": "tairouter-health",
+  "title": "TaiRouter instance health",
+  "schemaVersion": 40,
+  "version": 1,
+  "refresh": "15s",
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Health",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tairouter-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "tairouter_health",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "Database",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tairouter-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "expr": "tairouter_database_up",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "Cleanup failures",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tairouter-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "tairouter_cleanup_consecutive_failures",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Seconds since cleanup",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tairouter-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "targets": [
+        {
+          "expr": "time() - tairouter_cleanup_last_success_timestamp_seconds",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 5,
+      "title": "Inference outcomes (unknown usage and write failures remain separate)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "tairouter-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "targets": [
+        {
+          "expr": "rate(tairouter_inference_events_total[5m])",
+          "legendFormat": "{{event}}",
+          "refId": "A"
+        }
+      ]
+    }
+  ]
+}
