@@ -1447,5 +1447,14 @@
   "overrideConfigured": "Override configured",
   "noOverride": "No override",
   "theEffectiveSwitchingThresholdIs0No": "The effective switching threshold is 0%. No threshold is entered for this connection.",
-  "theEffectiveSwitchingThresholdIs0The": "The effective switching threshold is 0%. The entered threshold of {value0}% is kept."
+  "theEffectiveSwitchingThresholdIs0The": "The effective switching threshold is 0%. The entered threshold of {value0}% is kept.",
+  "pendingAcceptance": "Pending acceptance",
+  "whatWillChange": "What will change",
+  "you": "You",
+  "becomeOwner": "Become owner",
+  "previousOwner": "Previous owner",
+  "becomeAdministrator": "Become administrator",
+  "transferRequestsAreValidFor7": "Transfer requests are valid for 7 days.",
+  "ownershipDoesNotChangeUntilYou": "Ownership does not change until you accept.",
+  "leavingThisPageDoesNotCancel": "Leaving this page does not cancel the transfer."
 }

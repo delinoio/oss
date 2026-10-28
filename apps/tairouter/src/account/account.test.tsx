@@ -556,6 +556,503 @@ describe("public acceptance", () => {
   });
 });
 
+describe("ownership acceptance review", () => {
+  afterEach(() => window.history.replaceState(null, "", "/"));
+  const acme = { id: "org-a", name: "Acme Studio", role: Role.MEMBER };
+  const nominated = (overrides: Record<string, unknown> = {}) => ({
+    id: "t1",
+    toUserId: session.userId,
+    state: LifecycleState.PENDING,
+    expiresAt: future(),
+    ...overrides,
+  });
+  type Handlers = {
+    transfer?: () => unknown;
+    accept?: (request: {
+      organizationId: string;
+      transferId: string;
+    }) => unknown;
+    session?: () => unknown;
+    organization?: () => unknown;
+  };
+  function mountOwnership(
+    handlers: Handlers,
+    props: { onAccepted?: (organization: unknown) => void } = {},
+  ) {
+    return mount(
+      <OwnershipAcceptancePage organizationId={acme.id} {...props} />,
+      (router) => {
+        router.service(AccountService, {
+          getSession: (handlers.session ?? (() => session)) as never,
+        });
+        router.service(OrganizationService, {
+          getOrganization: (handlers.organization ??
+            (() => ({ organization: acme }))) as never,
+        });
+        router.service(OwnershipService, {
+          getOwnershipTransfer: (handlers.transfer ??
+            (() => ({ transfer: nominated() }))) as never,
+          acceptOwnership: (handlers.accept ?? (() => ({}))) as never,
+        });
+      },
+    );
+  }
+  const acceptButton = () =>
+    screen.getByRole("button", {
+      name: "Accept ownership",
+    }) as HTMLButtonElement;
+  const rpcError = (code: Code, reason?: ErrorReason, requestId?: string) =>
+    new ConnectError("private detail", code, undefined, [
+      {
+        desc: ErrorDetailSchema,
+        value: create(ErrorDetailSchema, { reason, requestId }),
+      },
+    ]);
+
+  it("renders the review card in the specified order with the heading focused", async () => {
+    const accept = rs.fn();
+    mountOwnership({ accept });
+    expect(document.activeElement).toBe(
+      screen.getByRole("heading", {
+        level: 1,
+        name: "Accept organization ownership",
+      }),
+    );
+    await screen.findByRole("heading", { level: 2, name: "Acme Studio" });
+    await waitFor(() => expect(acceptButton().disabled).toBe(false));
+    expect(document.activeElement).not.toBe(acceptButton());
+    expect(
+      screen.getByText("Review the change before accepting."),
+    ).toBeTruthy();
+    expect(screen.getByText("Organization")).toBeTruthy();
+    expect(screen.getByText("Pending acceptance")).toBeTruthy();
+    expect(
+      screen.getByRole("heading", { level: 3, name: "What will change" }),
+    ).toBeTruthy();
+    const terms = Array.from(document.querySelectorAll("dt")).map(
+      (node) => node.textContent,
+    );
+    const values = Array.from(document.querySelectorAll("dd")).map(
+      (node) => node.textContent,
+    );
+    expect(terms).toEqual(["You", "Previous owner", "Expires"]);
+    expect(values.slice(0, 2)).toEqual([
+      "Become owner",
+      "Become administrator",
+    ]);
+    expect(values[2]).toMatch(/\d{4}|\d{1,2}\/\d{1,2}/);
+    expect(
+      screen.getByText("Transfer requests are valid for 7 days."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Ownership does not change until you accept."),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Leaving this page does not cancel the transfer."),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", { name: "Back to organization" })
+        .getAttribute("href"),
+    ).toBe("/organizations/org-a/overview");
+    expect(accept).not.toHaveBeenCalled();
+  });
+
+  it("shows a hidden skeleton and one polite loading message before data arrives", async () => {
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { container } = mountOwnership({
+      transfer: async () => {
+        await gate;
+        return { transfer: nominated() };
+      },
+    });
+    expect(screen.getByText("Loading ownership transfer…")).toBeTruthy();
+    expect(
+      screen.getByText("Loading ownership transfer…").getAttribute("role"),
+    ).toBe("status");
+    expect(
+      container
+        .querySelector(".ownership-skeleton")
+        ?.getAttribute("aria-hidden"),
+    ).toBe("true");
+    expect(screen.queryByText("Acme Studio")).toBeNull();
+    expect(screen.queryByText("Become owner")).toBeNull();
+    release();
+    await screen.findByText("Acme Studio");
+    expect(container.querySelector(".ownership-skeleton")).toBeNull();
+    expect(screen.queryByText("Loading ownership transfer…")).toBeNull();
+  });
+
+  it("sends exactly the reviewed ids once on explicit click and keeps success after empty polls", async () => {
+    const user = userEvent.setup();
+    let confirmed = false;
+    const accept = rs.fn(
+      (_request: { organizationId: string; transferId: string }) => {
+        confirmed = true;
+        return { organization: { ...acme, role: Role.OWNER } };
+      },
+    );
+    const onAccepted = rs.fn();
+    const { cache } = mountOwnership(
+      {
+        accept,
+        transfer: () => (confirmed ? {} : { transfer: nominated() }),
+      },
+      { onAccepted },
+    );
+    await screen.findByText("Acme Studio");
+    await waitFor(() => expect(acceptButton().disabled).toBe(false));
+    await user.click(acceptButton());
+    await screen.findByText("Ownership accepted. You are now the owner.");
+    expect(accept).toHaveBeenCalledTimes(1);
+    expect(accept.mock.calls[0][0]).toMatchObject({
+      organizationId: "org-a",
+      transferId: "t1",
+    });
+    expect(onAccepted).toHaveBeenCalledTimes(1);
+    expect(
+      screen
+        .getByText("Ownership accepted. You are now the owner.")
+        .getAttribute("role"),
+    ).toBe("status");
+    await cache.refetchQueries();
+    await waitFor(() => expect(cache.isFetching()).toBe(0));
+    expect(
+      screen.getByText("Ownership accepted. You are now the owner."),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText("No pending ownership transfer is available."),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Accept ownership" }),
+    ).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "Back to organization" }),
+    ).toBeTruthy();
+    expect(accept).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the confirmed result when later polls fail with NotFound", async () => {
+    const user = userEvent.setup();
+    let confirmed = false;
+    const { cache } = mountOwnership({
+      accept: () => {
+        confirmed = true;
+        return { organization: { ...acme, role: Role.OWNER } };
+      },
+      transfer: () => {
+        if (confirmed) throw rpcError(Code.NotFound);
+        return { transfer: nominated() };
+      },
+    });
+    await screen.findByText("Acme Studio");
+    await waitFor(() => expect(acceptButton().disabled).toBe(false));
+    await user.click(acceptButton());
+    await screen.findByText("Ownership accepted. You are now the owner.");
+    await cache.refetchQueries();
+    await waitFor(() => expect(cache.isFetching()).toBe(0));
+    expect(
+      screen.getByText("Ownership accepted. You are now the owner."),
+    ).toBeTruthy();
+    expect(
+      screen.queryByText(
+        "This link or code is invalid or no longer available.",
+      ),
+    ).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Accept ownership" }),
+    ).toBeNull();
+  });
+
+  it("blocks a mismatching transfer_id without accepting the newer nomination", async () => {
+    window.history.replaceState(null, "", "/ownership?transfer_id=old");
+    const accept = rs.fn();
+    mountOwnership({
+      transfer: () => ({ transfer: nominated({ id: "t2" }) }),
+      accept,
+    });
+    await screen.findByText(
+      "This request was replaced by a newer ownership transfer. Ask the owner for the current link.",
+    );
+    expect(acceptButton().disabled).toBe(true);
+    expect(screen.queryByText("Become owner")).toBeNull();
+    expect(screen.queryByText("Expires")).toBeNull();
+    expect(accept).not.toHaveBeenCalled();
+  });
+
+  it("accepts the current nomination when transfer_id is absent or matches", async () => {
+    window.history.replaceState(null, "", "/ownership?transfer_id=t1");
+    const user = userEvent.setup();
+    const accept = rs.fn(() => ({ organization: acme }));
+    mountOwnership({ accept });
+    await screen.findByText("Acme Studio");
+    await waitFor(() => expect(acceptButton().disabled).toBe(false));
+    await user.click(acceptButton());
+    await waitFor(() => expect(accept).toHaveBeenCalledTimes(1));
+  });
+
+  it("disables acceptance at the local deadline and announces expiry once", async () => {
+    const accept = rs.fn();
+    mountOwnership({
+      transfer: () => ({
+        transfer: nominated({
+          expiresAt: timestampFromDate(new Date(Date.now() + 1500)),
+        }),
+      }),
+      accept,
+    });
+    await screen.findByText("Acme Studio");
+    await waitFor(() => expect(acceptButton().disabled).toBe(false));
+    await waitFor(() => expect(acceptButton().disabled).toBe(true), {
+      timeout: 4000,
+    });
+    expect(
+      screen.getAllByText("This ownership transfer has expired."),
+    ).toHaveLength(1);
+    expect(
+      screen
+        .getByText("This ownership transfer has expired.")
+        .getAttribute("role"),
+    ).toBe("status");
+    expect(screen.queryByText("Pending acceptance")).toBeNull();
+    expect(accept).not.toHaveBeenCalled();
+  });
+
+  it("treats a missing deadline as not available and not acceptable", async () => {
+    mountOwnership({
+      transfer: () => ({ transfer: nominated({ expiresAt: undefined }) }),
+    });
+    await screen.findByText("Acme Studio");
+    expect(screen.getByText("Not available")).toBeTruthy();
+    expect(acceptButton().disabled).toBe(true);
+    expect(screen.queryByText("Pending acceptance")).toBeNull();
+  });
+
+  it("explains a wrong nominee without enabling acceptance", async () => {
+    const accept = rs.fn();
+    mountOwnership({
+      transfer: () => ({ transfer: nominated({ toUserId: "someone-else" }) }),
+      accept,
+    });
+    await screen.findByText(
+      "Only the nominated member can accept this transfer. Sign in with the nominated account.",
+    );
+    expect(acceptButton().disabled).toBe(true);
+    expect(screen.queryByText("Pending acceptance")).toBeNull();
+    expect(accept).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    [
+      LifecycleState.ACCEPTED,
+      "This ownership transfer has already been accepted.",
+    ],
+    [LifecycleState.CANCELED, "This ownership transfer was canceled."],
+    [LifecycleState.EXPIRED, "This ownership transfer has expired."],
+    [
+      LifecycleState.SUPERSEDED,
+      "This ownership transfer was replaced by a newer request.",
+    ],
+    [LifecycleState.FAILED, "This ownership transfer is no longer available."],
+    [LifecycleState.UNSPECIFIED, "Ownership transfer status is unavailable."],
+  ])(
+    "renders returned state %s as its own status without an action",
+    async (state, message) => {
+      const accept = rs.fn();
+      mountOwnership({
+        transfer: () => ({ transfer: nominated({ state }) }),
+        accept,
+      });
+      const status = await screen.findByText(message);
+      expect(status.getAttribute("role")).toBe("status");
+      expect(
+        screen.queryByRole("button", { name: "Accept ownership" }),
+      ).toBeNull();
+      expect(screen.queryByText("Become owner")).toBeNull();
+      expect(screen.queryByText("Pending acceptance")).toBeNull();
+      expect(accept).not.toHaveBeenCalled();
+    },
+  );
+
+  it("renders a distinct empty lookup and a distinct NotFound without history", async () => {
+    const empty = mountOwnership({ transfer: () => ({}) });
+    await screen.findByText("No pending ownership transfer is available.");
+    expect(
+      screen.queryByRole("button", { name: "Accept ownership" }),
+    ).toBeNull();
+    empty.unmount();
+    mountOwnership({
+      transfer: () => {
+        throw rpcError(Code.NotFound);
+      },
+    });
+    await screen.findByText(
+      "This link or code is invalid or no longer available.",
+    );
+    expect(screen.queryByText(/canceled|expired|accepted/i)).toBeNull();
+    expect(
+      screen.queryByText("No pending ownership transfer is available."),
+    ).toBeNull();
+  });
+
+  it("blocks a link without an organization and never queries or accepts", () => {
+    const accept = rs.fn();
+    const transfer = rs.fn();
+    mount(<OwnershipAcceptancePage />, (router) => {
+      router.service(AccountService, { getSession: () => session });
+      router.service(OwnershipService, {
+        getOwnershipTransfer: transfer,
+        acceptOwnership: accept,
+      });
+    });
+    expect(
+      screen
+        .getByText(
+          "This link is missing its organization. Ask the current owner for a new link.",
+        )
+        .getAttribute("role"),
+    ).toBe("alert");
+    expect(
+      screen.queryByRole("link", { name: "Back to organization" }),
+    ).toBeNull();
+    expect(screen.queryByText("Loading ownership transfer…")).toBeNull();
+    expect(transfer).not.toHaveBeenCalled();
+    expect(accept).not.toHaveBeenCalled();
+  });
+
+  it("shows a safe request id on query errors and retries queries without accepting", async () => {
+    const user = userEvent.setup();
+    const accept = rs.fn();
+    let failures = 1;
+    const transfer = rs.fn(() => {
+      if (failures-- > 0)
+        throw rpcError(Code.Unavailable, undefined, "req-123");
+      return { transfer: nominated() };
+    });
+    mountOwnership({ transfer, accept });
+    await screen.findByText(
+      "The service is unavailable. No change has been confirmed.",
+    );
+    expect(screen.getByText("Request ID: req-123")).toBeTruthy();
+    expect(screen.queryByText("private detail")).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Try again" }));
+    await screen.findByText("Acme Studio");
+    expect(transfer).toHaveBeenCalledTimes(2);
+    expect(accept).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when a poll loses authorization and offers sign-in", async () => {
+    let calls = 0;
+    const { cache } = mountOwnership({
+      transfer: () => {
+        if (calls++ > 0) throw rpcError(Code.Unauthenticated);
+        return { transfer: nominated() };
+      },
+    });
+    await screen.findByText("Acme Studio");
+    await cache.refetchQueries();
+    await screen.findByText(
+      "Your session has expired. Sign in again, then review and submit the action.",
+    );
+    expect(screen.queryByText("Acme Studio")).toBeNull();
+    expect(
+      screen.queryByRole("button", { name: "Accept ownership" }),
+    ).toBeNull();
+    expect(screen.getByRole("link", { name: "Sign in again" })).toBeTruthy();
+  });
+
+  it("reports a failed acceptance without success, refetches and never replays", async () => {
+    const user = userEvent.setup();
+    const accept = rs.fn(() => {
+      throw rpcError(Code.PermissionDenied);
+    });
+    const transfer = rs.fn(() => ({ transfer: nominated() }));
+    mountOwnership({ accept, transfer });
+    await screen.findByText("Acme Studio");
+    await waitFor(() => expect(acceptButton().disabled).toBe(false));
+    await user.click(acceptButton());
+    await screen.findByText(
+      "Your permissions changed or this action is not available to your account.",
+    );
+    await waitFor(() => expect(transfer.mock.calls.length).toBeGreaterThan(1));
+    expect(accept).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByText("Ownership accepted. You are now the owner."),
+    ).toBeNull();
+  });
+
+  it("does not refocus or re-announce on transfer polls", async () => {
+    const { cache } = mountOwnership({});
+    const heading = screen.getByRole("heading", { level: 1 });
+    await screen.findByText("Acme Studio");
+    await waitFor(() => expect(acceptButton().disabled).toBe(false));
+    const status = document.querySelector('[role="status"]');
+    const before = status?.textContent;
+    await cache.refetchQueries();
+    await waitFor(() => expect(cache.isFetching()).toBe(0));
+    expect(document.activeElement).toBe(heading);
+    expect(document.querySelector('[role="status"]')).toBe(status);
+    expect(status?.textContent).toBe(before);
+  });
+
+  it("refetches every 15 seconds and a replacement nomination cannot be accepted", async () => {
+    window.history.replaceState(null, "", "/ownership?transfer_id=t1");
+    rs.useFakeTimers({ toFake: ["setInterval", "clearInterval", "Date"] });
+    try {
+      const accept = rs.fn();
+      let current = "t1";
+      const transfer = rs.fn(() => ({
+        transfer: nominated({ id: current }),
+      }));
+      mountOwnership({ transfer, accept });
+      await rs.advanceTimersByTimeAsync(100);
+      await screen.findByText("Acme Studio");
+      expect(acceptButton().disabled).toBe(false);
+      expect(transfer).toHaveBeenCalledTimes(1);
+      current = "t2";
+      await rs.advanceTimersByTimeAsync(14000);
+      expect(transfer).toHaveBeenCalledTimes(1);
+      await rs.advanceTimersByTimeAsync(2000);
+      expect(transfer.mock.calls.length).toBeGreaterThan(1);
+      await screen.findByText(
+        "This request was replaced by a newer ownership transfer. Ask the owner for the current link.",
+      );
+      expect(acceptButton().disabled).toBe(true);
+      expect(accept).not.toHaveBeenCalled();
+    } finally {
+      rs.useRealTimers();
+    }
+  });
+
+  it("scopes the review styles away from invitation acceptance", async () => {
+    const { container } = mount(
+      <InvitationPage token="invitation-token" />,
+      (router) => {
+        router.service(AccountService, { getSession: () => session });
+        router.service(InvitationService, {
+          getInvitation: () => ({
+            invitation: {
+              id: "invite",
+              organizationName: "Studio",
+              email: session.email,
+              state: LifecycleState.PENDING,
+              expiresAt: future(),
+              role: Role.MEMBER,
+            },
+          }),
+        });
+      },
+    );
+    await screen.findByText("Studio");
+    expect(container.querySelector(".ownership-surface")).toBeNull();
+    expect(container.querySelector(".ownership-card")).toBeNull();
+    expect(container.querySelector(".account-card")).not.toBeNull();
+  });
+});
+
 describe("account lifecycle races", () => {
   it("blocks deletion until all organization pages have been inspected", async () => {
     const user = userEvent.setup();
