@@ -204,9 +204,7 @@
   "unavailableConnection": "Unavailable connection",
   "addConnectionsFromOneSupportedOauthProvider": "Add connections from one supported OAuth provider to configure native pooling.",
   "upstreamFailoverThreshold": "Upstream failover threshold",
-  "emptyUses3ZeroDisablesUpstreamFailure": "Empty uses 3. Zero disables upstream-failure-based failover.",
   "failureWindow": "Failure window",
-  "defaultEnabledUsesASliding60Second": "Default: enabled. Uses a sliding 60-second failure ratio; Disabled uses only the consecutive-failure counter.",
   "unspecifiedKeep": "Unspecified (keep)",
   "defaultKeep": "Default (keep)",
   "keep": "Keep",
@@ -216,7 +214,6 @@
   "cacheAffinity": "Cache affinity",
   "defaultEnabledForCodex": "Default: enabled for Codex.",
   "excludedPlans": "Excluded plans",
-  "onePlanPerLineUpTo100": "One plan per line, up to 100. Names are case-insensitive.",
   "modelRule": "Model rule {value0}",
   "ruleName": "Rule name {value0}",
   "lettersDigitsUnderscoresOrHyphensStartWith": "Letters, digits, underscores, or hyphens; start with a letter or digit.",
@@ -1410,5 +1407,13 @@
   "uncheckedMeansNoPoolLevelNativeSettings": "Unchecked means no pool-level native settings are saved. Member overrides below stay available.",
   "clearingRemovesDraftNativeSettingsCreatingAn": "Clearing removes draft native settings. Creating an eligible OAuth pool enables native pooling by default; configure Native pooling as Disabled to opt out. Generic affinity is unchanged.",
   "enterAWholeNumberFromTo": "Enter a whole number from {value0} to {value1}.",
-  "eligibleOauthPoolsEnableNativePoolingOn": "Eligible OAuth pools enable native pooling on create, even without pool-level settings. Keep configuration checked and choose Disabled to opt out."
+  "eligibleOauthPoolsEnableNativePoolingOn": "Eligible OAuth pools enable native pooling on create, even without pool-level settings. Keep configuration checked and choose Disabled to opt out.",
+  "onePlanPerLineUpTo100_2da7f1": "One plan per line, up to 100, each at most 128 characters. Names are case-insensitive and saved as typed.",
+  "defaultSliding60SecondFailureRatioSteering": "Default: sliding 60-second failure ratio. Steering is independent of the threshold.",
+  "emptyUses3ZeroDisablesConsecutiveFailure": "Empty uses 3. Zero disables consecutive-failure avoidance only.",
+  "codexFailoverAndAffinity": "Codex failover and affinity",
+  "useAtMostExcludedPlans": "Use at most {value0} excluded plans.",
+  "lineIsBlankRemoveEmptyLines": "Line {value0} is blank. Remove empty lines.",
+  "lineIsLongerThanCharacters": "Line {value0} is longer than {value1} characters.",
+  "lineRepeatsLinePlanNamesAreCompared": "Line {value0} repeats line {value1}. Plan names are compared case-insensitively."
 }

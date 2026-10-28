@@ -718,3 +718,161 @@ it.each(providers)(
     }
   },
 );
+
+const thresholdHelp =
+  "Empty uses 3. Zero disables consecutive-failure avoidance only.";
+const windowHelp =
+  "Default: sliding 60-second failure ratio. Steering is independent of the threshold.";
+const openaiSaved = create(PoolSchema, {
+  id: "pool",
+  name: "Saved codex",
+  strategy: PoolStrategy.PRIORITY,
+  members: [
+    { connectionId: "one", priority: 0, weight: 1 },
+    { connectionId: "two", priority: 1, weight: 1 },
+  ],
+  nativeOptions: {
+    enabled: true,
+    upstreamFailoverThreshold: 0,
+    failureWindow: true,
+    pinnedTransientPolicy: NativePinnedTransientPolicy.UNSPECIFIED,
+    cacheAffinity: false,
+    excludedPlans: ["Free", "Trial"],
+  },
+});
+const describedBy = (element: HTMLElement) =>
+  document.getElementById(element.getAttribute("aria-describedby")!)
+    ?.textContent;
+
+it("PC1: shows the corrected Codex health copy in its own group and serializes 0 and true unchanged", async () => {
+  const user = userEvent.setup(),
+    mutation = rs.fn((_r: unknown) => ({}));
+  mount(openaiSaved, "openai", mutation);
+  await user.click(await screen.findByRole("button", { name: "Edit pool" }));
+  await user.click(await screen.findByText("Native OAuth pool settings"));
+  const group = screen
+    .getByText("Codex failover and affinity")
+    .closest("fieldset")!;
+  const threshold = within(group).getByLabelText("Upstream failover threshold");
+  const windowSelect = within(group).getByLabelText("Failure window");
+  expect(describedBy(threshold)).toBe(thresholdHelp);
+  expect(describedBy(windowSelect)).toBe(windowHelp);
+  // No copy may claim that zero stops all failure-based switching.
+  expect(
+    screen.queryByText(/disables (upstream-)?failure-based failover/i),
+  ).toBeNull();
+  expect(screen.queryByText(/Disabled uses only the consecutive/i)).toBeNull();
+  expect((threshold as HTMLInputElement).value).toBe("0");
+  expect((windowSelect as HTMLSelectElement).value).toBe("true");
+  await user.click(screen.getByRole("button", { name: "Save pool" }));
+  const request = mutation.mock.calls[0]?.[0] as {
+    poolId: string;
+    nativeOptions: {
+      upstreamFailoverThreshold?: number;
+      failureWindow?: boolean;
+      pinnedTransientPolicy?: number;
+      cacheAffinity?: boolean;
+      excludedPlans: string[];
+    };
+  };
+  expect(request.poolId).toBe("pool");
+  expect(request.nativeOptions.upstreamFailoverThreshold).toBe(0);
+  expect(request.nativeOptions.failureWindow).toBe(true);
+  expect(request.nativeOptions.pinnedTransientPolicy).toBe(
+    NativePinnedTransientPolicy.UNSPECIFIED,
+  );
+  expect(request.nativeOptions.cacheAffinity).toBe(false);
+  expect(request.nativeOptions.excludedPlans).toEqual(["Free", "Trial"]);
+});
+
+it("PC1: keeps failureWindow=false with threshold 0 and the pinned policy distinctions", async () => {
+  const user = userEvent.setup(),
+    mutation = rs.fn((_r: unknown) => ({}));
+  mount(undefined, "openai", mutation);
+  await start(user);
+  const policy = screen.getByLabelText("Pinned transient policy");
+  expect(
+    within(policy).queryByRole("option", { name: "Unspecified (keep)" }),
+  ).toBeNull();
+  await user.type(screen.getByLabelText("Upstream failover threshold"), "0");
+  await user.selectOptions(screen.getByLabelText("Failure window"), "false");
+  await user.selectOptions(policy, String(NativePinnedTransientPolicy.KEEP));
+  await user.click(screen.getByRole("button", { name: "Save pool" }));
+  const first = mutation.mock.calls[0]?.[0] as {
+    nativeOptions: {
+      upstreamFailoverThreshold?: number;
+      failureWindow?: boolean;
+      pinnedTransientPolicy?: number;
+    };
+  };
+  expect(first.nativeOptions.upstreamFailoverThreshold).toBe(0);
+  expect(first.nativeOptions.failureWindow).toBe(false);
+  expect(first.nativeOptions.pinnedTransientPolicy).toBe(
+    NativePinnedTransientPolicy.KEEP,
+  );
+});
+
+it("validates excluded plans with a field error and keeps the values as typed", async () => {
+  const user = userEvent.setup(),
+    mutation = rs.fn((_r: unknown) => ({}));
+  mount(undefined, "openai", mutation);
+  await start(user);
+  const plans = screen.getByLabelText("Excluded plans");
+  const save = () => screen.getByRole("button", { name: "Save pool" });
+  const invalid = () => plans.getAttribute("aria-invalid") === "true";
+  await user.type(plans, "Free{Enter}Trial");
+  expect(invalid()).toBe(false);
+  expect(save().hasAttribute("disabled")).toBe(false);
+  // Case-insensitive duplicate.
+  await user.type(plans, "{Enter}free");
+  expect(invalid()).toBe(true);
+  expect(
+    screen.getByText(
+      "Line 3 repeats line 1. Plan names are compared case-insensitively.",
+    ),
+  ).toBeTruthy();
+  expect(save().hasAttribute("disabled")).toBe(true);
+  // Blank line.
+  await user.clear(plans);
+  await user.type(plans, "Free{Enter}{Enter}Trial");
+  expect(screen.getByText("Line 2 is blank. Remove empty lines.")).toBeTruthy();
+  expect(save().hasAttribute("disabled")).toBe(true);
+  // 128 characters pass, 129 fail.
+  await user.clear(plans);
+  await user.click(plans);
+  await user.paste("x".repeat(128));
+  expect(invalid()).toBe(false);
+  await user.paste("y");
+  expect(
+    screen.getByText("Line 1 is longer than 128 characters."),
+  ).toBeTruthy();
+  expect(save().hasAttribute("disabled")).toBe(true);
+  // 100 plans pass, 101 fail.
+  await user.clear(plans);
+  await user.click(plans);
+  await user.paste(Array.from({ length: 100 }, (_, i) => `p${i}`).join("\n"));
+  expect(invalid()).toBe(false);
+  await user.paste("\np100");
+  expect(screen.getByText("Use at most 100 excluded plans.")).toBeTruthy();
+  expect(save().hasAttribute("disabled")).toBe(true);
+  // Fixing it saves the plans exactly as typed, without case folding.
+  await user.clear(plans);
+  await user.type(plans, "Free{Enter}Trial");
+  await user.click(save());
+  const request = mutation.mock.calls[0]?.[0] as {
+    nativeOptions: { excludedPlans: string[] };
+  };
+  expect(request.nativeOptions.excludedPlans).toEqual(["Free", "Trial"]);
+});
+
+it("hides the Codex group and its excluded plans for Anthropic pools", async () => {
+  const user = userEvent.setup();
+  mount(
+    undefined,
+    "anthropic",
+    rs.fn((_r: unknown) => ({})),
+  );
+  await start(user);
+  expect(screen.queryByText("Codex failover and affinity")).toBeNull();
+  expect(screen.queryByLabelText("Excluded plans")).toBeNull();
+});
