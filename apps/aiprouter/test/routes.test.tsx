@@ -17,6 +17,7 @@ import {
   pageHref,
   pagePaths,
   operatorPaths,
+  organizationPages,
   resolveRoute,
 } from "../src/routes";
 
@@ -25,7 +26,7 @@ describe("canonical console routes", () => {
   it.each(Object.entries(pagePaths))(
     "resolves the %s deep link",
     (page, path) => {
-      const route = resolveRoute(url(path + "?organization=studio"));
+      const route = resolveRoute(url(path));
       expect(route?.page).toBe(page);
       expect(route?.url.pathname).toBe(path);
     },
@@ -71,10 +72,43 @@ describe("canonical console routes", () => {
   });
   it("encodes organization scope in absolute navigation links", () => {
     expect(pageHref("keys", "studio & other")).toBe(
-      "/keys?organization=studio+%26+other",
+      "/organizations/studio%20%26%20other/keys",
     );
     expect(pageHref("account")).toBe("/account");
     expect(pageHref("keys", "")).toBe("/keys");
+  });
+  it.each(organizationPages)("resolves scoped %s deep links", (page) => {
+    const href = pageHref(page, "01a17e38-0f0f-78f5-b8c5-f8cdb4960299");
+    const route = resolveRoute(url(href));
+    expect(route?.page).toBe(page);
+    expect(route?.organization).toBe("01a17e38-0f0f-78f5-b8c5-f8cdb4960299");
+    expect(route?.url.pathname).toBe(href);
+  });
+  it("migrates organization bookmarks while preserving other URL state", () => {
+    const route = resolveRoute(
+      url("/keys?organization=studio&filter=active#main"),
+    );
+    expect(route?.organization).toBe("studio");
+    expect(route!.url.pathname + route!.url.search + route!.url.hash).toBe(
+      "/organizations/studio/keys?filter=active#main",
+    );
+  });
+  it.each([
+    "/organizations//keys",
+    "/organizations/studio/missing",
+    "/organizations/studio/instance/health",
+    "/organizations/studio/device",
+    "/organizations/studio/onboarding",
+    "/organizations/studio/keys/extra",
+    "/organizations/studio/keys?organization=other",
+    "/organizations/studio/keys?org=other",
+    "/organizations/studio/keys?organization_id=other",
+    "/organizations/bad%2Fid/keys",
+    "/organizations/bad%5Cid/keys",
+    "/organizations/%00/keys",
+    "/organizations/%ZZ/keys",
+  ])("rejects invalid scoped paths %s", (path) => {
+    expect(resolveRoute(url(path))).toBeUndefined();
   });
   it("rejects unknown paths instead of showing overview", () => {
     expect(resolveRoute(url("/missing?page=keys"))).toBeUndefined();
@@ -230,12 +264,12 @@ describe("page entry and navigation", () => {
     await userEvent.click(navigation.getByRole("link", { name: "API keys" }));
     await screen.findByRole("heading", { name: "API keys" });
     expect(window.location.pathname + window.location.search).toBe(
-      "/keys?organization=studio",
+      "/organizations/studio/keys",
     );
     expect(document.querySelector(".sidebar")).toBe(sidebar);
     expect(push).toHaveBeenCalledTimes(1);
     act(() => {
-      window.history.replaceState(null, "", "/connect?organization=other");
+      window.history.replaceState(null, "", "/organizations/other/connect");
       window.dispatchEvent(new PopStateEvent("popstate"));
     });
     await screen.findByRole("heading", { name: "Connect a client" });
@@ -245,7 +279,44 @@ describe("page entry and navigation", () => {
     ).toContain("Other");
     expect(
       navigation.getByRole("link", { name: "API keys" }).getAttribute("href"),
-    ).toBe("/keys?organization=other");
+    ).toBe("/organizations/other/keys");
+  });
+  it("switches organizations through path history without replacing the shell", async () => {
+    mount("/organizations/studio/connect?filter=active#main");
+    await screen.findByRole("heading", { name: "Connect a client" });
+    const sidebar = document.querySelector(".sidebar");
+    const push = rs.spyOn(window.history, "pushState");
+    await userEvent.click(
+      screen.getAllByRole("button", { name: "Switch organization" })[0],
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Other Owner" }));
+    expect(
+      window.location.pathname + window.location.search + window.location.hash,
+    ).toBe("/organizations/other/connect?filter=active#main");
+    expect(push).toHaveBeenCalledTimes(1);
+    expect(document.querySelector(".sidebar")).toBe(sidebar);
+    act(() => {
+      window.history.replaceState(
+        null,
+        "",
+        "/organizations/studio/connect?filter=active#main",
+      );
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    });
+    await screen.findByRole("heading", { name: "Connect a client" });
+    expect(
+      document.querySelector(".sidebar .org-switch")?.textContent,
+    ).toContain("Studio");
+  });
+  it("replaces a legacy organization bookmark without adding history", async () => {
+    window.history.replaceState(null, "", "/connect?organization=studio");
+    const historyLength = window.history.length;
+    mount("/connect?organization=studio");
+    await screen.findByRole("heading", { name: "Connect a client" });
+    expect(window.location.pathname + window.location.search).toBe(
+      "/organizations/studio/connect",
+    );
+    expect(window.history.length).toBe(historyLength);
   });
   it("protects unsaved operator edits on internal links and allows confirmed navigation", async () => {
     mount("/instance/settings");
@@ -284,13 +355,15 @@ describe("page entry and navigation", () => {
     expect(
       await screen.findByRole("heading", { name: "Organization usage" }),
     ).toBeTruthy();
-    expect(window.location.pathname).toBe("/organization-usage");
+    expect(window.location.pathname).toBe(
+      "/organizations/studio/organization-usage",
+    );
     const navigation = within(
       screen.getByRole("navigation", { name: "Main navigation" }),
     );
     expect(
       navigation.getByRole("link", { name: "API keys" }).getAttribute("href"),
-    ).toBe("/keys?organization=studio");
+    ).toBe("/organizations/studio/keys");
     expect(
       navigation
         .getByRole("link", { name: "Organization usage" })

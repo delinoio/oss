@@ -292,7 +292,7 @@ describe("organization boundary", () => {
     await waitFor(() => expect(secondRequested).toBe(true));
     expect(screen.queryByText("Old personal key")).toBeNull();
     expect(screen.queryByRole("dialog")).toBeNull();
-    expect(window.location.search).toContain("organization=two");
+    expect(window.location.pathname).toBe("/organizations/two/keys");
     expect(screen.queryByRole("link", { name: "Members" })).toBeNull();
   });
 });

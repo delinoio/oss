@@ -140,7 +140,7 @@ describe("Overview composition", () => {
     ).toBeTruthy();
     expect(screen.getByText("Your settings in Acme Studio.")).toBeTruthy();
     expect(headerAction().getAttribute("href")).toBe(
-      "/keys?organization=org-a",
+      "/organizations/org-a/keys",
     );
     expect(screen.getByText("Private to you")).toBeTruthy();
     await screen.findByText("No personal connections yet.");
@@ -219,11 +219,11 @@ describe("Overview checklist predicates", () => {
     ])
       expect(stepStatusText(label)).toBe("Complete");
     const hrefs = [
-      ["Choose organization", "/overview?organization=org-a"],
-      ["Connect personal providers", "/providers?organization=org-a"],
-      ["Configure models/routing", "/routing?organization=org-a"],
-      ["Create API key", "/keys?organization=org-a"],
-      ["Connect a client", "/connect?organization=org-a"],
+      ["Choose organization", "/organizations/org-a/overview"],
+      ["Connect personal providers", "/organizations/org-a/providers"],
+      ["Configure models/routing", "/organizations/org-a/routing"],
+      ["Create API key", "/organizations/org-a/keys"],
+      ["Connect a client", "/organizations/org-a/connect"],
     ];
     for (const [label, href] of hrefs)
       expect(step(label!).link.getAttribute("href")).toBe(href);
@@ -384,7 +384,7 @@ describe("Overview request activity", () => {
     expect(counts).toEqual(["140", "180", "160", "220", "190", "210", "184"]);
     expect(
       screen.getByRole("link", { name: "View usage" }).getAttribute("href"),
-    ).toBe("/usage?organization=org-a");
+    ).toBe("/organizations/org-a/usage");
     const group = screen.getByRole("group", { name: "Daily usage pages" });
     await user.click(within(group).getByRole("button", { name: "Next page" }));
     await waitFor(() => expect(daily).toHaveBeenCalledTimes(2));
@@ -421,7 +421,7 @@ describe("Overview request activity", () => {
       within(activity)
         .getByRole("link", { name: "Connect a client" })
         .getAttribute("href"),
-    ).toBe("/connect?organization=org-a");
+    ).toBe("/organizations/org-a/connect");
   });
 });
 
@@ -454,7 +454,7 @@ describe("Overview personal connections and routing", () => {
     expect(within(card).getByText("Connection failed")).toBeTruthy();
     expect(within(card).queryByText(/verified/i)).toBeNull();
     for (const link of within(card).getAllByRole("link"))
-      expect(link.getAttribute("href")).toBe("/providers?organization=org-a");
+      expect(link.getAttribute("href")).toBe("/organizations/org-a/providers");
     expect(
       within(card).getByRole("link", {
         name: "Manage connection: Work account",
@@ -491,7 +491,7 @@ describe("Overview personal connections and routing", () => {
     expect(within(card).getByText("Disabled")).toBeTruthy();
     expect(
       within(card).getByRole("link", { name: "View all" }).getAttribute("href"),
-    ).toBe("/routing?organization=org-a");
+    ).toBe("/organizations/org-a/routing");
   });
 });
 
@@ -562,12 +562,12 @@ describe("Overview independent region states", () => {
       screen
         .getByRole("link", { name: "Connect a provider" })
         .getAttribute("href"),
-    ).toBe("/providers?organization=org-a");
+    ).toBe("/organizations/org-a/providers");
     expect(
       screen
         .getByRole("link", { name: "Configure routing" })
         .getAttribute("href"),
-    ).toBe("/routing?organization=org-a");
+    ).toBe("/organizations/org-a/routing");
     expect(stepStatusText("Connect personal providers")).toBe(
       "Not yet complete",
     );
@@ -594,10 +594,10 @@ describe("Overview scope changes", () => {
     expect(screen.getByText("Loading personal connections…")).toBeTruthy();
     expect(stepStatusText("Connect personal providers")).toBe("Checking…");
     expect(headerAction().getAttribute("href")).toBe(
-      "/keys?organization=org-b",
+      "/organizations/org-b/keys",
     );
     expect(step("Choose organization").link.getAttribute("href")).toBe(
-      "/overview?organization=org-b",
+      "/organizations/org-b/overview",
     );
     await waitFor(() =>
       expect(

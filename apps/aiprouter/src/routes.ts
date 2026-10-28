@@ -37,29 +37,69 @@ export function operatorSection(path: string): OperatorSection {
     ) ?? "health"
   );
 }
+export const organizationPages: readonly Page[] = [
+  "overview",
+  "providers",
+  "pools",
+  "routing",
+  "keys",
+  "usage",
+  "connect",
+  "members",
+  "invitations",
+  "organization-usage",
+  "audit",
+  "settings",
+  "account",
+];
+function validOrganization(id: string) {
+  return !!id && id !== "." && id !== ".." && !/[\\/\x00-\x1f\x7f]/.test(id);
+}
 export function pageHref(page: Page, organization?: string) {
-  const params = new URLSearchParams();
-  if (organization) params.set("organization", organization);
-  return pagePaths[page] + (params.size ? `?${params}` : "");
+  return organization && organizationPages.includes(page)
+    ? `/organizations/${encodeURIComponent(organization)}${pagePaths[page]}`
+    : pagePaths[page];
 }
 export function resolveRoute(url: URL) {
+  let pathname = url.pathname;
+  let organization: string | undefined;
+  if (pathname.startsWith("/organizations/")) {
+    const parts = pathname.split("/");
+    if (parts.length !== 4) return undefined;
+    try {
+      organization = decodeURIComponent(parts[2]);
+    } catch {
+      return undefined;
+    }
+    if (!validOrganization(organization)) return undefined;
+    pathname = `/${parts[3]}`;
+  }
   let page = (Object.keys(pagePaths) as Page[]).find(
-    (key) => pagePaths[key] === url.pathname,
+    (key) => pagePaths[key] === pathname,
   );
-  if (Object.values(operatorPaths).some((path) => path === url.pathname))
+  if (Object.values(operatorPaths).some((path) => path === pathname))
     page = "instance";
-  if (!page) return undefined;
+  if (!page || (organization && !organizationPages.includes(page)))
+    return undefined;
   const standalone = ["device", "invitation", "ownership", "sign-in"].includes(
     page,
   );
   if (
     url.searchParams.has("page") ||
     url.searchParams.has("org") ||
-    (!standalone && url.searchParams.has("organization_id"))
+    (!standalone && url.searchParams.has("organization_id")) ||
+    (organization && url.searchParams.has("organization"))
   )
     return undefined;
   const canonical = new URL(url);
-  if (!standalone && !canonical.searchParams.get("organization"))
+  if (!standalone) {
+    // Accept existing bookmarks while emitting only path-based workspace links.
+    organization ??= canonical.searchParams.get("organization") || undefined;
+    if (organization && !validOrganization(organization)) return undefined;
+    if (organizationPages.includes(page))
+      canonical.pathname = pageHref(page, organization);
+    else organization = undefined;
     canonical.searchParams.delete("organization");
-  return { page, url: canonical };
+  }
+  return { page, organization, url: canonical };
 }
