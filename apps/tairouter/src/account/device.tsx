@@ -31,12 +31,16 @@ export function DevicePage({ initialCode }: { initialCode?: string }) {
       "",
   );
   const [code, setCode] = useState(input.trim());
+  // A code supplied by the URL or prop moves focus to the heading once; typed
+  // codes and "Enter another code" keep focus on the entry input instead.
+  const [supplied] = useState(Boolean(input.trim()));
   const helperId = useId();
   return (
     <AccountSurface
       title={translate("connectThisDevice")}
       subtitle={translate("verifyTheDetailsBelowAndApproveOnly")}
       className="device-surface"
+      focusHeading={supplied}
     >
       {code ? (
         <DeviceReview key={code} code={code} onReset={() => setCode("")} />
@@ -84,6 +88,7 @@ function DeviceReview({
   useLocale();
   const now = useNow();
   const organizationHelperId = useId();
+  const unverifiedId = useId();
   const [organizationId, setOrganizationId] = useState("");
   const [expiry, setExpiry] = useState(Expiry.ThirtyDays);
   const [decision, setDecision] = useState<State>();
@@ -160,9 +165,71 @@ function DeviceReview({
           void inspected.refetch();
         }}
       />
+      {authorization && inspected.isError && (
+        <p id={unverifiedId} className="device-unverified">
+          {translate("unverifiedTheseDetailsCouldNotBe")}
+        </p>
+      )}
+      {/* Always mounted so a result change is announced politely once; it sits
+          before the detail rows so a finished connection reads first. */}
+      <div
+        role="status"
+        className="device-result"
+        data-state={state === undefined ? undefined : State[state]}
+      >
+        {state === State.APPROVED && (
+          <>
+            <h2>{translate("approvedWaitingForCliStorage")}</h2>
+            <p>{translate("returnToYourCliToFinishApproval")}</p>
+          </>
+        )}
+        {state === State.DELIVERED && (
+          <>
+            <h2>{translate("connected")}</h2>
+            <p>{translate("theCliConfirmedThatItStoredThe")}</p>
+          </>
+        )}
+        {state === State.DENIED && (
+          <>
+            <h2>{translate("connectionDenied")}</h2>
+            <p>{translate("thisRequestWasDeniedStartANew")}</p>
+          </>
+        )}
+        {state === State.EXPIRED && (
+          <>
+            <h2>{translate("connectionExpired")}</h2>
+            <p>{translate("theOriginalDeadlineHasPassedAnUnclaimed")}</p>
+          </>
+        )}
+        {state === State.REVOKED && (
+          <>
+            <h2>{translate("connectionNotCompleted")}</h2>
+            <p>{translate("theConnectionKeyWasRevokedCheckThe")}</p>
+          </>
+        )}
+        {state === State.UNSPECIFIED && (
+          <p>{translate("connectionStatusIsUnavailableRefreshBeforeTaking")}</p>
+        )}
+      </div>
+      {state === State.APPROVED && authorization && (
+        <section className="device-recovery">
+          <h3>{translate("ifLocalStorageFails")}</h3>
+          <p>
+            {translate("theCliAttemptsToRevokeThe")}
+            <a href={pageHref("keys", authorization.organizationId)}>
+              {translate("apiKeys")}
+            </a>
+            .
+          </p>
+        </section>
+      )}
       {authorization && (
         <>
-          <dl className="account-details device-details">
+          <dl
+            className="account-details device-details"
+            aria-describedby={inspected.isError ? unverifiedId : undefined}
+            data-verified={inspected.isError ? "false" : "true"}
+          >
             <dt>{translate("server_aef7de")}</dt>
             <dd>{authorization.serverAddress}</dd>
             <dt>{translate("device")}</dt>
@@ -350,50 +417,6 @@ function DeviceReview({
               </div>
             </form>
           )}
-          <div role="status">
-            {state === State.APPROVED && (
-              <>
-                <h2>{translate("approvedWaitingForCliStorage")}</h2>
-                <p>{translate("returnToYourCliToFinishApproval")}</p>
-                <p>
-                  {translate("ifLocalStorageFailsTheCliAttempts")}
-                  <a href={pageHref("keys", authorization.organizationId)}>
-                    {translate("apiKeys")}
-                  </a>
-                  .
-                </p>
-              </>
-            )}
-            {state === State.DELIVERED && (
-              <>
-                <h2>{translate("connected")}</h2>
-                <p>{translate("theCliConfirmedThatItStoredThe")}</p>
-              </>
-            )}
-            {state === State.DENIED && (
-              <>
-                <h2>{translate("connectionDenied")}</h2>
-                <p>{translate("thisRequestWasDeniedStartANew")}</p>
-              </>
-            )}
-            {state === State.EXPIRED && (
-              <>
-                <h2>{translate("connectionExpired")}</h2>
-                <p>{translate("theOriginalDeadlineHasPassedAnUnclaimed")}</p>
-              </>
-            )}
-            {state === State.REVOKED && (
-              <>
-                <h2>{translate("connectionNotCompleted")}</h2>
-                <p>{translate("theConnectionKeyWasRevokedCheckThe")}</p>
-              </>
-            )}
-            {state === State.UNSPECIFIED && (
-              <p>
-                {translate("connectionStatusIsUnavailableRefreshBeforeTaking")}
-              </p>
-            )}
-          </div>
         </>
       )}
       <div className="device-reset">

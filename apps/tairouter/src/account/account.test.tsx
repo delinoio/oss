@@ -744,6 +744,358 @@ describe("device approval layout", () => {
     });
   });
 
+  describe("result promotion", () => {
+    const precedes = (first: Element | null, second: Element | null) =>
+      Boolean(
+        first &&
+        second &&
+        first.compareDocumentPosition(second) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      );
+
+    it("keeps the live result region empty and shows the form while pending", async () => {
+      const { container } = mountDevice({ initialCode: "CODE" });
+      await screen.findByText("SSH workstation");
+      const result = container.querySelector(".device-result") as HTMLElement;
+      expect(result.getAttribute("role")).toBe("status");
+      expect(result.textContent).toBe("");
+      expect(container.querySelector(".device-recovery")).toBeNull();
+      expect(container.querySelector(".device-form")).not.toBeNull();
+    });
+
+    it("promotes the approved waiting panel above the detail rows with conditional recovery guidance", async () => {
+      const user = userEvent.setup();
+      const { container } = mountDevice({ initialCode: "CODE" });
+      await screen.findByText("SSH workstation");
+      const region = container.querySelector(".device-result");
+      await user.selectOptions(screen.getByLabelText("Organization"), org.id);
+      await user.click(approveButton());
+      await screen.findByText("Approved — waiting for CLI storage");
+      // The same live region is updated, never remounted.
+      expect(container.querySelector(".device-result")).toBe(region);
+      expect(region?.getAttribute("role")).toBe("status");
+      expect(region?.textContent).toContain(
+        "Return to your CLI to finish. Approval does not confirm that your CLI stored the key.",
+      );
+      const recovery = container.querySelector(".device-recovery") as Element;
+      expect(recovery.querySelector("h3")?.textContent).toBe(
+        "If local storage fails",
+      );
+      expect(recovery.textContent).toContain(
+        "The CLI attempts to revoke the key. If it reports incomplete revocation, revoke the CLI key in API keys.",
+      );
+      expect(
+        screen.getByRole("link", { name: "API keys" }).getAttribute("href"),
+      ).toBe(pageHref("keys", org.id));
+      expect(precedes(region, container.querySelector(".device-details"))).toBe(
+        true,
+      );
+      expect(
+        precedes(recovery, container.querySelector(".device-details")),
+      ).toBe(true);
+      expect(screen.queryByRole("heading", { name: "Connected" })).toBeNull();
+      expect(container.querySelector(".device-form")).toBeNull();
+      expect(container.textContent).not.toMatch(
+        /raw key|CLI confirmed|Connected/i,
+      );
+      // Organization and key expiry remain visible once the request is no longer pending.
+      expect(screen.getByText("Studio")).not.toBeNull();
+      expect(screen.getByText("No expiry")).not.toBeNull();
+    });
+
+    it.each([
+      [
+        State.DELIVERED,
+        "Connected",
+        "The CLI confirmed that it stored the key. Continue in your CLI to review client settings.",
+      ],
+      [
+        State.DENIED,
+        "Connection denied",
+        "This request was denied. Start a new connection from your CLI if needed.",
+      ],
+      [
+        State.EXPIRED,
+        "Connection expired",
+        "The original deadline has passed. An unclaimed key is revoked by the server. Start a new connection from your CLI.",
+      ],
+      [
+        State.REVOKED,
+        "Connection not completed",
+        "The connection key was revoked. Check the CLI for storage or delivery errors, then start a new connection.",
+      ],
+    ])(
+      "shows exact %s copy before the detail rows without recovery guidance",
+      async (state, heading, body) => {
+        const { container } = mountDevice({
+          initialCode: "CODE",
+          authorization: { state },
+        });
+        await screen.findByRole("heading", { level: 2, name: heading });
+        const region = container.querySelector(".device-result") as Element;
+        expect(region.textContent).toBe(`${heading}${body}`);
+        expect(
+          precedes(region, container.querySelector(".device-details")),
+        ).toBe(true);
+        expect(container.querySelector(".device-recovery")).toBeNull();
+        expect(container.querySelector(".device-form")).toBeNull();
+        expect(screen.getByText("https://router.example.test")).not.toBeNull();
+        expect(container.querySelector(".device-code")?.textContent).toBe(
+          "CODE",
+        );
+      },
+    );
+
+    it("shows the unavailable status without decision controls for an unspecified state", async () => {
+      const { container, approve, deny } = mountDevice({
+        initialCode: "CODE",
+        authorization: { state: State.UNSPECIFIED },
+      });
+      await screen.findByText(
+        "Connection status is unavailable. Refresh before taking any action.",
+      );
+      expect(
+        precedes(
+          container.querySelector(".device-result"),
+          container.querySelector(".device-details"),
+        ),
+      ).toBe(true);
+      expect(screen.queryByRole("button", { name: "Approve connection" })).toBe(
+        null,
+      );
+      expect(screen.queryByRole("button", { name: "Deny" })).toBeNull();
+      expect(resetButton().disabled).toBe(false);
+      expect(approve).not.toHaveBeenCalled();
+      expect(deny).not.toHaveBeenCalled();
+    });
+
+    it("lets a polled terminal state replace the local approval result", async () => {
+      const user = userEvent.setup();
+      let calls = 0;
+      const { container } = mountDevice({
+        initialCode: "CODE",
+        inspect: () => ({
+          authorization: {
+            ...device(),
+            state: ++calls > 1 ? State.REVOKED : State.PENDING,
+          },
+        }),
+      });
+      await screen.findByText("SSH workstation");
+      await user.selectOptions(screen.getByLabelText("Organization"), org.id);
+      await user.click(approveButton());
+      await screen.findByText("Connection not completed");
+      expect(
+        screen.queryByText("Approved — waiting for CLI storage"),
+      ).toBeNull();
+      expect(container.querySelector(".device-recovery")).toBeNull();
+    });
+  });
+
+  describe("unverified details", () => {
+    it("qualifies retained details after an inspection error and keeps decisions blocked", async () => {
+      let calls = 0;
+      const { container, cache, approve, deny } = mountDevice({
+        initialCode: "CODE",
+        inspect: () => {
+          if (++calls > 1)
+            throw new ConnectError("private diagnostic", Code.Unavailable);
+          return { authorization: device() };
+        },
+      });
+      await screen.findByText("SSH workstation");
+      const user = userEvent.setup();
+      await user.selectOptions(screen.getByLabelText("Organization"), org.id);
+      expect(approveButton().disabled).toBe(false);
+      expect(container.querySelector(".device-unverified")).toBeNull();
+      expect(
+        container
+          .querySelector(".device-details")
+          ?.getAttribute("data-verified"),
+      ).toBe("true");
+      await cache.refetchQueries();
+      await screen.findByText(
+        "The service is unavailable. No change has been confirmed.",
+      );
+      const note = container.querySelector(".device-unverified") as Element;
+      expect(note.textContent).toContain("Unverified");
+      const details = container.querySelector(".device-details") as Element;
+      expect(details.getAttribute("data-verified")).toBe("false");
+      expect(details.getAttribute("aria-describedby")).toBe(note.id);
+      // Retained details stay visible, but nothing is actionable.
+      expect(screen.getByText("SSH workstation")).not.toBeNull();
+      expect(approveButton().disabled).toBe(true);
+      expect(denyButton().disabled).toBe(true);
+      expect(screen.queryByText("private diagnostic")).toBeNull();
+      expect(approve).not.toHaveBeenCalled();
+      expect(deny).not.toHaveBeenCalled();
+    });
+
+    it("does not qualify details for a mutation error alone", async () => {
+      const user = userEvent.setup();
+      const { container } = mountDevice({
+        initialCode: "CODE",
+        approve: () => {
+          throw new ConnectError("private", Code.Unavailable);
+        },
+      });
+      await screen.findByText("SSH workstation");
+      await user.selectOptions(screen.getByLabelText("Organization"), org.id);
+      await user.click(approveButton());
+      await screen.findByText(
+        "The service is unavailable. No change has been confirmed.",
+      );
+      expect(container.querySelector(".device-unverified")).toBeNull();
+    });
+
+    it("shows a safe request id with the mapped inspection error and no details", async () => {
+      mountDevice({
+        initialCode: "CODE",
+        inspect: () => {
+          throw new ConnectError("private", Code.NotFound, undefined, [
+            {
+              desc: ErrorDetailSchema,
+              value: { requestId: "req-device-1" },
+            },
+          ]);
+        },
+      });
+      await screen.findByText(
+        "This link or code is invalid or no longer available.",
+      );
+      expect(screen.getByText("Request ID: req-device-1")).not.toBeNull();
+      expect(document.querySelector(".device-unverified")).toBeNull();
+      expect(screen.queryByText("SSH workstation")).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Approve connection" }),
+      ).toBeNull();
+    });
+  });
+
+  describe("focus and announcements", () => {
+    it("focuses the review heading for a supplied code without approving", async () => {
+      const { approve } = mountDevice({ initialCode: "CODE" });
+      await screen.findByText("SSH workstation");
+      expect(document.activeElement).toBe(
+        screen.getByRole("heading", { level: 1, name: "Connect this device?" }),
+      );
+      expect(approve).not.toHaveBeenCalled();
+    });
+
+    it("focuses the heading for a user_code query parameter", async () => {
+      window.history.replaceState(null, "", "/device?user_code=QUERY");
+      const { inspect, approve } = mountDevice();
+      await screen.findByText("SSH workstation");
+      expect(inspect.mock.calls[0][0]).toMatchObject({ userCode: "QUERY" });
+      expect(document.activeElement?.tagName).toBe("H1");
+      expect(approve).not.toHaveBeenCalled();
+    });
+
+    it("leaves the heading unfocused when the code was typed", async () => {
+      const user = userEvent.setup();
+      mountDevice();
+      await user.type(screen.getByLabelText("Connection code"), "TYPED");
+      await user.click(
+        screen.getByRole("button", { name: "Review connection" }),
+      );
+      await screen.findByText("SSH workstation");
+      expect(document.activeElement?.tagName).not.toBe("H1");
+    });
+
+    it("returns focus to the editable input with its prior value on Enter another code", async () => {
+      const user = userEvent.setup();
+      const { approve, deny } = mountDevice({ initialCode: " ABCD-EFGH " });
+      await screen.findByText("SSH workstation");
+      await user.click(resetButton());
+      const input = screen.getByLabelText(
+        "Connection code",
+      ) as HTMLInputElement;
+      expect(document.activeElement).toBe(input);
+      expect(input.value).toBe(" ABCD-EFGH ");
+      expect(input.disabled).toBe(false);
+      expect(input.readOnly).toBe(false);
+      await user.type(input, "X");
+      expect(input.value).toBe(" ABCD-EFGH X");
+      expect(approve).not.toHaveBeenCalled();
+      expect(deny).not.toHaveBeenCalled();
+    });
+
+    it("also resets from a terminal result without denying or revoking", async () => {
+      const user = userEvent.setup();
+      const { deny } = mountDevice({
+        initialCode: "CODE",
+        authorization: { state: State.DENIED },
+      });
+      await screen.findByText("Connection denied");
+      await user.click(resetButton());
+      expect(document.activeElement).toBe(
+        screen.getByLabelText("Connection code"),
+      );
+      expect(
+        (screen.getByLabelText("Connection code") as HTMLInputElement).value,
+      ).toBe("CODE");
+      expect(deny).not.toHaveBeenCalled();
+    });
+
+    it("does not announce the countdown and does not move focus when a result arrives", async () => {
+      const user = userEvent.setup();
+      const { container } = mountDevice({ initialCode: "CODE" });
+      await screen.findByText("SSH workstation");
+      const countdown = screen.getByText(/Code expires in/);
+      expect(countdown.getAttribute("aria-live")).toBe("off");
+      expect(
+        countdown.closest("[role='status'],[aria-live='polite']"),
+      ).toBeNull();
+      await user.selectOptions(screen.getByLabelText("Organization"), org.id);
+      await user.click(approveButton());
+      await screen.findByText("Approved — waiting for CLI storage");
+      const region = container.querySelector(".device-result") as Element;
+      expect(region.contains(document.activeElement)).toBe(false);
+      expect(document.activeElement?.tagName).not.toBe("H2");
+      expect(region.getAttribute("aria-live")).toBeNull();
+    });
+
+    it("keeps the empty result region exposed and suppresses only its visual chrome", () => {
+      const css = accountCss();
+      const rule = css.match(/\.device-result:empty \{([^}]*)\}/);
+      expect(rule).not.toBeNull();
+      const body = rule?.[1] ?? "";
+      // display: none would remove the live region from the accessibility tree
+      // until its content arrives, so the first announcement could be missed.
+      expect(body).not.toMatch(/display\s*:/);
+      expect(body).not.toMatch(/visibility\s*:/);
+      expect(body).toMatch(/margin:\s*0;/);
+      expect(body).toMatch(/padding:\s*0;/);
+      expect(body).toMatch(/border:\s*0;/);
+      expect(body).toMatch(/background:\s*transparent;/);
+    });
+
+    it("announces local expiry once through the status region", async () => {
+      const { container, approve } = mountDevice({
+        initialCode: "CODE",
+        inspect: () => ({
+          authorization: {
+            ...device(),
+            expiresAt: timestampFromDate(new Date(Date.now() + 1500)),
+          },
+        }),
+      });
+      await screen.findByText("SSH workstation");
+      expect(container.querySelector(".device-result")?.textContent).toBe("");
+      await screen.findByText("Connection expired", undefined, {
+        timeout: 4000,
+      });
+      expect(screen.getAllByText("Connection expired")).toHaveLength(1);
+      expect(
+        screen.getByText("Connection expired").closest("[role='status']"),
+      ).toBe(container.querySelector(".device-result"));
+      expect(
+        screen.queryByRole("button", { name: "Approve connection" }),
+      ).toBeNull();
+      expect(approve).not.toHaveBeenCalled();
+    });
+  });
+
   it("scopes the device layout away from other AccountSurface consumers", async () => {
     const { container } = mount(
       <InvitationPage token="invitation-token" />,

@@ -745,7 +745,6 @@
   "originalDeadline": "Original deadline: {value0}",
   "approvedWaitingForCliStorage": "Approved — waiting for CLI storage",
   "returnToYourCliToFinishApproval": "Return to your CLI to finish. Approval does not confirm that your CLI stored the key.",
-  "ifLocalStorageFailsTheCliAttempts": "If local storage fails, the CLI attempts to revoke the key. If it reports incomplete revocation, revoke the CLI key in ",
   "theCliConfirmedThatItStoredThe": "The CLI confirmed that it stored the key. Continue in your CLI to review client settings.",
   "connectionDenied": "Connection denied",
   "thisRequestWasDeniedStartANew": "This request was denied. Start a new connection from your CLI if needed.",
@@ -1476,5 +1475,8 @@
   "currentStep": "Current step",
   "originalDeadlineLabel": "Original deadline",
   "yourCliKeyWillBelongTo": "Your CLI key will belong to this organization.",
-  "loadingOrganizations": "Loading organizations…"
+  "loadingOrganizations": "Loading organizations…",
+  "unverifiedTheseDetailsCouldNotBe": "Unverified: these details could not be refreshed and may be out of date. Do not act on them until the check succeeds.",
+  "ifLocalStorageFails": "If local storage fails",
+  "theCliAttemptsToRevokeThe": "The CLI attempts to revoke the key. If it reports incomplete revocation, revoke the CLI key in "
 }
