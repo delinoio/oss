@@ -169,4 +169,4 @@ Update this contract, the project index, and affected producer/consumer contract
 
 ## Monorepo integration
 
-Use `pnpm dev:tairouter` for local Compose evaluation and `pnpm dev:tairouter:source` for configured source development and the centrally planned `tairouter` job in `.github/workflows/CI.yml` for affected fixture validation. These replace the standalone repository root commands and CI workflow. Public docs are built through `apps/public-docs`, including all existing TaiRouter guides. Stage future release assets under the `tairouter@v<version>` tag namespace; staging does not publish artifacts.
+Use `pnpm dev:tairouter` for local Compose evaluation and `pnpm dev:tairouter:source` for configured source development and the centrally planned `tairouter` job in `.github/workflows/CI.yml` for affected fixture validation. These replace the standalone repository root commands and CI workflow. Public docs are built through `apps/labs-docs`, including all existing English TaiRouter guides at `https://docs.labs.delino.io/tairouter/`. Stage future release assets under the `tairouter@v<version>` tag namespace; staging does not publish artifacts.

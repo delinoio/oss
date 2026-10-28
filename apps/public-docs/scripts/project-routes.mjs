@@ -1,18 +1,5 @@
 // Stable public routes shared by generated-output validators.
 export const projectRoutes = {
-  tairouter: [
-    "/",
-    "/guide/clients",
-    "/guide/compatibility",
-    "/guide/configuration",
-    "/guide/installation",
-    "/guide/migration",
-    "/guide/native-compatibility",
-    "/guide/operations",
-    "/guide/organizations",
-    "/guide/providers",
-    "/guide/recovery",
-  ],
   clibox: [
     "/releases",
     "/troubleshooting",

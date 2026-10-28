@@ -33,5 +33,17 @@
   "theme.promptCopyText": "プロンプトをコピー",
   "theme.promptCopiedText": "コピーしました",
   "theme.promptExpandText": "展開",
-  "theme.promptCollapseText": "折りたたむ"
+  "theme.promptCollapseText": "折りたたむ",
+  "tairouter": "TaiRouter（英語）",
+  "tairouterOverview": "概要",
+  "tairouterInstallation": "インストール",
+  "tairouterConfiguration": "設定",
+  "tairouterOrganizations": "組織",
+  "tairouterProviders": "プロバイダーとルーティング",
+  "tairouterClients": "クライアント",
+  "tairouterNative": "ネイティブ互換性",
+  "tairouterCompatibility": "互換性",
+  "tairouterOperations": "運用",
+  "tairouterRecovery": "復旧",
+  "tairouterMigration": "移行"
 }

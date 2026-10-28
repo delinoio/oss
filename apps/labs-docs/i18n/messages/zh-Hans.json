@@ -33,5 +33,17 @@
   "theme.promptCopyText": "复制提示词",
   "theme.promptCopiedText": "已复制",
   "theme.promptExpandText": "展开",
-  "theme.promptCollapseText": "收起"
+  "theme.promptCollapseText": "收起",
+  "tairouter": "TaiRouter（英语）",
+  "tairouterOverview": "概述",
+  "tairouterInstallation": "安装",
+  "tairouterConfiguration": "配置",
+  "tairouterOrganizations": "组织",
+  "tairouterProviders": "提供商与路由",
+  "tairouterClients": "客户端",
+  "tairouterNative": "原生兼容性",
+  "tairouterCompatibility": "兼容性",
+  "tairouterOperations": "运维",
+  "tairouterRecovery": "恢复",
+  "tairouterMigration": "迁移"
 }

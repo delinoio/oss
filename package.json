@@ -34,7 +34,7 @@
     "i18n:profiles": "node scripts/localization/cli.mjs profiles",
     "dev:tairouter:stop": "node scripts/tairouter/local.mjs stop",
     "dev:tairouter:logs": "node scripts/tairouter/local.mjs logs",
-    "dev:tairouter:source": "turbo run dev --filter=@tairouter/server --filter=@tairouter/console --filter=public-docs"
+    "dev:tairouter:source": "turbo run dev --filter=@tairouter/server --filter=@tairouter/console --filter=labs-docs"
   },
   "pnpm": {
     "overrides": {

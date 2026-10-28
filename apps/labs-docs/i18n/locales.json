@@ -33,5 +33,20 @@
       "lang": "pt-BR",
       "label": "Português (Brasil)"
     }
-  ]
+  ],
+  "sourceOnly": {
+    "pages": [
+      "tairouter/guide/clients.md",
+      "tairouter/guide/compatibility.md",
+      "tairouter/guide/configuration.md",
+      "tairouter/guide/installation.md",
+      "tairouter/guide/migration.md",
+      "tairouter/guide/native-compatibility.md",
+      "tairouter/guide/operations.md",
+      "tairouter/guide/organizations.md",
+      "tairouter/guide/providers.md",
+      "tairouter/guide/recovery.md",
+      "tairouter/index.md"
+    ]
+  }
 }

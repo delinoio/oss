@@ -33,5 +33,17 @@
   "theme.promptCopyText": "프롬프트 복사",
   "theme.promptCopiedText": "복사됨",
   "theme.promptExpandText": "펼치기",
-  "theme.promptCollapseText": "접기"
+  "theme.promptCollapseText": "접기",
+  "tairouter": "TaiRouter (영어)",
+  "tairouterOverview": "개요",
+  "tairouterInstallation": "설치",
+  "tairouterConfiguration": "설정",
+  "tairouterOrganizations": "조직",
+  "tairouterProviders": "제공업체와 라우팅",
+  "tairouterClients": "클라이언트",
+  "tairouterNative": "네이티브 호환성",
+  "tairouterCompatibility": "호환성",
+  "tairouterOperations": "운영",
+  "tairouterRecovery": "복구",
+  "tairouterMigration": "마이그레이션"
 }

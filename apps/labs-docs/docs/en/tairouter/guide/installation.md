@@ -69,6 +69,6 @@ The Compose service publishes HTTP only on host loopback port 8080 and does not 
 
 ## Publication boundaries
 
-The public documentation can be hosted as a static site on Cloudflare Pages. That does not deploy the TaiRouter service. No public documentation domain or hosted service is promised here.
+The public documentation can be hosted as a static site on Cloudflare Pages. That does not deploy the TaiRouter service. The canonical documentation address is `https://docs.labs.delino.io/tairouter/`. This address does not provide a hosted TaiRouter service.
 
 The client executable is `tairouter`, with standalone binaries and checksums and an npm installer named `@delino/tairouter`. Package publication and download availability must be confirmed for a release before installation. See [client prerequisites](clients.md).

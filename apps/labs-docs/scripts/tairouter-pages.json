@@ -1,0 +1,13 @@
+[
+  { "page": "index", "label": "tairouterOverview" },
+  { "page": "guide/installation", "label": "tairouterInstallation" },
+  { "page": "guide/configuration", "label": "tairouterConfiguration" },
+  { "page": "guide/organizations", "label": "tairouterOrganizations" },
+  { "page": "guide/providers", "label": "tairouterProviders" },
+  { "page": "guide/clients", "label": "tairouterClients" },
+  { "page": "guide/native-compatibility", "label": "tairouterNative" },
+  { "page": "guide/compatibility", "label": "tairouterCompatibility" },
+  { "page": "guide/operations", "label": "tairouterOperations" },
+  { "page": "guide/recovery", "label": "tairouterRecovery" },
+  { "page": "guide/migration", "label": "tairouterMigration" }
+]

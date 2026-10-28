@@ -2,7 +2,7 @@
 
 ## Scope
 
-Owns `apps/public-docs/docs/tairouter`, English public guides published by the consolidated documentation application. Repository source-of-truth contracts remain in `docs/`.
+Owns `apps/labs-docs/docs/en/tairouter`, English public guides published by the independent Delino Labs documentation application. TaiRouter means **Team AI Router** and is an open-source Delino Labs product. Repository source-of-truth contracts remain in `docs/`.
 
 ## Runtime and Language
 
@@ -24,15 +24,17 @@ Include English public guidance for all of:
 6. Observability and troubleshooting.
 7. Manual migration from existing setups.
 
-Include internal design and source-of-truth contract documents. Exclude internal runbooks.
+Keep internal design, source-of-truth contracts and operational internals in repository `docs/`. Exclude internal runbooks from public pages.
 
-Keep public docs focused on user/operator workflows and supported interfaces; keep internal implementation details in repository contracts. `apps/public-docs` builds and publishes the guides at `https://oss.delino.io/tairouter`. Keep all eleven routes in the shared route catalog, navigation and site selector. The standalone upstream docs app is replaced by this content root; no second publisher or development port is introduced.
+Keep public docs focused on user/operator workflows and supported interfaces; keep internal implementation details in repository contracts. `apps/labs-docs` builds and publishes the guides at `https://docs.labs.delino.io/tairouter/`. Keep all eleven routes in the Labs route catalog and navigation. Preserve all migrated guide content and verification limits. Publish these guides in English first, with exact `sourceOnly.pages` entries in the Labs localization registry. Every localized Labs sidebar labels the TaiRouter group as English and links to the same unprefixed routes. Do not add translated copies or missing-language route aliases.
+
+The marketing page at `https://labs.delino.io/tairouter/` links to these guides and introduces the product in all eight Labs languages. Remove TaiRouter content, route registration and site-selector entries from `apps/public-docs`; it no longer publishes TaiRouter. The new canonical location is a route migration with no old-host redirect or alias. Existing external links require updating by their owners.
 
 Exclude automatic import of opencodex settings, credentials, or usage. Users register providers/accounts/routing again using manual migration guidance.
 
 Exclude user data export. Provide console inspection/deletion and operator backup only.
 
-Publish supported workflows and interfaces with actual compatibility and verification limits. Do not copy repository-internal contracts or operational internals into public pages. The canonical publication origin is `https://oss.delino.io`; source integration does not establish deployment acceptance.
+Publish supported workflows and interfaces with actual compatibility and verification limits. Do not copy repository-internal contracts or operational internals into public pages. The canonical publication origin is `https://docs.labs.delino.io`; source integration does not establish deployment acceptance.
 
 ## Storage
 
@@ -48,7 +50,7 @@ Documentation build/dev diagnostics must not reveal secrets. Documentation serve
 
 ## Build and Test
 
-Run `pnpm test` from `apps/public-docs` after frontend changes. Use root `pnpm dev:public-docs` on fixed loopback port 46302 for documentation development. Build and validate navigation, links, examples, and the seven required guidance areas against owning contracts. Do not label fixtures as live operational acceptance.
+Run `pnpm test` from `apps/labs-docs` after frontend changes. Use root `pnpm dev:labs-docs` on fixed loopback port 46303 for documentation development. The existing Labs Docs publisher owns deployment; no additional app or port is introduced. Build and validate navigation, links, examples, and the seven required guidance areas against owning contracts. Do not label fixtures as live operational acceptance.
 
 ## Dependencies and Integrations
 

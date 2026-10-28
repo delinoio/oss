@@ -2,7 +2,7 @@
 
 ## Goal
 
-Build a self-hosted, organization-based, multi-tenant and multi-user AI provider router. Each user exclusively uses personal provider credentials, account pools, and routing within each organization. Deliver a Go service and client configuration CLI, a multilingual responsive React console, and a Docker Compose deployment. PostgreSQL owns durable and encrypted temporary state; R2 holds temporary generated images and hosted video output under the service media limits.
+TaiRouter means **Team AI Router** and is an open-source Delino Labs product. Build a self-hosted, organization-based, multi-tenant and multi-user AI provider router. Each user exclusively uses personal provider credentials, account pools, and routing within each organization. Deliver a Go service and client configuration CLI, a multilingual responsive React console, and a Docker Compose deployment. PostgreSQL owns durable and encrypted temporary state; R2 holds temporary generated images and hosted video output under the service media limits.
 
 ## Project ID
 
@@ -10,9 +10,9 @@ Build a self-hosted, organization-based, multi-tenant and multi-user AI provider
 
 ### Naming boundary
 
-TaiRouter replaces the former AIPRouter name across repository paths, executables, workspace packages, configuration, management RPCs, storage namespaces, and distribution assets. The canonical identifiers are `tairouter`, `TAIROUTER_*`, `@tairouter/*`, `@delino/tairouter`, and `tairouter.v1`. Public documentation uses `/tairouter`.
+TaiRouter replaces the former AIPRouter name across repository paths, executables, workspace packages, configuration, management RPCs, storage namespaces, and distribution assets. The canonical identifiers are `tairouter`, `TAIROUTER_*`, `@tairouter/*`, `@delino/tairouter`, and `tairouter.v1`. Public documentation uses `https://docs.labs.delino.io/tairouter/`; product marketing uses `https://labs.delino.io/tairouter/`.
 
-This rename does not provide legacy aliases or automatic migration of existing deployments, local evaluation volumes, CLI state, OS credential-store entries, or database schemas. Preserve the previous installation and its protected backups before evaluating the renamed installation. Do not treat an existing database as a fresh TaiRouter database or mix old and new service/CLI versions. The [public migration guide](../apps/public-docs/docs/tairouter/guide/migration.md) describes the user-facing boundary.
+This rename does not provide legacy aliases or automatic migration of existing deployments, local evaluation volumes, CLI state, OS credential-store entries, or database schemas. Preserve the previous installation and its protected backups before evaluating the renamed installation. Do not treat an existing database as a fresh TaiRouter database or mix old and new service/CLI versions. The [public migration guide](../apps/labs-docs/docs/en/tairouter/guide/migration.md) describes the user-facing boundary.
 
 ## Domain Ownership Map
 
@@ -27,7 +27,8 @@ The following canonical paths define component ownership. Contracts describe req
 | Protocol          | `protos/tairouter/v1`                           | Protobuf source and generated Go bindings                                     |
 | TypeScript client | `packages/tairouter-client`                     | Generated management bindings for console                                     |
 | Console           | `apps/tairouter`                                | React/Rsbuild console; generated Connect RPC consumer                         |
-| Public docs       | `apps/public-docs/docs/tairouter`               | Consolidated Rspress publication; curated user/operator guidance              |
+| Public docs       | `apps/labs-docs/docs/en/tairouter`              | Labs Rspress publication; English user/operator guidance                      |
+| Marketing         | `apps/labs-site/tairouter.html`                 | Localized static product page at `https://labs.delino.io/tairouter/`          |
 | Distribution      | `packaging/tairouter`                           | Compose/npm/observability assets; operations contract owns integration        |
 | Validation        | `scripts/tairouter`                             | Reproducible fixtures and validation; operations contract owns release gates  |
 
@@ -35,7 +36,7 @@ The service executable composes `internal/service`, `internal/config`, `internal
 
 Root `pnpm dev:tairouter` provides the local Compose evaluation described in the [environment contract](repository-environment-contract.md#local-development), including generated private configuration and automatic migrations. `scripts/tairouter/local.mjs` owns startup, logs and stop; `packaging/tairouter/compose.local.yml` isolates evaluation from production assets.
 
-The service workspace manifest and package-level Turbo configuration expose its Go development command to root `pnpm dev:tairouter:source`. The console and consolidated public documentation workspace commands join the same persistent, uncached Turbo task under the [workflow contract](repository-workflow-contract.md#development).
+The service workspace manifest and package-level Turbo configuration expose its Go development command to root `pnpm dev:tairouter:source`. The console and Labs documentation workspace commands join the same persistent, uncached Turbo task under the [workflow contract](repository-workflow-contract.md#development).
 
 Affected validation runs in the centrally planned `tairouter` job in `.github/workflows/CI.yml`. The [workflow contract](repository-workflow-contract.md) owns selection and final result aggregation; the [operations contract](servers-tairouter-operations-contract.md) owns validation coverage and acceptance boundaries.
 

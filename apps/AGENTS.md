@@ -47,3 +47,4 @@
 
 - [TaiRouter](../docs/project-tairouter.md)
 - [TaiRouter domain contract](../docs/apps-tairouter-console-contract.md)
+- [TaiRouter public documentation](../docs/apps-tairouter-docs-contract.md): Labs Docs owns the English public guides; Labs Site owns the localized product page. The consolidated public-docs app does not publish this product.

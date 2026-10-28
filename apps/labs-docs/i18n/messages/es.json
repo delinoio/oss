@@ -33,5 +33,17 @@
   "theme.promptCopyText": "Copiar prompt",
   "theme.promptCopiedText": "Copiado",
   "theme.promptExpandText": "Expandir",
-  "theme.promptCollapseText": "Contraer"
+  "theme.promptCollapseText": "Contraer",
+  "tairouter": "TaiRouter (inglés)",
+  "tairouterOverview": "Descripción general",
+  "tairouterInstallation": "Instalación",
+  "tairouterConfiguration": "Configuración",
+  "tairouterOrganizations": "Organizaciones",
+  "tairouterProviders": "Proveedores y rutas",
+  "tairouterClients": "Clientes",
+  "tairouterNative": "Compatibilidad nativa",
+  "tairouterCompatibility": "Compatibilidad",
+  "tairouterOperations": "Operaciones",
+  "tairouterRecovery": "Recuperación",
+  "tairouterMigration": "Migración"
 }

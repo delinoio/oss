@@ -19,12 +19,13 @@ Provide a static documentation site for Delino Labs at `https://docs.labs.delino
 - [Labs documentation foundation](apps-labs-docs-foundation.md)
 
 - [Shared Labs localization](apps-labs-localization-contract.md)
+- [TaiRouter public documentation](apps-tairouter-docs-contract.md)
 
 ## Cross-Domain Invariants
 
 - The canonical production origin is `https://docs.labs.delino.io` with base `/`.
 - This app is independent of the consolidated `public-docs` publisher and site registry.
-- Public pages use the default Rspress theme and English source text with registered translations. Internal contracts remain in `docs/`.
+- Public pages use the default Rspress theme and English source text with registered translations. TaiRouter is an open-source Delino Labs product; its eleven public guides are initially English-only at `/tairouter/` and `/tairouter/guide/*`, linked from every language sidebar. Internal contracts remain in `docs/`.
 - TypeScript configuration and Markdown content use Rspress, with Cloudflare Pages as the deployment target, following repository defaults.
 
 ## Change Policy

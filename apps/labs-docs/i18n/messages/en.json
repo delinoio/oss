@@ -33,5 +33,17 @@
   "theme.promptCopyText": "Copy Prompt",
   "theme.promptCopiedText": "Copied",
   "theme.promptExpandText": "Expand",
-  "theme.promptCollapseText": "Collapse"
+  "theme.promptCollapseText": "Collapse",
+  "tairouter": "TaiRouter (English)",
+  "tairouterOverview": "Overview",
+  "tairouterInstallation": "Installation",
+  "tairouterConfiguration": "Configuration",
+  "tairouterOrganizations": "Organizations",
+  "tairouterProviders": "Providers and routing",
+  "tairouterClients": "Clients",
+  "tairouterNative": "Native compatibility",
+  "tairouterCompatibility": "Compatibility",
+  "tairouterOperations": "Operations",
+  "tairouterRecovery": "Recovery",
+  "tairouterMigration": "Migration"
 }
