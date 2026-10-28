@@ -202,7 +202,10 @@ describe("canonical console routes", () => {
     expect(css).toContain("--not-found-padding: 24px;");
   });
   it("matches every server allowlisted route and serves every generated route", () => {
-    const source = readFileSync("../../servers/aiprouter/console.go", "utf8");
+    const source = readFileSync(
+      "../../servers/aiprouter/internal/console/console.go",
+      "utf8",
+    );
     const paths = [...source.matchAll(/"(\/[^\"]*)": true/g)].map(
       (match) => match[1],
     );

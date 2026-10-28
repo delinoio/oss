@@ -25,6 +25,8 @@ The following canonical paths define component ownership. Contracts describe req
 | Distribution      | `packaging/aiprouter`                           | Compose/npm/observability assets; operations contract owns integration        |
 | Validation        | `scripts/aiprouter`                             | Reproducible fixtures and validation; operations contract owns release gates  |
 
+The service executable composes `internal/service`, `internal/config`, `internal/console`, `internal/auth`, and `internal/observability` under `servers/aiprouter`. The [service package boundaries](servers-aiprouter-service-contract.md#internal-package-boundaries) define ownership and dependency direction. These packages share one deployment and the existing root Go module.
+
 Root `pnpm dev:aiprouter` provides the local Compose evaluation described in the [environment contract](repository-environment-contract.md#local-development), including generated private configuration and automatic migrations. `scripts/aiprouter/local.mjs` owns startup, logs and stop; `packaging/aiprouter/compose.local.yml` isolates evaluation from production assets.
 
 The service workspace manifest and package-level Turbo configuration expose its Go development command to root `pnpm dev:aiprouter:source`. The console and consolidated public documentation workspace commands join the same persistent, uncached Turbo task under the [workflow contract](repository-workflow-contract.md#development).
