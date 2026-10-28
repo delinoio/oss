@@ -1,11 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale } from "../i18n";
 import { pageHref } from "../routes";
-import { useState } from "react";
-import { useMutation, useQuery } from "@connectrpc/connect-query";
+import { useEffect, useId, useRef, useState } from "react";
+import {
+  createConnectQueryKey,
+  useMutation,
+  useQuery,
+} from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   AccountService,
+  ErrorDetailSchema,
+  ErrorReason,
   InvitationService,
   LifecycleState,
   OrganizationService,
@@ -37,6 +43,13 @@ export function InvitationPage({
       "",
   );
   const [input, setInput] = useState("");
+  const [inputInvalid, setInputInvalid] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const pagingRef = useRef<HTMLButtonElement>(null);
+  const restorePagingFocus = useRef(false);
+  const inputId = useId();
+  const helperId = useId();
+  const errorId = useId();
   const invitationId =
     new URLSearchParams(window.location.search).get("invitation_id") ?? "";
   const session = useQuery(
@@ -55,19 +68,86 @@ export function InvitationPage({
   });
   const cache = useQueryClient();
   const organization = accept.data?.organization;
-  const invitation = token
-    ? detail.data?.invitation
-    : mine.invitations.find((value) => value.id === invitationId);
+  const manualEntry = !token && !invitationId;
+  const sessionEmail = session.isSuccess ? (session.data?.email ?? "") : "";
+  // Authorized detail is only presented for a valid session and a source that
+  // has not lost authority; retained query data is otherwise dropped.
+  const contextRevoked = [
+    session.error,
+    token ? detail.error : mine.error,
+  ].some(revokesInvitationContext);
+  const reviewContext = session.isSuccess && !contextRevoked;
+  const invitation = !reviewContext
+    ? undefined
+    : token
+      ? detail.data?.invitation
+      : mine.invitations.find((value) => value.id === invitationId);
   const now = useNow();
   const deadline = timestampMs(invitation?.expiresAt);
   const expired = deadline !== undefined && deadline <= now;
+  const pending = invitation?.state === LifecycleState.PENDING;
   const eligible =
-    invitation?.state === LifecycleState.PENDING &&
+    pending &&
     deadline !== undefined &&
     !expired &&
     session.isSuccess &&
     !detail.isError &&
-    !mine.isError;
+    !mine.isError &&
+    !contextRevoked;
+  const loading =
+    !manualEntry &&
+    (session.isPending || (token ? detail.isPending : mine.isPending));
+  const pagingMore = !token && mine.isFetchingNextPage;
+  // Another account must never see detail loaded for the previous one.
+  const lastEmail = useRef("");
+  useEffect(() => {
+    if (!sessionEmail) return;
+    if (lastEmail.current && lastEmail.current !== sessionEmail) {
+      void cache.resetQueries({
+        queryKey: createConnectQueryKey({
+          schema: InvitationService.method.getInvitation,
+          cardinality: undefined,
+        }),
+      });
+      void cache.resetQueries({
+        queryKey: createConnectQueryKey({
+          schema: InvitationService.method.listMyInvitations,
+          cardinality: undefined,
+        }),
+      });
+    }
+    lastEmail.current = sessionEmail;
+  }, [cache, sessionEmail]);
+  // Keep keyboard focus on the paging control once its fetch settles.
+  useEffect(() => {
+    if (mine.isFetching || !restorePagingFocus.current) return;
+    restorePagingFocus.current = false;
+    pagingRef.current?.focus();
+  }, [mine.isFetching]);
+  let statusMessage = "";
+  if (organization)
+    statusMessage = translate("youJoined", { value0: organization.name });
+  else if (loading) statusMessage = translate("loadingInvitation");
+  else if (pagingMore) statusMessage = translate("checkingMoreInvitations");
+  else if (invitation && pending && expired)
+    statusMessage = invitationStates[LifecycleState.EXPIRED] ?? "";
+  else if (invitation && !pending)
+    statusMessage =
+      invitationStates[invitation.state] ??
+      translate("invitationStatusIsUnavailable");
+  const notFoundSoFar =
+    !token &&
+    reviewContext &&
+    mine.isSuccess &&
+    !invitation &&
+    mine.hasNextPage;
+  const exhausted =
+    !token &&
+    reviewContext &&
+    mine.isSuccess &&
+    !invitation &&
+    !mine.hasNextPage;
+  const reviewable = Boolean(invitation) && pending && !expired;
   return (
     <AccountSurface
       title={
@@ -76,147 +156,210 @@ export function InvitationPage({
           : translate("joinAnOrganization")
       }
       subtitle={translate("useTheAccountWithTheInvitedVerified")}
+      className="invitation-surface"
+      focusHeading={!manualEntry}
     >
-      {organization ? (
-        <div className="account-card">
-          <p role="status">
-            {translate("youJoined", { value0: organization.name })}
+      <div className="account-card invitation-card">
+        {!organization && sessionEmail && (
+          <p className="invitation-identity">
+            {translate("signedInAs", { value0: sessionEmail })}
           </p>
-          <a href={pageHref("overview", organization.id)}>
-            {translate("openOrganization")}
-          </a>
-        </div>
-      ) : (
-        <div className="account-card">
+        )}
+        {/* Always mounted so state changes are announced politely once. */}
+        <p role="status" className="invitation-status">
+          {statusMessage}
+        </p>
+        {!organization && (
           <AccountError
             error={session.error}
             retry={() => {
               void session.refetch();
             }}
           />
-          {!token && !invitationId ? (
-            <form
-              onSubmit={(event) => {
-                event.preventDefault();
-                // Keep invitation credentials in memory; never persist pasted links in browser storage.
-                try {
-                  const url = new URL(input, window.location.origin);
-                  setToken(url.searchParams.get("token") ?? input.trim());
-                } catch {
-                  setToken(input.trim());
-                }
+        )}
+        {organization ? (
+          <p className="invitation-return">
+            <a href={pageHref("overview", organization.id)}>
+              {translate("openOrganization")}
+            </a>
+          </p>
+        ) : manualEntry ? (
+          <form
+            noValidate
+            onSubmit={(event) => {
+              event.preventDefault();
+              // Whitespace-only input is validation, never a lookup request.
+              if (!input.trim()) {
+                setInputInvalid(true);
+                inputRef.current?.focus();
+                return;
+              }
+              // Keep invitation credentials in memory; never persist pasted links in browser storage.
+              try {
+                const url = new URL(input, window.location.origin);
+                setToken(url.searchParams.get("token") ?? input.trim());
+              } catch {
+                setToken(input.trim());
+              }
+            }}
+          >
+            <label htmlFor={inputId}>{translate("invitationLinkOrCode")}</label>
+            <input
+              id={inputId}
+              ref={inputRef}
+              autoFocus
+              type="text"
+              autoComplete="off"
+              spellCheck={false}
+              value={input}
+              aria-invalid={inputInvalid || undefined}
+              aria-describedby={
+                inputInvalid ? `${helperId} ${errorId}` : helperId
+              }
+              onChange={(event) => {
+                setInput(event.target.value);
+                setInputInvalid(false);
               }}
-            >
-              <label>
-                {translate("invitationLinkOrCode")}
-                <input
-                  autoFocus
-                  type="text"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={input}
-                  required
-                  onChange={(event) => setInput(event.target.value)}
-                />
-              </label>
-              <button className="account-primary" type="submit">
-                {translate("reviewInvitation")}
-              </button>
-            </form>
-          ) : (
-            <>
-              <p>
-                {translate("signedInAs", {
-                  value0: session.data?.email ?? "…",
-                })}
+            />
+            <p id={helperId} className="account-hint invitation-helper">
+              {translate("pasteTheInvitationLinkOrCode")}
+            </p>
+            {inputInvalid && (
+              <p id={errorId} role="alert" className="invitation-field-error">
+                {translate("enterTheInvitationLinkOrCode")}
               </p>
-              {(token ? detail.isPending : mine.isPending) && (
-                <p role="status">{translate("loadingInvitation")}</p>
-              )}
-              <AccountError
-                error={detail.error ?? mine.error}
-                retry={() => {
-                  if (token) void detail.refetch();
-                  else void mine.refetch();
-                }}
-              />
-              {invitation && (
-                <>
+            )}
+            <button className="account-primary invitation-accept" type="submit">
+              {translate("reviewInvitation")}
+            </button>
+          </form>
+        ) : (
+          <>
+            {loading && (
+              <div className="invitation-skeleton" aria-hidden="true">
+                <span className="invitation-skeleton-line invitation-skeleton-title" />
+                <span className="invitation-skeleton-line" />
+                <span className="invitation-skeleton-line" />
+                <span className="invitation-skeleton-line" />
+              </div>
+            )}
+            <AccountError
+              error={detail.error ?? mine.error}
+              retry={() => {
+                if (token) void detail.refetch();
+                else if (mine.isFetchNextPageError) void mine.fetchNextPage();
+                else void mine.refetch();
+              }}
+            />
+            {invitation && (
+              <>
+                <header className="invitation-organization">
                   <h2>{invitation.organizationName}</h2>
-                  <dl className="account-details">
-                    <dt>{translate("invitedEmail")}</dt>
-                    <dd>{invitation.email}</dd>
-                    <dt>{translate("role")}</dt>
-                    <dd>
-                      {invitation.role === Role.ADMINISTRATOR
-                        ? translate("administrator")
-                        : invitation.role === Role.MEMBER
-                          ? translate("member")
-                          : translate("unknown")}
-                    </dd>
-                    <dt>{translate("expires_f6725f")}</dt>
-                    <dd>{dateLabel(invitation.expiresAt)}</dd>
-                  </dl>
-                  {expired && invitation.state === LifecycleState.PENDING ? (
-                    <p role="status">
-                      {translate("thisInvitationHasExpiredAskAnAdministrator")}
-                    </p>
-                  ) : (
-                    invitation.state !== LifecycleState.PENDING && (
-                      <p role="status">
-                        {invitationStates[invitation.state] ??
-                          translate("invitationStatusIsUnavailable")}
-                      </p>
-                    )
+                  {reviewable && (
+                    <span className="invitation-badge">
+                      {translate("oauthStatePending")}
+                    </span>
                   )}
-                </>
-              )}
-              {!token && mine.isSuccess && !invitation && !mine.hasNextPage && (
-                <p role="alert">
-                  {translate("thisInvitationIsNoLongerPendingOr")}
-                </p>
-              )}
-              <AccountError error={accept.error} />
-              {!token && mine.hasNextPage && !invitation && (
-                <button
-                  type="button"
-                  disabled={mine.isFetching}
-                  onClick={() => {
-                    void mine.fetchNextPage();
-                  }}
-                >
-                  {translate("checkMoreInvitations")}
-                </button>
-              )}
+                </header>
+                {reviewable && (
+                  <p>{translate("reviewYourInvitationBeforeJoining")}</p>
+                )}
+                <dl className="account-details invitation-details">
+                  <dt>{translate("invitedEmail")}</dt>
+                  <dd>{invitation.email}</dd>
+                  <dt>{translate("role")}</dt>
+                  <dd>
+                    {invitation.role === Role.ADMINISTRATOR
+                      ? translate("administrator")
+                      : invitation.role === Role.MEMBER
+                        ? translate("member")
+                        : translate("unknown")}
+                  </dd>
+                  <dt>{translate("expires_f6725f")}</dt>
+                  <dd>{dateLabel(invitation.expiresAt)}</dd>
+                </dl>
+                {reviewable && (
+                  <p className="invitation-note">
+                    {translate("joiningDoesNotCopyProviderCredentials")}
+                  </p>
+                )}
+              </>
+            )}
+            {notFoundSoFar && (
+              <p className="invitation-unresolved">
+                {translate("thisInvitationHasNotBeenFound")}
+              </p>
+            )}
+            {exhausted && (
+              <p role="alert" className="invitation-unresolved">
+                {translate("thisInvitationIsNoLongerPendingOr")}
+              </p>
+            )}
+            <AccountError error={accept.error} />
+            {notFoundSoFar && (
               <button
+                ref={pagingRef}
                 type="button"
-                className="account-primary"
-                disabled={!eligible || accept.isPending}
+                className="invitation-paging"
+                disabled={mine.isFetching}
                 onClick={() => {
-                  if (!eligible) return;
-                  accept.mutate(token ? { token } : { invitationId }, {
-                    onSuccess: (response) => {
-                      if (response.organization) {
-                        void cache.invalidateQueries();
-                        onAccepted?.(response.organization);
-                      }
-                    },
-                    onError: () => {
-                      if (token) void detail.refetch();
-                      else void mine.refetch();
-                    },
-                  });
+                  restorePagingFocus.current = true;
+                  void mine.fetchNextPage();
                 }}
               >
-                {accept.isPending
-                  ? translate("message_a168fd64e9")
-                  : translate("acceptInvitation")}
+                {translate("checkMoreInvitations")}
               </button>
-            </>
-          )}
-        </div>
-      )}
+            )}
+            <button
+              type="button"
+              className="account-primary invitation-accept"
+              disabled={!eligible || accept.isPending}
+              onClick={() => {
+                if (!eligible || accept.isPending) return;
+                accept.mutate(token ? { token } : { invitationId }, {
+                  onSuccess: (response) => {
+                    if (response.organization) {
+                      void cache.invalidateQueries();
+                      onAccepted?.(response.organization);
+                    }
+                  },
+                  onError: () => {
+                    if (token) void detail.refetch();
+                    else void mine.refetch();
+                  },
+                });
+              }}
+            >
+              {accept.isPending
+                ? translate("message_a168fd64e9")
+                : translate("acceptInvitation")}
+            </button>
+            {reviewable && (
+              <p className="account-hint invitation-helper">
+                {translate("youJoinOnlyAfterYouAccept")}
+              </p>
+            )}
+          </>
+        )}
+      </div>
     </AccountSurface>
+  );
+}
+
+/**
+ * Failures that mean the caller may no longer be authorized to see the
+ * reviewed invitation. Retained cached details are dropped for these so a
+ * stale payload is never presented as current authority.
+ */
+function revokesInvitationContext(error: unknown): boolean {
+  if (!error) return false;
+  const rpc = ConnectError.from(error);
+  return (
+    rpc.code === Code.Unauthenticated ||
+    rpc.code === Code.PermissionDenied ||
+    rpc.code === Code.NotFound ||
+    rpc.findDetails(ErrorDetailSchema)[0]?.reason ===
+      ErrorReason.INVITATION_EMAIL_MISMATCH
   );
 }
 

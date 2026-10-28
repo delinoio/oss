@@ -10,6 +10,7 @@ import {
 } from "@connectrpc/connect";
 import { create } from "@bufbuild/protobuf";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { createConnectQueryKey } from "@connectrpc/connect-query";
 import { QueryClient } from "@tanstack/react-query";
 import {
   AccountService,
@@ -553,6 +554,709 @@ describe("public acceptance", () => {
       organizationId: org.id,
       transferId: "transfer",
     });
+  });
+});
+
+describe("invitation acceptance review", () => {
+  afterEach(() => window.history.replaceState(null, "", "/"));
+  const pendingInvitation = (
+    overrides: Record<string, unknown> = {},
+  ): Record<string, unknown> => ({
+    id: "invite-one",
+    organizationName: "Acme Studio",
+    email: session.email,
+    state: LifecycleState.PENDING,
+    expiresAt: future(),
+    role: Role.MEMBER,
+    ...overrides,
+  });
+  const rpcError = (code: Code, reason?: ErrorReason, requestId?: string) =>
+    new ConnectError("secret recipient", code, undefined, [
+      {
+        desc: ErrorDetailSchema,
+        value: create(ErrorDetailSchema, { reason, requestId }),
+      },
+    ]);
+  const acceptButton = () =>
+    screen.getByRole("button", {
+      name: "Accept invitation",
+    }) as HTMLButtonElement;
+
+  it("renders the manual entry form with a focused labeled input and review-only submit", async () => {
+    const user = userEvent.setup();
+    const get = rs.fn((_request: { token: string }) => ({
+      invitation: pendingInvitation(),
+    }));
+    const accept = rs.fn();
+    mount(<InvitationPage />, (router) => {
+      router.service(AccountService, { getSession: () => session });
+      router.service(InvitationService, {
+        getInvitation: get,
+        acceptInvitation: accept,
+      });
+    });
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Join an organization" }),
+    ).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Use the account with the invited, verified email address.",
+      ),
+    ).toBeTruthy();
+    const field = screen.getByLabelText(
+      "Invitation link or code",
+    ) as HTMLInputElement;
+    expect(document.activeElement).toBe(field);
+    expect(field.getAttribute("autocomplete")).toBe("off");
+    expect(field.getAttribute("spellcheck")).toBe("false");
+    expect(
+      screen.getByText("Paste the invitation link or code from your email."),
+    ).toBeTruthy();
+    await screen.findByText(`Signed in as ${session.email}`);
+    await user.type(
+      field,
+      "https://router.example/invitation?token=fixture-code{Enter}",
+    );
+    await screen.findByRole("heading", { level: 2, name: "Acme Studio" });
+    expect(get.mock.calls[0][0]).toMatchObject({ token: "fixture-code" });
+    expect(accept).not.toHaveBeenCalled();
+    expect(window.location.search).toBe("");
+    expect(document.activeElement).not.toBe(acceptButton());
+  });
+
+  it("rejects empty and whitespace-only manual input without any request", async () => {
+    const user = userEvent.setup();
+    const get = rs.fn();
+    const accept = rs.fn();
+    mount(<InvitationPage />, (router) => {
+      router.service(AccountService, { getSession: () => session });
+      router.service(InvitationService, {
+        getInvitation: get,
+        acceptInvitation: accept,
+      });
+    });
+    const field = screen.getByLabelText("Invitation link or code");
+    await user.click(screen.getByRole("button", { name: "Review invitation" }));
+    await screen.findByText(
+      "Enter the invitation link or code from your email.",
+    );
+    expect(field.getAttribute("aria-invalid")).toBe("true");
+    await user.type(field, "   {Enter}");
+    expect(get).not.toHaveBeenCalled();
+    expect(accept).not.toHaveBeenCalled();
+    expect(document.activeElement).toBe(field);
+  });
+
+  it("uses the raw code when a pasted value is not a link", async () => {
+    const user = userEvent.setup();
+    const get = rs.fn((_request: { token: string }) => ({
+      invitation: pendingInvitation(),
+    }));
+    mount(<InvitationPage />, (router) => {
+      router.service(AccountService, { getSession: () => session });
+      router.service(InvitationService, { getInvitation: get });
+    });
+    await user.type(
+      screen.getByLabelText("Invitation link or code"),
+      "fixture-code{Enter}",
+    );
+    await screen.findByRole("heading", { level: 2, name: "Acme Studio" });
+    expect(get.mock.calls[0][0]).toMatchObject({ token: "fixture-code" });
+  });
+
+  it("renders the pending review card in order and accepts only on explicit click", async () => {
+    const user = userEvent.setup();
+    const accept = rs.fn(
+      (_request: { token?: string; invitationId?: string }) => ({
+        organization: { id: "org-new", name: "Acme Studio", role: Role.MEMBER },
+      }),
+    );
+    const accepted = rs.fn();
+    mount(
+      <InvitationPage token="invitation-token" onAccepted={accepted} />,
+      (router) => {
+        router.service(AccountService, { getSession: () => session });
+        router.service(InvitationService, {
+          getInvitation: () => ({ invitation: pendingInvitation() }),
+          acceptInvitation: accept,
+        });
+      },
+    );
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Join an organization" }),
+    ).toBe(document.activeElement);
+    await screen.findByRole("heading", { level: 2, name: "Acme Studio" });
+    await waitFor(() => expect(acceptButton().disabled).toBe(false));
+    expect(document.activeElement).not.toBe(acceptButton());
+    expect(screen.getByText("Pending")).toBeTruthy();
+    expect(
+      screen.getByText("Review your invitation before joining."),
+    ).toBeTruthy();
+    expect(
+      Array.from(document.querySelectorAll("dt")).map((n) => n.textContent),
+    ).toEqual(["Invited email", "Role", "Expires"]);
+    expect(
+      Array.from(document.querySelectorAll("dd")).map((n) => n.textContent)[1],
+    ).toBe("Member");
+    expect(
+      screen.getByText(
+        "Joining does not copy provider credentials or settings from other organizations.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("You join only after you accept.")).toBeTruthy();
+    expect(
+      screen.queryByRole("button", { name: /decline|resend/i }),
+    ).toBeNull();
+    expect(accept).not.toHaveBeenCalled();
+    await user.click(acceptButton());
+    await screen.findByRole("heading", {
+      level: 1,
+      name: "Invitation accepted",
+    });
+    expect(accept).toHaveBeenCalledTimes(1);
+    expect(accept.mock.calls[0][0]).toMatchObject({
+      token: "invitation-token",
+    });
+    expect(accept.mock.calls[0][0].invitationId ?? "").toBe("");
+    expect(screen.getByRole("status").textContent).toBe(
+      "You joined Acme Studio.",
+    );
+    expect(
+      screen
+        .getByRole("link", { name: "Open organization" })
+        .getAttribute("href"),
+    ).toBe("/organizations/org-new/overview");
+    expect(accepted).toHaveBeenCalledTimes(1);
+    expect(document.querySelector(".invitation-identity")).toBeNull();
+  });
+
+  it("does not treat a response without an organization as success", async () => {
+    const user = userEvent.setup();
+    const accept = rs.fn(() => ({}));
+    const accepted = rs.fn();
+    mount(
+      <InvitationPage token="invitation-token" onAccepted={accepted} />,
+      (router) => {
+        router.service(AccountService, { getSession: () => session });
+        router.service(InvitationService, {
+          getInvitation: () => ({ invitation: pendingInvitation() }),
+          acceptInvitation: accept,
+        });
+      },
+    );
+    await waitFor(async () => {
+      await screen.findByRole("heading", { level: 2, name: "Acme Studio" });
+      expect(acceptButton().disabled).toBe(false);
+    });
+    await user.click(acceptButton());
+    await waitFor(() => expect(accept).toHaveBeenCalledTimes(1));
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Join an organization" }),
+    ).toBeTruthy();
+    expect(screen.queryByText(/You joined/)).toBeNull();
+    expect(
+      screen.queryByRole("link", { name: "Open organization" }),
+    ).toBeNull();
+    expect(accepted).not.toHaveBeenCalled();
+  });
+
+  it("omits the identity strip without session data and never shows a placeholder", async () => {
+    mount(<InvitationPage token="invitation-token" />, (router) => {
+      router.service(AccountService, {
+        getSession: () => {
+          throw rpcError(Code.Unavailable);
+        },
+      });
+      router.service(InvitationService, {
+        getInvitation: () => ({ invitation: pendingInvitation() }),
+      });
+    });
+    await screen.findByText(
+      "The service is unavailable. No change has been confirmed.",
+    );
+    expect(screen.queryByText(/Signed in as/)).toBeNull();
+    expect(screen.queryByText("…")).toBeNull();
+    expect(screen.queryByRole("heading", { level: 2 })).toBeNull();
+    expect(acceptButton().disabled).toBe(true);
+  });
+
+  it("shows Not available for a missing expiry and keeps acceptance blocked", async () => {
+    const accept = rs.fn();
+    mount(<InvitationPage token="invitation-token" />, (router) => {
+      router.service(AccountService, { getSession: () => session });
+      router.service(InvitationService, {
+        getInvitation: () => ({
+          invitation: pendingInvitation({ expiresAt: undefined }),
+        }),
+        acceptInvitation: accept,
+      });
+    });
+    await screen.findByText("Not available");
+    expect(acceptButton().disabled).toBe(true);
+    expect(accept).not.toHaveBeenCalled();
+  });
+
+  it("maps unknown roles and statuses without inventing authority", async () => {
+    mount(<InvitationPage token="invitation-token" />, (router) => {
+      router.service(AccountService, { getSession: () => session });
+      router.service(InvitationService, {
+        getInvitation: () => ({
+          invitation: pendingInvitation({
+            role: Role.OWNER,
+            state: LifecycleState.UNSPECIFIED,
+          }),
+        }),
+      });
+    });
+    await screen.findByText("Invitation status is unavailable.");
+    expect(screen.getByText("Unknown")).toBeTruthy();
+    expect(screen.queryByText("Pending")).toBeNull();
+    expect(acceptButton().disabled).toBe(true);
+  });
+
+  it("renders the failed terminal state and a pending invitation past its deadline as polite status", async () => {
+    mount(<InvitationPage token="invitation-token" />, (router) => {
+      router.service(AccountService, { getSession: () => session });
+      router.service(InvitationService, {
+        getInvitation: () => ({
+          invitation: pendingInvitation({
+            state: LifecycleState.FAILED,
+          }),
+        }),
+      });
+    });
+    const status = await screen.findByText(
+      "Invitation delivery failed and this link is invalid. Ask an administrator to resend it.",
+    );
+    expect(status.getAttribute("role")).toBe("status");
+    expect(acceptButton().disabled).toBe(true);
+    expect(screen.queryByText("You join only after you accept.")).toBeNull();
+  });
+
+  it("treats a pending invitation whose deadline has passed as expired", async () => {
+    mount(<InvitationPage token="invitation-token" />, (router) => {
+      router.service(AccountService, { getSession: () => session });
+      router.service(InvitationService, {
+        getInvitation: () => ({
+          invitation: pendingInvitation({
+            expiresAt: timestampFromDate(new Date(Date.now() - 1000)),
+          }),
+        }),
+      });
+    });
+    const status = await screen.findByText(
+      "This invitation has expired. Ask an administrator for a new invitation.",
+    );
+    expect(status.getAttribute("role")).toBe("status");
+    expect(screen.queryByText("Pending")).toBeNull();
+    expect(acceptButton().disabled).toBe(true);
+  });
+
+  it("shows a reserved skeleton and one polite loading message", async () => {
+    mount(<InvitationPage token="invitation-token" />, (router) => {
+      router.service(AccountService, { getSession: () => session });
+      router.service(InvitationService, {
+        getInvitation: () => ({ invitation: pendingInvitation() }),
+      });
+    });
+    const status = await screen.findByText("Loading invitation…");
+    expect(status.getAttribute("role")).toBe("status");
+    expect(
+      document
+        .querySelector(".invitation-skeleton")
+        ?.getAttribute("aria-hidden"),
+    ).toBe("true");
+    expect(acceptButton().disabled).toBe(true);
+    await screen.findByRole("heading", { level: 2, name: "Acme Studio" });
+    expect(screen.queryByText("Loading invitation…")).toBeNull();
+    expect(document.querySelector(".invitation-skeleton")).toBeNull();
+  });
+
+  describe("invitation_id lookup", () => {
+    const listing =
+      (
+        pages: Array<{ invitations: Record<string, unknown>[]; next?: string }>,
+        calls: Array<{ pageSize?: number; pageToken?: string }> = [],
+      ) =>
+      (request: { page?: { pageSize: number; pageToken: string } }) => {
+        calls.push({
+          pageSize: request.page?.pageSize,
+          pageToken: request.page?.pageToken,
+        });
+        const index = request.page?.pageToken
+          ? pages.findIndex(
+              (_, at) =>
+                at > 0 && pages[at - 1].next === request.page?.pageToken,
+            )
+          : 0;
+        const page = pages[index];
+        return {
+          invitations: page.invitations,
+          page: { nextPageToken: page.next ?? "" },
+        };
+      };
+
+    it("reports not found so far, pages with the opaque token and accepts by invitation id only", async () => {
+      window.history.replaceState(
+        null,
+        "",
+        "/invitation?invitation_id=invite-two",
+      );
+      const user = userEvent.setup();
+      const calls: Array<{ pageSize?: number; pageToken?: string }> = [];
+      const accept = rs.fn(
+        (_request: { token?: string; invitationId?: string }) => ({
+          organization: {
+            id: "org-new",
+            name: "Acme Studio",
+            role: Role.MEMBER,
+          },
+        }),
+      );
+      mount(<InvitationPage />, (router) => {
+        router.service(AccountService, { getSession: () => session });
+        router.service(InvitationService, {
+          listMyInvitations: listing(
+            [
+              { invitations: [], next: "page-two" },
+              { invitations: [pendingInvitation({ id: "invite-two" })] },
+            ],
+            calls,
+          ),
+          acceptInvitation: accept,
+        });
+      });
+      await screen.findByText(
+        "This invitation has not been found in the invitations checked so far.",
+      );
+      expect(
+        screen.queryByText(/no longer pending or is unavailable/),
+      ).toBeNull();
+      const more = screen.getByRole("button", {
+        name: "Check more invitations",
+      });
+      expect(document.activeElement).not.toBe(more);
+      await user.click(more);
+      await screen.findByRole("heading", { level: 2, name: "Acme Studio" });
+      expect(calls).toEqual([
+        { pageSize: 100, pageToken: "" },
+        { pageSize: 100, pageToken: "page-two" },
+      ]);
+      expect(
+        screen.queryByRole("button", { name: "Check more invitations" }),
+      ).toBeNull();
+      await waitFor(() => expect(acceptButton().disabled).toBe(false));
+      await user.click(acceptButton());
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Invitation accepted",
+      });
+      expect(accept.mock.calls[0][0]).toMatchObject({
+        invitationId: "invite-two",
+      });
+      expect(accept.mock.calls[0][0].token ?? "").toBe("");
+    });
+
+    it("announces paging progress and disables the control while fetching", async () => {
+      window.history.replaceState(
+        null,
+        "",
+        "/invitation?invitation_id=invite-two",
+      );
+      const user = userEvent.setup();
+      let release: () => void = () => undefined;
+      const gate = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      mount(<InvitationPage />, (router) => {
+        router.service(AccountService, { getSession: () => session });
+        router.service(InvitationService, {
+          listMyInvitations: async (request: {
+            page?: { pageToken: string };
+          }) => {
+            if (!request.page?.pageToken)
+              return { invitations: [], page: { nextPageToken: "page-two" } };
+            await gate;
+            return {
+              invitations: [],
+              page: { nextPageToken: "page-three" },
+            };
+          },
+        });
+      });
+      const more = await screen.findByRole("button", {
+        name: "Check more invitations",
+      });
+      more.focus();
+      await user.click(more);
+      const status = await screen.findByText("Checking more invitations…");
+      expect(status.getAttribute("role")).toBe("status");
+      expect((more as HTMLButtonElement).disabled).toBe(true);
+      release();
+      await waitFor(() =>
+        expect((more as HTMLButtonElement).disabled).toBe(false),
+      );
+      await waitFor(() => expect(document.activeElement).toBe(more));
+      expect(screen.queryByText("Checking more invitations…")).toBeNull();
+    });
+
+    it("claims exhaustion only after the last page and never invents a state", async () => {
+      window.history.replaceState(
+        null,
+        "",
+        "/invitation?invitation_id=missing",
+      );
+      const accept = rs.fn();
+      mount(<InvitationPage />, (router) => {
+        router.service(AccountService, { getSession: () => session });
+        router.service(InvitationService, {
+          listMyInvitations: listing([
+            { invitations: [pendingInvitation({ id: "other" })] },
+          ]),
+          acceptInvitation: accept,
+        });
+      });
+      const alert = await screen.findByText(
+        "This invitation is no longer pending or is unavailable to your account. Open the original email link for its current status.",
+      );
+      expect(alert.getAttribute("role")).toBe("alert");
+      expect(
+        screen.queryByText(/not been found in the invitations checked so far/),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Check more invitations" }),
+      ).toBeNull();
+      expect(screen.queryByRole("heading", { level: 2 })).toBeNull();
+      expect(acceptButton().disabled).toBe(true);
+      expect(accept).not.toHaveBeenCalled();
+    });
+
+    it("keeps a retry path on a failed page and never claims exhaustion", async () => {
+      window.history.replaceState(
+        null,
+        "",
+        "/invitation?invitation_id=invite-two",
+      );
+      const user = userEvent.setup();
+      let failing = true;
+      mount(<InvitationPage />, (router) => {
+        router.service(AccountService, { getSession: () => session });
+        router.service(InvitationService, {
+          listMyInvitations: (request: { page?: { pageToken: string } }) => {
+            if (!request.page?.pageToken)
+              return { invitations: [], page: { nextPageToken: "page-two" } };
+            if (failing)
+              throw rpcError(Code.Unavailable, undefined, "req-page");
+            return { invitations: [pendingInvitation({ id: "invite-two" })] };
+          },
+        });
+      });
+      await user.click(
+        await screen.findByRole("button", { name: "Check more invitations" }),
+      );
+      await screen.findByText("Request ID: req-page");
+      expect(
+        screen.queryByText(/no longer pending or is unavailable/),
+      ).toBeNull();
+      expect(acceptButton().disabled).toBe(true);
+      failing = false;
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+      await screen.findByRole("heading", { level: 2, name: "Acme Studio" });
+    });
+
+    it("lets a non-empty token win over invitation_id", async () => {
+      window.history.replaceState(
+        null,
+        "",
+        "/invitation?invitation_id=invite-two",
+      );
+      const user = userEvent.setup();
+      const list = rs.fn();
+      const accept = rs.fn(
+        (_request: { token?: string; invitationId?: string }) => ({
+          organization: {
+            id: "org-new",
+            name: "Acme Studio",
+            role: Role.MEMBER,
+          },
+        }),
+      );
+      mount(<InvitationPage token="invitation-token" />, (router) => {
+        router.service(AccountService, { getSession: () => session });
+        router.service(InvitationService, {
+          getInvitation: () => ({ invitation: pendingInvitation() }),
+          listMyInvitations: list,
+          acceptInvitation: accept,
+        });
+      });
+      await screen.findByRole("heading", { level: 2, name: "Acme Studio" });
+      await waitFor(() => expect(acceptButton().disabled).toBe(false));
+      await user.click(acceptButton());
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Invitation accepted",
+      });
+      expect(list).not.toHaveBeenCalled();
+      expect(accept.mock.calls[0][0].token).toBe("invitation-token");
+      expect(accept.mock.calls[0][0].invitationId ?? "").toBe("");
+    });
+  });
+
+  it("drops authorized detail when a later read reports an email mismatch", async () => {
+    const user = userEvent.setup();
+    let mismatch = false;
+    mount(<InvitationPage token="invitation-token" />, (router) => {
+      router.service(AccountService, { getSession: () => session });
+      router.service(InvitationService, {
+        getInvitation: () => {
+          if (mismatch)
+            throw rpcError(
+              Code.PermissionDenied,
+              ErrorReason.INVITATION_EMAIL_MISMATCH,
+              "req-mismatch",
+            );
+          return { invitation: pendingInvitation() };
+        },
+        acceptInvitation: () => {
+          throw rpcError(Code.Unavailable);
+        },
+      });
+    });
+    await screen.findByRole("heading", { level: 2, name: "Acme Studio" });
+    await waitFor(() => expect(acceptButton().disabled).toBe(false));
+    mismatch = true;
+    await user.click(acceptButton());
+    await screen.findByText("Sign in with the invited email address.");
+    await screen.findByText("Request ID: req-mismatch");
+    expect(screen.queryByRole("heading", { level: 2 })).toBeNull();
+    expect(screen.queryByText("Acme Studio")).toBeNull();
+    expect(screen.queryByText("secret recipient")).toBeNull();
+    expect(screen.queryByText("Member")).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "Sign in again" }).getAttribute("href"),
+    ).toContain("/auth/login?return_to=");
+    expect(acceptButton().disabled).toBe(true);
+  });
+
+  it.each([
+    [
+      Code.Unauthenticated,
+      "Your session has expired. Sign in again, then review and submit the action.",
+    ],
+    [
+      Code.PermissionDenied,
+      "Your permissions changed or this action is not available to your account.",
+    ],
+    [Code.NotFound, "This link or code is invalid or no longer available."],
+    [Code.InvalidArgument, "Check the entered value and try again."],
+    [
+      Code.Unavailable,
+      "The service is unavailable. No change has been confirmed.",
+    ],
+  ])(
+    "shows safe copy and only the typed request id for code %s",
+    async (code, message) => {
+      const accept = rs.fn();
+      mount(<InvitationPage token="invitation-token" />, (router) => {
+        router.service(AccountService, { getSession: () => session });
+        router.service(InvitationService, {
+          getInvitation: () => {
+            throw rpcError(code, undefined, "req-safe");
+          },
+          acceptInvitation: accept,
+        });
+      });
+      await screen.findByText(message);
+      expect(screen.getByText("Request ID: req-safe")).toBeTruthy();
+      expect(screen.queryByText("secret recipient")).toBeNull();
+      expect(acceptButton().disabled).toBe(true);
+      expect(accept).not.toHaveBeenCalled();
+    },
+  );
+
+  it("clears detail when the session is lost and never replays the mutation", async () => {
+    const user = userEvent.setup();
+    let signedIn = true;
+    const accept = rs.fn(() => {
+      throw rpcError(Code.Unavailable);
+    });
+    const { cache } = mount(
+      <InvitationPage token="invitation-token" />,
+      (router) => {
+        router.service(AccountService, {
+          getSession: () => {
+            if (!signedIn) throw rpcError(Code.Unauthenticated);
+            return session;
+          },
+        });
+        router.service(InvitationService, {
+          getInvitation: () => ({ invitation: pendingInvitation() }),
+          acceptInvitation: accept,
+        });
+      },
+    );
+    await screen.findByRole("heading", { level: 2, name: "Acme Studio" });
+    await waitFor(() => expect(acceptButton().disabled).toBe(false));
+    await user.click(acceptButton());
+    await waitFor(() => expect(accept).toHaveBeenCalledTimes(1));
+    signedIn = false;
+    await cache.refetchQueries();
+    await screen.findByText(/Your session has expired/);
+    expect(screen.queryByRole("heading", { level: 2 })).toBeNull();
+    expect(screen.queryByText(/Signed in as/)).toBeNull();
+    expect(acceptButton().disabled).toBe(true);
+    expect(accept).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops detail loaded for the previous account when the session email changes", async () => {
+    let email = session.email;
+    const { cache } = mount(
+      <InvitationPage token="invitation-token" />,
+      (router) => {
+        router.service(AccountService, {
+          getSession: () => ({ ...session, email }),
+        });
+        router.service(InvitationService, {
+          getInvitation: () => {
+            if (email !== session.email)
+              throw rpcError(
+                Code.PermissionDenied,
+                ErrorReason.INVITATION_EMAIL_MISMATCH,
+              );
+            return { invitation: pendingInvitation() };
+          },
+        });
+      },
+    );
+    await screen.findByRole("heading", { level: 2, name: "Acme Studio" });
+    email = "other@example.test";
+    await cache.refetchQueries({
+      queryKey: createConnectQueryKey({
+        schema: AccountService.method.getSession,
+        cardinality: undefined,
+      }),
+    });
+    await screen.findByText("Sign in with the invited email address.");
+    expect(screen.queryByText("Acme Studio")).toBeNull();
+    expect(screen.getByText("Signed in as other@example.test")).toBeTruthy();
+  });
+
+  it("scopes the invitation styles away from other account screens", async () => {
+    const { container } = mount(
+      <OwnershipAcceptancePage organizationId={org.id} />,
+      (router) => {
+        router.service(AccountService, { getSession: () => session });
+        router.service(OrganizationService, {
+          getOrganization: () => ({ organization: org }),
+        });
+        router.service(OwnershipService, {
+          getOwnershipTransfer: () => ({}),
+        });
+      },
+    );
+    await screen.findByRole("heading", { level: 1 });
+    expect(container.querySelector(".invitation-surface")).toBeNull();
+    expect(container.querySelector(".invitation-card")).toBeNull();
   });
 });
 
