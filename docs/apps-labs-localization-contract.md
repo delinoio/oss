@@ -19,7 +19,7 @@ are translation input. Internal `docs/` contracts are never translation input.
 Theme catalog entries retain their MIT attribution and license in
 `apps/labs-docs/i18n`; copies in `docs/public` ship with the static build.
 
-The AIPRouter console also consumes this shared tooling. Its catalog, browser behavior and language selection are owned by the [AIPRouter console contract](apps-aiprouter-console-contract.md#localization); the Labs route rules above do not apply to console routes.
+The TaiRouter console also consumes this shared tooling. Its catalog, browser behavior and language selection are owned by the [TaiRouter console contract](apps-tairouter-console-contract.md#localization); the Labs route rules above do not apply to console routes.
 
 ## Maintainer commands
 
