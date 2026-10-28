@@ -12,13 +12,31 @@ import (
 
 var consoleRoutes = map[string]bool{"/sign-in": true, "/onboarding": true, "/overview": true, "/providers": true, "/pools": true, "/routing": true, "/keys": true, "/usage": true, "/organization-usage": true, "/connect": true, "/device": true, "/members": true, "/invitation": true, "/invitations": true, "/ownership": true, "/audit": true, "/settings": true, "/account": true, "/instance/settings": true, "/instance/retention": true, "/instance/destinations": true, "/instance/health": true, "/instance/prices": true, "/instance/audit": true}
 
-func knownConsoleRoute(value string) bool { return consoleRoutes[value] }
+var organizationConsoleRoutes = map[string]bool{
+	"/overview": true, "/providers": true, "/pools": true, "/routing": true,
+	"/keys": true, "/usage": true, "/organization-usage": true, "/connect": true,
+	"/members": true, "/invitations": true, "/audit": true, "/settings": true, "/account": true,
+}
+
+func knownConsoleRoute(value string) bool {
+	if consoleRoutes[value] {
+		return true
+	}
+	parts := strings.Split(value, "/")
+	if len(parts) != 4 || parts[1] != "organizations" || parts[2] == "" || parts[2] == "." || parts[2] == ".." {
+		return false
+	}
+	if strings.ContainsAny(parts[2], "\\") || strings.ContainsFunc(parts[2], func(r rune) bool { return r < 32 || r == 127 }) {
+		return false
+	}
+	return organizationConsoleRoutes["/"+parts[3]]
+}
 func knownConsoleURL(u *url.URL) bool {
 	if !knownConsoleRoute(u.Path) {
 		return false
 	}
 	query := u.Query()
-	if query.Has("page") || query.Has("org") {
+	if query.Has("page") || query.Has("org") || (strings.HasPrefix(u.Path, "/organizations/") && query.Has("organization")) {
 		return false
 	}
 	switch u.Path {

@@ -15,7 +15,9 @@ export function navigate(
   { replace = false, confirmed = false } = {},
 ) {
   const url = new URL(href, window.location.href);
-  if (url.origin !== window.location.origin || !resolveRoute(url)) return false;
+  const route = resolveRoute(url);
+  if (url.origin !== window.location.origin || !route) return false;
+  url.href = route.url.href;
   if (url.href === window.location.href) return true;
   if (!confirmed && !canLeave()) return false;
   window.history[replace ? "replaceState" : "pushState"](null, "", url);

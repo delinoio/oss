@@ -99,6 +99,44 @@ func TestRetiredConsoleRoutesAreRejected(t *testing.T) {
 	}
 }
 
+func TestOrganizationConsoleRoutes(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("fixture console"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	handler, err := consoleHandler(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for suffix := range organizationConsoleRoutes {
+		target := "/organizations/01a17e38-0f0f-78f5-b8c5-f8cdb4960299" + suffix + "?filter=active"
+		for _, method := range []string{"GET", "HEAD"} {
+			w := httptest.NewRecorder()
+			handler.ServeHTTP(w, httptest.NewRequest(method, target, nil))
+			if w.Code != 200 || safeReturnTo(target) != target {
+				t.Fatalf("scoped console route %s %s: %d", method, target, w.Code)
+			}
+			if method == "HEAD" && w.Body.Len() != 0 {
+				t.Fatal("HEAD returned a document body")
+			}
+		}
+	}
+	for _, target := range []string{
+		"/organizations//keys", "/organizations/studio/missing",
+		"/organizations/studio/instance/health", "/organizations/studio/device",
+		"/organizations/studio/onboarding", "/organizations/studio/keys/extra",
+		"/organizations/studio/keys?organization=other", "/organizations/studio/keys?org=other",
+		"/organizations/studio/keys?organization_id=other", "/organizations/studio/keys?page=keys",
+		"/organizations/bad%2Fid/keys", "/organizations/bad%5Cid/keys", "/organizations/%00/keys",
+	} {
+		w := httptest.NewRecorder()
+		handler.ServeHTTP(w, httptest.NewRequest("GET", target, nil))
+		if w.Code != 404 || safeReturnTo(target) != "/overview" {
+			t.Fatalf("accepted invalid scoped console route %s: %d", target, w.Code)
+		}
+	}
+}
+
 func TestConsoleInstallationAssets(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("fixture console"), 0600); err != nil {

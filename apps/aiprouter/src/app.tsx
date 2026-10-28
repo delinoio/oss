@@ -136,7 +136,7 @@ export function App() {
   const route = resolveRoute(new URL(href));
   useEffect(() => {
     if (route && route.url.href !== window.location.href)
-      window.history.replaceState(null, "", route.url);
+      navigate(route.url.href, { replace: true, confirmed: true });
   }, [route?.url.href]);
   if (!route) return <NotFound />;
   const page = route.page;
@@ -170,7 +170,7 @@ function AuthenticatedApp({ page, href }: { page: Page; href: string }) {
   const api = useApi();
   const cache = useQueryClient();
   const transport = useTransport();
-  const scope = new URL(href).searchParams.get("organization") ?? "";
+  const scope = resolveRoute(new URL(href))?.organization ?? "";
   const [switcher, setSwitcher] = useState(false);
   const [menu, setMenu] = useState(false);
   const [search, setSearch] = useState("");
@@ -262,10 +262,11 @@ function AuthenticatedApp({ page, href }: { page: Page; href: string }) {
     setAuthorityMessage("");
     setScopeBlocked(false);
     const url = new URL(window.location.href);
-    url.searchParams.set("organization", id);
+    url.pathname = pageHref(page, id);
+    url.searchParams.delete("organization");
     url.searchParams.delete("org");
     url.searchParams.delete("organization_id");
-    navigate(url.href, { replace: true, confirmed: true });
+    navigate(url.href, { confirmed: true });
   };
   const selectScope = (id: string) => {
     if (dirty && id !== selected?.id) setPendingScope(id);

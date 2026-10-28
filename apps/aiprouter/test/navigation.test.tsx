@@ -50,9 +50,9 @@ describe("console link navigation", () => {
     render(<Probe />);
     expect(click("/providers?organization=studio")).toBe(true);
     expect(window.location.pathname + window.location.search).toBe(
-      "/providers?organization=studio",
+      "/organizations/studio/providers",
     );
-    expect(screen.getByText("/providers")).toBeTruthy();
+    expect(screen.getByText("/organizations/studio/providers")).toBeTruthy();
   });
 
   it.each([

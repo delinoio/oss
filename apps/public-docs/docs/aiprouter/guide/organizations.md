@@ -17,9 +17,9 @@ Administrators cannot change another administrator's or the owner's role/members
 
 ## Open and share a console page
 
-Console pages have direct addresses such as `/providers`, `/routing`, `/keys`, and `/organization-usage`. The `organization` query parameter selects the workspace, for example `/keys?organization=<organization-id>`. Opening or refreshing the address keeps that page and workspace; current membership and permissions still apply.
+Console pages include the organization in the path, for example `/organizations/<organization-id>/keys`, `/organizations/<organization-id>/providers`, `/organizations/<organization-id>/routing`, and `/organizations/<organization-id>/organization-usage`. Opening or refreshing the address keeps that page and workspace; current membership and permissions still apply. Internal links open without reloading the page, and browser Back and Forward restore the page and organization. Existing bookmarks such as `/keys?organization=<organization-id>` open at the corresponding path address.
 
-Open `/overview` to choose an organization and `/invitation` to accept an invitation. Legacy `?page=` addresses, path aliases, and `org` or `organization_id` workspace selectors are no longer supported. Use the direct page address and the `organization` workspace parameter. Instance operators can also open individual sections, such as `/instance/settings` for request limits and `/instance/health` for health and usage aggregates.
+Open `/overview` to choose an organization and `/invitation` to accept an invitation. Legacy `?page=` addresses, path aliases, and `org` or `organization_id` workspace selectors are no longer supported. Use the organization path address. Instance operators can also open individual sections, such as `/instance/settings` for request limits and `/instance/health` for health and usage aggregates.
 
 ## Invite and accept
 

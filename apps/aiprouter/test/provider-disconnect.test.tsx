@@ -265,7 +265,7 @@ describe("provider disconnect confirmation", () => {
       within(dialog)
         .getByRole("link", { name: "Review routing" })
         .getAttribute("href"),
-    ).toBe("/routing?organization=org-1");
+    ).toBe("/organizations/org-1/routing");
   });
 
   it("enumerates later pages and shows None only for settled empty results", async () => {
