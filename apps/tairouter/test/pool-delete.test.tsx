@@ -236,7 +236,7 @@ describe("pool delete confirmation", () => {
     ).toBeTruthy();
   });
 
-  it("deletes once with the selected scope, reports success only after confirmation and focuses the heading", async () => {
+  it("deletes once with the selected scope, reports success only after confirmation and focuses the preceding card action", async () => {
     const user = userEvent.setup();
     let release: () => void = () => undefined;
     const gate = new Promise<void>((resolve) => (release = resolve));
@@ -281,11 +281,9 @@ describe("pool delete confirmation", () => {
     expect(deleteProviderConnection).not.toHaveBeenCalled();
     await screen.findByText("Pool deleted.");
     await waitFor(() => expect(screen.queryByText("Other pool")).toBeNull());
-    const heading = screen.getByRole("heading", {
-      level: 1,
-      name: "Account pools",
-    });
-    await waitFor(() => expect(document.activeElement).toBe(heading));
+    // The deleted pool was last, so focus falls back to the preceding card's first action.
+    const previous = screen.getByRole("button", { name: "Edit pool" });
+    await waitFor(() => expect(document.activeElement).toBe(previous));
     expect(window.location.pathname).toBe("/");
   });
 

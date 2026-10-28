@@ -32,7 +32,12 @@ import { useApi, type PageProps, pageSize } from "./api";
 import { useAction } from "./actions";
 import { usePersonalResources } from "./resources";
 import { PoolDeleteDialog } from "./pool-delete";
-import { useRestoreHeadingFocus } from "./focus-restore";
+import {
+  InventoryState,
+  PoolCard,
+  inventoryState,
+  usePoolsFocus,
+} from "./pool-list";
 import { RouteCard, useRoutingFocus } from "./route-list";
 import { pageHref } from "./routes";
 import { Code, ConnectError } from "@connectrpc/connect";
@@ -59,6 +64,7 @@ export function PoolsPage({ organization }: PageProps) {
   useLocale();
   const api = useApi();
   const action = useAction();
+  const online = useOnline();
   const [token, setToken] = useState("");
   const [edit, setEdit] = useState<Pool | true>();
   const [remove, setRemove] = useState<Pool>();
@@ -71,73 +77,154 @@ export function PoolsPage({ organization }: PageProps) {
     pools,
     routes,
   } = usePersonalResources(organization.id);
-  const { headingRef, requestRestore } = useRestoreHeadingFocus(query);
-  // A confirmation is bound to the organization it was opened in.
+  const focus = usePoolsFocus(query);
+  // Dialogs are bound to the organization they were opened in.
   useEffect(() => {
     setRemove(undefined);
+    setEdit(undefined);
   }, [organization.id]);
+  const listCode = query.error
+    ? ConnectError.from(query.error).code
+    : undefined;
+  const accessDenied =
+    listCode === Code.PermissionDenied || listCode === Code.Unauthenticated;
+  // Cached rows are not authorization; they are hidden once access is denied.
+  const rows = accessDenied ? undefined : query.data?.pools;
+  // A failed or offline read is not a deletion; mutating entry points stay inert until it recovers.
+  const unavailable = !!query.error || !online;
+  const stale = !!rows && unavailable;
+  const inventory = inventoryState(accounts);
+  const firstUse = !!rows && rows.length === 0 && !token;
+  // The empty panel owns the primary action (Create pool, or Connect providers when no connection exists).
+  const panelOwnsCreate = firstUse && inventory === InventoryState.Populated;
+  const panelOwnsPrimary =
+    panelOwnsCreate || (firstUse && inventory === InventoryState.Empty);
+  const hasMembers = !!rows?.some((pool) => pool.members.length > 0);
+  const navigate = (next: string) => {
+    focus.beginNavigation();
+    setToken(next);
+  };
+  const retryConnections = (
+    <Button
+      disabled={accounts.isFetching}
+      onClick={() => void accounts.refetch()}
+    >
+      {translate("retryConnections")}
+    </Button>
+  );
   return (
     <>
       <PageHeader
-        headingRef={headingRef}
+        headingRef={focus.listHeadingRef}
         title={translate("accountPools")}
         description={translate("onlyYoursIn", { value0: organization.name })}
         action={
-          <Button variant="primary" onClick={() => setEdit(true)}>
+          <Button
+            ref={focus.createRef}
+            variant={panelOwnsPrimary ? "secondary" : "primary"}
+            disabled={unavailable}
+            onClick={() => setEdit(true)}
+          >
             {translate("createPool")}
           </Button>
         }
       />
       <Notice>{translate("poolsGroupYourOwnConnectionsStrategyAnd")}</Notice>
       {action.feedback}
-      <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-      {query.isPending ? (
-        <Loading />
-      ) : query.data?.pools.length === 0 ? (
-        <EmptyState title={translate("createYourFirstPool")}>
-          {translate("connectProvidersBeforeAddingThemToA")}
-        </EmptyState>
-      ) : (
-        <div className="records">
-          {query.data?.pools.map((pool) => (
-            <Card key={pool.id} className="record">
-              <div>
-                <h2>{pool.name}</h2>
-                <p>{enumLabel(PoolStrategy[pool.strategy])}</p>
-                <ol>
-                  {pool.members
-                    .toSorted((a, b) => a.priority - b.priority)
-                    .map((m) => (
-                      <li key={m.connectionId}>
-                        {translate("weight", {
-                          value0:
-                            accounts.data?.find((c) => c.id === m.connectionId)
-                              ?.name ??
-                            `Unavailable connection (${m.connectionId})`,
-                          value1: m.weight,
-                        })}
-                      </li>
-                    ))}
-                </ol>
-              </div>
-              <div className="actions">
-                <Button onClick={() => setEdit(pool)}>
-                  {translate("editPool")}
-                </Button>
-                <Button variant="danger" onClick={() => setRemove(pool)}>
-                  {translate("delete")}
-                </Button>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
-      <Pagination
-        next={query.data?.page?.nextPageToken}
-        onNext={setToken}
-        onFirst={() => setToken("")}
-        hasPrevious={!!token}
+      <ErrorNotice
+        error={query.error}
+        retry={accessDenied ? undefined : () => void query.refetch()}
       />
+      {stale && (
+        <Notice tone="warning">{translate("poolListMayBeOutOfDate")}</Notice>
+      )}
+      {hasMembers && accounts.isError && (
+        <Notice tone="warning">
+          {translate("connectionNamesCouldNotBeLoaded")}
+          <div className="actions">{retryConnections}</div>
+        </Notice>
+      )}
+      {query.isPending ? (
+        <div className="loading-state" role="status" aria-busy="true">
+          <p>{translate("loadingPools")}</p>
+          <div className="pool-skeletons" aria-hidden="true">
+            <div className="skeleton" />
+            <div className="skeleton" />
+            <div className="skeleton" />
+          </div>
+        </div>
+      ) : rows && rows.length === 0 ? (
+        <Card className="empty pool-empty">
+          <h2 ref={focus.emptyHeadingRef} tabIndex={-1}>
+            {token
+              ? translate("noPoolsOnThisPage")
+              : translate("createYourFirstPool")}
+          </h2>
+          <p>
+            {token
+              ? translate("useFirstPageToReturnToYourPools")
+              : translate("poolsGroupYourOwnConnections")}
+          </p>
+          {firstUse && inventory === InventoryState.Loading && (
+            <p role="status">{translate("loadingConnections")}</p>
+          )}
+          {firstUse && inventory === InventoryState.Failed && (
+            <Notice tone="warning">
+              {translate("connectionsCouldNotBeLoaded")}
+              <div className="actions">{retryConnections}</div>
+            </Notice>
+          )}
+          {firstUse && inventory === InventoryState.Empty && (
+            <>
+              <p>{translate("connectProvidersBeforeAddingThemToA")}</p>
+              <div className="actions">
+                <a
+                  className="button primary"
+                  href={pageHref("providers", organization.id)}
+                >
+                  {translate("connectProviders")}
+                </a>
+              </div>
+            </>
+          )}
+          {panelOwnsCreate && (
+            <div className="actions">
+              <Button
+                variant="primary"
+                disabled={unavailable}
+                onClick={() => setEdit(true)}
+              >
+                {translate("createPool")}
+              </Button>
+            </div>
+          )}
+        </Card>
+      ) : rows ? (
+        <ul className="pool-list" aria-label={translate("yourPools")}>
+          {rows.map((pool) => (
+            <li key={pool.id}>
+              <PoolCard
+                pool={pool}
+                connections={accounts}
+                disabled={unavailable}
+                editRef={focus.editRef(pool.id)}
+                onEdit={() => setEdit(pool)}
+                onDelete={() => setRemove(pool)}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <Pagination
+        next={rows ? query.data?.page?.nextPageToken : undefined}
+        onNext={navigate}
+        onFirst={() => navigate("")}
+        hasPrevious={!!token}
+        pending={query.isFetching}
+      />
+      <p className="visually-hidden" role="status" aria-live="polite">
+        {focus.announcement}
+      </p>
       {edit && (
         <PoolEditor
           organizationName={organization.name}
@@ -190,8 +277,10 @@ export function PoolsPage({ organization }: PageProps) {
                   poolId: remove.id,
                 }),
               () => {
+                const list = query.data?.pools ?? [];
+                const at = list.findIndex((item) => item.id === remove.id);
                 setRemove(undefined);
-                requestRestore();
+                focus.requestRestore(list[at + 1]?.id, list[at - 1]?.id);
               },
               translate("poolDeleted"),
             );
