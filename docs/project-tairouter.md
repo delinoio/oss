@@ -40,6 +40,8 @@ The service workspace manifest and package-level Turbo configuration expose its 
 
 Affected validation runs in the centrally planned `tairouter` job in `.github/workflows/CI.yml`. The [workflow contract](repository-workflow-contract.md) owns selection and final result aggregation; the [operations contract](servers-tairouter-operations-contract.md) owns validation coverage and acceptance boundaries.
 
+The common `Release Project` coordinator prepares TaiRouter versions and tags. `.github/workflows/release-tairouter.yml` owns fixture-gated binary, Compose, npm and Linux container publication under the [operations contract](servers-tairouter-operations-contract.md#publication). Public documentation keeps its existing Labs Docs publisher.
+
 ## Domain Contract Documents
 
 - [servers-tairouter-service-contract](servers-tairouter-service-contract.md)

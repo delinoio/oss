@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -73,5 +74,60 @@ func TestNativeHealthUsageCapturedGateAndBudget(t *testing.T) {
 	denied := func(context.Context, func(context.Context) error) error { return inference.ErrUnauthorized }
 	if _, e = nativeUsageRequest(ctx, policy, denied, "openai", credential); e == nil || sends.Load() != 1 || budget.Load() != 1 {
 		t.Fatal("revoked gate initiated usage send")
+	}
+}
+
+func TestNativeHealthUsageWaitsForDispatchCompletion(t *testing.T) {
+	policy := nativeHealthUsagePolicy(t, func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"rate_limit":{"primary_window":{"used_percent":10,"limit_window_seconds":18000}}}`))
+	})
+	entered, release, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	defer unblock()
+	gate := func(ctx context.Context, start func(context.Context) error) error {
+		err := start(ctx)
+		close(entered)
+		// The upstream can respond while the authorization transaction is still
+		// finishing after the bounded write. Its callback must not outlive Do.
+		<-release
+		defer close(finished)
+		return err
+	}
+	ctx := inference.WithPhysicalSendBudget(context.Background(), func(ctx context.Context, start func(context.Context) error) error { return start(ctx) })
+	result := make(chan error, 1)
+	go func() {
+		_, err := nativeUsageRequest(ctx, policy, gate, "openai", inference.Credential{Secret: "fixture-token"})
+		result <- err
+	}()
+	select {
+	case <-entered:
+	case err := <-result:
+		t.Fatalf("request ended before dispatch: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("dispatch did not start")
+	}
+	premature := false
+	select {
+	case <-result:
+		premature = true
+	case <-time.After(100 * time.Millisecond):
+	}
+	unblock()
+	select {
+	case <-finished:
+	case <-time.After(5 * time.Second):
+		t.Fatal("dispatch did not finish")
+	}
+	if premature {
+		t.Fatal("usage request returned before its authorization callback finished")
+	}
+	select {
+	case err := <-result:
+		if err != nil {
+			t.Fatalf("usage request failed: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("usage request did not return after dispatch finished")
 	}
 }

@@ -4,6 +4,23 @@
 
 The supplied installation uses a single-host Docker Compose deployment with the web console served from the same origin as the API. A production-ready release, published image coordinates, and an end-to-end installation verification are not established by these guides. Use only the versioned distribution and its matching configuration instructions when they become available. Do not substitute guessed image tags or install an unrelated similarly named package.
 
+## Use a published distribution
+
+Confirm that the [TaiRouter release list](https://github.com/delinoio/oss/releases?q=tairouter%40v) contains the version you intend to deploy. A configured release workflow does not establish that a release has been published or that production installation has passed.
+
+For an available release, download `tairouter-compose.tar.gz`, `SHA256SUMS` and their Sigstore bundles from its `tairouter@v<version>` release. Verify the downloaded archive against the checksum manifest and verify the bundles before extracting it. The archive supplies Compose configuration, an example environment and optional observability settings.
+
+Use `ghcr.io/delinoio/tairouter:<version>` for the matching Linux AMD64/ARM64 server image. It includes the web console. Set `TAIROUTER_IMAGE` in `.env` to that image, preferably pinned by digest, and complete the required configuration below. Pull the image before migration; these commands use the published image without a source build:
+
+```sh
+docker compose pull tairouter
+docker compose up -d --wait postgres
+docker compose run --rm --no-deps tairouter migrate
+docker compose up -d --no-build tairouter
+```
+
+Retain the previous image digest and a matching database backup for rollback. Publishing an image does not configure your identity provider, reverse proxy or other required services. CLI binaries and the checked npm tarball are separate release assets; confirm npm registry availability before using the npm installer.
+
 ## Try locally from source
 
 With Node.js 24, pnpm 10.26.2 and Docker Compose installed, start Docker Desktop or the Docker daemon. In a complete source checkout, run:

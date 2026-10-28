@@ -4,6 +4,7 @@ package inference
 import (
 	"context"
 	"net/http"
+	"sync"
 )
 
 // SendGate holds the authoritative revocation fence only around start's bounded write.
@@ -21,6 +22,7 @@ func (a supportAuthorizer) Dispatch(ctx context.Context, _ Principal, start func
 // Do executes one support request, retaining its query while validating and pinning
 // the origin. No redirects or retries are performed. gate must be non-nil. onSend
 // is a notification, not authorization; use WithPhysicalSendBudget for budget refusal.
+// Do waits for active dispatch callbacks and prevents new callbacks before returning.
 func (p DestinationPolicy) Do(ctx context.Context, req *http.Request, gate SendGate, onSend func()) (*http.Response, error) {
 	if req == nil || req.URL == nil || gate == nil || req.Host != "" && req.Host != req.URL.Host {
 		return nil, ErrDestination
@@ -29,10 +31,18 @@ func (p DestinationPolicy) Do(ctx context.Context, req *http.Request, gate SendG
 	ctx, stopFirstByte, cancel := supportFirstByteContext(ctx)
 	defer stopFirstByte()
 	keepContext := false
+	var dispatchMu sync.Mutex
+	dispatchFinished := false
 	defer func() {
 		if !keepContext {
 			cancel()
 		}
+		// net/http can return a response before its write goroutine finishes
+		// the authorization transaction. Join that callback before callers read
+		// captured outcomes, and reject dispatches that arrive after Do returns.
+		dispatchMu.Lock()
+		dispatchFinished = true
+		dispatchMu.Unlock()
 	}()
 	u := *req.URL
 	u.RawQuery = ""
@@ -42,6 +52,11 @@ func (p DestinationPolicy) Do(ctx context.Context, req *http.Request, gate SendG
 		return nil, e
 	}
 	wrapped := supportAuthorizer{gate: func(c context.Context, start func(context.Context) error) error {
+		dispatchMu.Lock()
+		defer dispatchMu.Unlock()
+		if dispatchFinished {
+			return ErrUnavailable
+		}
 		return gate(c, func(locked context.Context) error { return physicalSend(locked, start) })
 	}}
 	if onSend == nil {

@@ -16,6 +16,8 @@ Service and CLI implementers and generated-Go consumers.
 
 Provide shared mechanisms for protocol/client integration, typed configuration, and security/lifecycle support where both consumers need them. Service policy is owned by the service contract; CLI settings/OS behavior is owned by the CLI contract. Do not import executable entry points into libraries or hide policy changes in shared helpers.
 
+Support HTTP operations wait for active dispatch callbacks to finish and prevent new callbacks before returning. Callers can inspect captured authorization outcomes after the operation returns; a response or cancellation alone does not prove that the HTTP write goroutine has finished its authorization transaction. This lifecycle boundary preserves the existing revocation fences and physical-send budget.
+
 ## Storage
 
 Migration replay must preserve expanded provider/outcome usage dimensions and recreate backup-excluded temporary tables without reinstating superseded constraints.
