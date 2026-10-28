@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale, enumLabel } from "./i18n";
-import { useId, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { useQuery } from "@connectrpc/connect-query";
-import { timestampFromDate } from "@bufbuild/protobuf/wkt";
+import { timestampFromDate, type Timestamp } from "@bufbuild/protobuf/wkt";
 import {
   KeyService,
   KeyState,
@@ -14,7 +15,6 @@ import { useAction } from "./actions";
 import {
   PageHeader,
   Button,
-  Card,
   Field,
   Dialog,
   ConfirmDialog,
@@ -24,13 +24,40 @@ import {
   Badge,
   CopyButton,
   Notice,
+  RefreshStatus,
+  useOnline,
   formatDate,
   Pagination,
 } from "./ui";
-export function KeysPage({ organization }: PageProps) {
+/** Presentation tone for the server-authoritative key state. */
+function keyStateTone(state: KeyState): "success" | "neutral" {
+  return state === KeyState.ACTIVE ? "success" : "neutral";
+}
+/** Machine-readable UTC value for a returned timestamp, when it is representable. */
+function utcIso(value: Timestamp): string | undefined {
+  const date = new Date(Number(value.seconds) * 1000);
+  return Number.isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+/** A UTC date-time with a machine-readable value; a missing value reads Unknown. */
+function KeyTime({ value }: { value?: Timestamp }) {
+  useLocale();
+  const iso = value ? utcIso(value) : undefined;
+  return iso ? (
+    <time dateTime={iso}>{formatDate(value)}</time>
+  ) : (
+    <>{formatDate(value)}</>
+  );
+}
+// The key list remounts per organization, so rows, dialogs, the raw secret,
+// the page cursor and action state never carry over into another scope.
+export function KeysPage(props: PageProps) {
+  return <KeysScope key={props.organization.id} {...props} />;
+}
+function KeysScope({ organization }: PageProps) {
   useLocale();
   const api = useApi();
   const action = useAction();
+  const headingId = useId();
   const [token, setToken] = useState("");
   const query = useQuery(KeyService.method.listKeys, {
     organizationId: organization.id,
@@ -39,6 +66,31 @@ export function KeysPage({ organization }: PageProps) {
   const [create, setCreate] = useState(false);
   const [revoke, setRevoke] = useState<InferenceKey>();
   const [raw, setRaw] = useState("");
+  // Timestamp of a confirmed revoke whose Revoke button may disappear on refetch.
+  const [restoreFocus, setRestoreFocus] = useState<number>();
+  const collectionHeading = useRef<HTMLHeadingElement>(null);
+  // The dialog returns focus to the Revoke button that opened it; once the
+  // refetch removes that button, move focus to the surviving collection heading.
+  useEffect(() => {
+    if (restoreFocus === undefined) return;
+    const active = document.activeElement;
+    if (!active || active === document.body || !active.isConnected) {
+      collectionHeading.current?.focus();
+      setRestoreFocus(undefined);
+    } else if (
+      query.fetchStatus === "idle" &&
+      query.dataUpdatedAt >= restoreFocus
+    ) {
+      setRestoreFocus(undefined);
+    }
+  }, [restoreFocus, query.data, query.fetchStatus, query.dataUpdatedAt]);
+  const online = useOnline();
+  const listCode = query.error
+    ? ConnectError.from(query.error).code
+    : undefined;
+  const accessDenied =
+    listCode === Code.PermissionDenied || listCode === Code.Unauthenticated;
+  const keys = accessDenied ? undefined : query.data?.keys;
   return (
     <>
       <PageHeader
@@ -52,52 +104,45 @@ export function KeysPage({ organization }: PageProps) {
       />
       <Notice>{translate("newKeysAreShownOnlyOnceStore")}</Notice>
       {action.feedback}
-      <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-      {query.isPending ? (
-        <Loading />
-      ) : query.data?.keys.length === 0 ? (
-        <EmptyState title={translate("createYourFirstApiKey")}>
-          {translate("keysConnectYourClientsToYourPersonal")}
-        </EmptyState>
+      {accessDenied ? (
+        <Notice tone="warning">
+          {translate("youNoLongerHaveAccessToTheseApiKeys")}
+        </Notice>
       ) : (
-        <div className="records">
-          {query.data?.keys.map((key) => (
-            <Card key={key.id} className="record">
-              <div>
-                <h2>{key.name}</h2>
-                <code>{key.prefix}••••</code>
-                <p>
-                  {translate("created", {
-                    value0:
-                      key.kind === KeyKind.CLI ? "CLI" : translate("personal"),
-                    value1: formatDate(key.createdAt),
-                  })}
-                </p>
-                <p>
-                  {translate("expires", {
-                    value0: key.expiresAt
-                      ? formatDate(key.expiresAt)
-                      : translate("noExpiry"),
-                  })}
-                </p>
-              </div>
-              <div className="actions">
-                <Badge
-                  tone={key.state === KeyState.ACTIVE ? "success" : "neutral"}
-                >
-                  {enumLabel(KeyState[key.state])}
-                </Badge>
-                {key.state === KeyState.ACTIVE && (
-                  <Button variant="danger" onClick={() => setRevoke(key)}>
-                    {translate("revoke")}
-                  </Button>
-                )}
-              </div>
-            </Card>
-          ))}
-        </div>
+        <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       )}
+      {query.error && query.data && !accessDenied && (
+        <Notice tone="warning">
+          {translate("showingTheLastLoadedApiKeysTheLatest")}
+        </Notice>
+      )}
+      {!online && query.data && !accessDenied && (
+        <Notice tone="warning">
+          {translate("youAreOfflineTheseApiKeysMayBeOut")}
+        </Notice>
+      )}
+      <RefreshStatus updating={!!keys && query.isFetching && !query.isError} />
+      <div className="keys-collection">
+        <h2
+          id={headingId}
+          ref={collectionHeading}
+          tabIndex={-1}
+          className="visually-hidden"
+        >
+          {translate("yourApiKeys")}
+        </h2>
+        {query.isPending ? (
+          <Loading />
+        ) : keys?.length === 0 ? (
+          <EmptyState title={translate("createYourFirstApiKey")}>
+            {translate("keysConnectYourClientsToYourPersonal")}
+          </EmptyState>
+        ) : keys ? (
+          <KeysTable keys={keys} headingId={headingId} onRevoke={setRevoke} />
+        ) : null}
+      </div>
       <Pagination
+        label={translate("apiKeyPages")}
         next={query.data?.page?.nextPageToken}
         onNext={setToken}
         onFirst={() => setToken("")}
@@ -148,7 +193,10 @@ export function KeysPage({ organization }: PageProps) {
                   organizationId: organization.id,
                   keyId: revoke.id,
                 }),
-              () => setRevoke(undefined),
+              () => {
+                setRevoke(undefined);
+                setRestoreFocus(Date.now());
+              },
               translate("keyRevoked"),
             );
           }}
@@ -159,6 +207,107 @@ export function KeysPage({ organization }: PageProps) {
         </ConfirmDialog>
       )}
     </>
+  );
+}
+/**
+ * One semantic table at every width. Below the collection's container query the
+ * stylesheet reflows each row into a labeled card, so only one set of focusable
+ * controls exists; ARIA roles keep the table semantics when display changes.
+ */
+function KeysTable({
+  keys,
+  headingId,
+  onRevoke,
+}: {
+  keys: InferenceKey[];
+  headingId: string;
+  onRevoke: (key: InferenceKey) => void;
+}) {
+  useLocale();
+  const idPrefix = useId();
+  const columns = {
+    name: translate("name"),
+    type: translate("type"),
+    created: translate("createdColumn"),
+    expires: translate("expires_f6725f"),
+    status: translate("status"),
+  };
+  return (
+    <table className="keys-table" role="table" aria-labelledby={headingId}>
+      <thead role="rowgroup">
+        <tr role="row">
+          <th scope="col" role="columnheader">
+            {columns.name}
+          </th>
+          <th scope="col" role="columnheader">
+            {columns.type}
+          </th>
+          <th scope="col" role="columnheader">
+            {columns.created}
+          </th>
+          <th scope="col" role="columnheader">
+            {columns.expires}
+          </th>
+          <th scope="col" role="columnheader">
+            {columns.status}
+          </th>
+          <th scope="col" role="columnheader">
+            <span className="visually-hidden">{translate("actions")}</span>
+          </th>
+        </tr>
+      </thead>
+      <tbody role="rowgroup">
+        {keys.map((key) => {
+          const identityId = `${idPrefix}-${key.id}-identity`;
+          return (
+            <tr key={key.id} role="row">
+              <td role="cell" data-label={columns.name} className="key-name">
+                <strong>{key.name}</strong>
+                {key.prefix ? (
+                  <code id={identityId}>{key.prefix}••••</code>
+                ) : (
+                  <span id={identityId} className="key-identifier-missing">
+                    {translate("identifierUnavailable")}
+                  </span>
+                )}
+              </td>
+              <td role="cell" data-label={columns.type}>
+                {key.kind === KeyKind.CLI ? "CLI" : translate("personal")}
+              </td>
+              <td role="cell" data-label={columns.created}>
+                <KeyTime value={key.createdAt} />
+              </td>
+              <td role="cell" data-label={columns.expires}>
+                {key.expiresAt ? (
+                  <KeyTime value={key.expiresAt} />
+                ) : (
+                  translate("noExpiry")
+                )}
+              </td>
+              <td role="cell" data-label={columns.status}>
+                <Badge tone={keyStateTone(key.state)}>
+                  {enumLabel(KeyState[key.state])}
+                </Badge>
+              </td>
+              <td role="cell" className="key-actions">
+                {key.state === KeyState.ACTIVE && (
+                  <Button
+                    variant="danger"
+                    aria-label={translate("revokeNamedKey", {
+                      value0: key.name,
+                    })}
+                    aria-describedby={identityId}
+                    onClick={() => onRevoke(key)}
+                  >
+                    {translate("revoke")}
+                  </Button>
+                )}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }
 // One-time result of ordinary key issuance. The raw value lives only in the

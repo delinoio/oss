@@ -2318,3 +2318,143 @@ dialog.models-dialog {
 .native-member-card > legend {
   overflow-wrap: anywhere;
 }
+
+/* API keys list. One semantic table that reflows to labeled cards by container width. */
+.keys-collection {
+  container: keys-collection / inline-size;
+  margin-top: 24px;
+}
+.keys-collection > h2:focus {
+  outline: none;
+}
+.keys-collection > h2:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 4px;
+}
+.keys-table {
+  width: 100%;
+  background: #fff;
+  border: 1px solid #e0e5ec;
+  border-radius: 12px;
+  border-collapse: separate;
+  border-spacing: 0;
+  overflow: hidden;
+}
+.keys-table th,
+.keys-table td {
+  padding: 24px;
+  border-bottom: 1px solid #e0e5ec;
+  vertical-align: middle;
+  overflow-wrap: anywhere;
+}
+.keys-table thead th {
+  padding-top: 16px;
+  padding-bottom: 16px;
+  background: #f7f8fa;
+  color: #4e5968;
+  font-size: 14px;
+  font-weight: 600;
+}
+.keys-table tbody tr {
+  height: 88px;
+}
+.keys-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.keys-table th:nth-child(1) {
+  width: 25%;
+}
+.keys-table th:nth-child(2) {
+  width: 10%;
+}
+.keys-table th:nth-child(3),
+.keys-table th:nth-child(4) {
+  width: 22%;
+}
+.keys-table th:nth-child(5) {
+  width: 10%;
+}
+.keys-table th:nth-child(6) {
+  width: 11%;
+}
+.keys-table .key-name strong {
+  display: block;
+  color: #191f28;
+  font-size: 16px;
+}
+.keys-table .key-name code,
+.keys-table .key-identifier-missing {
+  display: block;
+  margin-top: 4px;
+  color: #4e5968;
+  font-size: 14px;
+}
+.keys-table .key-actions {
+  text-align: right;
+}
+@container keys-collection (max-width: 1099px) {
+  .keys-table,
+  .keys-table tbody,
+  .keys-table tr,
+  .keys-table td {
+    display: block;
+  }
+  .keys-table {
+    background: none;
+    border: 0;
+    border-radius: 0;
+    overflow: visible;
+  }
+  /* The header row stays in the accessibility tree while cards carry visible labels. */
+  .keys-table thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    padding: 0;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+  .keys-table tbody tr {
+    height: auto;
+    margin-bottom: 16px;
+    padding: 16px;
+    background: #fff;
+    border: 1px solid #e0e5ec;
+    border-radius: 12px;
+  }
+  .keys-table td {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 8px 0;
+    border: 0;
+  }
+  .keys-table td::before {
+    content: attr(data-label);
+    content: attr(data-label) / "";
+    flex: 0 0 96px;
+    color: #4e5968;
+    font-size: 14px;
+  }
+  .keys-table td.key-name {
+    display: block;
+    padding-top: 0;
+  }
+  .keys-table td.key-name::before {
+    display: none;
+  }
+  .keys-table td.key-actions {
+    display: block;
+    padding-bottom: 0;
+    text-align: left;
+  }
+  .keys-table td.key-actions::before {
+    display: none;
+  }
+  .keys-table td.key-actions:empty {
+    display: none;
+  }
+}
