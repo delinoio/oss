@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale } from "./i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { create } from "@bufbuild/protobuf";
 import {
   NativePoolOptionsSchema,
@@ -10,6 +10,7 @@ import {
   NativeQuotaWindow,
   NativePinnedTransientPolicy,
   ProviderAuthKind,
+  type NativeModelRoute,
   type NativePoolOptions,
   type NativePoolMemberOptions,
   type ProviderConnection,
@@ -242,6 +243,521 @@ function OptionalBoolean({
     </Field>
   );
 }
+/** Limits for ordered model rules. */
+enum ModelRuleLimit {
+  MaxRules = 32,
+  MaxConnections = 32,
+  MaxNameLength = 64,
+  MaxPatternLength = 128,
+}
+const MODEL_RULE_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const MODEL_RULE_PATTERN = /^[A-Za-z0-9_./:*?-]+$/;
+/** Field-level explanations for one model rule; undefined entries are valid. */
+export type ModelRuleErrors = {
+  name?: string;
+  match?: string;
+  connections?: string;
+};
+/**
+ * Explains why one model rule cannot be saved. The checks mirror
+ * nativePoolError, which keeps gating Save with one aggregate message.
+ */
+export function modelRuleErrors(
+  route: NativeModelRoute,
+  index: number,
+  routes: NativeModelRoute[],
+  members: NativeMember[],
+): ModelRuleErrors {
+  const errors: ModelRuleErrors = {};
+  if (!route.name) errors.name = translate("enterARuleName");
+  else if (!MODEL_RULE_NAME.test(route.name))
+    errors.name = translate("useOrFewerLettersDigitsUnderscoresOr", {
+      value0: ModelRuleLimit.MaxNameLength,
+    });
+  else if (routes.some((r, i) => i !== index && r.name === route.name))
+    errors.name = translate("anotherRuleAlreadyUsesThisNameNames");
+  if (!route.match) errors.match = translate("enterAModelPattern");
+  else if (route.match.length > ModelRuleLimit.MaxPatternLength)
+    errors.match = translate("useOrFewerCharacters", {
+      value0: ModelRuleLimit.MaxPatternLength,
+    });
+  else if (!MODEL_RULE_PATTERN.test(route.match))
+    errors.match = translate("useLettersDigitsUnderscoresDotsSlashesColons");
+  else if (routes.some((r, i) => i !== index && r.match === route.match))
+    errors.match = translate("anotherRuleAlreadyUsesThisPatternPatterns");
+  const ids = route.connectionIds;
+  if (ids.length < 1)
+    errors.connections = translate("addAtLeastOneConnectionToThis");
+  else if (ids.length > ModelRuleLimit.MaxConnections)
+    errors.connections = translate("aRuleCanListAtMostConnections", {
+      value0: ModelRuleLimit.MaxConnections,
+    });
+  else if (new Set(ids).size !== ids.length)
+    errors.connections = translate("aConnectionCanAppearOnlyOnceIn");
+  else if (ids.some((id) => !members.some((m) => m.connectionId === id)))
+    errors.connections = translate("aListedConnectionIsNoLongerIn");
+  return errors;
+}
+function ModelRuleCard({
+  index,
+  route,
+  options,
+  members,
+  name,
+  onChange,
+  announce,
+  requestFocus,
+}: {
+  index: number;
+  route: NativeModelRoute;
+  options: NativePoolOptions;
+  members: NativeMember[];
+  name: (id: string) => string;
+  onChange: (o: NativePoolOptions) => void;
+  announce: (message: string) => void;
+  requestFocus: (id: string) => void;
+}) {
+  useLocale();
+  const number = index + 1;
+  const rid = `pool-rule-${index}`;
+  const errors = modelRuleErrors(route, index, options.routes, members);
+  const patch = (next: Partial<NativeModelRoute>) =>
+    onChange({
+      ...options,
+      routes: options.routes.map((r, i) =>
+        i === index ? { ...r, ...next } : r,
+      ),
+    });
+  const available = members.filter(
+    (m) => !route.connectionIds.includes(m.connectionId),
+  );
+  return (
+    <fieldset className="target-card rule-card">
+      <legend>{translate("modelRule", { value0: number })}</legend>
+      <div className="field-grid">
+        <Field
+          label={translate("ruleName", { value0: number })}
+          hint={translate("lettersDigitsUnderscoresOrHyphensStartWith")}
+          error={errors.name}
+        >
+          <input
+            required
+            value={route.name}
+            onChange={(e) => patch({ name: e.target.value })}
+          />
+        </Field>
+        <Field
+          label={translate("modelPattern", { value0: number })}
+          hint={translate("useAndAsWildcardsMaximum128Characters")}
+          error={errors.match}
+        >
+          <input
+            required
+            value={route.match}
+            onChange={(e) => patch({ match: e.target.value })}
+          />
+        </Field>
+      </div>
+      <p className="section-hint">
+        {translate("listedConnectionsAreTriedInThisOrder")}
+      </p>
+      <ol className="rule-connections">
+        {route.connectionIds.map((id, j) => {
+          const label = name(id);
+          const inPool = members.some((m) => m.connectionId === id);
+          return (
+            <li key={id}>
+              <span className="rule-connection-name">
+                {inPool ? label : translate("notInThisPool", { value0: label })}
+              </span>
+              <div className="actions">
+                <Button
+                  id={`${rid}-conn-${id}-up`}
+                  aria-label={translate("moveConnectionUpInModelRule", {
+                    value0: label,
+                    value1: number,
+                  })}
+                  disabled={j === 0}
+                  onClick={() => {
+                    const ids = [...route.connectionIds];
+                    [ids[j - 1], ids[j]] = [ids[j]!, ids[j - 1]!];
+                    patch({ connectionIds: ids });
+                    requestFocus(
+                      j - 1 === 0
+                        ? `${rid}-conn-${id}-remove`
+                        : `${rid}-conn-${id}-up`,
+                    );
+                    announce(
+                      translate("movedUpToPositionInModelRule", {
+                        value0: label,
+                        value1: j,
+                        value2: number,
+                      }),
+                    );
+                  }}
+                >
+                  {translate("moveConnectionUp")}
+                </Button>
+                <Button
+                  id={`${rid}-conn-${id}-remove`}
+                  variant="danger"
+                  aria-label={translate("removeRuleConnectionFromModelRule", {
+                    value0: label,
+                    value1: number,
+                  })}
+                  onClick={() => {
+                    const next =
+                      route.connectionIds[j + 1] ?? route.connectionIds[j - 1];
+                    patch({
+                      connectionIds: route.connectionIds.filter(
+                        (_, k) => k !== j,
+                      ),
+                    });
+                    requestFocus(
+                      next ? `${rid}-conn-${next}-remove` : `${rid}-add`,
+                    );
+                    announce(
+                      translate("removedFromModelRule", {
+                        value0: label,
+                        value1: number,
+                      }),
+                    );
+                  }}
+                >
+                  {translate("removeRuleConnection")}
+                </Button>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      <Field
+        label={translate("addRuleConnection", { value0: number })}
+        hint={
+          route.connectionIds.length >= ModelRuleLimit.MaxConnections
+            ? translate("aRuleCanListAtMostConnections", {
+                value0: ModelRuleLimit.MaxConnections,
+              })
+            : available.length === 0
+              ? translate("everyConnectionInThisPoolIsAlready")
+              : undefined
+        }
+        error={errors.connections}
+      >
+        <select
+          id={`${rid}-add`}
+          value=""
+          disabled={route.connectionIds.length >= ModelRuleLimit.MaxConnections}
+          onChange={(e) => {
+            const id = e.target.value;
+            if (!id) return;
+            patch({ connectionIds: [...route.connectionIds, id] });
+            announce(
+              translate("addedToModelRule", {
+                value0: name(id),
+                value1: number,
+              }),
+            );
+          }}
+        >
+          <option value="">{translate("chooseAPoolConnection")}</option>
+          {available.map((m) => (
+            <option key={m.connectionId} value={m.connectionId}>
+              {name(m.connectionId)}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <label className="check">
+        <input
+          type="checkbox"
+          checked={route.fallback}
+          onChange={(e) => patch({ fallback: e.target.checked })}
+        />
+        {translate("useTheFullPoolOnlyWhenNo")}
+      </label>
+      <div className="actions">
+        <Button
+          id={`${rid}-up`}
+          aria-label={translate("moveRuleUpModelRule", { value0: number })}
+          disabled={index === 0}
+          onClick={() => {
+            const routes = [...options.routes];
+            [routes[index - 1], routes[index]] = [
+              routes[index]!,
+              routes[index - 1]!,
+            ];
+            onChange({ ...options, routes });
+            requestFocus(
+              index - 1 === 0
+                ? `pool-rule-0-remove`
+                : `pool-rule-${index - 1}-up`,
+            );
+            announce(
+              translate("movedModelRuleUpToPosition", {
+                value0: number,
+                value1: index,
+              }),
+            );
+          }}
+        >
+          {translate("moveRuleUp")}
+        </Button>
+        <Button
+          id={`${rid}-remove`}
+          variant="danger"
+          onClick={() => {
+            onChange({
+              ...options,
+              routes: options.routes.filter((_, i) => i !== index),
+            });
+            requestFocus(
+              options.routes.length > 1
+                ? `pool-rule-${index === options.routes.length - 1 ? index - 1 : index}-remove`
+                : "pool-add-rule",
+            );
+            announce(translate("removedModelRule", { value0: number }));
+          }}
+        >
+          {translate("removeModelRule", { value0: number })}
+        </Button>
+      </div>
+    </fieldset>
+  );
+}
+function AnthropicFields({
+  family,
+  options,
+  onChange,
+  members,
+  name,
+}: {
+  /** Display identity of the homogeneous Anthropic family. */
+  family: string;
+  options: NativePoolOptions;
+  onChange: (o: NativePoolOptions) => void;
+  members: NativeMember[];
+  name: (id: string) => string;
+}) {
+  useLocale();
+  const [announcement, setAnnouncement] = useState("");
+  const focusRequest = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (focusRequest.current) {
+      document.getElementById(focusRequest.current)?.focus();
+      focusRequest.current = undefined;
+    }
+  });
+  const atLimit = options.routes.length >= ModelRuleLimit.MaxRules;
+  return (
+    <>
+      <fieldset className="native-group">
+        <legend>{translate("quotaAndMessages", { value0: family })}</legend>
+        <div className="field-grid">
+          <Field
+            label={translate("nativeQuotaWindow")}
+            hint={translate("whichUsageWindowDrivesVoluntaryQuotaSwitching")}
+          >
+            <select
+              value={options.quotaWindow}
+              onChange={(e) =>
+                onChange({ ...options, quotaWindow: Number(e.target.value) })
+              }
+            >
+              <option value={NativeQuotaWindow.UNSPECIFIED}>
+                {translate("defaultFiveHour")}
+              </option>
+              {[
+                NativeQuotaWindow.FIVE_HOUR,
+                NativeQuotaWindow.WEEKLY,
+                NativeQuotaWindow.MAX_UTILIZATION,
+              ].map((w) => (
+                <option key={w} value={w}>
+                  {enumLabel(NativeQuotaWindow[w])}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <OptionalBoolean
+            label={translate("nativeMessages")}
+            value={options.nativeMessages}
+            hint={translate("defaultEnabledDisabledUsesLegacyTranslation")}
+            onChange={(nativeMessages) =>
+              onChange({ ...options, nativeMessages })
+            }
+          />
+        </div>
+      </fieldset>
+      <section className="route-section" aria-labelledby="pool-rules-heading">
+        <h3 id="pool-rules-heading">{translate("orderedModelRules")}</h3>
+        <p className="section-hint">
+          {translate("theFirstMatchingRuleSelectsAnOrdered")}
+        </p>
+        <p className="section-hint">
+          {translate("ofRules", {
+            value0: options.routes.length,
+            value1: ModelRuleLimit.MaxRules,
+          })}
+          {atLimit && <> {translate("removeARuleToAddAnother")}</>}
+        </p>
+        <div
+          role="status"
+          className="visually-hidden"
+          data-testid="model-rule-announcement"
+        >
+          {announcement}
+        </div>
+        {options.routes.map((route, index) => (
+          <ModelRuleCard
+            key={index}
+            index={index}
+            route={route}
+            options={options}
+            members={members}
+            name={name}
+            onChange={onChange}
+            announce={setAnnouncement}
+            requestFocus={(id) => {
+              focusRequest.current = id;
+            }}
+          />
+        ))}
+        <Button
+          id="pool-add-rule"
+          disabled={atLimit}
+          onClick={() =>
+            onChange({
+              ...options,
+              routes: [...options.routes, create(NativeModelRouteSchema)],
+            })
+          }
+        >
+          {translate("addModelRule")}
+        </Button>
+      </section>
+    </>
+  );
+}
+function MemberOverrides({
+  members,
+  onMembers,
+  codex,
+  name,
+}: {
+  members: NativeMember[];
+  onMembers: (m: NativeMember[]) => void;
+  codex: boolean;
+  name: (id: string) => string;
+}) {
+  useLocale();
+  return (
+    <section className="route-section" aria-labelledby="pool-member-native">
+      <h3 id="pool-member-native">{translate("memberNativeOptions")}</h3>
+      <p className="section-hint">
+        {translate("cardsFollowTheConnectionOrderAboveNative")}
+      </p>
+      {members.map((member, index) => {
+        const current = member.nativeOptions;
+        const label = name(member.connectionId);
+        const update = (nativeOptions: NativePoolMemberOptions | undefined) =>
+          onMembers(
+            members.map((m, i) => (i === index ? { ...m, nativeOptions } : m)),
+          );
+        return (
+          <fieldset
+            className="target-card native-member-card"
+            key={member.connectionId}
+          >
+            <legend>{translate("nativeOptionsFor", { value0: label })}</legend>
+            <p className="section-hint">
+              {current
+                ? translate("overrideConfigured")
+                : translate("noOverride")}
+            </p>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={!!current}
+                onChange={(e) =>
+                  update(
+                    e.target.checked
+                      ? create(NativePoolMemberOptionsSchema)
+                      : undefined,
+                  )
+                }
+              />
+              {translate("overrideNativeOptionsFor", { value0: label })}
+            </label>
+            {current && (
+              <>
+                <div className="field-grid">
+                  <OptionalNumber
+                    label={translate("switchingThresholdFor", {
+                      value0: label,
+                    })}
+                    value={current.autoSwitchThreshold}
+                    min={0}
+                    max={100}
+                    hint={translate(
+                      "emptyInheritsThePoolThresholdZeroDisables",
+                    )}
+                    onChange={(autoSwitchThreshold) =>
+                      update({ ...current, autoSwitchThreshold })
+                    }
+                  />
+                  <OptionalNumber
+                    label={translate("nativePriorityFor", { value0: label })}
+                    value={current.priority}
+                    min={-100}
+                    max={100}
+                    hint={translate("wholeNumberFrom100To100Higher")}
+                    onChange={(priority) => update({ ...current, priority })}
+                  />
+                </div>
+                <label className="check">
+                  <input
+                    type="checkbox"
+                    checked={current.useRemainingQuota}
+                    onChange={(e) =>
+                      update({
+                        ...current,
+                        useRemainingQuota: e.target.checked,
+                      })
+                    }
+                  />
+                  {translate("useRemainingQuotaFor", { value0: label })}
+                </label>
+                <p className="section-hint">
+                  {current.useRemainingQuota
+                    ? current.autoSwitchThreshold === undefined
+                      ? translate("theEffectiveSwitchingThresholdIs0No")
+                      : translate("theEffectiveSwitchingThresholdIs0The", {
+                          value0: current.autoSwitchThreshold,
+                        })
+                    : translate(
+                        "usingRemainingQuotaMakesTheEffectiveSwitching",
+                      )}
+                </p>
+                {codex && (
+                  <label className="check">
+                    <input
+                      type="checkbox"
+                      checked={current.allowCredits}
+                      onChange={(e) =>
+                        update({ ...current, allowCredits: e.target.checked })
+                      }
+                    />
+                    {translate("allowCreditsFor", { value0: label })}
+                  </label>
+                )}
+              </>
+            )}
+          </fieldset>
+        );
+      })}
+    </section>
+  );
+}
 export function NativePoolFields({
   options,
   onChange,
@@ -438,340 +954,23 @@ export function NativePoolFields({
                 </Field>
               </fieldset>
             ) : (
-              <>
-                <Field label={translate("nativeQuotaWindow")}>
-                  <select
-                    value={options.quotaWindow}
-                    onChange={(e) =>
-                      onChange({
-                        ...options,
-                        quotaWindow: Number(e.target.value),
-                      })
-                    }
-                  >
-                    <option value={NativeQuotaWindow.UNSPECIFIED}>
-                      {translate("defaultFiveHour")}
-                    </option>
-                    {[
-                      NativeQuotaWindow.FIVE_HOUR,
-                      NativeQuotaWindow.WEEKLY,
-                      NativeQuotaWindow.MAX_UTILIZATION,
-                    ].map((w) => (
-                      <option key={w} value={w}>
-                        {enumLabel(NativeQuotaWindow[w])}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <OptionalBoolean
-                  label={translate("nativeMessages")}
-                  value={options.nativeMessages}
-                  hint={translate(
-                    "defaultEnabledDisabledUsesLegacyTranslation",
-                  )}
-                  onChange={(nativeMessages) =>
-                    onChange({ ...options, nativeMessages })
-                  }
-                />
-                <h3>{translate("orderedModelRules")}</h3>
-                <p>{translate("theFirstMatchingRuleSelectsAnOrdered")}</p>
-                {options.routes.map((route, index) => (
-                  <fieldset key={index}>
-                    <legend>
-                      {translate("modelRule", { value0: index + 1 })}
-                    </legend>
-                    <Field
-                      label={translate("ruleName", { value0: index + 1 })}
-                      hint={translate(
-                        "lettersDigitsUnderscoresOrHyphensStartWith",
-                      )}
-                    >
-                      <input
-                        required
-                        maxLength={64}
-                        pattern="[A-Za-z0-9][A-Za-z0-9_-]*"
-                        value={route.name}
-                        onChange={(e) =>
-                          onChange({
-                            ...options,
-                            routes: options.routes.map((r, i) =>
-                              i === index ? { ...r, name: e.target.value } : r,
-                            ),
-                          })
-                        }
-                      />
-                    </Field>
-                    <Field
-                      label={translate("modelPattern", { value0: index + 1 })}
-                      hint={translate("useAndAsWildcardsMaximum128Characters")}
-                    >
-                      <input
-                        required
-                        maxLength={128}
-                        value={route.match}
-                        onChange={(e) =>
-                          onChange({
-                            ...options,
-                            routes: options.routes.map((r, i) =>
-                              i === index ? { ...r, match: e.target.value } : r,
-                            ),
-                          })
-                        }
-                      />
-                    </Field>
-                    <ol>
-                      {route.connectionIds.map((id, j) => (
-                        <li key={id}>
-                          {name(id)}
-                          <div className="actions">
-                            <Button
-                              disabled={j === 0}
-                              onClick={() => {
-                                const ids = [...route.connectionIds];
-                                [ids[j - 1], ids[j]] = [ids[j], ids[j - 1]];
-                                onChange({
-                                  ...options,
-                                  routes: options.routes.map((r, i) =>
-                                    i === index
-                                      ? { ...r, connectionIds: ids }
-                                      : r,
-                                  ),
-                                });
-                              }}
-                            >
-                              {translate("moveConnectionUp")}
-                            </Button>
-                            <Button
-                              onClick={() =>
-                                onChange({
-                                  ...options,
-                                  routes: options.routes.map((r, i) =>
-                                    i === index
-                                      ? {
-                                          ...r,
-                                          connectionIds: r.connectionIds.filter(
-                                            (_, k) => k !== j,
-                                          ),
-                                        }
-                                      : r,
-                                  ),
-                                })
-                              }
-                            >
-                              {translate("removeRuleConnection")}
-                            </Button>
-                          </div>
-                        </li>
-                      ))}
-                    </ol>
-                    <Field
-                      label={translate("addRuleConnection", {
-                        value0: index + 1,
-                      })}
-                    >
-                      <select
-                        value=""
-                        disabled={route.connectionIds.length >= 32}
-                        onChange={(e) => {
-                          if (e.target.value)
-                            onChange({
-                              ...options,
-                              routes: options.routes.map((r, i) =>
-                                i === index
-                                  ? {
-                                      ...r,
-                                      connectionIds: [
-                                        ...r.connectionIds,
-                                        e.target.value,
-                                      ],
-                                    }
-                                  : r,
-                              ),
-                            });
-                        }}
-                      >
-                        <option value="">
-                          {translate("chooseAPoolConnection")}
-                        </option>
-                        {members
-                          .filter(
-                            (m) =>
-                              !route.connectionIds.includes(m.connectionId),
-                          )
-                          .map((m) => (
-                            <option key={m.connectionId} value={m.connectionId}>
-                              {name(m.connectionId)}
-                            </option>
-                          ))}
-                      </select>
-                    </Field>
-                    <label className="check">
-                      <input
-                        type="checkbox"
-                        checked={route.fallback}
-                        onChange={(e) =>
-                          onChange({
-                            ...options,
-                            routes: options.routes.map((r, i) =>
-                              i === index
-                                ? { ...r, fallback: e.target.checked }
-                                : r,
-                            ),
-                          })
-                        }
-                      />
-                      {translate("useTheFullPoolOnlyWhenNo")}
-                    </label>
-                    <div className="actions">
-                      <Button
-                        disabled={index === 0}
-                        onClick={() => {
-                          const routes = [...options.routes];
-                          [routes[index - 1], routes[index]] = [
-                            routes[index],
-                            routes[index - 1],
-                          ];
-                          onChange({ ...options, routes });
-                        }}
-                      >
-                        {translate("moveRuleUp")}
-                      </Button>
-                      <Button
-                        onClick={() =>
-                          onChange({
-                            ...options,
-                            routes: options.routes.filter(
-                              (_, i) => i !== index,
-                            ),
-                          })
-                        }
-                      >
-                        {translate("removeModelRule", { value0: index + 1 })}
-                      </Button>
-                    </div>
-                  </fieldset>
-                ))}
-                <Button
-                  disabled={options.routes.length >= 32}
-                  onClick={() =>
-                    onChange({
-                      ...options,
-                      routes: [
-                        ...options.routes,
-                        create(NativeModelRouteSchema),
-                      ],
-                    })
-                  }
-                >
-                  {translate("addModelRule")}
-                </Button>
-              </>
+              <AnthropicFields
+                family={provider === "anthropic2" ? "Anthropic 2" : "Anthropic"}
+                options={options}
+                onChange={onChange}
+                members={members}
+                name={name}
+              />
             )}
           </>
         )}
         {provider && (
-          <>
-            <h3>{translate("memberNativeOptions")}</h3>
-            {members.map((member, index) => {
-              const current = member.nativeOptions;
-              const update = (
-                nativeOptions: NativePoolMemberOptions | undefined,
-              ) =>
-                onMembers(
-                  members.map((m, i) =>
-                    i === index ? { ...m, nativeOptions } : m,
-                  ),
-                );
-              return (
-                <fieldset key={member.connectionId}>
-                  <legend>{name(member.connectionId)}</legend>
-                  <label className="check">
-                    <input
-                      type="checkbox"
-                      checked={!!current}
-                      onChange={(e) =>
-                        update(
-                          e.target.checked
-                            ? create(NativePoolMemberOptionsSchema)
-                            : undefined,
-                        )
-                      }
-                    />
-                    {translate("overrideNativeOptionsFor", {
-                      value0: name(member.connectionId),
-                    })}
-                  </label>
-                  {current && (
-                    <>
-                      <OptionalNumber
-                        label={translate("switchingThresholdFor", {
-                          value0: name(member.connectionId),
-                        })}
-                        value={current.autoSwitchThreshold}
-                        min={0}
-                        max={100}
-                        hint={translate(
-                          "emptyInheritsThePoolThresholdZeroDisables",
-                        )}
-                        onChange={(autoSwitchThreshold) =>
-                          update({ ...current, autoSwitchThreshold })
-                        }
-                      />
-                      <OptionalNumber
-                        label={translate("nativePriorityFor", {
-                          value0: name(member.connectionId),
-                        })}
-                        value={current.priority}
-                        min={-100}
-                        max={100}
-                        hint={translate("higherValuesComeFirstSeparateFromThe")}
-                        onChange={(priority) =>
-                          update({ ...current, priority })
-                        }
-                      />
-                      <label className="check">
-                        <input
-                          type="checkbox"
-                          checked={current.useRemainingQuota}
-                          onChange={(e) =>
-                            update({
-                              ...current,
-                              useRemainingQuota: e.target.checked,
-                            })
-                          }
-                        />
-                        {translate("useRemainingQuotaFor", {
-                          value0: name(member.connectionId),
-                        })}
-                      </label>
-                      <p>
-                        {translate(
-                          "usingRemainingQuotaMakesTheEffectiveSwitching",
-                        )}
-                      </p>
-                      {codex && (
-                        <label className="check">
-                          <input
-                            type="checkbox"
-                            checked={current.allowCredits}
-                            onChange={(e) =>
-                              update({
-                                ...current,
-                                allowCredits: e.target.checked,
-                              })
-                            }
-                          />
-                          {translate("allowCreditsFor", {
-                            value0: name(member.connectionId),
-                          })}
-                        </label>
-                      )}
-                    </>
-                  )}
-                </fieldset>
-              );
-            })}
-          </>
+          <MemberOverrides
+            members={members}
+            onMembers={onMembers}
+            codex={codex}
+            name={name}
+          />
         )}
         {error && <Notice tone="warning">{error}</Notice>}
         {hasNative && (
