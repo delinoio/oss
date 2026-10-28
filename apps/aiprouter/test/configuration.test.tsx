@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, rs } from "@rstest/core";
 import {
@@ -693,6 +693,53 @@ describe("hosted helpers dialog shell", () => {
     expect(
       (screen.getByLabelText("Configure web search") as HTMLInputElement)
         .checked,
+    ).toBe(true);
+    await user.click(save);
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update.mock.calls[0]?.[0]).toMatchObject({
+      organizationId: "org",
+      settings: { search: {} },
+    });
+  });
+  it("reports a failed settings refresh over cached data, blocks Save, and keeps the draft through retry", async () => {
+    const user = userEvent.setup();
+    let calls = 0;
+    const update = rs.fn((_request: unknown) => ({}));
+    mount(<HostedHelpers organizationId="org" />, (r) =>
+      shellRoutes(r, {
+        update,
+        get: () => {
+          calls += 1;
+          // Only the refetch on reopen fails; the cache still holds call 1.
+          if (calls === 2) throw new ConnectError("down", Code.Unavailable);
+          return {};
+        },
+      }),
+    );
+    await openDialog(user);
+    await screen.findByLabelText("Configure web search");
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await openDialog(user);
+    const dialog = await screen.findByRole("dialog");
+    await within(dialog).findByText(
+      "Hosted helper settings could not be refreshed, so the settings shown may be out of date. Save is unavailable until they load.",
+    );
+    expect(within(dialog).getByRole("alert")).toBeTruthy();
+    const save = within(dialog).getByRole("button", {
+      name: "Save helper settings",
+    }) as HTMLButtonElement;
+    expect(save.disabled).toBe(true);
+    await user.click(within(dialog).getByLabelText("Configure web search"));
+    expect(save.disabled).toBe(true);
+    await user.click(within(dialog).getByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(save.disabled).toBe(false));
+    expect(within(dialog).queryByRole("alert")).toBeNull();
+    expect(
+      (
+        within(dialog).getByLabelText(
+          "Configure web search",
+        ) as HTMLInputElement
+      ).checked,
     ).toBe(true);
     await user.click(save);
     expect(update).toHaveBeenCalledTimes(1);

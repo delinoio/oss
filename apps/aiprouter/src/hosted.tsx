@@ -143,11 +143,16 @@ function HostedLoader({
       <ErrorNotice error={query.error} retry={() => void query.refetch()} />
     );
   } else {
+    // A failed refresh keeps the cached settings and draft visible, but the
+    // cache may be stale, so the editor reports it and blocks Save.
+    const settingsError = query.isError ? query.error : undefined;
     const connectionsError = resources.connections.error;
     const poolsError = resources.pools.error;
     content = (
       <HostedEditor
         initial={query.data?.settings}
+        settingsError={settingsError}
+        retrySettings={() => void query.refetch()}
         connections={resources.connections.data ?? []}
         pools={resources.pools.data ?? []}
         resourcesError={connectionsError ?? poolsError}
@@ -351,6 +356,8 @@ function TargetFields({
 }
 function HostedEditor({
   initial,
+  settingsError,
+  retrySettings,
   connections,
   pools,
   resourcesError,
@@ -361,6 +368,8 @@ function HostedEditor({
   onClose,
 }: {
   initial?: HostedSettings;
+  settingsError: unknown;
+  retrySettings: () => void;
   connections: ProviderConnection[];
   pools: Pool[];
   resourcesError: unknown;
@@ -411,6 +420,12 @@ function HostedEditor({
           {translate("saveReplacesAllHelperSettingsRemovingA")}
         </div>
       )}
+      {!!settingsError && (
+        <div className="hosted-resource-error">
+          <p>{translate("hostedHelperSettingsCouldNotBeRefreshed")}</p>
+          <ErrorNotice error={settingsError} retry={retrySettings} />
+        </div>
+      )}
       {resourcesPending && (
         <p className="hosted-resource-status" role="status">
           {translate("loadingPersonalConnectionsAndPoolsSaveIs")}
@@ -430,7 +445,13 @@ function HostedEditor({
       <form
         onSubmit={(e) => {
           e.preventDefault();
-          if (action.pending || resourcesPending || resourcesError) return;
+          if (
+            action.pending ||
+            resourcesPending ||
+            resourcesError ||
+            settingsError
+          )
+            return;
           onSave(draft);
         }}
       >
@@ -888,7 +909,12 @@ function HostedEditor({
           <Button
             type="submit"
             variant="primary"
-            disabled={action.pending || resourcesPending || !!resourcesError}
+            disabled={
+              action.pending ||
+              resourcesPending ||
+              !!resourcesError ||
+              !!settingsError
+            }
           >
             {action.pending
               ? translate("message_23e39291d6")
