@@ -12,12 +12,12 @@ import {
 } from "@tairouter/client";
 import { useApi, type PageProps, pageSize } from "./api";
 import { useAction } from "./actions";
+import { RevokeKeyDialog } from "./revoke-key-dialog";
 import {
   PageHeader,
   Button,
   Field,
   Dialog,
-  ConfirmDialog,
   ErrorNotice,
   Loading,
   EmptyState,
@@ -180,31 +180,33 @@ function KeysScope({ organization }: PageProps) {
         />
       )}
       {revoke && (
-        <ConfirmDialog
-          title={translate("revoke_c771c3", { value0: revoke.name })}
-          confirmLabel={translate("revokeKey")}
-          onClose={() => setRevoke(undefined)}
-          pending={action.pending}
+        <RevokeKeyDialog
+          key={revoke.id}
+          keyName={revoke.name}
+          organizationName={organization.name}
+          busy={action.pending}
           error={action.error}
+          onClose={() => setRevoke(undefined)}
           onConfirm={() => {
+            const target = revoke;
             void action.run(
               () =>
                 api.key.revokeKey({
                   organizationId: organization.id,
-                  keyId: revoke.id,
+                  keyId: target.id,
                 }),
               () => {
-                setRevoke(undefined);
+                // The dialog may have been dismissed, and another key's dialog
+                // opened, while this request was pending; close only its own.
+                setRevoke((current) =>
+                  current?.id === target.id ? undefined : current,
+                );
                 setRestoreFocus(Date.now());
               },
               translate("keyRevoked"),
             );
           }}
-        >
-          {translate("revokeThisKeyInNewRequestsStop", {
-            value0: organization.name,
-          })}
-        </ConfirmDialog>
+        />
       )}
     </>
   );
