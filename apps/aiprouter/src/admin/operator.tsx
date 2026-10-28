@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale } from "../i18n";
-import { useEffect, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import { OperatorService, type PriceOverride } from "@aiprouter/client";
-import { Card, PageHeader } from "../ui";
+import { Card, Notice, PageHeader } from "../ui";
 import { useDirtyForm } from "../api";
 import {
   Confirm,
+  ConfirmFocus,
   Dialog,
   Empty,
   ErrorNotice,
@@ -18,7 +19,17 @@ import {
 import { DestinationPolicyForm, DestinationPolicyNotice } from "./destinations";
 import { RequestLimitsForm } from "./limits";
 import { RetentionForm } from "./retention";
-import { usePriceRevision, type PriceSnapshot } from "./price-revision";
+import {
+  PriceReviewContext,
+  usePriceRevision,
+  type PriceSnapshot,
+} from "./price-revision";
+import {
+  PriceRates,
+  priceRateFields,
+  priceRecordName,
+  tierLabel,
+} from "./price-display";
 
 export { Health } from "./instance-health";
 
@@ -94,20 +105,18 @@ function Unavailable({ retry }: { retry: () => void }) {
     </>
   );
 }
-const rateFields = () =>
-  [
-    ["input", translate("input")],
-    ["output", translate("output")],
-    ["cacheRead", translate("cacheRead")],
-    ["cacheWrite", translate("cacheWrite")],
-    ["cacheWriteShort", translate("shortCacheWrite")],
-    ["cacheWriteLong", translate("longCacheWrite")],
-  ] as const;
 export function Prices() {
   useLocale();
   const [token, setToken] = useState("");
   const [editing, setEditing] = useState<PriceSnapshot>();
   const [deleting, setDeleting] = useState<PriceSnapshot>();
+  // Set after a confirmed deletion so focus moves to the page heading, because
+  // the deleted record's Delete button no longer exists to receive it.
+  const [deletedCount, setDeletedCount] = useState(0);
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (deletedCount) headingRef.current?.focus();
+  }, [deletedCount]);
   const action = useAction(true);
   const query = useQuery(OperatorService.method.listPriceOverrides, {
     page: { pageSize: 100, pageToken: token },
@@ -117,6 +126,7 @@ export function Prices() {
     <>
       <PageHeader
         title={translate("priceOverrides")}
+        headingRef={headingRef}
         description={translate("commonPricesInCurrencyUnitsPerMillion")}
         action={
           <button
@@ -136,6 +146,9 @@ export function Prices() {
           </button>
         }
       />
+      <p className="admin-price-note">
+        {translate("appliesToNewRequestsOnlyHistoricalEstimates")}
+      </p>
       {action.feedback}
       {query.isPending ? (
         <Loading />
@@ -149,6 +162,16 @@ export function Prices() {
         />
       ) : (
         <Card>
+          {!query.data?.revision && (
+            <Notice tone="warning">
+              {translate("priceChangesAreUnavailableBecauseTheServer")}
+              <div className="admin-actions">
+                <button onClick={() => void query.refetch()}>
+                  {translate("tryAgain")}
+                </button>
+              </div>
+            </Notice>
+          )}
           {!query.data?.overrides.length && (
             <Empty>
               {translate("noPriceOverridesBundledPricesApplyWhere")}
@@ -156,33 +179,33 @@ export function Prices() {
           )}
           <div className="admin-records">
             {query.data?.overrides.map((price) => (
-              <article key={price.id} className="admin-record">
+              <article
+                key={price.id}
+                className="admin-record admin-price-record"
+                aria-labelledby={`price-${price.id}`}
+              >
                 <div>
-                  <h2>
-                    {price.providerId} / {price.modelId}
-                  </h2>
+                  <h2 id={`price-${price.id}`}>{price.modelId}</h2>
                   <p>
-                    {translate("tierProvenanceInstanceOperatorOverride", {
-                      value0: price.serviceTier || translate("default"),
+                    {translate("providerIdValue", { value0: price.providerId })}
+                  </p>
+                  <p>{tierLabel(price.serviceTier)}</p>
+                  <p>
+                    {translate("currency_633895", {
+                      value0: price.rates?.currency || translate("unknown"),
                     })}
                   </p>
+                  <p>{translate("provenanceInstanceOperatorOverride")}</p>
                   <p>
                     {translate("updated", { value0: date(price.updatedAt) })}
                   </p>
-                  {rateFields().map(([field, name]) => (
-                    <p key={field}>
-                      {name}:{" "}
-                      {price.rates?.[field] === undefined
-                        ? translate("unknown")
-                        : translate("perMillionTokens", {
-                            value0: price.rates.currency,
-                            value1: price.rates[field],
-                          })}
-                    </p>
-                  ))}
+                  <PriceRates rates={price.rates} />
                 </div>
                 <div className="admin-actions">
                   <button
+                    aria-label={translate("editOverrideFor", {
+                      value0: priceRecordName(price),
+                    })}
                     disabled={!query.data?.revision || action.pending}
                     onClick={() => {
                       action.clearError();
@@ -192,6 +215,9 @@ export function Prices() {
                     {translate("editOverride")}
                   </button>
                   <button
+                    aria-label={translate("deleteOverrideFor", {
+                      value0: priceRecordName(price),
+                    })}
                     disabled={!query.data?.revision || action.pending}
                     onClick={() => {
                       action.clearError();
@@ -225,6 +251,10 @@ export function Prices() {
           revision={deleting.revision}
           action={action}
           onClose={() => setDeleting(undefined)}
+          onDeleted={() => {
+            setDeleting(undefined);
+            setDeletedCount((count) => count + 1);
+          }}
         />
       )}
     </>
@@ -248,7 +278,7 @@ function PriceEditor({
   const [currency, setCurrency] = useState(price?.rates?.currency ?? "USD");
   const [rates, setRates] = useState<Record<string, string>>(() =>
     Object.fromEntries(
-      rateFields().map(([field]) => [field, price?.rates?.[field] ?? ""]),
+      priceRateFields().map(([field]) => [field, price?.rates?.[field] ?? ""]),
     ),
   );
   const snapshot = usePriceRevision(
@@ -258,10 +288,21 @@ function PriceEditor({
   );
   const save = useMutation(OperatorService.method.setPriceOverride);
   const dirty = useDirtyForm();
+  const ids = useId();
+  const tierHelpId = `${ids}-tier`;
+  const currencyHelpId = `${ids}-currency`;
+  const ratesHelpId = `${ids}-rates`;
+  const currencyRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     dirty(true);
     return () => dirty(false);
   }, [dirty]);
+  // Edit locks the identity fields, so initial focus moves to the first
+  // editable control instead of a read-only identity value. This effect runs
+  // after the Dialog's own initial focus because the Dialog is a child.
+  useEffect(() => {
+    if (price) currencyRef.current?.focus();
+  }, [price]);
   return (
     <Dialog
       title={
@@ -270,6 +311,7 @@ function PriceEditor({
       onClose={onClose}
     >
       <form
+        className="admin-price-form"
         onSubmit={(e) => {
           e.preventDefault();
           if (snapshot.blocked) return;
@@ -294,59 +336,80 @@ function PriceEditor({
           );
         }}
       >
-        <label>
-          {translate("providerId")}
-          <input
-            required
-            readOnly={!!price}
-            value={provider}
-            onChange={(e) => setProvider(e.target.value)}
-          />
-        </label>
-        <label>
-          {translate("modelId_089ef2")}
-          <input
-            required
-            readOnly={!!price}
-            value={model}
-            onChange={(e) => setModel(e.target.value)}
-          />
-        </label>
-        <label>
-          {translate("serviceTier_e9cf60")}
-          <input
-            readOnly={!!price}
-            value={tier}
-            onChange={(e) => setTier(e.target.value)}
-          />
-        </label>
-        <label>
-          {translate("currency")}
-          <input
-            required
-            pattern="[A-Z]{3}"
-            maxLength={3}
-            value={currency}
-            onChange={(e) => setCurrency(e.target.value.toUpperCase())}
-          />
-        </label>
-        <p>{translate("ratesPerMillionTokensBlankMeansUnknown")}</p>
-        <div className="admin-form-grid">
-          {rateFields().map(([field, name]) => (
-            <label key={field}>
-              {name}
-              <input
-                inputMode="decimal"
-                pattern="[0-9]+([.][0-9]+)?"
-                value={rates[field]}
-                onChange={(e) =>
-                  setRates({ ...rates, [field]: e.target.value })
-                }
-              />
-            </label>
-          ))}
-        </div>
-        <ErrorNotice error={action.error} />
+        <fieldset className="admin-price-group">
+          <legend>{translate("priceIdentity")}</legend>
+          <label>
+            {translate("providerId")}
+            <input
+              required
+              readOnly={!!price}
+              value={provider}
+              onChange={(e) => setProvider(e.target.value)}
+            />
+          </label>
+          <label>
+            {translate("modelId_089ef2")}
+            <input
+              required
+              readOnly={!!price}
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+            />
+          </label>
+          <label>
+            {translate("serviceTier_e9cf60")}
+            <input
+              readOnly={!!price}
+              aria-describedby={tierHelpId}
+              value={tier}
+              onChange={(e) => setTier(e.target.value)}
+            />
+          </label>
+          <small id={tierHelpId}>
+            {translate("leaveEmptyToApplyWhenNoTierSpecific")}
+          </small>
+        </fieldset>
+        <fieldset className="admin-price-group">
+          <legend>{translate("tokenRates")}</legend>
+          <label>
+            {translate("currency")}
+            <input
+              ref={currencyRef}
+              required
+              pattern="[A-Z]{3}"
+              maxLength={3}
+              aria-describedby={currencyHelpId}
+              value={currency}
+              onChange={(e) => setCurrency(e.target.value.toUpperCase())}
+            />
+          </label>
+          <small id={currencyHelpId}>
+            {translate("usdIsCurrentlySupported")}
+          </small>
+          <h3>{translate("yourEnteredRates")}</h3>
+          <p>{translate("currencyUnitsPerMillionTokens")}</p>
+          <div className="admin-form-grid admin-price-rate-grid">
+            {priceRateFields().map(([field, name]) => (
+              <label key={field}>
+                {name}
+                <input
+                  inputMode="decimal"
+                  pattern="[0-9]+([.][0-9]+)?"
+                  aria-describedby={ratesHelpId}
+                  value={rates[field]}
+                  onChange={(e) =>
+                    setRates({ ...rates, [field]: e.target.value })
+                  }
+                />
+              </label>
+            ))}
+          </div>
+          <small id={ratesHelpId}>
+            {translate("blankMeansUnknownEnterZeroOnlyFor")}
+          </small>
+          <p>{translate("historicalEstimatesRemainUnchanged")}</p>
+        </fieldset>
+        {!snapshot.conflicted && <ErrorNotice error={action.error} />}
         {snapshot.controls}
         <div className="admin-actions">
           <button type="button" data-cancel onClick={onClose}>
@@ -354,6 +417,7 @@ function PriceEditor({
           </button>
           <button
             className="admin-primary"
+            data-price-submit
             disabled={action.pending || snapshot.blocked}
           >
             {translate("saveOverride")}
@@ -369,14 +433,22 @@ function PriceDeletion({
   revision,
   action,
   onClose,
+  onDeleted,
 }: {
   price: PriceOverride;
   revision: string;
   action: ReturnType<typeof useAction>;
   onClose: () => void;
+  // Called only after the server confirmed the deletion.
+  onDeleted: () => void;
 }) {
   useLocale();
-  const snapshot = usePriceRevision(revision, price, action);
+  const snapshot = usePriceRevision(
+    revision,
+    price,
+    action,
+    PriceReviewContext.Delete,
+  );
   const remove = useMutation(OperatorService.method.deletePriceOverride);
   return (
     <Confirm
@@ -384,6 +456,7 @@ function PriceDeletion({
       name={price.modelId}
       pending={action.pending || snapshot.blocked}
       onClose={onClose}
+      initialFocus={ConfirmFocus.Input}
       action={() => {
         if (snapshot.blocked) return;
         void action.run(
@@ -392,12 +465,30 @@ function PriceDeletion({
               overrideId: price.id,
               expectedRevision: snapshot.revision,
             }),
-          { done: onClose, success: translate("priceOverrideDeleted") },
+          { done: onDeleted, success: translate("priceOverrideDeleted") },
         );
       }}
     >
-      <p>{translate("futureRequestsUseTheBundledPriceWhere")}</p>
-      <ErrorNotice error={action.error} />
+      <dl className="admin-price-delete-identity">
+        <div>
+          <dt>{translate("provider")}</dt>
+          <dd>{price.providerId}</dd>
+        </div>
+        <div>
+          <dt>{translate("model")}</dt>
+          <dd>{price.modelId}</dd>
+        </div>
+        <div>
+          <dt>{translate("serviceTier_e9cf60")}</dt>
+          <dd>{tierLabel(price.serviceTier)}</dd>
+        </div>
+        <div>
+          <dt>{translate("provenance")}</dt>
+          <dd>{translate("instanceOperatorOverride")}</dd>
+        </div>
+      </dl>
+      <p>{translate("futureRequestsUseAnyRemainingApplicableOverride")}</p>
+      {!snapshot.conflicted && <ErrorNotice error={action.error} />}
       {snapshot.controls}
     </Confirm>
   );

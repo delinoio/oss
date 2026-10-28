@@ -27,8 +27,49 @@ import {
 } from "./ui";
 import { SummaryCards, UsageTrend } from "./usage";
 import { connectionLabel } from "./providers";
+/** Setup progress of one checklist step; unresolved queries never settle it. */
+enum StepStatus {
+  Complete = "complete",
+  Incomplete = "incomplete",
+  Checking = "checking",
+  Unavailable = "unavailable",
+}
+const stepStatusMessage = {
+  [StepStatus.Complete]: "message_143b270a32",
+  [StepStatus.Incomplete]: "notYetComplete",
+  [StepStatus.Checking]: "checking",
+  [StepStatus.Unavailable]: "statusUnavailable",
+} as const;
+function stepStatus(
+  query: { isPending: boolean; isError: boolean },
+  isDone: () => boolean,
+) {
+  if (query.isError) return StepStatus.Unavailable;
+  if (query.isPending) return StepStatus.Checking;
+  return isDone() ? StepStatus.Complete : StepStatus.Incomplete;
+}
+const PREVIEW_LIMIT = 4;
+function RegionError({
+  message,
+  error,
+  retry,
+}: {
+  message: string;
+  error: unknown;
+  retry: () => void;
+}) {
+  useLocale();
+  if (!error) return null;
+  return (
+    <>
+      <p className="overview-region-error">{message}</p>
+      <ErrorNotice error={error} retry={retry} />
+    </>
+  );
+}
 export function OverviewPage({ organization, session }: PageProps) {
   useLocale();
+  // Rolling seven-day window, fixed for the life of the page.
   const [timeRange] = useState(() => ({
     start: timestampFromDate(new Date(Date.now() - 7 * 86400000)),
     end: timestampFromDate(new Date()),
@@ -51,33 +92,47 @@ export function OverviewPage({ organization, session }: PageProps) {
     timeRange,
   });
   const link = (page: Page) => pageHref(page, organization.id);
-  const steps = [
-    [translate("chooseOrganization"), "overview", true],
+  const steps: [string, Page, StepStatus][] = [
+    [translate("chooseOrganization"), "overview", StepStatus.Complete],
     [
       translate("connectPersonalProviders"),
       "providers",
-      providers.data?.connections.some(
-        (c) => c.state === ConnectionState.READY,
+      stepStatus(providers, () =>
+        (providers.data?.connections ?? []).some(
+          (c) => c.state === ConnectionState.READY,
+        ),
       ),
     ],
     [
       translate("configureModelsRouting"),
       "routing",
-      routes.data?.routes.some((r) => r.enabled && r.targets.length > 0),
+      stepStatus(routes, () =>
+        (routes.data?.routes ?? []).some(
+          (r) => r.enabled && r.targets.length > 0,
+        ),
+      ),
     ],
     [
       translate("createApiKey"),
       "keys",
-      keys.data?.keys.some((k) => k.state === KeyState.ACTIVE),
+      stepStatus(keys, () =>
+        (keys.data?.keys ?? []).some((k) => k.state === KeyState.ACTIVE),
+      ),
     ],
     [
       translate("connectAClient"),
       "connect",
-      keys.data?.keys.some((k) => k.kind === KeyKind.CLI && k.lastUsedAt),
+      stepStatus(keys, () =>
+        (keys.data?.keys ?? []).some(
+          (k) => k.kind === KeyKind.CLI && !!k.lastUsedAt,
+        ),
+      ),
     ],
-  ] as const;
+  ];
+  const connections = providers.data?.connections ?? [];
+  const routeList = routes.data?.routes ?? [];
   return (
-    <>
+    <div className="overview">
       <PageHeader
         title={translate("yourWorkspace")}
         description={translate("yourSettingsIn", { value0: organization.name })}
@@ -87,85 +142,177 @@ export function OverviewPage({ organization, session }: PageProps) {
           </a>
         }
       />
-      <Notice>
-        <strong>{translate("privateToYou")}</strong>
-        <br />
+      <p className="overview-note">
+        <strong>{translate("privateToYou")}</strong> ·{" "}
         {translate("yourProvidersAndRoutingAreSeparateIn")}
-      </Notice>
-      <ErrorNotice
-        error={providers.error ?? routes.error ?? keys.error ?? usage.error}
-      />
-      {providers.isPending ? (
-        <Loading />
-      ) : (
-        <div className="grid">
-          {providers.data?.connections.slice(0, 4).map((c) => (
-            <Card key={c.id}>
-              <div className="record-title">
-                <span className="provider-mark" aria-hidden="true">
-                  {c.providerId.slice(0, 2).toUpperCase()}
-                </span>
-                <h2>{c.name}</h2>
-              </div>
-              <Badge
-                tone={c.state === ConnectionState.READY ? "success" : "warning"}
-              >
-                {connectionLabel[c.state] ?? translate("unknownStatus")}
-              </Badge>
-              <p>{translate("personalAccount")}</p>
-              <a href={link("providers")}>{translate("manageConnection")}</a>
-            </Card>
-          ))}
-        </div>
-      )}
-      <SummaryCards summary={usage.data?.summary} />
-      <UsageTrend
-        organizationId={organization.id}
-        userId={session.userId}
-        timeRange={timeRange}
-      />
-      <Card>
-        <h2>{translate("getConnected")}</h2>
-        <ol className="checklist">
-          {steps.map(([label, page, done], i) => (
-            <li key={page}>
-              <span
-                className={done ? "step done" : "step"}
-                aria-label={
-                  done
-                    ? translate("message_143b270a32")
-                    : translate("notYetComplete")
-                }
-              >
-                {done ? "✓" : i + 1}
-              </span>
-              <a href={link(page)}>{label}</a>
-            </li>
-          ))}
-        </ol>
-      </Card>
-      <Card>
-        <div className="record">
-          <h2>{translate("yourRouting")}</h2>
-          <a href={link("routing")}>{translate("viewAll")}</a>
-        </div>
-        {routes.data?.routes.length === 0 ? (
-          <p>{translate("noModelRoutesYetConfigureARoute")}</p>
-        ) : (
-          routes.data?.routes.slice(0, 4).map((r) => (
-            <div className="record" key={r.id}>
-              <strong>{r.modelId}</strong>
-              <span>{translate("targets", { value0: r.targets.length })}</span>
-              <Badge>
-                {r.enabled
-                  ? translate("enabledCheckConnectionHealth")
-                  : translate("disabled")}
-              </Badge>
-            </div>
-          ))
+      </p>
+      <section className="overview-usage" aria-labelledby="overview-usage">
+        <h2 id="overview-usage">{translate("last7Days")}</h2>
+        <p className="overview-caption">
+          {translate("yourRequestsOverTheLastSeven")}
+        </p>
+        <RegionError
+          message={translate("couldNotLoadUsageSummary")}
+          error={usage.error}
+          retry={() => void usage.refetch()}
+        />
+        {!usage.isError && (
+          <SummaryCards
+            summary={usage.data?.summary}
+            loading={usage.isPending}
+            updating={usage.isFetching && !usage.isPending}
+          />
         )}
-      </Card>
-    </>
+      </section>
+      <div className="overview-primary">
+        <UsageTrend
+          key={`${organization.id}:${session.userId}`}
+          className="overview-activity"
+          title={translate("requestActivity")}
+          description={translate("dailyRecordedRequestsInUtcMissing")}
+          action={<a href={link("usage")}>{translate("viewUsage")}</a>}
+          emptyHint={
+            <>
+              {translate("requestsAppearAfterAClientUsesYour")}{" "}
+              <a href={link("connect")}>{translate("connectAClient")}</a>
+            </>
+          }
+          organizationId={organization.id}
+          userId={session.userId}
+          timeRange={timeRange}
+        />
+        <Card className="overview-connections">
+          <h2>{translate("personalConnections")}</h2>
+          <RegionError
+            message={translate("couldNotLoadPersonalConnections")}
+            error={providers.error}
+            retry={() => void providers.refetch()}
+          />
+          {providers.isPending ? (
+            <Loading label={translate("loadingPersonalConnections")} />
+          ) : providers.isError ? null : connections.length === 0 ? (
+            <p>
+              {translate("noPersonalConnectionsYet")}{" "}
+              <a href={link("providers")}>{translate("connectAProvider")}</a>
+            </p>
+          ) : (
+            <>
+              <ul className="overview-list">
+                {connections.slice(0, PREVIEW_LIMIT).map((c) => (
+                  <li key={c.id}>
+                    <span className="provider-mark" aria-hidden="true">
+                      {c.providerId.slice(0, 2).toUpperCase()}
+                    </span>
+                    <div className="overview-list-body">
+                      <h3>{c.name}</h3>
+                      <p>
+                        {translate("personalAccount_938eac", {
+                          value0: c.providerId,
+                        })}
+                      </p>
+                      <Badge
+                        tone={
+                          c.state === ConnectionState.READY
+                            ? "success"
+                            : "warning"
+                        }
+                      >
+                        {connectionLabel[c.state] ?? translate("unknownStatus")}
+                      </Badge>
+                    </div>
+                    <a
+                      className="overview-link"
+                      href={link("providers")}
+                      aria-label={translate("manageConnection_fde57e", {
+                        value0: c.name,
+                      })}
+                    >
+                      {translate("manageConnection")}
+                    </a>
+                  </li>
+                ))}
+              </ul>
+              <a className="overview-link" href={link("providers")}>
+                {translate("manageProviders")}
+              </a>
+            </>
+          )}
+        </Card>
+      </div>
+      <div className="overview-secondary">
+        <Card className="overview-checklist-card">
+          <h2>{translate("getConnected")}</h2>
+          <RegionError
+            message={translate("couldNotLoadApiKeys")}
+            error={keys.error}
+            retry={() => void keys.refetch()}
+          />
+          {keys.isPending && <Loading label={translate("checkingApiKeys")} />}
+          <ol className="overview-checklist">
+            {steps.map(([label, page, status], i) => (
+              <li key={page}>
+                <span
+                  className={
+                    status === StepStatus.Complete ? "step done" : "step"
+                  }
+                  aria-hidden="true"
+                >
+                  {status === StepStatus.Complete ? "✓" : i + 1}
+                </span>
+                <a className="overview-link" href={link(page)}>
+                  {label}
+                </a>
+                <span className="step-status">
+                  {translate(stepStatusMessage[status])}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </Card>
+        <Card className="overview-routing">
+          <div className="overview-card-heading">
+            <h2>{translate("yourRouting")}</h2>
+            <a className="overview-link" href={link("routing")}>
+              {translate("viewAll")}
+            </a>
+          </div>
+          <RegionError
+            message={translate("couldNotLoadRoutes")}
+            error={routes.error}
+            retry={() => void routes.refetch()}
+          />
+          {routes.isPending ? (
+            <Loading label={translate("loadingRoutes")} />
+          ) : routes.isError ? null : routeList.length === 0 ? (
+            <p>
+              {translate("noModelRoutesYetConfigureARoute")}{" "}
+              <a href={link("routing")}>{translate("configureRouting")}</a>
+            </p>
+          ) : (
+            <ul className="overview-list">
+              {routeList.slice(0, PREVIEW_LIMIT).map((r) => (
+                <li key={r.id}>
+                  <div className="overview-list-body">
+                    <h3>{r.modelId}</h3>
+                    <p>
+                      {translate(
+                        r.targets.length === 1 ? "target_8418d3" : "targets",
+                        { value0: r.targets.length },
+                      )}
+                    </p>
+                  </div>
+                  <Badge>
+                    {r.enabled
+                      ? translate("enabledCheckConnectionHealth")
+                      : translate("disabled")}
+                  </Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      </div>
+    </div>
   );
 }
 export function ConnectPage({ organization }: PageProps) {

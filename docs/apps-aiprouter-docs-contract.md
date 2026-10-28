@@ -16,7 +16,7 @@ Self-hosting operators, end users, and CLI users.
 
 Include English public guidance for all of:
 
-1. Installation, upgrades, rollback, backup, and restore.
+1. Installation, browser-managed console installation (including secure-context and online-only limits), upgrades, rollback, backup, and restore.
 2. OIDC, SMTP, HTTPS, and required R2 configuration.
 3. Organizations, invitations, and API keys.
 4. Provider/OAuth setup and routing.

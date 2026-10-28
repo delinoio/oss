@@ -74,7 +74,7 @@ func consoleHandler(directory string) (http.Handler, error) {
 		}
 		// Only generated static asset trees and explicit public icons are served. Unknown
 		// auth/API paths can never fall back to index.html or a coincidentally named file.
-		allowed := strings.HasPrefix(clean, "static/") || strings.HasPrefix(clean, "assets/") || clean == "favicon.ico" || clean == "favicon.svg" || clean == "robots.txt"
+		allowed := strings.HasPrefix(clean, "static/") || strings.HasPrefix(clean, "assets/") || clean == "favicon.ico" || clean == "favicon.svg" || clean == "robots.txt" || clean == "manifest.webmanifest"
 		if !allowed || strings.HasSuffix(clean, ".map") {
 			http.NotFound(w, r)
 			return
@@ -90,7 +90,12 @@ func consoleHandler(directory string) (http.Handler, error) {
 			http.NotFound(w, r)
 			return
 		}
-		w.Header().Set("Cache-Control", "public, max-age=3600")
+		if clean == "manifest.webmanifest" {
+			w.Header().Set("Content-Type", "application/manifest+json")
+			w.Header().Set("Cache-Control", "no-cache")
+		} else {
+			w.Header().Set("Cache-Control", "public, max-age=3600")
+		}
 		http.ServeContent(w, r, clean, info.ModTime(), file)
 	}), nil
 }

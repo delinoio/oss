@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale, getLocale } from "../i18n";
-import { useContext, useEffect, useState } from "react";
+import { useContext, useEffect, useId, useState } from "react";
 import { useMutation, useQuery, useTransport } from "@connectrpc/connect-query";
 import { createClient, Code, ConnectError } from "@connectrpc/connect";
 import {
@@ -20,7 +20,10 @@ import { useDirtyForm } from "../api";
 import {
   AdminAuthority,
   Confirm,
+  ConfirmFocus,
+  ConfirmTone,
   Dialog,
+  DialogSize,
   Empty,
   ErrorNotice,
   Loading,
@@ -35,11 +38,12 @@ import {
 
 export function Members() {
   useLocale();
-  const { organizationId, role } = useContext(AdminAuthority);
+  const { organizationId, role, organizationName } = useContext(AdminAuthority);
   const transport = useTransport();
   const [token, setToken] = useState("");
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Member>();
+  const searchHelperId = useId();
   const query = useQuery(MembershipService.method.listMembers, {
     organizationId,
     page: { pageSize: 100, pageToken: token },
@@ -69,6 +73,8 @@ export function Members() {
         Code.PermissionDenied,
       );
   }
+  // Page-local filter: case-insensitive substring over the loaded page only.
+  // The query is intentionally not trimmed or reinterpreted.
   const members =
     query.data?.members.filter((m) =>
       `${m.displayName} ${m.email}`
@@ -83,16 +89,28 @@ export function Members() {
           "manageMembershipPersonalCredentialsAndRequestContent",
         )}
       />
-      {action.feedback}
-      <Card>
+      {organizationName && (
+        <p className="admin-quiet admin-members-context">
+          {translate("organizationMembersIn", { value0: organizationName })}
+        </p>
+      )}
+      {/* While the removal dialog is open it owns the error and pending
+          announcements, so the same message is not announced twice. */}
+      {!selected && action.feedback}
+      <Card className="admin-members-card">
         <label>
           {translate("searchThisPage")}
           <input
             type="search"
+            placeholder={translate("searchNameOrEmail")}
+            aria-describedby={searchHelperId}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
+        <p id={searchHelperId} className="admin-helper">
+          {translate("searchAppliesOnlyToTheLoaded")}
+        </p>
         {search && (
           <button onClick={() => setSearch("")}>
             {translate("clearFilters")}
@@ -104,58 +122,97 @@ export function Members() {
           <ErrorNotice error={query.error} retry={() => void query.refetch()} />
         ) : (
           <>
-            <div className="admin-records">
-              {members.map((member) => (
-                <article className="admin-record" key={member.userId}>
-                  <div>
-                    <h2>{member.displayName || member.email}</h2>
-                    <p>{member.email}</p>
-                    <span className="admin-badge">
-                      {label(Role[member.role])}
-                    </span>
-                    <p>
-                      {translate("joined", { value0: date(member.joinedAt) })}
-                    </p>
-                  </div>
-                  <div className="admin-actions">
-                    {role === Role.OWNER && member.role !== Role.OWNER && (
-                      <button
-                        disabled={action.pending}
-                        onClick={() =>
-                          void action.run(
-                            async () => {
-                              await checkTarget(member);
-                              await change.mutateAsync({
-                                organizationId,
-                                userId: member.userId,
-                                role:
-                                  member.role === Role.ADMINISTRATOR
-                                    ? Role.MEMBER
-                                    : Role.ADMINISTRATOR,
-                              });
-                            },
-                            { owner: true },
-                          )
-                        }
-                      >
-                        {member.role === Role.ADMINISTRATOR
-                          ? translate("makeMember")
-                          : translate("makeAdministrator")}
-                      </button>
-                    )}
-                    {canRemove(role, member.role) && (
-                      <button
-                        className="admin-danger-outline"
-                        onClick={() => setSelected(member)}
-                      >
-                        {translate("remove_3028bf", {
-                          value0: member.displayName || member.email,
-                        })}
-                      </button>
-                    )}
-                  </div>
-                </article>
-              ))}
+            {members.length > 0 && (
+              <div className="admin-members-columns" aria-hidden="true">
+                <span>{translate("member")}</span>
+                <span>{translate("role")}</span>
+                <span>{translate("message_69318b0c6a")}</span>
+                <span>{translate("actions")}</span>
+              </div>
+            )}
+            <div className="admin-records admin-members-list">
+              {members.map((member) => {
+                const identity = member.displayName || member.email;
+                const canChangeRole =
+                  role === Role.OWNER && member.role !== Role.OWNER;
+                const canDelete = canRemove(role, member.role);
+                const roleLabel =
+                  member.role === Role.ADMINISTRATOR
+                    ? translate("makeMember")
+                    : translate("makeAdministrator");
+                return (
+                  <article
+                    className="admin-record admin-member"
+                    key={member.userId}
+                  >
+                    <div className="admin-member-identity">
+                      <h2>{identity}</h2>
+                      {/* The email is the heading when no display name exists,
+                          so it is not repeated beneath it. */}
+                      {member.displayName && <p>{member.email}</p>}
+                    </div>
+                    <div className="admin-member-role">
+                      <span className="admin-member-label">
+                        {translate("role")}
+                      </span>
+                      <span className="admin-badge">
+                        {label(Role[member.role])}
+                      </span>
+                    </div>
+                    <div className="admin-member-joined">
+                      <span className="admin-member-label">
+                        {translate("message_69318b0c6a")}
+                      </span>
+                      <span>{date(member.joinedAt)}</span>
+                    </div>
+                    <div
+                      className="admin-actions admin-member-actions"
+                      role={canChangeRole || canDelete ? "group" : undefined}
+                      aria-label={
+                        canChangeRole || canDelete
+                          ? translate("actionsFor", { value0: identity })
+                          : undefined
+                      }
+                    >
+                      {canChangeRole && (
+                        <button
+                          disabled={action.pending}
+                          aria-label={translate("message_6a776812d7", {
+                            value0: roleLabel,
+                            value1: identity,
+                          })}
+                          onClick={() =>
+                            void action.run(
+                              async () => {
+                                await checkTarget(member);
+                                await change.mutateAsync({
+                                  organizationId,
+                                  userId: member.userId,
+                                  role:
+                                    member.role === Role.ADMINISTRATOR
+                                      ? Role.MEMBER
+                                      : Role.ADMINISTRATOR,
+                                });
+                              },
+                              { owner: true },
+                            )
+                          }
+                        >
+                          {roleLabel}
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          className="admin-danger-outline"
+                          onClick={() => setSelected(member)}
+                        >
+                          {translate("remove_3028bf", { value0: identity })}
+                        </button>
+                      )}
+                    </div>
+                  </article>
+                );
+              })}
             </div>
             {!members.length && (
               <Empty>
@@ -176,6 +233,11 @@ export function Members() {
         <Confirm
           title={translate("removeMember")}
           name={selected.displayName || selected.email}
+          helper={translate("theNameMustMatchExactly")}
+          initialFocus={ConfirmFocus.Input}
+          size={DialogSize.Large}
+          pendingStatus
+          headingFallback
           pending={action.pending}
           onClose={() => setSelected(undefined)}
           action={() =>
@@ -194,12 +256,20 @@ export function Members() {
             )
           }
         >
-          <p>
-            {translate("removeTheirOrganizationKeysStopWorkingImmediately", {
-              value0: selected.displayName || selected.email,
-            })}
-          </p>
-          <p>{translate("usageRemainsSubjectToRetentionAlreadyDispatched")}</p>
+          <div className="admin-member-summary">
+            <strong>{selected.displayName || selected.email}</strong>
+            {selected.displayName && <span>{selected.email}</span>}
+          </div>
+          <div className="admin-consequences">
+            <p>
+              {translate("removeTheirOrganizationKeysStopWorkingImmediately", {
+                value0: selected.displayName || selected.email,
+              })}
+            </p>
+            <p>
+              {translate("usageRemainsSubjectToRetentionAlreadyDispatched")}
+            </p>
+          </div>
           <ErrorNotice error={action.error} />
         </Confirm>
       )}
@@ -231,6 +301,27 @@ export function invitationStatus(invitation: Invitation, now: number) {
     return translate("pendingDelivery");
   return translate("unknownStatus");
 }
+export enum InvitationTiming {
+  NextAttempt = "next-attempt",
+  StoredAttempt = "stored-attempt",
+  None = "none",
+}
+// Decides how a returned nextAttemptAt may be presented. The server serializes
+// nextAttemptAt for every lifecycle (for example eight days ahead after a
+// successful send), so its presence alone never proves a scheduled delivery.
+export function invitationTiming(invitation: Invitation, now: number) {
+  if (!invitation.nextAttemptAt) return InvitationTiming.None;
+  const expiresAt = milliseconds(invitation.expiresAt);
+  const deliverable =
+    invitation.state === LifecycleState.PENDING &&
+    (invitation.deliveryState === DeliveryState.QUEUED ||
+      invitation.deliveryState === DeliveryState.RETRY_PENDING) &&
+    expiresAt !== undefined &&
+    expiresAt > now;
+  return deliverable
+    ? InvitationTiming.NextAttempt
+    : InvitationTiming.StoredAttempt;
+}
 export function Invitations() {
   useLocale();
   const { organizationId } = useContext(AdminAuthority);
@@ -241,6 +332,7 @@ export function Invitations() {
   const [cooldowns, setCooldowns] = useState<Record<string, number>>({});
   const now = useNow();
   const action = useAction();
+  const inviteHelperId = useId();
   const dirty = useDirtyForm();
   useEffect(() => {
     dirty(open && !!email);
@@ -272,7 +364,7 @@ export function Invitations() {
         }
       />
       {action.feedback}
-      <p>{translate("resendsAreAtLeastOneMinuteApart")}</p>
+      <p className="admin-quiet">{translate("resendsAreAtLeastOneMinute")}</p>
       {query.isPending ? (
         <Loading />
       ) : query.error ? (
@@ -285,6 +377,7 @@ export function Invitations() {
           <div className="admin-records">
             {query.data?.invitations.map((invitation) => {
               const status = invitationStatus(invitation, now);
+              const timing = invitationTiming(invitation, now);
               const available = Math.max(
                 milliseconds(invitation.resendAvailableAt) ?? 0,
                 cooldowns[invitation.email] ?? 0,
@@ -296,25 +389,47 @@ export function Invitations() {
                 LifecycleState.SUPERSEDED,
               ].includes(invitation.state);
               return (
-                <article className="admin-record" key={invitation.id}>
-                  <div>
+                <article
+                  className="admin-record admin-invitation"
+                  key={invitation.id}
+                >
+                  <div className="admin-invitation-identity">
                     <h2>{invitation.email}</h2>
                     <p>{translate("roleMember")}</p>
-                    <p>{translate("createdNotReported")}</p>
+                  </div>
+                  <div className="admin-invitation-status">
                     <span className="admin-badge">{status}</span>
+                  </div>
+                  <div className="admin-invitation-dates">
                     <p>
                       {translate("expires_8c3e7e", {
                         value0: date(invitation.expiresAt),
                       })}
                     </p>
+                    <p>
+                      {invitation.createdAt
+                        ? translate("message_230b931bd9", {
+                            value0: date(invitation.createdAt),
+                          })
+                        : translate("createdNotReported")}
+                    </p>
+                  </div>
+                  <div className="admin-invitation-diagnostics">
                     {status === translate("deliveryFailed") && (
                       <p className="admin-danger-text">
                         {translate("theLinkIsInvalidResendToCreate")}
                       </p>
                     )}
-                    {invitation.nextAttemptAt && (
+                    {timing === InvitationTiming.NextAttempt && (
                       <p>
                         {translate("nextDeliveryAttemptDeliveryCanBeDeferred", {
+                          value0: date(invitation.nextAttemptAt),
+                        })}
+                      </p>
+                    )}
+                    {timing === InvitationTiming.StoredAttempt && (
+                      <p>
+                        {translate("storedAttemptTimeThisTimestampDoes", {
                           value0: date(invitation.nextAttemptAt),
                         })}
                       </p>
@@ -384,11 +499,16 @@ export function Invitations() {
             token={token}
             onChange={setToken}
           />
+          <p className="admin-quiet">
+            {translate("sentMeansTheEmailWasSubmitted")}
+          </p>
         </Card>
       )}
       {open && (
         <Dialog
           title={translate("inviteMember")}
+          size={DialogSize.Compact}
+          headingFallback
           onClose={() => setOpen(false)}
         >
           <form
@@ -412,17 +532,32 @@ export function Invitations() {
               );
             }}
           >
+            <p>{translate("inviteSomeoneToThisOrganizationAs")}</p>
             <label>
               {translate("emailAddress")}
               <input
                 type="email"
                 required
+                placeholder={translate("nameExampleTest")}
+                aria-describedby={inviteHelperId}
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
               />
             </label>
-            <p>{translate("theInvitedPersonJoinsAsAMember")}</p>
+            <p id={inviteHelperId} className="admin-helper">
+              {translate("theyMustSignInWithThis")}
+            </p>
+            <p>{translate("message_f2ebd8cccf")}</p>
+            <p className="admin-helper">
+              {translate("promotionToAdministratorIsManagedSeparately")}
+            </p>
+            <p className="admin-quiet">
+              {translate("invitationLinksExpireAfterSevenDays")}
+            </p>
             <ErrorNotice error={action.error} />
+            <p role="status" className="admin-dialog-status">
+              {action.pending ? translate("message_238b2274b1") : ""}
+            </p>
             <div className="admin-actions">
               <button type="button" data-cancel onClick={() => setOpen(false)}>
                 {translate("cancel")}
@@ -438,6 +573,12 @@ export function Invitations() {
         <Confirm
           title={translate("cancelInvitation")}
           name={cancel.email}
+          helper={translate("enterTheEmailAddressExactlyAs")}
+          initialFocus={ConfirmFocus.Input}
+          size={DialogSize.Compact}
+          confirmLabel={translate("confirm")}
+          pendingStatus
+          headingFallback
           pending={action.pending}
           onClose={() => setCancel(undefined)}
           action={() =>
@@ -451,6 +592,9 @@ export function Invitations() {
             )
           }
         >
+          <p>
+            <strong>{cancel.email}</strong>
+          </p>
           <p>
             {translate("theInvitationLinkForWillStopWorking", {
               value0: cancel.email,
@@ -466,29 +610,34 @@ export function Invitations() {
 export function Settings({ organization }: { organization: Organization }) {
   useLocale();
   const { organizationId, role } = useContext(AdminAuthority);
+  // The draft is local state: refetches, failed saves and owner dialogs never
+  // replace it, and a save never overwrites text typed while it was in flight.
   const [name, setName] = useState(organization.name);
   const [deleting, setDeleting] = useState(false);
+  const errorId = useId();
   const dirty = useDirtyForm();
   useEffect(() => {
     dirty(name !== organization.name);
     return () => dirty(false);
   }, [dirty, name, organization.name]);
-  const action = useAction();
+  const saveAction = useAction();
+  const deleteAction = useAction();
   const update = useMutation(OrganizationService.method.updateOrganization);
   const remove = useMutation(OrganizationService.method.deleteOrganization);
   return (
-    <>
+    <div className="admin-settings">
       <PageHeader
         title={translate("organizationSettings")}
         description={translate("manage", { value0: organization.name })}
       />
-      {action.feedback}
-      <Card>
+      <Card className="admin-settings-card">
         <h2>{translate("organizationName")}</h2>
         <form
           onSubmit={(e) => {
             e.preventDefault();
-            void action.run(() => update.mutateAsync({ organizationId, name }));
+            void saveAction.run(() =>
+              update.mutateAsync({ organizationId, name }),
+            );
           }}
         >
           <label>
@@ -497,13 +646,16 @@ export function Settings({ organization }: { organization: Organization }) {
               autoFocus
               required
               value={name}
+              aria-invalid={saveAction.error ? true : undefined}
+              aria-describedby={saveAction.error ? errorId : undefined}
               onChange={(e) => setName(e.target.value)}
             />
           </label>
+          <div id={errorId}>{saveAction.feedback}</div>
           <button
             className="admin-primary"
             disabled={
-              action.pending || !name.trim() || name === organization.name
+              saveAction.pending || !name.trim() || name === organization.name
             }
           >
             {translate("saveName")}
@@ -512,10 +664,14 @@ export function Settings({ organization }: { organization: Organization }) {
       </Card>
       {role === Role.OWNER && (
         <>
-          <Ownership />
-          <Card>
+          <Ownership organizationName={organization.name} />
+          <Card className="admin-settings-card admin-danger-card">
             <h2>{translate("deleteOrganization")}</h2>
-            <p>{translate("asTheSoleOwnerTransferOwnershipOr")}</p>
+            <p>{translate("message_85d815948f")}</p>
+            <p>
+              {translate("deletionRemovesCredentialsSettingsTemporaryState")}
+            </p>
+            {deleteAction.feedback}
             <button
               className="admin-danger-outline"
               onClick={() => setDeleting(true)}
@@ -529,35 +685,52 @@ export function Settings({ organization }: { organization: Organization }) {
         <Confirm
           title={translate("deleteOrganization")}
           name={organization.name}
-          pending={action.pending}
+          helper={translate("theNameMustMatchExactly")}
+          initialFocus={ConfirmFocus.Input}
+          size={DialogSize.Wide}
+          pendingStatus
+          pending={deleteAction.pending}
           onClose={() => setDeleting(false)}
           action={() =>
-            void action.run(() => remove.mutateAsync({ organizationId }), {
-              owner: true,
-              done: () => setDeleting(false),
-              success: translate("organizationDeleted"),
-            })
+            void deleteAction.run(
+              () => remove.mutateAsync({ organizationId }),
+              {
+                owner: true,
+                done: () => setDeleting(false),
+                success: translate("organizationDeleted"),
+              },
+            )
           }
         >
+          <p>
+            <strong>
+              {translate("permanentlyDelete", { value0: organization.name })}
+            </strong>
+          </p>
           <p>
             {translate("thisPermanentlyDeletesSCredentialsSettingsTemporary", {
               value0: organization.name,
             })}
           </p>
           <p>{translate("newRequestsStopImmediatelyResponsesAlreadySent")}</p>
-          <ErrorNotice error={action.error} />
+          <ErrorNotice error={deleteAction.error} />
         </Confirm>
       )}
-    </>
+    </div>
   );
 }
-function Ownership() {
+function Ownership({ organizationName }: { organizationName: string }) {
   useLocale();
   const { organizationId } = useContext(AdminAuthority);
   const [nominee, setNominee] = useState("");
   const [token, setToken] = useState("");
   const [confirm, setConfirm] = useState(false);
-  const [cancel, setCancel] = useState(false);
+  // The transfer shown when Cancel transfer was clicked. Retaining it keeps a
+  // later replacement nomination from being canceled by accident.
+  const [cancelTarget, setCancelTarget] = useState<{
+    id: string;
+    nominee: string;
+  }>();
   const now = useNow();
   const action = useAction();
   const members = useQuery(MembershipService.method.listMembers, {
@@ -571,66 +744,103 @@ function Ownership() {
   );
   const nominate = useMutation(OwnershipService.method.nominateOwner),
     remove = useMutation(OwnershipService.method.cancelOwnershipTransfer);
-  const transfer = query.data?.transfer;
+  // NotFound means there is no transfer. Any other failure means the state is
+  // unknown, which must never be presented as an empty state.
+  const notFound =
+    !!query.error && ConnectError.from(query.error).code === Code.NotFound;
+  const unknown = !!query.error && !notFound;
+  const transfer = notFound ? undefined : query.data?.transfer;
+  const undetermined = query.isPending || unknown;
   const pending = transfer?.state === LifecycleState.PENDING;
   const expired =
     !!transfer &&
     (transfer.state === LifecycleState.EXPIRED ||
       (milliseconds(transfer.expiresAt) ?? Infinity) <= now);
+  const replacing = pending && !expired;
   const person = members.data?.members.find(
     (m) => m.userId === transfer?.toUserId,
   );
-  const selected = members.data?.members.find((m) => m.userId === nominee);
+  const nomineeName = person?.displayName || transfer?.toUserId || "";
+  const eligible =
+    members.data?.members.filter((m) => m.role !== Role.OWNER) ?? [];
+  const selected = eligible.find((m) => m.userId === nominee);
+  const selectedName = selected ? selected.displayName || selected.email : "";
+  const nominationTitle = replacing
+    ? translate("replaceNomination")
+    : translate("nominateOwner");
   return (
-    <Card>
+    <Card className="admin-settings-card">
       <h2>{translate("ownershipTransfer")}</h2>
       {action.feedback}
       {query.isPending ? (
-        <Loading />
-      ) : query.error &&
-        ConnectError.from(query.error).code !== Code.NotFound ? (
+        <Loading label={translate("loadingOwnershipTransfer")} />
+      ) : unknown ? (
         <ErrorNotice error={query.error} retry={() => void query.refetch()} />
       ) : transfer ? (
-        <div>
-          <p>
-            {translate("nominee", {
-              value0: person?.displayName || transfer.toUserId,
-            })}
-          </p>
-          <p>
-            {translate("expires_5f50e1", {
-              value0: expired
-                ? translate("message_fa90c49b8b")
-                : pending
-                  ? translate("message_1dc7bfd9c5")
-                  : label(LifecycleState[transfer.state]),
-              value1: date(transfer.expiresAt),
-            })}
-          </p>
-          {pending && !expired && (
-            <button onClick={() => setCancel(true)}>
+        <div className="admin-status-block">
+          <dl>
+            <div>
+              <dt>{translate("message_8d8d0be9ef")}</dt>
+              <dd>{nomineeName}</dd>
+            </div>
+            <div>
+              <dt>{translate("status")}</dt>
+              <dd>
+                {expired
+                  ? translate("message_fa90c49b8b")
+                  : pending
+                    ? translate("message_1dc7bfd9c5")
+                    : transfer.state === LifecycleState.UNSPECIFIED ||
+                        LifecycleState[transfer.state] === undefined
+                      ? translate("unknown")
+                      : label(LifecycleState[transfer.state])}
+              </dd>
+            </div>
+            <div>
+              <dt>{translate("expires_f6725f")}</dt>
+              <dd>{date(transfer.expiresAt)}</dd>
+            </div>
+          </dl>
+          {replacing && (
+            <button
+              onClick={() =>
+                setCancelTarget({ id: transfer.id, nominee: nomineeName })
+              }
+            >
               {translate("cancelTransfer")}
             </button>
           )}
         </div>
       ) : (
-        <p>{translate("noPendingTransfer")}</p>
+        <p className="admin-status-block">{translate("noPendingTransfer")}</p>
       )}
       <p>{translate("youRemainOwnerUntilTheNomineeAccepts")}</p>
-      <ErrorNotice error={members.error} />
+      {members.isPending ? (
+        <Loading label={translate("loadingMembers")} />
+      ) : (
+        <ErrorNotice
+          error={members.error}
+          retry={() => void members.refetch()}
+        />
+      )}
       <label>
         {translate("nominateAnExistingMember")}
-        <select value={nominee} onChange={(e) => setNominee(e.target.value)}>
+        <select
+          value={nominee}
+          disabled={!members.data}
+          onChange={(e) => setNominee(e.target.value)}
+        >
           <option value="">{translate("chooseAMember")}</option>
-          {members.data?.members
-            .filter((m) => m.role !== Role.OWNER)
-            .map((m) => (
-              <option key={m.userId} value={m.userId}>
-                {m.displayName || m.email}
-              </option>
-            ))}
+          {eligible.map((m) => (
+            <option key={m.userId} value={m.userId}>
+              {m.displayName || m.email}
+            </option>
+          ))}
         </select>
       </label>
+      {members.data && eligible.length === 0 && (
+        <p>{translate("noEligibleMembersOnThisPage")}</p>
+      )}
       <Pager
         token={token}
         next={members.data?.page?.nextPageToken}
@@ -639,30 +849,33 @@ function Ownership() {
           setNominee("");
         }}
       />
-      <button
-        disabled={
-          !selected ||
-          action.pending ||
-          !!(
-            query.error && ConnectError.from(query.error).code !== Code.NotFound
-          )
-        }
-        onClick={() => setConfirm(true)}
-      >
-        {pending && !expired
-          ? translate("replaceNomination")
-          : translate("nominateOwner")}
-      </button>
+      <div className="admin-actions">
+        <button
+          className="admin-primary"
+          disabled={!selected || action.pending || undetermined}
+          onClick={() => setConfirm(true)}
+        >
+          {nominationTitle}
+        </button>
+      </div>
       {confirm && selected && (
         <Confirm
-          title={translate("nominateOwner")}
+          title={nominationTitle}
+          tone={ConfirmTone.Primary}
+          size={DialogSize.Wide}
+          pendingStatus
           pending={action.pending}
           onClose={() => setConfirm(false)}
           action={() =>
             void action.run(
-              () => nominate.mutateAsync({ organizationId, userId: nominee }),
+              () =>
+                nominate.mutateAsync({
+                  organizationId,
+                  userId: selected.userId,
+                }),
               {
                 owner: true,
+                refetchOnConflict: true,
                 done: () => setConfirm(false),
                 success: translate("ownershipNominationSent"),
               },
@@ -670,31 +883,60 @@ function Ownership() {
           }
         >
           <p>
-            {translate("nominateAnyPreviousRequestBecomesInvalidOwnership", {
-              value0: selected.displayName || selected.email,
+            {translate("nominateAsOwnerOf", {
+              value0: selectedName,
+              value1: organizationName,
+            })}
+          </p>
+          <p>
+            {replacing && person
+              ? translate("thePreviousRequestForBecomesInvalid", {
+                  value0: person.displayName || person.email,
+                })
+              : translate("anyPreviousRequestBecomesInvalid")}
+          </p>
+          <p>
+            {translate("ownershipChangesOnlyAfterAcceptsBecomes", {
+              value0: selectedName,
             })}
           </p>
           <ErrorNotice error={action.error} />
         </Confirm>
       )}
-      {cancel && transfer && (
+      {cancelTarget && (
         <Confirm
           title={translate("cancelTransfer")}
+          cancelLabel={translate("keepTransfer")}
+          size={DialogSize.Standard}
+          pendingStatus
           pending={action.pending}
-          onClose={() => setCancel(false)}
+          onClose={() => setCancelTarget(undefined)}
           action={() =>
             void action.run(
               () =>
-                remove.mutateAsync({ organizationId, transferId: transfer.id }),
+                remove.mutateAsync({
+                  organizationId,
+                  transferId: cancelTarget.id,
+                }),
               {
                 owner: true,
-                done: () => setCancel(false),
+                refetchOnConflict: true,
+                done: () => setCancelTarget(undefined),
                 success: translate("ownershipTransferCanceled"),
               },
             )
           }
         >
-          <p>{translate("theNomineeWillNoLongerBeAble")}</p>
+          <p>
+            {translate("cancelTheOwnershipTransferTo", {
+              value0: cancelTarget.nominee,
+            })}
+          </p>
+          <p>
+            {translate("theNomineeWillNoLongerBe", {
+              value0: organizationName,
+            })}
+          </p>
           <ErrorNotice error={action.error} />
         </Confirm>
       )}
