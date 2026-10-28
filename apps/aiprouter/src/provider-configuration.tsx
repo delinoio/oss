@@ -209,7 +209,7 @@ export function ConfigurationFields({
           ))}
         </select>
       </Field>
-      <details>
+      <details className="advanced-settings">
         <summary>{translate("advancedConnectionSettings")}</summary>
         {connection && (
           <Field label={translate("configurationChanges")}>
@@ -243,159 +243,168 @@ export function ConfigurationFields({
             <p>
               {translate("changingASettingReplacesTheCompleteConfiguration")}
             </p>
-            <Field
-              label={translate("responsesEndpointPath")}
-              hint={translate("originRelativePathForExampleV1Responses")}
-            >
-              <input
-                value={config.responsesPath ?? ""}
-                onChange={(e) =>
-                  update({ responsesPath: e.target.value || undefined })
-                }
-              />
-            </Field>
-            <Field label={translate("chatCompletionsEndpointPath")}>
-              <input
-                value={config.chatCompletionsPath ?? ""}
-                onChange={(e) =>
-                  update({ chatCompletionsPath: e.target.value || undefined })
-                }
-              />
-            </Field>
-            {providerId === "google-vertex" && (
-              <fieldset>
-                <legend>{translate("vertexAi")}</legend>
-                <p>{translate("oauthAndServiceAccountCredentialsRequireAn")}</p>
-                {(
-                  [
-                    ["vertexProject", translate("vertexProject")],
-                    ["vertexLocation", translate("vertexLocation")],
-                  ] as const
-                ).map(([key, label]) => (
-                  <div key={key}>
-                    <label>
-                      <input
-                        type="checkbox"
-                        checked={config[key] !== undefined}
-                        onChange={(e) =>
-                          update({ [key]: e.target.checked ? "" : undefined })
-                        }
-                      />
-                      {translate("override", { value0: label.toLowerCase() })}
-                    </label>
-                    {config[key] !== undefined && (
-                      <Field label={label}>
-                        <input
-                          value={config[key]}
-                          onChange={(e) => update({ [key]: e.target.value })}
-                        />
-                      </Field>
-                    )}
-                  </div>
-                ))}
-              </fieldset>
-            )}
-            {providerId === "azure" && (
+            <details className="advanced-disclosure">
+              <summary>{translate("endpointsAndProviderSettings")}</summary>
               <Field
-                label={translate("minimumOutputTokenBudget")}
-                hint={translate("optionalAzureFloorSubjectToRequestLimits")}
+                label={translate("responsesEndpointPath")}
+                hint={translate("originRelativePathForExampleV1Responses")}
               >
                 <input
-                  type="number"
-                  min="1"
-                  max="2147483647"
-                  step="1"
-                  value={draft.floor}
+                  value={config.responsesPath ?? ""}
                   onChange={(e) =>
-                    onChange({
-                      ...draft,
-                      mode: ConfigurationMode.Replace,
-                      floor: e.target.value,
-                    })
+                    update({ responsesPath: e.target.value || undefined })
                   }
                 />
               </Field>
-            )}
-            <h3>{translate("modelApiFormats")}</h3>
-            <p>{translate("overridesApplyToExactModelIds")}</p>
-            {draft.models.map((row, index) => (
-              <fieldset key={index}>
-                <legend>
-                  {translate("modelOverride", { value0: index + 1 })}
-                </legend>
+              <Field label={translate("chatCompletionsEndpointPath")}>
+                <input
+                  value={config.chatCompletionsPath ?? ""}
+                  onChange={(e) =>
+                    update({ chatCompletionsPath: e.target.value || undefined })
+                  }
+                />
+              </Field>
+              {providerId === "google-vertex" && (
+                <fieldset>
+                  <legend>{translate("vertexAi")}</legend>
+                  <p>
+                    {translate("oauthAndServiceAccountCredentialsRequireAn")}
+                  </p>
+                  {(
+                    [
+                      ["vertexProject", translate("vertexProject")],
+                      ["vertexLocation", translate("vertexLocation")],
+                    ] as const
+                  ).map(([key, label]) => (
+                    <div key={key}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={config[key] !== undefined}
+                          onChange={(e) =>
+                            update({ [key]: e.target.checked ? "" : undefined })
+                          }
+                        />
+                        {translate("override", { value0: label.toLowerCase() })}
+                      </label>
+                      {config[key] !== undefined && (
+                        <Field label={label}>
+                          <input
+                            value={config[key]}
+                            onChange={(e) => update({ [key]: e.target.value })}
+                          />
+                        </Field>
+                      )}
+                    </div>
+                  ))}
+                </fieldset>
+              )}
+              {providerId === "azure" && (
                 <Field
-                  label={translate("modelId_64bc8b", { value0: index + 1 })}
+                  label={translate("minimumOutputTokenBudget")}
+                  hint={translate("optionalAzureFloorSubjectToRequestLimits")}
                 >
                   <input
-                    required
-                    value={row.id}
+                    type="number"
+                    min="1"
+                    max="2147483647"
+                    step="1"
+                    value={draft.floor}
                     onChange={(e) =>
                       onChange({
                         ...draft,
                         mode: ConfigurationMode.Replace,
-                        models: draft.models.map((r, i) =>
-                          i === index ? { ...r, id: e.target.value } : r,
-                        ),
+                        floor: e.target.value,
                       })
                     }
                   />
                 </Field>
-                <Field label={translate("modelFormat", { value0: index + 1 })}>
-                  <select
-                    value={row.wire}
-                    onChange={(e) =>
+              )}
+            </details>
+            <details className="advanced-disclosure">
+              <summary>{translate("modelApiFormats")}</summary>
+              <p>{translate("overridesApplyToExactModelIds")}</p>
+              {draft.models.map((row, index) => (
+                <fieldset key={index}>
+                  <legend>
+                    {translate("modelOverride", { value0: index + 1 })}
+                  </legend>
+                  <Field
+                    label={translate("modelId_64bc8b", { value0: index + 1 })}
+                  >
+                    <input
+                      required
+                      value={row.id}
+                      onChange={(e) =>
+                        onChange({
+                          ...draft,
+                          mode: ConfigurationMode.Replace,
+                          models: draft.models.map((r, i) =>
+                            i === index ? { ...r, id: e.target.value } : r,
+                          ),
+                        })
+                      }
+                    />
+                  </Field>
+                  <Field
+                    label={translate("modelFormat", { value0: index + 1 })}
+                  >
+                    <select
+                      value={row.wire}
+                      onChange={(e) =>
+                        onChange({
+                          ...draft,
+                          mode: ConfigurationMode.Replace,
+                          models: draft.models.map((r, i) =>
+                            i === index
+                              ? { ...r, wire: Number(e.target.value) }
+                              : r,
+                          ),
+                        })
+                      }
+                    >
+                      {wires()
+                        .filter(
+                          ([wire]) =>
+                            wire === ProviderWire.CHAT ||
+                            wire === ProviderWire.RESPONSES,
+                        )
+                        .map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                    </select>
+                  </Field>
+                  <Button
+                    onClick={() =>
                       onChange({
                         ...draft,
                         mode: ConfigurationMode.Replace,
-                        models: draft.models.map((r, i) =>
-                          i === index
-                            ? { ...r, wire: Number(e.target.value) }
-                            : r,
-                        ),
+                        models: draft.models.filter((_, i) => i !== index),
                       })
                     }
                   >
-                    {wires()
-                      .filter(
-                        ([wire]) =>
-                          wire === ProviderWire.CHAT ||
-                          wire === ProviderWire.RESPONSES,
-                      )
-                      .map(([value, label]) => (
-                        <option key={value} value={value}>
-                          {label}
-                        </option>
-                      ))}
-                  </select>
-                </Field>
-                <Button
-                  onClick={() =>
-                    onChange({
-                      ...draft,
-                      mode: ConfigurationMode.Replace,
-                      models: draft.models.filter((_, i) => i !== index),
-                    })
-                  }
-                >
-                  {translate("removeModelOverride", { value0: index + 1 })}
-                </Button>
-              </fieldset>
-            ))}
-            <Button
-              onClick={() =>
-                onChange({
-                  ...draft,
-                  mode: ConfigurationMode.Replace,
-                  models: [
-                    ...draft.models,
-                    { id: "", wire: ProviderWire.CHAT },
-                  ],
-                })
-              }
-            >
-              {translate("addModelOverride")}
-            </Button>
-            <details>
+                    {translate("removeModelOverride", { value0: index + 1 })}
+                  </Button>
+                </fieldset>
+              ))}
+              <Button
+                onClick={() =>
+                  onChange({
+                    ...draft,
+                    mode: ConfigurationMode.Replace,
+                    models: [
+                      ...draft.models,
+                      { id: "", wire: ProviderWire.CHAT },
+                    ],
+                  })
+                }
+              >
+                {translate("addModelOverride")}
+              </Button>
+            </details>
+            <details className="advanced-disclosure">
               <summary>{translate("requestCompatibilityPolicies")}</summary>
               <p>{translate("inheritUsesTheProviderDefaultDisabledIs")}</p>
               {policies().map(([key, label]) => (
@@ -615,93 +624,97 @@ export function ConfigurationFields({
             </details>
           </>
         )}
-        <h3>{translate("customHeaders")}</h3>
-        {!!connection?.customHeaderNames.length && (
-          <p>
-            {translate("savedNamesValuesAreNeverReturned", {
-              value0: connection.customHeaderNames.join(", "),
-            })}
-          </p>
-        )}
-        <Field label={translate("headerChanges")}>
-          <select
-            value={draft.headerMode}
-            onChange={(e) =>
-              onChange({ ...draft, headerMode: e.target.value as HeaderMode })
-            }
-          >
-            <option value={HeaderMode.Preserve}>
-              {translate("keepSavedHeaders")}
-            </option>
-            <option value={HeaderMode.Replace}>
-              {translate("replaceAllHeaders")}
-            </option>
-            <option value={HeaderMode.Clear}>
-              {translate("clearAllHeaders")}
-            </option>
-          </select>
-        </Field>
-        {draft.headerMode === HeaderMode.Replace && (
-          <>
-            <p>{translate("enterEveryHeaderToRetainAuthenticationAnd")}</p>
-            {draft.headers.map((row, index) => (
-              <fieldset key={index}>
-                <legend>{translate("header", { value0: index + 1 })}</legend>
-                <Field label={translate("headerName", { value0: index + 1 })}>
-                  <input
-                    required
-                    autoComplete="off"
-                    value={row.name}
-                    onChange={(e) =>
-                      onChange({
-                        ...draft,
-                        headers: draft.headers.map((r, i) =>
-                          i === index ? { ...r, name: e.target.value } : r,
-                        ),
-                      })
-                    }
-                  />
-                </Field>
-                <Field label={translate("headerValue", { value0: index + 1 })}>
-                  <input
-                    type="password"
-                    autoComplete="new-password"
-                    value={row.value}
-                    onChange={(e) =>
-                      onChange({
-                        ...draft,
-                        headers: draft.headers.map((r, i) =>
-                          i === index ? { ...r, value: e.target.value } : r,
-                        ),
-                      })
-                    }
-                  />
-                </Field>
-                <Button
-                  onClick={() =>
-                    onChange({
-                      ...draft,
-                      headers: draft.headers.filter((_, i) => i !== index),
-                    })
-                  }
-                >
-                  {translate("removeHeader", { value0: index + 1 })}
-                </Button>
-              </fieldset>
-            ))}
-            <Button
-              disabled={draft.headers.length >= 64}
-              onClick={() =>
-                onChange({
-                  ...draft,
-                  headers: [...draft.headers, { name: "", value: "" }],
-                })
+        <details className="advanced-disclosure">
+          <summary>{translate("customHeaders")}</summary>
+          {!!connection?.customHeaderNames.length && (
+            <p>
+              {translate("savedNamesValuesAreNeverReturned", {
+                value0: connection.customHeaderNames.join(", "),
+              })}
+            </p>
+          )}
+          <Field label={translate("headerChanges")}>
+            <select
+              value={draft.headerMode}
+              onChange={(e) =>
+                onChange({ ...draft, headerMode: e.target.value as HeaderMode })
               }
             >
-              {translate("addHeader")}
-            </Button>
-          </>
-        )}
+              <option value={HeaderMode.Preserve}>
+                {translate("keepSavedHeaders")}
+              </option>
+              <option value={HeaderMode.Replace}>
+                {translate("replaceAllHeaders")}
+              </option>
+              <option value={HeaderMode.Clear}>
+                {translate("clearAllHeaders")}
+              </option>
+            </select>
+          </Field>
+          {draft.headerMode === HeaderMode.Replace && (
+            <>
+              <p>{translate("enterEveryHeaderToRetainAuthenticationAnd")}</p>
+              {draft.headers.map((row, index) => (
+                <fieldset key={index}>
+                  <legend>{translate("header", { value0: index + 1 })}</legend>
+                  <Field label={translate("headerName", { value0: index + 1 })}>
+                    <input
+                      required
+                      autoComplete="off"
+                      value={row.name}
+                      onChange={(e) =>
+                        onChange({
+                          ...draft,
+                          headers: draft.headers.map((r, i) =>
+                            i === index ? { ...r, name: e.target.value } : r,
+                          ),
+                        })
+                      }
+                    />
+                  </Field>
+                  <Field
+                    label={translate("headerValue", { value0: index + 1 })}
+                  >
+                    <input
+                      type="password"
+                      autoComplete="new-password"
+                      value={row.value}
+                      onChange={(e) =>
+                        onChange({
+                          ...draft,
+                          headers: draft.headers.map((r, i) =>
+                            i === index ? { ...r, value: e.target.value } : r,
+                          ),
+                        })
+                      }
+                    />
+                  </Field>
+                  <Button
+                    onClick={() =>
+                      onChange({
+                        ...draft,
+                        headers: draft.headers.filter((_, i) => i !== index),
+                      })
+                    }
+                  >
+                    {translate("removeHeader", { value0: index + 1 })}
+                  </Button>
+                </fieldset>
+              ))}
+              <Button
+                disabled={draft.headers.length >= 64}
+                onClick={() =>
+                  onChange({
+                    ...draft,
+                    headers: [...draft.headers, { name: "", value: "" }],
+                  })
+                }
+              >
+                {translate("addHeader")}
+              </Button>
+            </>
+          )}
+        </details>
       </details>
     </>
   );
