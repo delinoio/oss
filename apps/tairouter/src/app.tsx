@@ -32,6 +32,7 @@ import {
   Loading,
   Notice,
   ConfirmDialog,
+  useOnline,
 } from "./ui";
 import { OverviewPage, ConnectPage } from "./overview";
 const ProvidersPage = lazy(() =>
@@ -215,17 +216,7 @@ function AuthenticatedApp({ page, href }: { page: Page; href: string }) {
   const selected =
     organizations.data?.find((o) => o.id === scope) ??
     (!scope ? organizations.data?.[0] : undefined);
-  const [online, setOnline] = useState(navigator.onLine);
-  useEffect(() => {
-    const on = () => setOnline(true);
-    const off = () => setOnline(false);
-    window.addEventListener("online", on);
-    window.addEventListener("offline", off);
-    return () => {
-      window.removeEventListener("online", on);
-      window.removeEventListener("offline", off);
-    };
-  }, []);
+  const online = useOnline();
   useEffect(() => {
     const handler = (event: Event) => {
       const code = (event as CustomEvent<Code>).detail;

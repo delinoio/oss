@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -84,9 +85,13 @@ const scope = (request: Request): Request => ({
 function mount(
   listProviderModels: (request: Request) => object | Promise<object>,
   org = organization,
+  staleTime = 0,
 ) {
   const cache = new QueryClient({
-    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    defaultOptions: {
+      queries: { retry: false, staleTime },
+      mutations: { retry: false },
+    },
   });
   const transport = createRouterTransport((r: ConnectRouter) => {
     r.service(ProviderService, {
@@ -296,6 +301,77 @@ describe("connection models dialog", () => {
       expect(within(reopened).getByText(/last successful load/)).toBeTruthy(),
     );
     expect(within(reopened).getAllByRole("listitem")).toHaveLength(4);
+  });
+
+  it("warns that loaded models are stale when the browser goes offline after load", async () => {
+    const user = userEvent.setup();
+    const online = rs.spyOn(navigator, "onLine", "get");
+    try {
+      online.mockReturnValue(true);
+      mount(() => ({ models: sample }));
+      const { dialog } = await open(user);
+      await within(dialog).findByText("model-alpha");
+      expect(within(dialog).queryByText(/last successful load/)).toBeNull();
+      online.mockReturnValue(false);
+      act(() => {
+        window.dispatchEvent(new Event("offline"));
+      });
+      expect(
+        await within(dialog).findByText(/last successful load/),
+      ).toBeTruthy();
+      expect(within(dialog).getAllByRole("listitem")).toHaveLength(4);
+      online.mockReturnValue(true);
+      act(() => {
+        window.dispatchEvent(new Event("online"));
+      });
+      await waitFor(() =>
+        expect(within(dialog).queryByText(/last successful load/)).toBeNull(),
+      );
+    } finally {
+      // React Query keeps its own online flag, so restore it for later tests.
+      online.mockRestore();
+      act(() => {
+        window.dispatchEvent(new Event("online"));
+      });
+    }
+  });
+
+  it("warns when the dialog is reopened offline while the cached models are still fresh", async () => {
+    const user = userEvent.setup();
+    const online = rs.spyOn(navigator, "onLine", "get");
+    try {
+      online.mockReturnValue(true);
+      const calls: Request[] = [];
+      mount(
+        (request) => {
+          calls.push(scope(request));
+          return { models: sample };
+        },
+        organization,
+        15_000,
+      );
+      const { dialog } = await open(user);
+      await within(dialog).findByText("model-alpha");
+      await user.click(within(dialog).getByRole("button", { name: "Done" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      online.mockReturnValue(false);
+      act(() => {
+        window.dispatchEvent(new Event("offline"));
+      });
+      const { dialog: reopened } = await open(user);
+      expect(
+        await within(reopened).findByText(/last successful load/),
+      ).toBeTruthy();
+      expect(within(reopened).getAllByRole("listitem")).toHaveLength(4);
+      // The cached query is still fresh, so reopening never refetched.
+      expect(calls).toHaveLength(1);
+    } finally {
+      // React Query keeps its own online flag, so restore it for later tests.
+      online.mockRestore();
+      act(() => {
+        window.dispatchEvent(new Event("online"));
+      });
+    }
   });
 
   it("dismisses with Esc, Close and Done and returns focus to the trigger", async () => {

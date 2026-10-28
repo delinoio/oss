@@ -41,6 +41,7 @@ import {
   Notice,
   formatDate,
   Pagination,
+  useOnline,
 } from "./ui";
 export const connectionLabel: Record<number, string> = {
   get [ConnectionState.UNSPECIFIED]() {
@@ -1209,7 +1210,9 @@ function ModelsDialog({
   const code = query.error ? ConnectError.from(query.error).code : undefined;
   const denied =
     code === Code.PermissionDenied || code === Code.Unauthenticated;
-  const paused = query.fetchStatus === "paused";
+  // A fresh or idle query is not paused when the browser goes offline, so connectivity is tracked directly.
+  const online = useOnline();
+  const paused = query.fetchStatus === "paused" || !online;
   const stale = returned !== undefined && (query.isRefetchError || paused);
   const state = !returned
     ? query.isError
