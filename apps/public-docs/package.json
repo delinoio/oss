@@ -10,9 +10,9 @@
     "build": "node scripts/copy-public-assets.mjs && rspress build",
     "build:frontend": "pnpm build",
     "preview": "rspress preview",
-    "test:routes": "pnpm --filter @delinoio/docs-site-switcher test && pnpm build:frontend && node scripts/validate-clean-urls.mjs && node scripts/validate-public-docs.mjs && node --test scripts/clibox-validation.test.mjs && node --test scripts/aiprouter-content.test.mjs",
+    "test:routes": "pnpm --filter @delinoio/docs-site-switcher test && pnpm build:frontend && node scripts/validate-clean-urls.mjs && node scripts/validate-public-docs.mjs && node --test scripts/clibox-validation.test.mjs && node --test scripts/tairouter-content.test.mjs",
     "test": "pnpm test:routes",
-    "ci:routes": "node scripts/validate-clean-urls.mjs && node scripts/validate-public-docs.mjs && node --test scripts/clibox-validation.test.mjs && node --test scripts/aiprouter-content.test.mjs"
+    "ci:routes": "node scripts/validate-clean-urls.mjs && node scripts/validate-public-docs.mjs && node --test scripts/clibox-validation.test.mjs && node --test scripts/tairouter-content.test.mjs"
   },
   "devDependencies": {
     "@delinoio/docs-site-switcher": "workspace:*",

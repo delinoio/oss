@@ -1,0 +1,18 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "dev": {
+      "passThroughEnv": [
+        "TAIROUTER_*",
+        "OTEL_*",
+        "GO*",
+        "CGO_*",
+        "CC",
+        "CXX",
+        "PKG_CONFIG",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR"
+      ]
+    }
+  }
+}

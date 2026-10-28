@@ -67,11 +67,11 @@ importers:
         specifier: 2.9.18
         version: 2.9.18
 
-  apps/aiprouter:
+  apps/tairouter:
     dependencies:
-      '@aiprouter/client':
+      '@tairouter/client':
         specifier: workspace:*
-        version: link:../../packages/aiprouter-client
+        version: link:../../packages/tairouter-client
       '@bufbuild/protobuf':
         specifier: 2.16.0
         version: 2.16.0
@@ -210,7 +210,7 @@ importers:
         specifier: 6.0.1
         version: 6.0.1
 
-  packages/aiprouter-client:
+  packages/tairouter-client:
     dependencies:
       '@bufbuild/protobuf':
         specifier: 2.16.0
@@ -311,7 +311,7 @@ importers:
 
   scripts/ci: {}
 
-  servers/aiprouter: {}
+  servers/tairouter: {}
 
 packages:
 

@@ -47,8 +47,8 @@
       "scripts/ci/go-test.mjs",
       "scripts/ci/go-test.test.mjs",
       "scripts/ci/check-go-format.mjs",
-      "packages/aiprouter/**",
-      "scripts/aiprouter/**"
+      "packages/tairouter/**",
+      "scripts/tairouter/**"
     ]
   },
   "go-test": {
@@ -73,8 +73,8 @@
       "scripts/ci/go-affected*",
       "scripts/ci/go-quality*",
       "scripts/ci/check-go-format.mjs",
-      "packages/aiprouter/**",
-      "scripts/aiprouter/**"
+      "packages/tairouter/**",
+      "scripts/tairouter/**"
     ]
   },
   "rust-fmt": {
@@ -366,7 +366,7 @@
     "workspace": "labs-docs",
     "workspacePaths": ["apps/labs-docs/**"]
   },
-  "aiprouter": {
+  "tairouter": {
     "paths": [
       "AGENTS.md",
       ".nvmrc",
@@ -379,15 +379,15 @@
       "buf*.yml",
       "rstack.config.ts",
       "tsconfig*.json",
-      "apps/aiprouter*/**",
+      "apps/tairouter*/**",
       "apps/public-docs/**",
-      "packages/aiprouter*/**",
-      "servers/aiprouter/**",
-      "cmds/aiprouter/**",
-      "protos/aiprouter/**",
-      "scripts/aiprouter/**",
+      "packages/tairouter*/**",
+      "servers/tairouter/**",
+      "cmds/tairouter/**",
+      "protos/tairouter/**",
+      "scripts/tairouter/**",
       "scripts/localization/**",
-      "packaging/aiprouter/**",
+      "packaging/tairouter/**",
       "docs/**"
     ]
   }

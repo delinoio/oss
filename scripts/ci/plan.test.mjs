@@ -59,7 +59,7 @@ test("rustfmt configuration selects only formatting on PRs and main pushes", () 
     }
     assert.deepEqual(
       selected(event, [".rustfmt.toml", "docs/project-with-watch.md"]),
-      ["rust-fmt", "source-format", "aiprouter"],
+      ["rust-fmt", "source-format", "tairouter"],
     );
     const source = "crates/binpm/src/main.rs";
     assert.deepEqual(
@@ -68,7 +68,7 @@ test("rustfmt configuration selects only formatting on PRs and main pushes", () 
     );
     assert.deepEqual(selected(event, ["docs/project-with-watch.md"]), [
       "source-format",
-      "aiprouter",
+      "tairouter",
     ]);
   }
 });
@@ -212,7 +212,7 @@ test("Go report runner changes select native Go tests without widening other job
     }
     assert.deepEqual(selected(event, ["docs/project-with-watch.md"]), [
       "source-format",
-      "aiprouter",
+      "tairouter",
     ]);
     assert.equal(
       planJobs(event, ["scripts/ci/go-test.mjs"]).jobs["go-test"],
@@ -414,11 +414,11 @@ test("main selects affected non-Mac native jobs; manual skips native jobs", () =
   assert.deepEqual(selected(Event.Manual, []), []);
   assert.deepEqual(selected(Event.Push, ["docs/project-with-watch.md"]), [
     "source-format",
-    "aiprouter",
+    "tairouter",
   ]);
   assert.deepEqual(
     selected(Event.PullRequest, ["docs/project-with-watch.md"]),
-    ["source-format", "aiprouter"],
+    ["source-format", "tairouter"],
   );
   assert.deepEqual(selected(Event.Push, []), []);
 });
@@ -630,7 +630,7 @@ test("integrated project docs select the public-docs workspace and shared inputs
       id,
       "source-format",
       "release-contracts",
-      "aiprouter",
+      "tairouter",
     ]);
     assert.equal(planJobs(event, paths).forced[id], false);
     for (const path of [
@@ -643,7 +643,7 @@ test("integrated project docs select the public-docs workspace and shared inputs
       assert.equal(plan.forced[id], true, path);
     }
     for (const path of ["docs/project-runmoor.md"]) {
-      assert.deepEqual(selected(event, [path]), ["source-format", "aiprouter"]);
+      assert.deepEqual(selected(event, [path]), ["source-format", "tairouter"]);
     }
     const needs = results(event, paths);
     assert.equal(validateResults(needs), true);
@@ -1299,11 +1299,11 @@ test("CI Result requires every selected formatting job to succeed", () => {
   }
 });
 
-test("AIPRouter shared Go libraries and fixtures select Go validation", () => {
+test("TaiRouter shared Go libraries and fixtures select Go validation", () => {
   for (const event of Object.values(Event)) {
     for (const path of [
-      "packages/aiprouter/core/ids.go",
-      "scripts/aiprouter/fixture/main.go",
+      "packages/tairouter/core/ids.go",
+      "scripts/tairouter/fixture/main.go",
     ]) {
       const plan = planJobs(event, [path]);
       assert.equal(plan.jobs["go-test"], true, `${event}: ${path}`);
@@ -1351,34 +1351,34 @@ test("shared Labs localization inputs force both app checks on every eligible ev
   }
 });
 
-test("AIPRouter validation follows affected selection and fails the aggregate on missing results", () => {
+test("TaiRouter validation follows affected selection and fails the aggregate on missing results", () => {
   for (const event of Object.values(Event)) {
     for (const path of [
-      "servers/aiprouter/main.go",
-      "cmds/aiprouter/main.go",
-      "packages/aiprouter/core/ids.go",
-      "packages/aiprouter-client/src/gen/api.ts",
-      "protos/aiprouter/v1/management.proto",
-      "apps/aiprouter/src/main.tsx",
-      "apps/public-docs/docs/aiprouter/index.md",
-      "scripts/aiprouter/compose-smoke.py",
+      "servers/tairouter/main.go",
+      "cmds/tairouter/main.go",
+      "packages/tairouter/core/ids.go",
+      "packages/tairouter-client/src/gen/api.ts",
+      "protos/tairouter/v1/management.proto",
+      "apps/tairouter/src/main.tsx",
+      "apps/public-docs/docs/tairouter/index.md",
+      "scripts/tairouter/compose-smoke.py",
       "scripts/localization/cli.mjs",
-      "packaging/aiprouter/compose.yml",
-      "docs/project-aiprouter.md",
+      "packaging/tairouter/compose.yml",
+      "docs/project-tairouter.md",
       "go.mod",
       "buf.gen.yaml",
       ".github/workflows/CI.yml",
     ]) {
       const needs = results(event, [path]);
-      assert.equal(planJobs(event, [path]).jobs.aiprouter, true, path);
+      assert.equal(planJobs(event, [path]).jobs.tairouter, true, path);
       assert.equal(validateResults(needs), true);
       for (const result of ["failure", "cancelled", "skipped"]) {
-        needs.aiprouter.result = result;
-        assert.throws(() => validateResults(needs), /aiprouter/u);
+        needs.tairouter.result = result;
+        assert.throws(() => validateResults(needs), /tairouter/u);
       }
     }
     for (const path of ["crates/binpm/src/main.rs", "cmds/runmoor/main.go"]) {
-      assert.equal(planJobs(event, [path]).jobs.aiprouter, false, path);
+      assert.equal(planJobs(event, [path]).jobs.tairouter, false, path);
       assert.equal(validateResults(results(event, [path])), true);
     }
   }
