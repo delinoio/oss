@@ -23,7 +23,7 @@
     "proto:check": "turbo run ci:proto:check --filter=@delinoio/ci",
     "dev:async-commit-hook": "pnpm --filter async-commit-hook dev",
     "format:check": "turbo run ci:format --filter=@delinoio/ci",
-    "dev:aiprouter": "node scripts/aiprouter/local.mjs",
+    "dev:tairouter": "node scripts/tairouter/local.mjs",
     "dev:labs-site": "pnpm --filter labs-site dev",
     "dev:labs-docs": "pnpm --filter labs-docs dev",
     "i18n:check": "pnpm -r --workspace-concurrency=2 --if-present run i18n:check",
@@ -32,9 +32,9 @@
     "i18n:logout": "node scripts/localization/cli.mjs logout",
     "i18n:models": "node scripts/localization/cli.mjs models",
     "i18n:profiles": "node scripts/localization/cli.mjs profiles",
-    "dev:aiprouter:stop": "node scripts/aiprouter/local.mjs stop",
-    "dev:aiprouter:logs": "node scripts/aiprouter/local.mjs logs",
-    "dev:aiprouter:source": "turbo run dev --filter=@aiprouter/server --filter=@aiprouter/console --filter=public-docs"
+    "dev:tairouter:stop": "node scripts/tairouter/local.mjs stop",
+    "dev:tairouter:logs": "node scripts/tairouter/local.mjs logs",
+    "dev:tairouter:source": "turbo run dev --filter=@tairouter/server --filter=@tairouter/console --filter=public-docs"
   },
   "pnpm": {
     "overrides": {

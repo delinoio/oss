@@ -1,0 +1,24 @@
+# Isolated evaluation only. Requires Docker Compose 2.24 or later for !reset.
+# Fixtures own the network namespace before OIDC discovery starts in the server.
+services:
+  tairouter:
+    network_mode: service:fixtures
+    ports: !reset []
+    depends_on:
+      fixtures:
+        condition: service_started
+    environment:
+      TAIROUTER_OIDC_ISSUER: http://127.0.0.1:18090
+      TAIROUTER_OIDC_CLIENT_ID: tairouter-fixture
+      TAIROUTER_SMTP_ADDR: 127.0.0.1:1025
+  fixtures:
+    build:
+      context: ../..
+      dockerfile: packaging/tairouter/Dockerfile.fixture
+    command: [-listen, "0.0.0.0:18090", -smtp, "0.0.0.0:1025"]
+    ports:
+      - 127.0.0.1:8080:8080
+      - 127.0.0.1:18090:18090
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
