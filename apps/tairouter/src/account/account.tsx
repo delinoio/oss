@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale } from "../i18n";
 import { pageHref } from "../routes";
-import { useState } from "react";
+import { useId, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import { useQueryClient } from "@tanstack/react-query";
 import {
   AccountService,
   Role,
   type GetSessionResponse,
+  type Organization,
 } from "@tairouter/client";
 import {
   AccountDialog,
+  AccountDialogClosePlacement,
   AccountError,
   AccountSurface,
   LoadingAccount,
@@ -93,6 +95,38 @@ export function SignInPage({
   );
 }
 
+function OwnedOrganizations({
+  owned,
+  headingId,
+}: {
+  owned: Organization[];
+  headingId: string;
+}) {
+  useLocale();
+  return (
+    <ul className="account-owner-list" aria-labelledby={headingId}>
+      {owned.map((org) => (
+        <li key={org.id} className="account-owner">
+          <span className="account-owner-name">{org.name}</span>
+          <span className="account-owner-role">{translate("owner")}</span>
+          <a
+            className="account-owner-link"
+            href={pageHref("settings", org.id)}
+            aria-label={translate("openOrganizationSettingsFor", {
+              value0: org.name,
+            })}
+          >
+            {translate("openOrganizationSettings")}
+          </a>
+          <span className="account-owner-help">
+            {translate("transferOwnershipOrDeleteThisOrganization")}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
 export function AccountPage({
   session: suppliedSession,
   onSessionChange,
@@ -115,6 +149,10 @@ export function AccountPage({
   });
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [ended, setEnded] = useState(false);
+  const profileHeadingId = useId();
+  const deleteHeadingId = useId();
+  const ownershipHeadingId = useId();
+  const blockedHelpId = useId();
   const profile = suppliedSession ?? session.data;
   const owned = organizations.organizations.filter(
     (org) => org.role === Role.OWNER,
@@ -125,6 +163,29 @@ export function AccountPage({
     !organizations.isFetching &&
     complete &&
     owned.length === 0;
+  // The ownership check is only conclusive after every page was fetched
+  // successfully; a failed or partial response never produces the clear state.
+  const checkFailed = organizations.isError;
+  const checkIncomplete = !organizations.isPending && !complete;
+  const checkClear = canDelete;
+  const mutationPending = logout.isPending || deletion.isPending;
+  const deletionInFlightAfterDismiss = deletion.isPending && !confirmDelete;
+  const submitDeletion = () => {
+    // Guard with the current eligibility so a stale click never sends a
+    // request, and never start a second request while one is pending.
+    if (!canDelete || mutationPending) return;
+    deletion.mutate(
+      {},
+      {
+        onSuccess: () => {
+          void endSession();
+        },
+        onError: () => {
+          void organizations.refetch();
+        },
+      },
+    );
+  };
   const endSession = async () => {
     setEnded(true);
     setConfirmDelete(false);
@@ -135,6 +196,7 @@ export function AccountPage({
   if (ended)
     return (
       <AccountSurface
+        focusHeading
         title={
           deletion.isSuccess
             ? translate("accountDeleted")
@@ -151,10 +213,20 @@ export function AccountPage({
     );
   return (
     <AccountSurface
+      className="account-page"
       title={translate("account")}
       subtitle={translate("yourIdentityAndAccountSettings")}
     >
-      {!profile && session.isPending && <LoadingAccount />}
+      {!profile && session.isPending && (
+        <>
+          <div className="account-skeleton" aria-hidden="true">
+            <span className="account-skeleton-line account-skeleton-title" />
+            <span className="account-skeleton-line" />
+            <span className="account-skeleton-line" />
+          </div>
+          <LoadingAccount />
+        </>
+      )}
       <AccountError
         error={session.error}
         retry={() => {
@@ -163,8 +235,11 @@ export function AccountPage({
       />
       {profile && (
         <>
-          <div className="account-card">
-            <h2>{translate("profile")}</h2>
+          <section
+            className="account-card account-profile"
+            aria-labelledby={profileHeadingId}
+          >
+            <h2 id={profileHeadingId}>{translate("profile")}</h2>
             <dl className="account-details">
               <dt>{translate("name")}</dt>
               <dd>{profile.displayName || translate("notProvided")}</dd>
@@ -174,11 +249,12 @@ export function AccountPage({
             <p className="account-hint">
               {translate("manageYourNameAndVerifiedEmailWith")}
             </p>
-            <AccountError error={logout.error} />
             <button
               type="button"
-              disabled={logout.isPending || deletion.isPending}
-              onClick={() =>
+              className="account-signout"
+              disabled={mutationPending}
+              onClick={() => {
+                if (mutationPending) return;
                 logout.mutate(
                   {},
                   {
@@ -186,81 +262,161 @@ export function AccountPage({
                       void endSession();
                     },
                   },
-                )
-              }
+                );
+              }}
             >
               {logout.isPending
                 ? translate("signingOut")
                 : translate("signOut")}
             </button>
-          </div>
-          <div className="account-card">
-            <h2>{translate("deleteAccount")}</h2>
+            <AccountError error={logout.error} />
+          </section>
+          <section
+            className="account-card account-delete"
+            aria-labelledby={deleteHeadingId}
+          >
+            <h2 id={deleteHeadingId}>{translate("deleteAccount")}</h2>
             <p>{translate("firstTransferOrDeleteEveryOrganizationYou")}</p>
-            {organizations.isPending && (
-              <p role="status">{translate("checkingOwnedOrganizations")}</p>
-            )}
+            {/* Always mounted so check progress and the clear result are
+                announced politely and only once per change. */}
+            <div role="status" className="account-ownership-status">
+              {organizations.isPending && (
+                <>
+                  <div className="account-skeleton" aria-hidden="true">
+                    <span className="account-skeleton-line" />
+                    <span className="account-skeleton-line account-skeleton-short" />
+                  </div>
+                  <p>{translate("checkingOwnedOrganizations")}</p>
+                </>
+              )}
+              {!organizations.isPending &&
+                organizations.isFetching &&
+                !organizations.isFetchingNextPage &&
+                !checkFailed && (
+                  <p>{translate("checkingOwnedOrganizations")}</p>
+                )}
+              {checkClear && (
+                <div className="account-ownership-panel">
+                  <h3>{translate("ownershipCheckComplete")}</h3>
+                  <p>{translate("youDoNotOwnAnyOrganizations")}</p>
+                </div>
+              )}
+            </div>
             <AccountError
               error={organizations.error}
               retry={() => {
-                void organizations.refetch();
+                if (organizations.isFetching) return;
+                if (organizations.isFetchNextPageError)
+                  void organizations.fetchNextPage();
+                else void organizations.refetch();
               }}
             />
+            {(checkIncomplete || checkFailed) && (
+              <div className="account-ownership-panel">
+                <h3>{translate("ownershipCheckIncomplete")}</h3>
+                <p>{translate("accountDeletionStaysBlockedUntilAll")}</p>
+              </div>
+            )}
             {owned.length > 0 && (
-              <>
-                <p>{translate("theseOrganizationsBlockAccountDeletion")}</p>
-                <ul>
-                  {owned.map((org) => (
-                    <li key={org.id}>
-                      <a href={pageHref("settings", org.id)}>{org.name}</a>{" "}
-                      {translate("transferOwnershipOrDeleteThisOrganization")}
-                    </li>
-                  ))}
-                </ul>
-              </>
+              <div className="account-owner-section">
+                {complete && !checkFailed ? (
+                  <>
+                    <h3 id={ownershipHeadingId}>
+                      {translate("ownershipBlocksDeletion")}
+                    </h3>
+                    <p>
+                      {translate("transferOrDeleteTheseOrganizationsBefore")}
+                    </p>
+                  </>
+                ) : (
+                  <h3 id={ownershipHeadingId}>
+                    {translate("organizationsThatBlockDeletion")}
+                  </h3>
+                )}
+                <OwnedOrganizations
+                  owned={owned}
+                  headingId={ownershipHeadingId}
+                />
+              </div>
             )}
-            {!complete && (
-              <>
-                <p>
-                  {translate("theOrganizationListIsIncompleteAccountDeletion")}
-                </p>
-                <button
-                  type="button"
-                  disabled={organizations.isFetching}
-                  onClick={() => {
-                    void organizations.fetchNextPage();
-                  }}
-                >
-                  {translate("checkMoreOrganizations")}
-                </button>
-              </>
+            {checkIncomplete && !checkFailed && (
+              <button
+                type="button"
+                className="account-check-more"
+                disabled={organizations.isFetching}
+                onClick={() => {
+                  if (organizations.isFetching) return;
+                  void organizations.fetchNextPage();
+                }}
+              >
+                {organizations.isFetchingNextPage
+                  ? translate("checkingMoreOrganizations")
+                  : translate("checkMoreOrganizations")}
+              </button>
             )}
-            <p>
-              {translate("deletionRemovesYourMembershipsAndPersonalIdentity")}
-            </p>
-            <AccountError error={deletion.error} />
+            <div className="account-consequences">
+              <h3>{translate("whatDeletionChanges")}</h3>
+              <ul>
+                <li>
+                  {translate("removesYourMembershipsAndPersonalIdentity")}
+                </li>
+                <li>{translate("anonymizesSurvivingUsageAndAuditRecords")}</li>
+                <li>{translate("existingBackupsExpireUnderTheOperator")}</li>
+              </ul>
+            </div>
+            {/* Always mounted so the in-flight notice is announced politely once
+                after the dialog is dismissed; the open dialog owns its own copy. */}
+            <div role="status" className="account-deletion-status">
+              {deletionInFlightAfterDismiss && (
+                <p>{translate("deletingYourAccountClosingTheDialog")}</p>
+              )}
+            </div>
+            {!confirmDelete && <AccountError error={deletion.error} />}
             <button
               className="account-danger"
               type="button"
-              disabled={!canDelete || deletion.isPending || logout.isPending}
+              disabled={!canDelete || mutationPending}
+              aria-describedby={canDelete ? undefined : blockedHelpId}
               onClick={() => setConfirmDelete(true)}
             >
               {translate("deleteMyAccount")}
             </button>
-          </div>
+            {!canDelete && (
+              <p id={blockedHelpId} className="account-hint">
+                {translate("resolveOwnershipAndCompleteTheCheck")}
+              </p>
+            )}
+          </section>
         </>
       )}
       {confirmDelete && (
         <AccountDialog
           title={translate("deleteYourAccount")}
+          className="account-dialog-review"
+          closePlacement={AccountDialogClosePlacement.Header}
           onClose={() => setConfirmDelete(false)}
         >
-          <p>{translate("thisRemovesAllYourMembershipsAndPersonal")}</p>
-          <p>{translate("newRequestsStopResponsesAlreadySentTo")}</p>
+          <p className="account-dialog-lead">
+            {translate("thisActionCannotBeUndone")}
+          </p>
+          <h3>{translate("whatWillHappen")}</h3>
+          <ul className="account-dialog-list">
+            <li>{translate("removesAllYourMembershipsAndPersonal")}</li>
+            <li>{translate("survivingUsageAndAuditRecordsAre")}</li>
+            <li>{translate("existingBackupsExpireUnderTheOperator")}</li>
+          </ul>
+          <p className="account-dialog-notice">
+            {translate("newRequestsStopResponsesAlreadySentTo")}
+          </p>
+          <div role="status" className="account-deletion-status">
+            {deletion.isPending && (
+              <p>{translate("deletingYourAccountClosingTheDialog")}</p>
+            )}
+          </div>
           <AccountError error={deletion.error} />
-          <div className="account-actions">
+          <div className="account-actions account-dialog-actions">
             <button
-              autoFocus
+              data-dialog-initial-focus
               type="button"
               onClick={() => setConfirmDelete(false)}
             >
@@ -269,20 +425,8 @@ export function AccountPage({
             <button
               type="button"
               className="account-danger"
-              disabled={!canDelete || deletion.isPending}
-              onClick={() =>
-                deletion.mutate(
-                  {},
-                  {
-                    onSuccess: () => {
-                      void endSession();
-                    },
-                    onError: () => {
-                      void organizations.refetch();
-                    },
-                  },
-                )
-              }
+              disabled={!canDelete || mutationPending}
+              onClick={submitDeletion}
             >
               {deletion.isPending
                 ? translate("message_43b5894c3e")

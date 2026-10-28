@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale } from "../i18n";
 import { pageHref } from "../routes";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import {
@@ -31,16 +31,22 @@ export function DevicePage({ initialCode }: { initialCode?: string }) {
       "",
   );
   const [code, setCode] = useState(input.trim());
+  // A code supplied by the URL or prop moves focus to the heading once; typed
+  // codes and "Enter another code" keep focus on the entry input instead.
+  const [supplied] = useState(Boolean(input.trim()));
+  const helperId = useId();
   return (
     <AccountSurface
       title={translate("connectThisDevice")}
       subtitle={translate("verifyTheDetailsBelowAndApproveOnly")}
+      className="device-surface"
+      focusHeading={supplied}
     >
       {code ? (
         <DeviceReview key={code} code={code} onReset={() => setCode("")} />
       ) : (
         <form
-          className="account-card"
+          className="account-card device-card device-entry"
           onSubmit={(event) => {
             event.preventDefault();
             if (input.trim()) setCode(input.trim());
@@ -56,13 +62,14 @@ export function DevicePage({ initialCode }: { initialCode?: string }) {
               value={input}
               required
               maxLength={64}
+              aria-describedby={helperId}
               onChange={(event) => setInput(event.target.value)}
             />
           </label>
-          <p className="account-hint">
+          <p id={helperId} className="account-hint device-helper">
             {translate("enterTheOneTimeCodeShownBy")}
           </p>
-          <button className="account-primary" type="submit">
+          <button className="account-primary device-review" type="submit">
             {translate("reviewConnection")}
           </button>
         </form>
@@ -80,6 +87,8 @@ function DeviceReview({
 }) {
   useLocale();
   const now = useNow();
+  const organizationHelperId = useId();
+  const unverifiedId = useId();
   const [organizationId, setOrganizationId] = useState("");
   const [expiry, setExpiry] = useState(Expiry.ThirtyDays);
   const [decision, setDecision] = useState<State>();
@@ -144,7 +153,7 @@ function DeviceReview({
     remaining > 0;
 
   return (
-    <div className="account-card">
+    <div className="account-card device-card">
       {inspected.isPending && (
         <p role="status">{translate("checkingConnectionCode")}</p>
       )}
@@ -156,9 +165,71 @@ function DeviceReview({
           void inspected.refetch();
         }}
       />
+      {authorization && inspected.isError && (
+        <p id={unverifiedId} className="device-unverified">
+          {translate("unverifiedTheseDetailsCouldNotBe")}
+        </p>
+      )}
+      {/* Always mounted so a result change is announced politely once; it sits
+          before the detail rows so a finished connection reads first. */}
+      <div
+        role="status"
+        className="device-result"
+        data-state={state === undefined ? undefined : State[state]}
+      >
+        {state === State.APPROVED && (
+          <>
+            <h2>{translate("approvedWaitingForCliStorage")}</h2>
+            <p>{translate("returnToYourCliToFinishApproval")}</p>
+          </>
+        )}
+        {state === State.DELIVERED && (
+          <>
+            <h2>{translate("connected")}</h2>
+            <p>{translate("theCliConfirmedThatItStoredThe")}</p>
+          </>
+        )}
+        {state === State.DENIED && (
+          <>
+            <h2>{translate("connectionDenied")}</h2>
+            <p>{translate("thisRequestWasDeniedStartANew")}</p>
+          </>
+        )}
+        {state === State.EXPIRED && (
+          <>
+            <h2>{translate("connectionExpired")}</h2>
+            <p>{translate("theOriginalDeadlineHasPassedAnUnclaimed")}</p>
+          </>
+        )}
+        {state === State.REVOKED && (
+          <>
+            <h2>{translate("connectionNotCompleted")}</h2>
+            <p>{translate("theConnectionKeyWasRevokedCheckThe")}</p>
+          </>
+        )}
+        {state === State.UNSPECIFIED && (
+          <p>{translate("connectionStatusIsUnavailableRefreshBeforeTaking")}</p>
+        )}
+      </div>
+      {state === State.APPROVED && authorization && (
+        <section className="device-recovery">
+          <h3>{translate("ifLocalStorageFails")}</h3>
+          <p>
+            {translate("theCliAttemptsToRevokeThe")}
+            <a href={pageHref("keys", authorization.organizationId)}>
+              {translate("apiKeys")}
+            </a>
+            .
+          </p>
+        </section>
+      )}
       {authorization && (
         <>
-          <dl className="account-details">
+          <dl
+            className="account-details device-details"
+            aria-describedby={inspected.isError ? unverifiedId : undefined}
+            data-verified={inspected.isError ? "false" : "true"}
+          >
             <dt>{translate("server_aef7de")}</dt>
             <dd>{authorization.serverAddress}</dd>
             <dt>{translate("device")}</dt>
@@ -179,27 +250,34 @@ function DeviceReview({
               </>
             )}
           </dl>
-          <p>{translate("connectionCode")}</p>
-          <strong className="account-code">{code}</strong>
-          <p>{translate("confirmThisCodeMatchesYourCliApprove")}</p>
-          <p>
-            {translate("originalDeadline", {
-              value0:
-                deadline === undefined
-                  ? translate("notAvailable")
-                  : dateLabel(timestampFromDate(new Date(deadline))),
-            })}
-          </p>
-          {remaining !== undefined && (
-            <p aria-live="off">
-              {translate("codeExpiresIn", {
-                value0: Math.floor(remaining / 60),
-                value1: String(remaining % 60).padStart(2, "0"),
-              })}
+          <section className="device-code-panel">
+            <p className="device-code-label">{translate("connectionCode")}</p>
+            <strong className="account-code device-code">{code}</strong>
+            <p className="device-code-note">
+              {translate("confirmThisCodeMatchesYourCliApprove")}
             </p>
-          )}
+          </section>
+          <div className="device-deadline">
+            <p className="device-deadline-date">
+              <span className="device-deadline-label">
+                {translate("originalDeadlineLabel")}
+              </span>{" "}
+              {deadline === undefined
+                ? translate("notAvailable")
+                : dateLabel(timestampFromDate(new Date(deadline)))}
+            </p>
+            {remaining !== undefined && (
+              <p className="device-deadline-remaining" aria-live="off">
+                {translate("codeExpiresIn", {
+                  value0: Math.floor(remaining / 60),
+                  value1: String(remaining % 60).padStart(2, "0"),
+                })}
+              </p>
+            )}
+          </div>
           {state === State.PENDING && (
             <form
+              className="device-form"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (
@@ -243,6 +321,7 @@ function DeviceReview({
                 <select
                   required
                   value={organizationId}
+                  aria-describedby={organizationHelperId}
                   disabled={busy || organizations.isError}
                   onChange={(event) => setOrganizationId(event.target.value)}
                 >
@@ -254,10 +333,21 @@ function DeviceReview({
                   ))}
                 </select>
               </label>
+              <p
+                id={organizationHelperId}
+                className="account-hint device-helper"
+              >
+                {translate("yourCliKeyWillBelongTo")}
+              </p>
+              {organizations.isPending && (
+                <p role="status" className="device-helper">
+                  {translate("loadingOrganizations")}
+                </p>
+              )}
               {!organizations.isPending &&
                 !organizations.isError &&
                 orgs.length === 0 && (
-                  <p>
+                  <p className="device-no-organization">
                     <a href="/overview">
                       {translate("createAnOrganizationOrAcceptAnInvitation")}
                     </a>
@@ -267,6 +357,7 @@ function DeviceReview({
               {organizations.hasNextPage && (
                 <button
                   type="button"
+                  className="device-load-more"
                   disabled={organizations.isFetching}
                   onClick={() => {
                     void organizations.fetchNextPage();
@@ -291,7 +382,7 @@ function DeviceReview({
                   <option value={Expiry.None}>{translate("noExpiry")}</option>
                 </select>
               </label>
-              <div className="account-actions">
+              <div className="account-actions device-actions">
                 <button
                   type="submit"
                   className="account-primary"
@@ -305,6 +396,7 @@ function DeviceReview({
                 </button>
                 <button
                   type="button"
+                  className="device-deny"
                   disabled={!actionable}
                   onClick={() =>
                     deny.mutate(
@@ -325,53 +417,9 @@ function DeviceReview({
               </div>
             </form>
           )}
-          <div role="status">
-            {state === State.APPROVED && (
-              <>
-                <h2>{translate("approvedWaitingForCliStorage")}</h2>
-                <p>{translate("returnToYourCliToFinishApproval")}</p>
-                <p>
-                  {translate("ifLocalStorageFailsTheCliAttempts")}
-                  <a href={pageHref("keys", authorization.organizationId)}>
-                    {translate("apiKeys")}
-                  </a>
-                  .
-                </p>
-              </>
-            )}
-            {state === State.DELIVERED && (
-              <>
-                <h2>{translate("connected")}</h2>
-                <p>{translate("theCliConfirmedThatItStoredThe")}</p>
-              </>
-            )}
-            {state === State.DENIED && (
-              <>
-                <h2>{translate("connectionDenied")}</h2>
-                <p>{translate("thisRequestWasDeniedStartANew")}</p>
-              </>
-            )}
-            {state === State.EXPIRED && (
-              <>
-                <h2>{translate("connectionExpired")}</h2>
-                <p>{translate("theOriginalDeadlineHasPassedAnUnclaimed")}</p>
-              </>
-            )}
-            {state === State.REVOKED && (
-              <>
-                <h2>{translate("connectionNotCompleted")}</h2>
-                <p>{translate("theConnectionKeyWasRevokedCheckThe")}</p>
-              </>
-            )}
-            {state === State.UNSPECIFIED && (
-              <p>
-                {translate("connectionStatusIsUnavailableRefreshBeforeTaking")}
-              </p>
-            )}
-          </div>
         </>
       )}
-      <div className="account-actions">
+      <div className="device-reset">
         <button type="button" disabled={busy} onClick={onReset}>
           {translate("enterAnotherCode")}
         </button>

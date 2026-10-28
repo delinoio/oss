@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale } from "./i18n";
 import { pageHref, type Page } from "./routes";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import {
@@ -315,77 +315,134 @@ export function OverviewPage({ organization, session }: PageProps) {
     </div>
   );
 }
+// Mirrors the CLI profile-name rule in cmds/tairouter/types.go. Do not trim or normalize input before testing.
+const profilePattern = /^[a-z][a-z0-9-]{0,47}$/;
+const defaultProfile = "default";
+export const isValidConnectProfile = (value: string) =>
+  profilePattern.test(value);
 export function ConnectPage({ organization }: PageProps) {
   useLocale();
-  const [profile, setProfile] = useState("default");
-  const safeProfile = /^[a-z][a-z0-9-]{0,47}$/.test(profile);
+  const [profile, setProfile] = useState(defaultProfile);
+  const profileInput = useRef<HTMLInputElement>(null);
+  const safeProfile = isValidConnectProfile(profile);
+  // Invalid text is never interpolated into a displayed or copied command.
+  const commandProfile = safeProfile ? profile : defaultProfile;
   const origin = window.location.origin;
-  const command = `tairouter connect --server '${origin}' --profile '${safeProfile ? profile : "default"}'`;
+  const command = `tairouter connect --server '${origin}' --profile '${commandProfile}'`;
+  const configureCommand = `tairouter configure --profile '${commandProfile}' --client CLIENT_ID`;
+  const disconnectCommand = `tairouter disconnect --profile '${commandProfile}'`;
+  // Focus the single critical input once when the page is shown, never on keystrokes or scope refreshes.
+  useEffect(() => {
+    profileInput.current?.focus();
+  }, []);
   return (
-    <>
+    <div className="connect-page">
       <PageHeader
         title={translate("connectAClient")}
         description={translate("connectToWithYourOwnRouting", {
           value0: organization.name,
         })}
       />
-      <Card>
-        <h2>{translate("message1StartASecureConnection")}</h2>
-        <p>
-          {translate("server")}
-          <strong>{origin}</strong>
-        </p>
-        <p>
-          {translate("choose")}
-          <strong>{organization.name}</strong>{" "}
-          {translate("whenApprovingTheDeviceInYourBrowser")}
-        </p>
-        <Field
-          label={translate("profileName")}
-          hint={translate("startWithALowercaseLetterUseLowercase")}
-        >
-          <input value={profile} onChange={(e) => setProfile(e.target.value)} />
-        </Field>
-        {!safeProfile && (
-          <Notice tone="danger">
-            {translate("enterAValidProfileNameBeforeCopying")}
-          </Notice>
-        )}
-        <pre>
-          <code>{command}</code>
-        </pre>
-        {safeProfile && (
-          <CopyButton value={command} label={translate("copyConnectCommand")} />
-        )}
-        <p>{translate("runThisCommandWithTheInstalledTairouter")}</p>
-      </Card>
-      <Card>
-        <h2>{translate("message2ChooseAndConfigureYourClient")}</h2>
-        <pre>
-          <code>tairouter clients</code>
-        </pre>
-        <p>{translate("listSupportedClientsSettingsFormatsAndPlatform")}</p>
-        <pre>
-          <code>{`tairouter configure --profile '${safeProfile ? profile : "default"}' --client CLIENT_ID`}</code>
-        </pre>
-        <Notice>{translate("theCliPreviewsSettingsChangesAndAsks")}</Notice>
-        <p>{translate("clientsThatNeedALoopbackRelayShow")}</p>
-      </Card>
-      <Card>
-        <h2>{translate("recoverSafely")}</h2>
-        <p>{translate("ifTheOsCredentialStoreIsUnavailable")}</p>
-        <p>
-          {translate("ifServerRevocationCouldNotFinishOpen")}
-          <a href={pageHref("keys", organization.id)}>
-            {translate("apiKeys")}
-          </a>{" "}
-          {translate("andRevokeTheOutstandingCliKey")}
-        </p>
-        <p>{translate("ifRestorationDetectsSettingsConflictsPreserveYour")}</p>
-        <pre>
-          <code>{`tairouter disconnect --profile '${safeProfile ? profile : "default"}'`}</code>
-        </pre>
-      </Card>
-    </>
+      <dl className="connect-context">
+        <div>
+          <dt>{translate("connectContextServer")}</dt>
+          <dd>{origin}</dd>
+        </div>
+        <div>
+          <dt>{translate("connectContextOrganization")}</dt>
+          <dd>{organization.name}</dd>
+        </div>
+      </dl>
+      <div className="connect-layout">
+        <Card className="connect-step connect-step-one">
+          <h2>
+            <span className="connect-step-number">1</span>
+            {translate("connectStartSecureConnectionTitle")}
+          </h2>
+          <Field
+            label={translate("profileName")}
+            hint={
+              <>
+                {translate("startWithALowercaseLetterUseLowercase")}
+                {!safeProfile && (
+                  <> {translate("connectProfileFallbackHint")}</>
+                )}
+              </>
+            }
+            error={
+              safeProfile
+                ? undefined
+                : translate("enterAValidProfileNameBeforeCopying")
+            }
+          >
+            <input
+              ref={profileInput}
+              value={profile}
+              onChange={(e) => setProfile(e.target.value)}
+            />
+          </Field>
+          <pre>
+            <code>{command}</code>
+          </pre>
+          {safeProfile && (
+            <div className="connect-copy">
+              <CopyButton
+                value={command}
+                label={translate("copyConnectCommand")}
+                variant="primary"
+              />
+            </div>
+          )}
+          <p>
+            {translate("connectRunCommandInstruction", {
+              value0: organization.name,
+            })}
+          </p>
+          <p>{translate("connectCredentialStoreNote")}</p>
+        </Card>
+        <Card className="connect-step connect-step-two">
+          <h2>
+            <span className="connect-step-number">2</span>
+            {translate("connectChooseConfigureTitle")}
+          </h2>
+          <pre>
+            <code>tairouter clients</code>
+          </pre>
+          <p>{translate("connectListClientsInstruction")}</p>
+          <pre>
+            <code>{configureCommand}</code>
+          </pre>
+          <div className="notice info">
+            <h3>{translate("connectReviewBeforeApplyingTitle")}</h3>
+            <p>{translate("theCliPreviewsSettingsChangesAndAsks")}</p>
+          </div>
+          <p>{translate("clientsThatNeedALoopbackRelayShow")}</p>
+        </Card>
+        <Card className="connect-recovery">
+          <h2>{translate("recoverSafely")}</h2>
+          <section>
+            <h3>{translate("connectCredentialStoreUnavailableTitle")}</h3>
+            <p>{translate("connectCredentialStoreUnavailableBody")}</p>
+          </section>
+          <section>
+            <h3>{translate("connectRevocationIncompleteTitle")}</h3>
+            <p>{translate("connectRevocationIncompleteBody")}</p>
+            <a
+              className="connect-link"
+              href={pageHref("keys", organization.id)}
+            >
+              {translate("connectOpenApiKeys")}
+            </a>
+          </section>
+          <section>
+            <h3>{translate("connectRestorationConflictsTitle")}</h3>
+            <p>{translate("connectRestorationConflictsBody")}</p>
+          </section>
+          <pre>
+            <code>{disconnectCommand}</code>
+          </pre>
+        </Card>
+      </div>
+    </div>
   );
 }

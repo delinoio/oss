@@ -83,11 +83,14 @@ export function Field({
   label,
   children,
   hint,
+  describedBy: extraDescribedBy,
   error,
 }: {
   label: string;
   children: ReactNode;
   hint?: ReactNode;
+  /** Extra element ids (for example an error summary) appended to the control description. */
+  describedBy?: string;
   /** Field-associated error text; marks the control invalid and describes it. */
   error?: ReactNode;
 }) {
@@ -102,6 +105,7 @@ export function Field({
       child?.props["aria-describedby"],
       hint ? `${id}-hint` : undefined,
       error ? `${id}-error` : undefined,
+      extraDescribedBy,
     ]
       .filter(Boolean)
       .join(" ") || undefined;
@@ -314,6 +318,7 @@ export function Dialog({
   size?: DialogSize;
   /** Focus the dialog heading on open instead of the first form control. */
   focusHeading?: boolean;
+  /** Optional scoped class so one consumer can style its dialog without changing others. */
   className?: string;
   describedBy?: string;
 }) {
@@ -480,11 +485,13 @@ export function Pagination({
 export function CopyButton({
   value,
   label = translate("copy"),
+  variant = "secondary",
   statusId,
   className,
 }: {
   value: string;
   label?: string;
+  variant?: ComponentProps<typeof Button>["variant"];
   /** Optional id for the status region; the button is described by it. */
   statusId?: string;
   /** Optional extra class for the button. */
@@ -495,6 +502,7 @@ export function CopyButton({
   return (
     <>
       <Button
+        variant={variant}
         className={className}
         aria-describedby={statusId}
         onClick={() => {
@@ -506,7 +514,12 @@ export function CopyButton({
       >
         {label}
       </Button>
-      <span role="status" id={statusId} className="copy-status">
+      <span
+        role="status"
+        aria-live="polite"
+        id={statusId}
+        className="copy-status"
+      >
         {message}
       </span>
     </>

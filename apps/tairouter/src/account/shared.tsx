@@ -183,30 +183,53 @@ export function LoadingAccount() {
   return <p role="status">{translate("loadingYourAccount")}</p>;
 }
 
+/** Where AccountDialog renders its close control. */
+export enum AccountDialogClosePlacement {
+  /** Legacy default: a trailing "Close" button after the children. */
+  Footer = "footer",
+  /** Top-right icon button in the dialog header. */
+  Header = "header",
+}
+
 export function AccountDialog({
   title,
   onClose,
+  className,
+  closePlacement = AccountDialogClosePlacement.Footer,
   children,
 }: {
   title: string;
   onClose: () => void;
+  /** Optional scoped modifier class appended to the base dialog class. */
+  className?: string;
+  /** Defaults to the legacy trailing Close button. */
+  closePlacement?: AccountDialogClosePlacement;
   children: ReactNode;
 }) {
   useLocale();
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  // Remember the opener during the first render, before an autofocused child
+  // inside the dialog can take focus, so closing restores focus to the opener.
+  const opener = useRef<HTMLElement | null | undefined>(undefined);
+  if (opener.current === undefined)
+    opener.current = (document.activeElement as HTMLElement | null) ?? null;
   useEffect(() => {
-    const trigger = document.activeElement as HTMLElement | null;
+    const trigger = opener.current;
     const dialog = ref.current;
     dialog?.showModal();
+    // showModal() focuses the first focusable control (the header Close), so
+    // honor an explicit safest-action marker instead.
+    dialog?.querySelector<HTMLElement>("[data-dialog-initial-focus]")?.focus();
     return () => {
       dialog?.close();
       trigger?.focus();
     };
   }, []);
+  const header = closePlacement === AccountDialogClosePlacement.Header;
   return (
     <dialog
-      className="account-dialog"
+      className={className ? `account-dialog ${className}` : "account-dialog"}
       ref={ref}
       aria-labelledby={titleId}
       onKeyDown={(event) => {
@@ -231,15 +254,45 @@ export function AccountDialog({
         onClose();
       }}
     >
-      <h2 id={titleId}>{title}</h2>
+      {header ? (
+        <header className="account-dialog-header">
+          <h2 id={titleId}>{title}</h2>
+          <button
+            type="button"
+            className="account-dialog-close"
+            onClick={onClose}
+            aria-label={translate("close_312254", { value0: title })}
+          >
+            <svg
+              aria-hidden="true"
+              focusable="false"
+              viewBox="0 0 20 20"
+              width="20"
+              height="20"
+            >
+              <path
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                d="M4 4l12 12M16 4 4 16"
+              />
+            </svg>
+          </button>
+        </header>
+      ) : (
+        <h2 id={titleId}>{title}</h2>
+      )}
       {children}
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label={translate("close_312254", { value0: title })}
-      >
-        {translate("close")}
-      </button>
+      {!header && (
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label={translate("close_312254", { value0: title })}
+        >
+          {translate("close")}
+        </button>
+      )}
     </dialog>
   );
 }
