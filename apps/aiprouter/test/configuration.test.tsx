@@ -27,7 +27,7 @@ import {
   HostedSettingsSchema,
   HostedSearchBackend,
 } from "@aiprouter/client";
-import { ApiProvider } from "../src/api";
+import { ApiProvider, DirtyContext } from "../src/api";
 import { ProvidersPage } from "../src/providers";
 import { HostedHelpers } from "../src/hosted";
 import type { ReactNode } from "react";
@@ -798,6 +798,74 @@ describe("hosted helpers dialog shell", () => {
     release();
     await screen.findByText("Hosted helper settings saved.");
     expect(update).toHaveBeenCalledTimes(1);
+  });
+  describe("shell dirty flag", () => {
+    async function submitSlowSave(
+      user: ReturnType<typeof userEvent.setup>,
+      dirty: (dirty: boolean) => void,
+    ) {
+      let release: () => void = () => {};
+      const gate = new Promise<void>((resolve) => (release = resolve));
+      const update = rs.fn(async (_request: unknown) => {
+        await gate;
+        return {};
+      });
+      mount(
+        <DirtyContext value={dirty}>
+          <HostedHelpers organizationId="org" />
+        </DirtyContext>,
+        (r) => shellRoutes(r, { update }),
+      );
+      await openDialog(user);
+      await screen.findByLabelText("Configure web search");
+      await user.click(
+        screen.getByRole("button", { name: "Save helper settings" }),
+      );
+      expect(update).toHaveBeenCalledTimes(1);
+      return release;
+    }
+    it("clears the flag when the save finishes while its dialog is still open", async () => {
+      const user = userEvent.setup(),
+        // Records whether the dialog was still open when each report arrived.
+        reports: boolean[] = [],
+        dirty = rs.fn((value: boolean) => {
+          if (!value) reports.push(!!document.querySelector("dialog[open]"));
+        });
+      const release = await submitSlowSave(user, dirty);
+      release();
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+      expect(reports[0]).toBe(true);
+    });
+    it("leaves a newer draft's flag alone when the save finishes after the dialog was dismissed", async () => {
+      const user = userEvent.setup(),
+        dirty = rs.fn((_dirty: boolean) => {});
+      const release = await submitSlowSave(user, dirty);
+      await user.click(screen.getByRole("button", { name: "Close dialog" }));
+      // Closing a form dialog reports its own discard; only the later
+      // completion of the save must stay silent.
+      dirty.mockClear();
+      release();
+      await screen.findByText("Hosted helper settings saved.");
+      expect(dirty).not.toHaveBeenCalled();
+    });
+    it("leaves a newer draft's flag alone when the dialog was reopened before the save finished", async () => {
+      const user = userEvent.setup(),
+        dirty = rs.fn((_dirty: boolean) => {});
+      const release = await submitSlowSave(user, dirty);
+      await user.click(screen.getByRole("button", { name: "Close dialog" }));
+      await openDialog(user);
+      await screen.findByLabelText("Configure web search");
+      dirty.mockClear();
+      const pendingText =
+        "Saving… Closing this dialog does not cancel a submitted change.";
+      await screen.findByText(pendingText);
+      release();
+      // The shared action is still reported by the reopened dialog.
+      await waitFor(() => expect(screen.queryByText(pendingText)).toBeNull());
+      // The reopened dialog is a different draft and stays open.
+      expect(screen.getByRole("dialog")).toBeTruthy();
+      expect(dirty).not.toHaveBeenCalled();
+    });
   });
   it("reports a rejected save in the entry region after close without a success claim", async () => {
     const user = userEvent.setup();

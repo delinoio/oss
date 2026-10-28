@@ -53,10 +53,17 @@ export function HostedHelpers({
   const action = useAction();
   const [open, setOpen] = useState(false);
   const session = useRef(0);
+  // Session of the dialog that is open now; undefined once it is dismissed.
+  const active = useRef<number>(undefined);
   function openDialog() {
     action.reset();
     session.current += 1;
+    active.current = session.current;
     setOpen(true);
+  }
+  function closeDialog() {
+    active.current = undefined;
+    setOpen(false);
   }
   function save(settings: HostedSettings) {
     const submitted = session.current;
@@ -68,9 +75,12 @@ export function HostedHelpers({
         }),
       () => {
         // Close only the dialog that submitted this change.
-        if (session.current === submitted) setOpen(false);
+        if (active.current === submitted) closeDialog();
       },
       translate("hostedHelperSettingsSaved"),
+      // The shell's dirty flag is shared by every form. Once this dialog is
+      // dismissed, a save that finishes later must not clear a newer draft.
+      () => active.current === submitted,
     );
   }
   return (
@@ -94,7 +104,7 @@ export function HostedHelpers({
           organizationName={organizationName}
           action={action}
           onSave={save}
-          onClose={() => setOpen(false)}
+          onClose={closeDialog}
         />
       )}
     </Card>

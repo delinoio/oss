@@ -24,6 +24,12 @@ export function useAction() {
     operation: () => Promise<T>,
     done?: (value: T) => void,
     success = translate("changesSaved"),
+    /**
+     * Evaluated when the operation succeeds. Return false when the draft that
+     * was submitted no longer owns the shell's unsaved-change flag, so a
+     * completion that outlives its form cannot clear a newer draft's flag.
+     */
+    ownsDirty: () => boolean = () => true,
   ) {
     if (busy.current) return;
     busy.current = true;
@@ -33,7 +39,7 @@ export function useAction() {
     try {
       const result = await operation();
       if (mounted.current) {
-        reportDirty(false);
+        if (ownsDirty()) reportDirty(false);
         setNotice(success);
         done?.(result);
         await client.invalidateQueries();
