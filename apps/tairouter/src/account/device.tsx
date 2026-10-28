@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale } from "../i18n";
 import { pageHref } from "../routes";
-import { useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import { useMutation, useQuery } from "@connectrpc/connect-query";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import {
@@ -31,16 +31,18 @@ export function DevicePage({ initialCode }: { initialCode?: string }) {
       "",
   );
   const [code, setCode] = useState(input.trim());
+  const helperId = useId();
   return (
     <AccountSurface
       title={translate("connectThisDevice")}
       subtitle={translate("verifyTheDetailsBelowAndApproveOnly")}
+      className="device-surface"
     >
       {code ? (
         <DeviceReview key={code} code={code} onReset={() => setCode("")} />
       ) : (
         <form
-          className="account-card"
+          className="account-card device-card device-entry"
           onSubmit={(event) => {
             event.preventDefault();
             if (input.trim()) setCode(input.trim());
@@ -56,13 +58,14 @@ export function DevicePage({ initialCode }: { initialCode?: string }) {
               value={input}
               required
               maxLength={64}
+              aria-describedby={helperId}
               onChange={(event) => setInput(event.target.value)}
             />
           </label>
-          <p className="account-hint">
+          <p id={helperId} className="account-hint device-helper">
             {translate("enterTheOneTimeCodeShownBy")}
           </p>
-          <button className="account-primary" type="submit">
+          <button className="account-primary device-review" type="submit">
             {translate("reviewConnection")}
           </button>
         </form>
@@ -80,6 +83,7 @@ function DeviceReview({
 }) {
   useLocale();
   const now = useNow();
+  const organizationHelperId = useId();
   const [organizationId, setOrganizationId] = useState("");
   const [expiry, setExpiry] = useState(Expiry.ThirtyDays);
   const [decision, setDecision] = useState<State>();
@@ -144,7 +148,7 @@ function DeviceReview({
     remaining > 0;
 
   return (
-    <div className="account-card">
+    <div className="account-card device-card">
       {inspected.isPending && (
         <p role="status">{translate("checkingConnectionCode")}</p>
       )}
@@ -158,7 +162,7 @@ function DeviceReview({
       />
       {authorization && (
         <>
-          <dl className="account-details">
+          <dl className="account-details device-details">
             <dt>{translate("server_aef7de")}</dt>
             <dd>{authorization.serverAddress}</dd>
             <dt>{translate("device")}</dt>
@@ -179,27 +183,34 @@ function DeviceReview({
               </>
             )}
           </dl>
-          <p>{translate("connectionCode")}</p>
-          <strong className="account-code">{code}</strong>
-          <p>{translate("confirmThisCodeMatchesYourCliApprove")}</p>
-          <p>
-            {translate("originalDeadline", {
-              value0:
-                deadline === undefined
-                  ? translate("notAvailable")
-                  : dateLabel(timestampFromDate(new Date(deadline))),
-            })}
-          </p>
-          {remaining !== undefined && (
-            <p aria-live="off">
-              {translate("codeExpiresIn", {
-                value0: Math.floor(remaining / 60),
-                value1: String(remaining % 60).padStart(2, "0"),
-              })}
+          <section className="device-code-panel">
+            <p className="device-code-label">{translate("connectionCode")}</p>
+            <strong className="account-code device-code">{code}</strong>
+            <p className="device-code-note">
+              {translate("confirmThisCodeMatchesYourCliApprove")}
             </p>
-          )}
+          </section>
+          <div className="device-deadline">
+            <p className="device-deadline-date">
+              <span className="device-deadline-label">
+                {translate("originalDeadlineLabel")}
+              </span>{" "}
+              {deadline === undefined
+                ? translate("notAvailable")
+                : dateLabel(timestampFromDate(new Date(deadline)))}
+            </p>
+            {remaining !== undefined && (
+              <p className="device-deadline-remaining" aria-live="off">
+                {translate("codeExpiresIn", {
+                  value0: Math.floor(remaining / 60),
+                  value1: String(remaining % 60).padStart(2, "0"),
+                })}
+              </p>
+            )}
+          </div>
           {state === State.PENDING && (
             <form
+              className="device-form"
               onSubmit={(event) => {
                 event.preventDefault();
                 if (
@@ -243,6 +254,7 @@ function DeviceReview({
                 <select
                   required
                   value={organizationId}
+                  aria-describedby={organizationHelperId}
                   disabled={busy || organizations.isError}
                   onChange={(event) => setOrganizationId(event.target.value)}
                 >
@@ -254,10 +266,21 @@ function DeviceReview({
                   ))}
                 </select>
               </label>
+              <p
+                id={organizationHelperId}
+                className="account-hint device-helper"
+              >
+                {translate("yourCliKeyWillBelongTo")}
+              </p>
+              {organizations.isPending && (
+                <p role="status" className="device-helper">
+                  {translate("loadingOrganizations")}
+                </p>
+              )}
               {!organizations.isPending &&
                 !organizations.isError &&
                 orgs.length === 0 && (
-                  <p>
+                  <p className="device-no-organization">
                     <a href="/overview">
                       {translate("createAnOrganizationOrAcceptAnInvitation")}
                     </a>
@@ -267,6 +290,7 @@ function DeviceReview({
               {organizations.hasNextPage && (
                 <button
                   type="button"
+                  className="device-load-more"
                   disabled={organizations.isFetching}
                   onClick={() => {
                     void organizations.fetchNextPage();
@@ -291,7 +315,7 @@ function DeviceReview({
                   <option value={Expiry.None}>{translate("noExpiry")}</option>
                 </select>
               </label>
-              <div className="account-actions">
+              <div className="account-actions device-actions">
                 <button
                   type="submit"
                   className="account-primary"
@@ -305,6 +329,7 @@ function DeviceReview({
                 </button>
                 <button
                   type="button"
+                  className="device-deny"
                   disabled={!actionable}
                   onClick={() =>
                     deny.mutate(
@@ -371,7 +396,7 @@ function DeviceReview({
           </div>
         </>
       )}
-      <div className="account-actions">
+      <div className="device-reset">
         <button type="button" disabled={busy} onClick={onReset}>
           {translate("enterAnotherCode")}
         </button>
