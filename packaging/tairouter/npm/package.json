@@ -1,0 +1,33 @@
+{
+  "name": "@delino/tairouter",
+  "version": "0.1.0",
+  "description": "TaiRouter client configuration CLI",
+  "license": "Apache-2.0",
+  "repository": "github:delinoio/oss",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "tairouter": "bin.cjs"
+  },
+  "scripts": {
+    "postinstall": "node install.cjs"
+  },
+  "files": [
+    "bin.cjs",
+    "install.cjs",
+    "checksums.json",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES"
+  ],
+  "os": [
+    "linux",
+    "darwin",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
+}

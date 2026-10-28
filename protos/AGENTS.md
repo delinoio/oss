@@ -15,5 +15,5 @@
 
 - [async-commit-hook v1 protocol contract](../docs/protos-async-commit-hook-v1-contract.md)
 
-- [AIPRouter](../docs/project-aiprouter.md)
-- [AIPRouter domain contract](../docs/protos-aiprouter-management-contract.md)
+- [TaiRouter](../docs/project-tairouter.md)
+- [TaiRouter domain contract](../docs/protos-tairouter-management-contract.md)

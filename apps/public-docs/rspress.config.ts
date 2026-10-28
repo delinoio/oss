@@ -112,25 +112,25 @@ const pnportPages = [
   { text: "Releases and Rollback", link: "/pnport/releases" },
 ];
 
-const aiprouterPages = [
-  { text: "Overview", link: "/aiprouter/", activeMatch: "^/aiprouter/$" },
-  { text: "Clients", link: "/aiprouter/guide/clients" },
-  { text: "Compatibility", link: "/aiprouter/guide/compatibility" },
-  { text: "Configuration", link: "/aiprouter/guide/configuration" },
-  { text: "Installation", link: "/aiprouter/guide/installation" },
-  { text: "Migration", link: "/aiprouter/guide/migration" },
+const tairouterPages = [
+  { text: "Overview", link: "/tairouter/", activeMatch: "^/tairouter/$" },
+  { text: "Clients", link: "/tairouter/guide/clients" },
+  { text: "Compatibility", link: "/tairouter/guide/compatibility" },
+  { text: "Configuration", link: "/tairouter/guide/configuration" },
+  { text: "Installation", link: "/tairouter/guide/installation" },
+  { text: "Migration", link: "/tairouter/guide/migration" },
   {
     text: "Native compatibility",
-    link: "/aiprouter/guide/native-compatibility",
+    link: "/tairouter/guide/native-compatibility",
   },
-  { text: "Operations", link: "/aiprouter/guide/operations" },
-  { text: "Organizations", link: "/aiprouter/guide/organizations" },
-  { text: "Providers", link: "/aiprouter/guide/providers" },
-  { text: "Recovery", link: "/aiprouter/guide/recovery" },
+  { text: "Operations", link: "/tairouter/guide/operations" },
+  { text: "Organizations", link: "/tairouter/guide/organizations" },
+  { text: "Providers", link: "/tairouter/guide/providers" },
+  { text: "Recovery", link: "/tairouter/guide/recovery" },
 ];
 
 const projectPages = [
-  { text: "AIPRouter", link: "/aiprouter/", activeMatch: "^/aiprouter(?:/|$)" },
+  { text: "TaiRouter", link: "/tairouter/", activeMatch: "^/tairouter(?:/|$)" },
   { text: "Runmoor", link: "/runmoor/", activeMatch: "^/runmoor" },
   { text: "Nodeup", link: "/nodeup/", activeMatch: "^/nodeup" },
   { text: "binpm", link: "/binpm/", activeMatch: "^/binpm" },
@@ -172,7 +172,7 @@ export default defineConfig({
           items: [productPages[1]],
         },
       ],
-      "/aiprouter/": [{ text: "AIPRouter", items: aiprouterPages }],
+      "/tairouter/": [{ text: "TaiRouter", items: tairouterPages }],
       "/clibox/": [{ text: "clibox", items: cliboxPages }],
       "/pnport/": [{ text: "pnport", items: pnportPages }],
       "/runmoor/": [{ text: "Runmoor", items: runmoorPages }],

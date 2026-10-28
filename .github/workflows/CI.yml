@@ -1072,21 +1072,21 @@ jobs:
           path: ${{ steps.ci-node.outputs.cache-path }}
           key: ${{ steps.ci-node.outputs.cache-key }}
 
-  aiprouter:
+  tairouter:
     needs: changes
-    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['aiprouter'] }}
-    name: AIPRouter validation
+    if: ${{ needs.changes.result == 'success' && fromJSON(needs.changes.outputs.jobs)['tairouter'] }}
+    name: TaiRouter validation
     runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:14.19-bookworm
         env:
-          POSTGRES_DB: aiprouter_test
-          POSTGRES_USER: aiprouter
+          POSTGRES_DB: tairouter_test
+          POSTGRES_USER: tairouter
           POSTGRES_PASSWORD: fixture-only-password
         ports: ["55432:5432"]
         options: >-
-          --health-cmd "pg_isready -U aiprouter -d aiprouter_test"
+          --health-cmd "pg_isready -U tairouter -d tairouter_test"
           --health-interval 5s --health-timeout 3s --health-retries 20
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
@@ -1116,12 +1116,12 @@ jobs:
         run: |
           pnpm exec buf lint
           pnpm exec buf format --diff --exit-code
-          pnpm --dir packages/aiprouter-client generate:check
-          pnpm --dir packages/aiprouter-client typecheck
-          pnpm --dir packages/aiprouter-client test
+          pnpm --dir packages/tairouter-client generate:check
+          pnpm --dir packages/tairouter-client typecheck
+          pnpm --dir packages/tairouter-client test
       - name: Documentation and console tests and builds
         run: |
-          for app in apps/aiprouter; do
+          for app in apps/tairouter; do
             if [[ -f "$app/package.json" ]]; then
               pnpm --dir "$app" test
               pnpm --dir "$app" build
@@ -1131,29 +1131,29 @@ jobs:
           done
       - name: Unit and fixture validation
         env:
-          AIPROUTER_TEST_DATABASE_URL: postgres://aiprouter:fixture-only-password@127.0.0.1:55432/aiprouter_test?sslmode=disable
+          TAIROUTER_TEST_DATABASE_URL: postgres://tairouter:fixture-only-password@127.0.0.1:55432/tairouter_test?sslmode=disable
         run: |
           go mod download all
-          go test -race ./servers/aiprouter/... ./cmds/aiprouter/... ./packages/aiprouter/... ./protos/aiprouter/... ./scripts/aiprouter/...
-          scripts/aiprouter/validate.sh
+          go test -race ./servers/tairouter/... ./cmds/tairouter/... ./packages/tairouter/... ./protos/tairouter/... ./scripts/tairouter/...
+          scripts/tairouter/validate.sh
       - name: Alert condition fixtures
-        run: docker run --rm --entrypoint promtool -v "$PWD/packaging/aiprouter/observability:/rules:ro" prom/prometheus:v3.5.0 test rules /rules/alerts.test.yml
+        run: docker run --rm --entrypoint promtool -v "$PWD/packaging/tairouter/observability:/rules:ro" prom/prometheus:v3.5.0 test rules /rules/alerts.test.yml
       - name: Compose installation and recovery fixture
-        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/aiprouter/compose-smoke.py
+        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/tairouter/compose-smoke.py
       - name: Cross-platform binaries and npm package validation
-        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/aiprouter/build-release.py "$RUNNER_TEMP/aiprouter-release"
+        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/tairouter/build-release.py "$RUNNER_TEMP/tairouter-release"
       - name: Authenticated router load with synthetic upstream
         env:
-          AIPROUTER_TEST_DATABASE_URL: postgres://aiprouter:fixture-only-password@127.0.0.1:55432/aiprouter_test?sslmode=disable
-        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/aiprouter/router-load.py --output "$RUNNER_TEMP/aiprouter-load.json"
+          TAIROUTER_TEST_DATABASE_URL: postgres://tairouter:fixture-only-password@127.0.0.1:55432/tairouter_test?sslmode=disable
+        run: PYTHONDONTWRITEBYTECODE=1 python3 scripts/tairouter/router-load.py --output "$RUNNER_TEMP/tairouter-load.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: always()
         with:
-          name: aiprouter-validation
+          name: tairouter-validation
           path: |
-            ${{ runner.temp }}/aiprouter-load.json
-            ${{ runner.temp }}/aiprouter-release/build.json
-            ${{ runner.temp }}/aiprouter-release/SHA256SUMS
+            ${{ runner.temp }}/tairouter-load.json
+            ${{ runner.temp }}/tairouter-release/build.json
+            ${{ runner.temp }}/tairouter-release/SHA256SUMS
           if-no-files-found: warn
       - name: Record validation boundaries
         if: always()
@@ -1165,7 +1165,7 @@ jobs:
           {
             echo "Validation revision: $(git rev-parse HEAD)"
             echo "Comparison: $BASE..$HEAD; result: $RESULT"
-            echo 'Commands: pnpm install; generate:check; client typecheck/test; available apps test/build; go test -race ./servers/aiprouter/... ./cmds/aiprouter/... ./packages/aiprouter/... ./protos/aiprouter/... ./scripts/aiprouter/...; validate.sh; promtool test rules; compose-smoke.py; build-release.py; router-load.py'
+            echo 'Commands: pnpm install; generate:check; client typecheck/test; available apps test/build; go test -race ./servers/tairouter/... ./cmds/tairouter/... ./packages/tairouter/... ./protos/tairouter/... ./scripts/tairouter/...; validate.sh; promtool test rules; compose-smoke.py; build-release.py; router-load.py'
             echo 'Linux fixture/build checks only. No npm publication, deployment, real provider/account or native macOS/Windows acceptance. Router load uses seeded authentication and synthetic upstream responses; no live-provider capacity or SLO claim.'
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -1178,7 +1178,7 @@ jobs:
       - ci-contracts
       - release-contracts
       - async-commit-hook
-      - aiprouter
+      - tairouter
       - go-quality
       - go-test
       - rust-fmt

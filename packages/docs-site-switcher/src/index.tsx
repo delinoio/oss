@@ -17,7 +17,7 @@ export enum DocumentationSiteId {
   AsyncCommitHook = "async-commit-hook",
   Clibox = "clibox",
   Pnport = "pnport",
-  Aiprouter = "aiprouter",
+  Tairouter = "tairouter",
 }
 
 export interface DocumentationSite {
@@ -63,9 +63,9 @@ export const DOCUMENTATION_SITES = [
     href: "/pnport/",
   },
   {
-    id: DocumentationSiteId.Aiprouter,
-    label: "AIPRouter",
-    href: "/aiprouter/",
+    id: DocumentationSiteId.Tairouter,
+    label: "TaiRouter",
+    href: "/tairouter/",
   },
 ] as const satisfies readonly DocumentationSite[];
 

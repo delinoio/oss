@@ -1,6 +1,6 @@
 // Stable public routes shared by generated-output validators.
 export const projectRoutes = {
-  aiprouter: [
+  tairouter: [
     "/",
     "/guide/clients",
     "/guide/compatibility",
