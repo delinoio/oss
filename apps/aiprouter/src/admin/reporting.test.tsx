@@ -125,7 +125,7 @@ describe("server-side reporting filters", () => {
       .getByRole("heading", { name: "Request metadata" })
       .closest("section")!;
     await user.click(
-      within(requestSection).getByRole("button", { name: "Next page" }),
+      within(requestSection).getByRole("button", { name: "Next requests" }),
     );
     await waitFor(() =>
       expect(calls.list.mock.lastCall?.[0].page?.pageToken).toBe(
@@ -136,7 +136,9 @@ describe("server-side reporting filters", () => {
       .getByRole("heading", { name: "Daily usage" })
       .closest("section")!;
     await user.click(
-      within(dailySection).getByRole("button", { name: "Next page" }),
+      within(dailySection).getByRole("button", {
+        name: "Next daily usage",
+      }),
     );
     await waitFor(() =>
       expect(calls.daily.mock.lastCall?.[0].page?.pageToken).toBe("next-days"),

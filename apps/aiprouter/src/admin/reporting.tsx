@@ -1,6 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale, formatNumber } from "../i18n";
-import { useContext, useEffect, useId, useRef, useState } from "react";
+import {
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { useQuery } from "@connectrpc/connect-query";
 import { timestampFromDate } from "@bufbuild/protobuf/wkt";
 import {
@@ -12,6 +19,7 @@ import {
   RequestOutcome,
   PriceSource,
   type AuditRecord,
+  type DailyUsage,
   type UsageSummary,
   type UsageRecord,
 } from "@aiprouter/client";
@@ -99,25 +107,34 @@ export function Summary({ summary }: { summary?: UsageSummary }) {
     </Card>
   );
 }
-// Summary region of the organization usage report. It keeps its own loading,
-// error, refreshing and stale states so sibling regions are never blocked, and
-// pending or failed data is never rendered as zeros.
-function UsageSummaryRegion({
+type RegionQuery<T> = {
+  data?: T;
+  error: unknown;
+  isFetching: boolean;
+  fetchStatus: string;
+  refetch: () => unknown;
+};
+// One region of the organization usage report. Each region keeps its own
+// loading, error, refreshing and stale states so sibling regions are never
+// blocked, and pending or failed data is never rendered as zeros.
+function UsageRegion<T>({
+  title,
+  loadingLabel,
+  retryLabel,
   query,
+  className = "",
+  children,
 }: {
-  query: {
-    data?: { summary?: UsageSummary };
-    error: unknown;
-    isPending: boolean;
-    isFetching: boolean;
-    fetchStatus: string;
-    refetch: () => unknown;
-  };
+  title: string;
+  loadingLabel: string;
+  retryLabel: string;
+  query: RegionQuery<T>;
+  className?: string;
+  children: (data: T) => ReactNode;
 }) {
   useLocale();
   const headingId = useId();
   const retry = () => void query.refetch();
-  const retryLabel = translate("tryAgainLoadingUsageSummary");
   const staleDataText = translate("usageDataStale");
   const offline = query.fetchStatus === "paused";
   let content;
@@ -132,7 +149,7 @@ function UsageSummaryRegion({
         </button>
       </div>
     ) : (
-      <Loading label={translate("loadingUsageSummary")} />
+      <Loading label={loadingLabel} />
     );
   } else {
     const stale = !!query.error || offline;
@@ -155,15 +172,204 @@ function UsageSummaryRegion({
             {translate("refreshing")}
           </p>
         )}
-        <SummaryBody summary={query.data.summary} />
+        {children(query.data)}
       </>
     );
   }
   return (
-    <Card aria-labelledby={headingId} className="admin-usage-summary">
-      <h2 id={headingId}>{translate("usageSummary")}</h2>
+    <Card aria-labelledby={headingId} className={className}>
+      <h2 id={headingId}>{title}</h2>
       {content}
     </Card>
+  );
+}
+const usageTableQuery = "(min-width: 1024px)";
+function costText(summary?: UsageSummary) {
+  return summary?.knownCosts.length
+    ? summary.knownCosts.map(money).join(" · ")
+    : translate("unknown");
+}
+function dailyCoverage(summary?: UsageSummary) {
+  return translate("unknownCostMissingUsageMissingPrice", {
+    value0: formatNumber(summary?.missingCostCount),
+    value1: formatNumber(summary?.missingUsageCount),
+    value2: formatNumber(summary?.missingPriceCount),
+  });
+}
+function outcomeText(outcome: RequestOutcome) {
+  return outcome === RequestOutcome.UNSPECIFIED
+    ? translate("unknownOutcome")
+    : label(RequestOutcome[outcome]);
+}
+function tokenText(record: UsageRecord) {
+  return translate("inputOutput", {
+    value0: formatNumber(record.usage?.inputTokens),
+    value1: formatNumber(record.usage?.outputTokens),
+  });
+}
+// Rows are kept exactly as returned: no regrouping, gap days or client filtering.
+function dailyKey(day: DailyUsage, index: number) {
+  return `${day.date}:${day.userId}:${day.modelId}:${index}`;
+}
+function DailyUsageTable({ days }: { days: DailyUsage[] }) {
+  useLocale();
+  return (
+    <table
+      className="admin-audit-table admin-usage-table"
+      aria-label={translate("dailyUsage")}
+    >
+      <thead>
+        <tr>
+          <th scope="col">{translate("usageDateUtc")}</th>
+          <th scope="col">{translate("memberId")}</th>
+          <th scope="col">{translate("model")}</th>
+          <th scope="col">{translate("requests")}</th>
+          <th scope="col">{translate("knownEstimatedCost")}</th>
+          <th scope="col">{translate("usageCoverage")}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {days.map((day, index) => (
+          <tr key={dailyKey(day, index)}>
+            <td>{day.date}</td>
+            <td>{day.userId || translate("message_152bc3aa4e")}</td>
+            <td>{day.modelId || translate("allModels")}</td>
+            <td>{formatNumber(day.summary?.requestCount)}</td>
+            <td>{costText(day.summary)}</td>
+            <td>{dailyCoverage(day.summary)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+function DailyUsageCard({ day }: { day: DailyUsage }) {
+  useLocale();
+  const headingId = useId();
+  return (
+    <article className="admin-audit-card" aria-labelledby={headingId}>
+      <h3 id={headingId}>
+        {translate("utc", {
+          value0: day.date,
+          value1: day.modelId || translate("allModels"),
+        })}
+      </h3>
+      <dl>
+        <div>
+          <dt>{translate("memberId")}</dt>
+          <dd>{day.userId || translate("message_152bc3aa4e")}</dd>
+        </div>
+        <div>
+          <dt>{translate("requests")}</dt>
+          <dd>{formatNumber(day.summary?.requestCount)}</dd>
+        </div>
+        <div>
+          <dt>{translate("knownEstimatedCost")}</dt>
+          <dd>{costText(day.summary)}</dd>
+        </div>
+        <div>
+          <dt>{translate("usageCoverage")}</dt>
+          <dd>{dailyCoverage(day.summary)}</dd>
+        </div>
+      </dl>
+    </article>
+  );
+}
+function RequestTable({
+  records,
+  onDetail,
+}: {
+  records: UsageRecord[];
+  onDetail: (record: UsageRecord) => void;
+}) {
+  useLocale();
+  return (
+    <table
+      className="admin-audit-table admin-usage-table"
+      aria-label={translate("requestMetadata")}
+    >
+      <thead>
+        <tr>
+          <th scope="col">{translate("model")}</th>
+          <th scope="col">{translate("usageTimeLocal")}</th>
+          <th scope="col">{translate("memberId")}</th>
+          <th scope="col">{translate("outcome")}</th>
+          <th scope="col">{translate("usageInputOutputColumn")}</th>
+          <th scope="col">{translate("estimatedCost_9ccba2")}</th>
+          <th scope="col">{translate("requestId_d561f5")}</th>
+          <th scope="col">
+            <span className="admin-visually-hidden">
+              {translate("usageDetailsColumn")}
+            </span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {records.map((record) => (
+          <tr key={record.id}>
+            <td>{record.modelId || translate("unknown")}</td>
+            <td>{date(record.occurredAt)}</td>
+            <td>{record.userId || translate("message_152bc3aa4e")}</td>
+            <td>{outcomeText(record.outcome)}</td>
+            <td>{tokenText(record)}</td>
+            <td>{money(record.estimatedCost)}</td>
+            <td>{record.requestId || translate("unknown")}</td>
+            <td>
+              <button type="button" onClick={() => onDetail(record)}>
+                {translate("viewEstimateDetails")}
+              </button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+function RequestCard({
+  record,
+  onDetail,
+}: {
+  record: UsageRecord;
+  onDetail: (record: UsageRecord) => void;
+}) {
+  useLocale();
+  const headingId = useId();
+  return (
+    <article className="admin-audit-card" aria-labelledby={headingId}>
+      <h3 id={headingId}>{record.modelId || translate("unknown")}</h3>
+      <p className="admin-audit-card-meta">
+        <span>{date(record.occurredAt)}</span>
+      </p>
+      <dl>
+        <div>
+          <dt>{translate("memberId")}</dt>
+          <dd>{record.userId || translate("message_152bc3aa4e")}</dd>
+        </div>
+        <div>
+          <dt>{translate("outcome")}</dt>
+          <dd>{outcomeText(record.outcome)}</dd>
+        </div>
+        <div>
+          <dt>{translate("usageInputOutputColumn")}</dt>
+          <dd>{tokenText(record)}</dd>
+        </div>
+        <div>
+          <dt>{translate("estimatedCost_9ccba2")}</dt>
+          <dd>{money(record.estimatedCost)}</dd>
+        </div>
+        <div>
+          <dt>{translate("requestId_d561f5")}</dt>
+          <dd>{record.requestId || translate("unknown")}</dd>
+        </div>
+      </dl>
+      <button
+        type="button"
+        className="admin-usage-card-action"
+        onClick={() => onDetail(record)}
+      >
+        {translate("viewEstimateDetails")}
+      </button>
+    </article>
   );
 }
 export function OrganizationUsage() {
@@ -203,7 +409,16 @@ export function OrganizationUsage() {
     },
     { enabled: valid },
   );
-  const records = query.data?.records ?? [];
+  const table = useMediaQuery(usageTableQuery);
+  const filtersActive = !!userId || !!modelId || !!providerId || outcome !== "";
+  // A successful report with no data at all is an expected first-use state.
+  const reportEmpty =
+    !filtersActive &&
+    !token &&
+    !dailyToken &&
+    summary.data?.summary?.requestCount === 0n &&
+    daily.data?.days.length === 0 &&
+    query.data?.records.length === 0;
   // Both date inputs share the validation message so assistive technology
   // announces it from either field.
   const dateProps = {
@@ -334,138 +549,94 @@ export function OrganizationUsage() {
       </Card>
       {valid && (
         <>
-          <UsageSummaryRegion query={summary} />
-          <Card>
-            <h2>{translate("dailyUsage")}</h2>
-            {daily.isPending ? (
-              <Loading />
-            ) : daily.error ? (
-              <ErrorNotice
-                error={daily.error}
-                retry={() => void daily.refetch()}
-              />
-            ) : (
+          <UsageRegion
+            title={translate("usageSummary")}
+            loadingLabel={translate("loadingUsageSummary")}
+            retryLabel={translate("tryAgainLoadingUsageSummary")}
+            query={summary}
+            className="admin-usage-summary"
+          >
+            {(data) => <SummaryBody summary={data.summary} />}
+          </UsageRegion>
+          {reportEmpty && (
+            <Empty>{translate("usageNoneRecordedForDates")}</Empty>
+          )}
+          <UsageRegion
+            title={translate("dailyUsage")}
+            loadingLabel={translate("loadingDailyUsage")}
+            retryLabel={translate("tryAgainLoadingDailyUsage")}
+            query={daily}
+          >
+            {(data) => (
               <>
-                <div className="admin-records">
-                  {daily.data?.days.map((day, index) => (
-                    <article
-                      className="admin-record"
-                      key={`${day.date}:${day.userId}:${day.modelId}:${index}`}
-                    >
-                      <div>
-                        <h3>
-                          {translate("utc", {
-                            value0: day.date,
-                            value1: day.modelId || translate("allModels"),
-                          })}
-                        </h3>
-                        <p>
-                          {translate("member_0975eb", {
-                            value0:
-                              day.userId || translate("message_152bc3aa4e"),
-                          })}
-                        </p>
-                        <p>
-                          {translate("requests_f598de", {
-                            value0: formatNumber(day.summary?.requestCount),
-                          })}
-                        </p>
-                        <p>
-                          {translate("knownEstimatedCost_ad4501", {
-                            value0: day.summary?.knownCosts.length
-                              ? day.summary.knownCosts.map(money).join(" · ")
-                              : translate("unknown"),
-                          })}
-                        </p>
-                        <p>
-                          {translate("unknownCostMissingUsageMissingPrice", {
-                            value0: formatNumber(day.summary?.missingCostCount),
-                            value1: formatNumber(
-                              day.summary?.missingUsageCount,
-                            ),
-                            value2: formatNumber(
-                              day.summary?.missingPriceCount,
-                            ),
-                          })}
-                        </p>
-                      </div>
-                    </article>
+                {data.days.length > 0 &&
+                  (table ? (
+                    <DailyUsageTable days={data.days} />
+                  ) : (
+                    <div className="admin-audit-cards">
+                      {data.days.map((day, index) => (
+                        <DailyUsageCard key={dailyKey(day, index)} day={day} />
+                      ))}
+                    </div>
                   ))}
-                </div>
-                {!daily.data?.days.length && (
+                {!data.days.length && !reportEmpty && (
                   <Empty>{translate("noDailyUsageMatchesTheseFilters")}</Empty>
                 )}
                 <Pager
+                  label={translate("dailyUsagePages")}
+                  nextLabel={translate("usageNextDaily")}
                   token={dailyToken}
-                  next={daily.data?.page?.nextPageToken}
+                  next={data.page?.nextPageToken}
                   onChange={setDailyToken}
                 />
               </>
             )}
-          </Card>
-          <Card>
-            <h2>{translate("requestMetadata")}</h2>
-            {query.isPending ? (
-              <Loading />
-            ) : query.error ? (
-              <ErrorNotice
-                error={query.error}
-                retry={() => void query.refetch()}
-              />
-            ) : (
+          </UsageRegion>
+          <UsageRegion
+            title={translate("requestMetadata")}
+            loadingLabel={translate("loadingRequests")}
+            retryLabel={translate("tryAgainLoadingRequests")}
+            query={query}
+          >
+            {(data) => (
               <>
-                <div className="admin-records">
-                  {records.map((record) => (
-                    <article className="admin-record" key={record.id}>
-                      <div>
-                        <h3>{record.modelId}</h3>
-                        <p>{date(record.occurredAt)}</p>
-                        <p>
-                          {translate("member_827fcf", {
-                            value0:
-                              record.userId || translate("message_152bc3aa4e"),
-                            value1:
-                              record.outcome === RequestOutcome.UNSPECIFIED
-                                ? translate("unknownOutcome")
-                                : label(RequestOutcome[record.outcome]),
-                          })}
-                        </p>
-                        <p>
-                          {translate("inputOutput", {
-                            value0: formatNumber(record.usage?.inputTokens),
-                            value1: formatNumber(record.usage?.outputTokens),
-                          })}
-                        </p>
-                        <p>
-                          {translate("estimatedCost", {
-                            value0: money(record.estimatedCost),
-                          })}
-                        </p>
-                        <p>
-                          {translate("requestId", {
-                            value0: record.requestId || translate("unknown"),
-                          })}
-                        </p>
-                      </div>
-                      <button onClick={() => setDetail(record)}>
-                        {translate("viewEstimateDetails")}
-                      </button>
-                    </article>
+                {data.records.length > 0 &&
+                  (table ? (
+                    <RequestTable records={data.records} onDetail={setDetail} />
+                  ) : (
+                    <div className="admin-audit-cards">
+                      {data.records.map((record) => (
+                        <RequestCard
+                          key={record.id}
+                          record={record}
+                          onDetail={setDetail}
+                        />
+                      ))}
+                    </div>
                   ))}
-                </div>
-                {!records.length && (
+                {!data.records.length && !reportEmpty && (
                   <Empty>
                     {translate("noRequestsMatchTheseFiltersClearFilters")}
+                    {filtersActive && (
+                      <>
+                        <br />
+                        <button type="button" onClick={reset}>
+                          {translate("clearFilters")}
+                        </button>
+                      </>
+                    )}
                   </Empty>
                 )}
                 <Pager
+                  label={translate("usageRequestPages")}
+                  nextLabel={translate("usageNextRequests")}
                   token={token}
-                  next={query.data?.page?.nextPageToken}
+                  next={data.page?.nextPageToken}
                   onChange={setToken}
                 />
               </>
             )}
-          </Card>
+          </UsageRegion>
         </>
       )}
       {detail && (
