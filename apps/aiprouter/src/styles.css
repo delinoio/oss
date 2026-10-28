@@ -1399,3 +1399,76 @@ dialog.usage-estimate-dialog {
   font-size: 14px;
   color: #4e5968;
 }
+
+/* Hosted helpers dialog. Scoped so other dialogs are unchanged. */
+dialog.hosted-dialog {
+  width: min(800px, calc(100% - 48px));
+  max-height: calc(100dvh - 48px);
+  padding: 24px;
+  border-radius: 12px;
+}
+.hosted-dialog .dialog-heading {
+  margin-bottom: 8px;
+}
+.hosted-dialog .dialog-heading h2:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 4px;
+}
+.hosted-intro p {
+  margin: 0 0 8px;
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.hosted-compact-notice {
+  margin: 8px 0 16px;
+  padding: 12px 16px;
+  font-size: 14px;
+}
+.hosted-resource-status {
+  margin: 0 0 16px;
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.hosted-resource-error p {
+  margin: 0;
+  color: var(--danger);
+  overflow-wrap: anywhere;
+}
+.hosted-notice {
+  margin: 24px 0 16px;
+}
+.hosted-notice h3 {
+  margin: 0 0 4px;
+  font-size: 16px;
+}
+.hosted-notice p,
+.hosted-pending {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.hosted-pending {
+  color: var(--secondary);
+  margin-bottom: 8px;
+}
+.hosted-footer {
+  justify-content: flex-end;
+}
+@media (max-width: 1023px) {
+  dialog.hosted-dialog {
+    width: min(720px, calc(100% - 48px));
+  }
+}
+@media (max-width: 767px) {
+  dialog.hosted-dialog {
+    width: calc(100% - 32px);
+    max-height: calc(100dvh - 32px);
+    padding: 16px;
+  }
+  .hosted-footer {
+    flex-direction: column;
+  }
+  .hosted-footer > .button {
+    width: 100%;
+    flex: 1 1 100%;
+  }
+}

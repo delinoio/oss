@@ -168,7 +168,7 @@ export function ErrorNotice({
     </Notice>
   );
 }
-export function Loading({ label }: { label?: string }) {
+export function Loading({ label }: { label?: string } = {}) {
   useLocale();
   return (
     <div className="loading-state" role="status" aria-busy="true">
