@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale } from "../i18n";
 import { pageHref, operatorPaths, operatorSection } from "../routes";
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { navigate, useBrowserLocation } from "../navigation";
 import { useQuery } from "@connectrpc/connect-query";
 import {
   AccountService,
@@ -111,39 +112,10 @@ export function OperatorPage({ session }: { session: GetSessionResponse }) {
 }
 function OperatorBoundary() {
   useLocale();
-  const [section, setSection] = useState(() =>
-    operatorSection(window.location.pathname),
-  );
+  const href = useBrowserLocation();
+  const section = operatorSection(new URL(href).pathname);
   const [denied, setDenied] = useState(false);
-  const [dirty, setDirty] = useState(false);
   const reportDirty = useDirtyForm();
-  useEffect(() => {
-    const onPopState = () => {
-      const next = operatorSection(window.location.pathname);
-      if (next === section) return;
-      if (
-        dirty &&
-        !window.confirm(translate("leaveThisPageUnsavedChangesWillBe"))
-      ) {
-        // A history event has already changed the URL. Restore the editor's
-        // address when the user keeps unsaved changes.
-        window.history.pushState(null, "", operatorPaths[section]);
-        return;
-      }
-      setSection(next);
-      setDirty(false);
-      reportDirty(false);
-    };
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, [dirty, section, reportDirty]);
-  const onDirty = useCallback(
-    (value: boolean) => {
-      setDirty(value);
-      reportDirty(value);
-    },
-    [reportDirty],
-  );
   const session = useQuery(
     AccountService.method.getSession,
     {},
@@ -183,28 +155,13 @@ function OperatorBoundary() {
             <button
               key={key}
               aria-current={section === key ? "page" : undefined}
-              onClick={() => {
-                if (
-                  section !== key &&
-                  dirty &&
-                  !window.confirm(
-                    translate("leaveThisPageUnsavedChangesWillBe"),
-                  )
-                )
-                  return;
-                if (section !== key) {
-                  window.history.pushState(null, "", operatorPaths[key]);
-                  setSection(key);
-                  setDirty(false);
-                  reportDirty(false);
-                }
-              }}
+              onClick={() => navigate(operatorPaths[key])}
             >
               {title}
             </button>
           ))}
         </nav>
-        <DirtyContext.Provider value={onDirty}>
+        <DirtyContext.Provider value={reportDirty}>
           <div key={section}>
             {section === "health" ? (
               <Health />

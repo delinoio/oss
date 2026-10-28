@@ -17,6 +17,12 @@ import {
 import { ApiProvider, DirtyContext, useApi, pageSize } from "./api";
 import { pageHref, resolveRoute, type Page } from "./routes";
 import {
+  navigate,
+  useBrowserLocation,
+  useConsoleNavigation,
+  useNavigationGuard,
+} from "./navigation";
+import {
   Button,
   Badge,
   Card,
@@ -125,7 +131,9 @@ function NotFound() {
 }
 export function App() {
   useLocale();
-  const route = resolveRoute(new URL(window.location.href));
+  useConsoleNavigation();
+  const href = useBrowserLocation();
+  const route = resolveRoute(new URL(href));
   useEffect(() => {
     if (route && route.url.href !== window.location.href)
       window.history.replaceState(null, "", route.url);
@@ -135,7 +143,7 @@ export function App() {
   return (
     <Suspense fallback={<Loading />}>
       {["device", "invitation", "ownership", "sign-in"].includes(page) ? (
-        <main className="standalone">
+        <main className="standalone" key={href}>
           {page === "device" ? (
             <DevicePage />
           ) : page === "invitation" ? (
@@ -152,23 +160,29 @@ export function App() {
           ) : null}
         </main>
       ) : (
-        <AuthenticatedApp page={page} />
+        <AuthenticatedApp page={page} href={route.url.href} />
       )}
     </Suspense>
   );
 }
-function AuthenticatedApp({ page }: { page: Page }) {
+function AuthenticatedApp({ page, href }: { page: Page; href: string }) {
   useLocale();
   const api = useApi();
   const cache = useQueryClient();
   const transport = useTransport();
-  const [scope, setScope] = useState(
-    () => new URLSearchParams(window.location.search).get("organization") ?? "",
-  );
+  const scope = new URL(href).searchParams.get("organization") ?? "";
   const [switcher, setSwitcher] = useState(false);
   const [menu, setMenu] = useState(false);
   const [search, setSearch] = useState("");
   const [dirty, setDirty] = useState(false);
+  useNavigationGuard(dirty);
+  useEffect(() => {
+    setMenu(false);
+    setSwitcher(false);
+    setDirty(false);
+    setScopeBlocked(false);
+    setAuthorityMessage("");
+  }, [href]);
   const [pendingScope, setPendingScope] = useState<string>();
   const [authorityVersion, setAuthorityVersion] = useState(0);
   const [authorityMessage, setAuthorityMessage] = useState("");
@@ -241,7 +255,6 @@ function AuthenticatedApp({ page }: { page: Page }) {
     return () => window.removeEventListener("beforeunload", before);
   }, [dirty]);
   const changeScope = (id: string) => {
-    setScope(id);
     setSwitcher(false);
     setMenu(false);
     setDirty(false);
@@ -252,7 +265,7 @@ function AuthenticatedApp({ page }: { page: Page }) {
     url.searchParams.set("organization", id);
     url.searchParams.delete("org");
     url.searchParams.delete("organization_id");
-    window.history.replaceState(null, "", url);
+    navigate(url.href, { replace: true, confirmed: true });
   };
   const selectScope = (id: string) => {
     if (dirty && id !== selected?.id) setPendingScope(id);
@@ -418,7 +431,8 @@ function AuthenticatedApp({ page }: { page: Page }) {
           <DirtyContext value={setDirty}>
             <OnboardingPage
               onOrganizationCreated={(o) => {
-                window.location.assign(pageHref("overview", o.id));
+                void organizations.refetch();
+                navigate(pageHref("overview", o.id));
               }}
             />
           </DirtyContext>

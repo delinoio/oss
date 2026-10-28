@@ -29,6 +29,8 @@ Use generated TypeScript management clients from `packages/aiprouter-client`. Su
 
 ### Page routes
 
+Ordinary internal link activation updates browser history and the rendered route without reloading the document. Preserve the authenticated shell and query caches within the same user and organization while lazy page code loads. Back and Forward restore the route and organization scope. Confirm before discarding unsaved edits. Modified clicks, new-tab targets, downloads, fragment links, external URLs, and authentication endpoints retain native browser behavior.
+
 Console navigation uses absolute pathname routes and the `organization` query parameter for workspace scope. Personal pages use `/overview`, `/providers`, `/pools`, `/routing`, `/keys`, `/usage`, and `/connect`. Organization administration uses `/members`, `/invitations`, `/organization-usage`, `/audit`, and `/settings`. Account and creation use `/account` and `/onboarding`.
 
 Standalone flows use `/sign-in`, `/device`, `/invitation`, and `/ownership`; preserve their error, code, token, invitation, and organization parameters. Instance sections use `/instance/health`, `/instance/settings` (request limits), `/instance/retention`, `/instance/destinations`, `/instance/prices`, and `/instance/audit`. The health page includes instance usage aggregates.
