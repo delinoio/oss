@@ -18,6 +18,7 @@ on:
             clibox,
             pnport,
             async-commit-hook,
+            tairouter,
           ]
       bump:
         description: SemVer increment (next is pnport only)

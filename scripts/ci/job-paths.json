@@ -323,7 +323,9 @@
       "packaging/homebrew/templates/runmoor.rb.tmpl",
       "scripts/release/update-homebrew.sh",
       "turbo.json",
-      "scripts/release/generate-checksums*"
+      "scripts/release/generate-checksums*",
+      "scripts/release/tairouter*",
+      "packaging/tairouter/npm/package.json"
     ]
   },
   "node-labs-site-test": {
@@ -389,7 +391,9 @@
       "scripts/tairouter/**",
       "scripts/localization/**",
       "packaging/tairouter/**",
-      "docs/**"
+      "docs/**",
+      ".github/workflows/release-tairouter.yml",
+      "scripts/release/tairouter*"
     ]
   }
 }
