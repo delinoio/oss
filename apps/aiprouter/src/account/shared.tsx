@@ -145,17 +145,32 @@ export function useMyInvitations(enabled = true) {
 export function AccountSurface({
   title,
   subtitle,
+  className,
+  focusHeading = false,
   children,
 }: {
   title: string;
   subtitle?: string;
+  /** Optional scoped modifier class appended to the base surface class. */
+  className?: string;
+  /** Moves programmatic focus to the h1 once on first render. */
+  focusHeading?: boolean;
   children: ReactNode;
 }) {
   useLocale();
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (focusHeading) heading.current?.focus();
+  }, [focusHeading]);
   return (
-    <section className="account-surface" aria-label={title}>
+    <section
+      className={className ? `account-surface ${className}` : "account-surface"}
+      aria-label={title}
+    >
       <header>
-        <h1>{title}</h1>
+        <h1 ref={heading} tabIndex={focusHeading ? -1 : undefined}>
+          {title}
+        </h1>
         {subtitle && <p>{subtitle}</p>}
       </header>
       {children}

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, rs } from "@rstest/core";
+import { afterEach, describe, expect, it, rs } from "@rstest/core";
 import {
   createRouterTransport,
   ConnectError,
@@ -290,6 +290,156 @@ describe("account and onboarding", () => {
     expect(screen.getByRole("link").getAttribute("href")).toBe(
       "/auth/login?return_to=%2Foverview",
     );
+  });
+
+  describe("sign-in card", () => {
+    const fallback = "Sign-in could not be completed. Start a new sign-in.";
+    const setQuery = (query: string) =>
+      window.history.replaceState(null, "", `/sign-in${query}`);
+    afterEach(() => window.history.replaceState(null, "", "/"));
+
+    it("renders the default state with one heading, one link and no alert", () => {
+      setQuery("");
+      const { container } = render(<SignInPage />);
+      expect(screen.getAllByRole("heading")).toHaveLength(1);
+      expect(
+        screen.getByRole("heading", { level: 1, name: "Sign in to AIPRouter" }),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(
+          "Use your organization's identity provider to continue.",
+        ),
+      ).toBeTruthy();
+      expect(
+        screen.getByText(
+          "Your identity provider must supply a verified email address.",
+        ),
+      ).toBeTruthy();
+      expect(screen.queryByRole("alert")).toBeNull();
+      const link = screen.getByRole("link", {
+        name: "Continue with your identity provider",
+      });
+      expect(link.getAttribute("href")).toBe(
+        "/auth/login?return_to=%2Foverview",
+      );
+      expect(container.querySelectorAll("a")).toHaveLength(1);
+      expect(container.querySelectorAll("input, select, button")).toHaveLength(
+        0,
+      );
+      expect(container.querySelector(".sign-in-wordmark")?.textContent).toBe(
+        "AIPRouter",
+      );
+      expect(container.querySelector("a.sign-in-wordmark")).toBeNull();
+    });
+
+    it.each([
+      [
+        "missing_email",
+        "Your identity provider did not provide an email address. Add an email there, then try again.",
+      ],
+      [
+        "unverified_email",
+        "Verify your email address with your identity provider, then try again.",
+      ],
+      [
+        "verified_email_required",
+        "Your identity provider must provide a verified email address. Correct this at your identity provider, then try again.",
+      ],
+      [
+        "login_denied",
+        "Sign-in was canceled or denied. Try again when you are ready.",
+      ],
+      ["login_expired", "This sign-in attempt expired. Start a new sign-in."],
+      [
+        "authentication_unavailable",
+        "Sign-in is temporarily unavailable. Try again later.",
+      ],
+      ["private_diagnostic_123", fallback],
+    ])("maps reason %s to its safe copy", (reason, message) => {
+      setQuery("");
+      const { container } = render(<SignInPage error={reason} />);
+      const alert = screen.getByRole("alert");
+      expect(alert.textContent).toBe(message);
+      expect(alert.textContent).not.toContain("private_diagnostic");
+      expect(container.querySelectorAll('[role="alert"]')).toHaveLength(1);
+      expect(alert.querySelector("svg")?.getAttribute("aria-hidden")).toBe(
+        "true",
+      );
+    });
+
+    it("omits the alert for an empty reason", () => {
+      setQuery("");
+      render(<SignInPage error="" />);
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+
+    it("reads the query error and lets the error prop win", () => {
+      setQuery("?error=login_expired");
+      const first = render(<SignInPage />);
+      expect(screen.getByRole("alert").textContent).toBe(
+        "This sign-in attempt expired. Start a new sign-in.",
+      );
+      first.unmount();
+      render(<SignInPage error="login_denied" />);
+      expect(screen.getByRole("alert").textContent).toContain(
+        "canceled or denied",
+      );
+    });
+
+    it("treats an empty error prop as authoritative over the query", () => {
+      setQuery("?error=login_expired");
+      render(<SignInPage error="" />);
+      expect(screen.queryByRole("alert")).toBeNull();
+    });
+
+    it("does not recreate the alert on an unchanged rerender", () => {
+      setQuery("");
+      const view = render(<SignInPage error="login_denied" />);
+      const alert = screen.getByRole("alert");
+      view.rerender(<SignInPage error="login_denied" />);
+      expect(screen.getByRole("alert")).toBe(alert);
+      expect(screen.getAllByRole("alert")).toHaveLength(1);
+    });
+
+    it.each([
+      [undefined, "", "%2Foverview"],
+      ["/device?code=fictional", "", "%2Fdevice%3Fcode%3Dfictional"],
+      [
+        undefined,
+        "?return_to=/device?code=fictional",
+        "%2Fdevice%3Fcode%3Dfictional",
+      ],
+      ["/device", "?return_to=/other", "%2Fdevice"],
+      ["//external.example", "", "%2Foverview"],
+      ["https://external.example", "", "%2Foverview"],
+      ["/a\\b", "", "%2Foverview"],
+    ])(
+      "builds the href for returnTo %s and query %s",
+      (returnTo, query, encoded) => {
+        setQuery(query);
+        render(<SignInPage returnTo={returnTo} />);
+        expect(screen.getByRole("link").getAttribute("href")).toBe(
+          `/auth/login?return_to=${encoded}`,
+        );
+      },
+    );
+
+    it("focuses the heading on first render and never the link", () => {
+      setQuery("");
+      render(<SignInPage />);
+      const heading = screen.getByRole("heading", { level: 1 });
+      expect(heading.getAttribute("tabindex")).toBe("-1");
+      expect(document.activeElement).toBe(heading);
+      expect(document.activeElement).not.toBe(screen.getByRole("link"));
+    });
+
+    it("leaves other AccountSurface consumers without heading focus", () => {
+      mount(<OnboardingPage />, () => {});
+      const heading = screen.getByRole("heading", { level: 1 });
+      expect(heading.hasAttribute("tabindex")).toBe(false);
+      expect(document.activeElement).not.toBe(heading);
+      expect(document.querySelector(".sign-in-card")).toBeNull();
+    });
   });
 });
 
