@@ -1139,7 +1139,9 @@ describe("account and onboarding", () => {
         }),
       });
     });
-    await screen.findByText("These organizations block account deletion:");
+    await screen.findByRole("heading", {
+      name: "Ownership blocks deletion",
+    });
     expect(
       (
         screen.getByRole("button", {
@@ -2695,9 +2697,7 @@ describe("account lifecycle races", () => {
             : { organizations: [], page: { nextPageToken: "next" } },
       });
     });
-    await screen.findByText(
-      "The organization list is incomplete. Account deletion is blocked until all ownership can be checked.",
-    );
+    await screen.findByRole("heading", { name: "Ownership check incomplete" });
     expect(
       (
         screen.getByRole("button", {
@@ -2708,7 +2708,9 @@ describe("account lifecycle races", () => {
     await user.click(
       screen.getByRole("button", { name: "Check more organizations" }),
     );
-    await screen.findByText("These organizations block account deletion:");
+    await screen.findByRole("heading", {
+      name: "Ownership blocks deletion",
+    });
     expect(
       (
         screen.getByRole("button", {
@@ -3351,5 +3353,542 @@ describe("onboarding page redesign", () => {
         screen.queryByRole("button", { name: "Create organization" }),
       ).toBeNull();
     });
+  });
+});
+
+describe("account page redesign", () => {
+  const owner = (id: string, name: string) => ({
+    id,
+    name,
+    role: Role.OWNER,
+  });
+  const entryButton = () =>
+    screen.getByRole("button", {
+      name: "Delete my account",
+    }) as HTMLButtonElement;
+  const detail = (reason: ErrorReason, requestId = "") =>
+    new ConnectError("rejected", Code.FailedPrecondition, undefined, [
+      {
+        desc: ErrorDetailSchema,
+        value: create(ErrorDetailSchema, { reason, requestId }),
+      },
+    ]);
+  function mountAccount(
+    options: {
+      organizations?: (request: {
+        page?: { pageToken?: string; pageSize?: number };
+      }) => unknown;
+      account?: Record<string, unknown>;
+      props?: Parameters<typeof AccountPage>[0];
+    } = {},
+  ) {
+    return mount(<AccountPage {...options.props} />, (router) => {
+      router.service(AccountService, {
+        getSession: () => session,
+        ...options.account,
+      });
+      router.service(OrganizationService, {
+        listOrganizations: (options.organizations ??
+          (() => ({ organizations: [] }))) as never,
+      });
+    });
+  }
+
+  it("renders the heading, profile card and delete card in order", async () => {
+    const { container } = mountAccount({
+      account: {
+        getSession: () => ({ ...session, displayName: "Alex Morgan" }),
+      },
+    });
+    expect(
+      screen.getByRole("heading", { level: 1, name: "Account" }),
+    ).toBeTruthy();
+    screen.getByText("Your identity and account settings.");
+    await screen.findByText("Alex Morgan");
+    const cards = container.querySelectorAll(
+      ".account-page > section.account-card",
+    );
+    expect(cards.length).toBe(2);
+    expect(cards[0].querySelector("h2")?.textContent).toBe("Profile");
+    expect(cards[1].querySelector("h2")?.textContent).toBe("Delete account");
+    const terms = Array.from(cards[0].querySelectorAll("dt")).map(
+      (term) => term.textContent,
+    );
+    expect(terms).toEqual(["Name", "Email"]);
+    expect(cards[0].querySelectorAll("dd")[1].textContent).toBe(session.email);
+    expect(
+      cards[0].textContent?.includes(
+        "Manage your name and verified email with your identity provider.",
+      ),
+    ).toBe(true);
+    expect(cards[0].querySelectorAll("input, textarea").length).toBe(0);
+    expect(
+      Array.from(cards[0].querySelectorAll("button")).map(
+        (button) => button.textContent,
+      ),
+    ).toEqual(["Sign out"]);
+    const order = Array.from(cards[1].children).map(
+      (node) => node.className || node.tagName,
+    );
+    expect(order.indexOf("account-ownership-status")).toBeLessThan(
+      order.indexOf("account-consequences"),
+    );
+    expect(order.indexOf("account-consequences")).toBeLessThan(
+      order.indexOf("account-danger"),
+    );
+  });
+
+  it("falls back to Not provided and wraps long values without inventing a name", async () => {
+    const email = `${"a".repeat(200)}@example.test`;
+    mountAccount({
+      account: { getSession: () => ({ userId: "u", email, displayName: "" }) },
+    });
+    await screen.findByText(email);
+    screen.getByText("Not provided");
+  });
+
+  it("shows a skeleton and one polite message while the profile loads", async () => {
+    const { container } = mountAccount({
+      account: {
+        getSession: () =>
+          new Promise((resolve) => setTimeout(() => resolve(session), 30)),
+      },
+    });
+    const status = screen.getByText("Loading your account…");
+    expect(status.getAttribute("role")).toBe("status");
+    expect(
+      container.querySelector(".account-skeleton")?.getAttribute("aria-hidden"),
+    ).toBe("true");
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+    await screen.findByText(session.email);
+    expect(screen.queryByText("Loading your account…")).toBeNull();
+  });
+
+  it.each([
+    [
+      Code.Unauthenticated,
+      "Your session has expired. Sign in again, then review and submit the action.",
+    ],
+    [
+      Code.PermissionDenied,
+      "Your permissions changed or this action is not available to your account.",
+    ],
+    [
+      Code.Unavailable,
+      "The service is unavailable. No change has been confirmed.",
+    ],
+  ])("maps session error %s to exact safe copy", async (code, copy) => {
+    mountAccount({
+      account: {
+        getSession: () => {
+          throw new ConnectError("raw diagnostic", code);
+        },
+      },
+    });
+    await screen.findByText(copy);
+    expect(screen.queryByText(/raw diagnostic/)).toBeNull();
+    expect(screen.queryByRole("button", { name: "Sign out" })).toBeNull();
+  });
+
+  it("uses a supplied session without fetching it", async () => {
+    const getSession = rs.fn(() => session);
+    mountAccount({
+      account: { getSession },
+      props: { session: session as never },
+    });
+    await screen.findByText(session.email);
+    expect(getSession).not.toHaveBeenCalled();
+  });
+
+  describe("ownership check", () => {
+    it("shows a skeleton and polite checking status while the first page loads", async () => {
+      let release!: () => void;
+      const { container } = mountAccount({
+        organizations: () =>
+          new Promise((resolve) => {
+            release = () => resolve({ organizations: [] });
+          }),
+      });
+      const status = await screen.findByText("Checking owned organizations…");
+      expect(status.closest("[role=status]")).not.toBeNull();
+      expect(
+        container
+          .querySelector(".account-delete .account-skeleton")
+          ?.getAttribute("aria-hidden"),
+      ).toBe("true");
+      expect(entryButton().disabled).toBe(true);
+      expect(screen.queryByText("Ownership check complete")).toBeNull();
+      release();
+      await screen.findByText("Ownership check complete");
+      expect(screen.queryByText("Checking owned organizations…")).toBeNull();
+    });
+
+    it("shows the clear state and enables the entry button without a blocked helper", async () => {
+      mountAccount();
+      await screen.findByText("Ownership check complete");
+      screen.getByText("You do not own any organizations.");
+      await waitFor(() => expect(entryButton().disabled).toBe(false));
+      expect(
+        screen.queryByText(
+          "Resolve ownership and complete the check to continue.",
+        ),
+      ).toBeNull();
+      expect(entryButton().getAttribute("aria-describedby")).toBeNull();
+      expect(screen.queryByRole("dialog")).toBeNull();
+    });
+
+    it("lists consequences and associates the blocked helper with the disabled button", async () => {
+      mountAccount({
+        organizations: () => ({ organizations: [owner("o1", "Acme")] }),
+      });
+      await screen.findByRole("heading", { name: "Ownership blocks deletion" });
+      const consequences = screen.getByRole("heading", {
+        name: "What deletion changes",
+      }).parentElement!;
+      expect(
+        Array.from(consequences.querySelectorAll("li")).map(
+          (item) => item.textContent,
+        ),
+      ).toEqual([
+        "Removes your memberships and personal identity.",
+        "Anonymizes surviving usage and audit records.",
+        "Existing backups expire under the operator's policy.",
+      ]);
+      const helper = screen.getByText(
+        "Resolve ownership and complete the check to continue.",
+      );
+      expect(entryButton().disabled).toBe(true);
+      expect(entryButton().getAttribute("aria-describedby")).toBe(helper.id);
+    });
+
+    it("keeps an incomplete check blocked, requests exactly one page per activation and forwards tokens", async () => {
+      const user = userEvent.setup();
+      const requests: Array<{ token: string; size: number }> = [];
+      let release!: () => void;
+      mountAccount({
+        organizations: (request) => {
+          requests.push({
+            token: request.page?.pageToken ?? "",
+            size: request.page?.pageSize ?? 0,
+          });
+          if (!request.page?.pageToken)
+            return { organizations: [], page: { nextPageToken: "t1" } };
+          if (request.page.pageToken === "t1")
+            return new Promise((resolve) => {
+              release = () =>
+                resolve({
+                  organizations: [owner("o2", "Later Studio")],
+                  page: { nextPageToken: "t2" },
+                });
+            });
+          return { organizations: [] };
+        },
+      });
+      await screen.findByRole("heading", {
+        name: "Ownership check incomplete",
+      });
+      screen.getByText(
+        "Account deletion stays blocked until all organizations have been checked.",
+      );
+      expect(screen.queryByText("Ownership check complete")).toBeNull();
+      expect(entryButton().disabled).toBe(true);
+      await user.click(
+        screen.getByRole("button", { name: "Check more organizations" }),
+      );
+      const busy = await screen.findByRole("button", {
+        name: "Checking more organizations…",
+      });
+      expect((busy as HTMLButtonElement).disabled).toBe(true);
+      release();
+      await screen.findByRole("heading", {
+        name: "Organizations that block deletion",
+      });
+      screen.getByRole("heading", { name: "Ownership check incomplete" });
+      expect(requests).toEqual([
+        { token: "", size: 100 },
+        { token: "t1", size: 100 },
+      ]);
+      expect(entryButton().disabled).toBe(true);
+      await user.click(
+        screen.getByRole("button", { name: "Check more organizations" }),
+      );
+      await screen.findByText("Ownership blocks deletion");
+      expect(requests.length).toBe(3);
+      expect(requests[2].token).toBe("t2");
+      expect(
+        screen.queryByRole("button", { name: "Check more organizations" }),
+      ).toBeNull();
+    });
+
+    it("enables deletion only after the last page confirms no owner", async () => {
+      const user = userEvent.setup();
+      mountAccount({
+        organizations: (request) =>
+          request.page?.pageToken
+            ? { organizations: [{ ...org, role: Role.MEMBER }] }
+            : { organizations: [], page: { nextPageToken: "next" } },
+      });
+      await screen.findByRole("button", { name: "Check more organizations" });
+      expect(entryButton().disabled).toBe(true);
+      await user.click(
+        screen.getByRole("button", { name: "Check more organizations" }),
+      );
+      await screen.findByText("Ownership check complete");
+      await waitFor(() => expect(entryButton().disabled).toBe(false));
+    });
+
+    it("renders each owner with a role label, settings link by id and helper", async () => {
+      mountAccount({
+        organizations: () => ({
+          organizations: [
+            owner("org-a", "Twin"),
+            owner("org-b", "Twin"),
+            { ...org, role: Role.MEMBER },
+          ],
+        }),
+      });
+      await screen.findByRole("heading", { name: "Ownership blocks deletion" });
+      screen.getByText(
+        "Transfer or delete these organizations before deleting your account.",
+      );
+      const list = screen.getByRole("list", {
+        name: "Ownership blocks deletion",
+      });
+      const items = list.querySelectorAll("li");
+      expect(items.length).toBe(2);
+      items.forEach((item) => {
+        expect(item.textContent).toContain("Twin");
+        expect(item.textContent).toContain("Owner");
+        expect(item.textContent).toContain(
+          "Transfer ownership or delete this organization in Settings.",
+        );
+      });
+      const links = screen.getAllByRole("link", {
+        name: "Open organization settings for Twin",
+      });
+      expect(links.map((link) => link.getAttribute("href"))).toEqual([
+        pageHref("settings", "org-a"),
+        pageHref("settings", "org-b"),
+      ]);
+      expect(screen.queryByText("Studio")).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Check more organizations" }),
+      ).toBeNull();
+      expect(screen.queryByText("Ownership check complete")).toBeNull();
+    });
+
+    it("keeps known owners and never shows the clear state when a later page fails", async () => {
+      const user = userEvent.setup();
+      let failNext = true;
+      mountAccount({
+        organizations: (request) => {
+          if (!request.page?.pageToken)
+            return {
+              organizations: [owner("o1", "Acme")],
+              page: { nextPageToken: "t1" },
+            };
+          if (failNext)
+            throw new ConnectError("outage", Code.Unavailable, undefined, [
+              {
+                desc: ErrorDetailSchema,
+                value: create(ErrorDetailSchema, { requestId: "req-42" }),
+              },
+            ]);
+          return { organizations: [] };
+        },
+      });
+      await user.click(
+        await screen.findByRole("button", { name: "Check more organizations" }),
+      );
+      await screen.findByText(
+        "The service is unavailable. No change has been confirmed.",
+      );
+      screen.getByText("Request ID: req-42");
+      screen.getByRole("link", { name: "Open organization settings for Acme" });
+      expect(screen.queryByText("Ownership check complete")).toBeNull();
+      expect(
+        screen.queryByText("You do not own any organizations."),
+      ).toBeNull();
+      expect(entryButton().disabled).toBe(true);
+      failNext = false;
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+      await screen.findByRole("heading", { name: "Ownership blocks deletion" });
+      expect(entryButton().disabled).toBe(true);
+    });
+
+    it("never shows the clear state when the first load fails and retries explicitly", async () => {
+      const user = userEvent.setup();
+      let fail = true;
+      mountAccount({
+        organizations: () => {
+          if (fail) throw new ConnectError("outage", Code.Unavailable);
+          return { organizations: [] };
+        },
+      });
+      await screen.findByText(
+        "The service is unavailable. No change has been confirmed.",
+      );
+      expect(screen.queryByText("Ownership check complete")).toBeNull();
+      expect(
+        screen.queryByText("You do not own any organizations."),
+      ).toBeNull();
+      expect(entryButton().disabled).toBe(true);
+      fail = false;
+      await user.click(screen.getByRole("button", { name: "Try again" }));
+      await screen.findByText("Ownership check complete");
+      await waitFor(() => expect(entryButton().disabled).toBe(false));
+    });
+
+    it("refreshes ownership after a late OWNED_ORGANIZATIONS_REMAIN and blocks repeats", async () => {
+      const user = userEvent.setup();
+      let owners = false;
+      const listOrganizations = rs.fn(() => ({
+        organizations: owners ? [owner("o1", "Late Studio")] : [],
+      }));
+      const deleteAccount = rs.fn(() => {
+        owners = true;
+        throw detail(ErrorReason.OWNED_ORGANIZATIONS_REMAIN, "req-late");
+      });
+      const { cache } = mountAccount({
+        organizations: listOrganizations,
+        account: { deleteAccount },
+      });
+      cache.setQueryData(["private-fixture"], "private");
+      await waitFor(() => expect(entryButton().disabled).toBe(false));
+      await user.click(entryButton());
+      const dialog = screen.getByRole("dialog");
+      await user.click(dialog.querySelector("button.account-danger")!);
+      await waitFor(() => expect(deleteAccount).toHaveBeenCalledTimes(1));
+      await screen.findByRole("heading", { name: "Ownership blocks deletion" });
+      expect(
+        screen.getAllByText(
+          "Transfer or delete all organizations you own before deleting your account.",
+        ).length,
+      ).toBeGreaterThan(0);
+      expect(listOrganizations.mock.calls.length).toBeGreaterThanOrEqual(2);
+      expect(
+        screen.queryByRole("heading", { name: "Account deleted" }),
+      ).toBeNull();
+      expect(cache.getQueryData(["private-fixture"])).toBe("private");
+      fireEvent(
+        screen.getByRole("dialog"),
+        new Event("cancel", { bubbles: true, cancelable: true }),
+      );
+      expect(entryButton().disabled).toBe(true);
+      expect(deleteAccount).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  describe("sign out", () => {
+    it("renders a neutral Sign out button below the helper with its own error region", async () => {
+      const user = userEvent.setup();
+      const logout = rs.fn(() => {
+        throw new ConnectError("outage", Code.Unavailable);
+      });
+      const { container } = mountAccount({ account: { logout } });
+      const button = await screen.findByRole("button", { name: "Sign out" });
+      expect(button.classList.contains("account-danger")).toBe(false);
+      const profile = container.querySelector(".account-profile")!;
+      const children = Array.from(profile.children).map((node) => node.tagName);
+      expect(children.indexOf("BUTTON")).toBeGreaterThan(children.indexOf("P"));
+      await user.click(button);
+      const alert = await screen.findByText(
+        "The service is unavailable. No change has been confirmed.",
+      );
+      expect(profile.contains(alert)).toBe(true);
+      expect(
+        container.querySelector(".account-delete [role=alert]"),
+      ).toBeNull();
+    });
+
+    it("sends one request on double click and disables both actions while pending", async () => {
+      const user = userEvent.setup();
+      let finish!: () => void;
+      const logout = rs.fn(
+        () =>
+          new Promise<Record<string, never>>((resolve) => {
+            finish = () => resolve({});
+          }),
+      );
+      const { cache } = mountAccount({ account: { logout } });
+      cache.setQueryData(["private-fixture"], "private");
+      await waitFor(() => expect(entryButton().disabled).toBe(false));
+      await user.dblClick(screen.getByRole("button", { name: "Sign out" }));
+      await screen.findByRole("button", { name: "Signing out…" });
+      expect(logout).toHaveBeenCalledTimes(1);
+      expect(entryButton().disabled).toBe(true);
+      expect(cache.getQueryData(["private-fixture"])).toBe("private");
+      finish();
+      await screen.findByRole("heading", { name: "Signed out" });
+      screen.getByText("Your session has ended.");
+      expect(screen.getByRole("link", { name: "Sign in" })).toBeTruthy();
+      expect(screen.queryByText(session.email)).toBeNull();
+      expect(screen.queryByText("Delete account")).toBeNull();
+    });
+
+    it("keeps the profile after a failed logout and allows an explicit retry", async () => {
+      const user = userEvent.setup();
+      let fail = true;
+      const onSessionChange = rs.fn();
+      const logout = rs.fn(() => {
+        if (fail) throw new ConnectError("outage", Code.Unavailable);
+        return {};
+      });
+      mountAccount({ account: { logout }, props: { onSessionChange } });
+      await user.click(await screen.findByRole("button", { name: "Sign out" }));
+      await screen.findByText(
+        "The service is unavailable. No change has been confirmed.",
+      );
+      screen.getByText(session.email);
+      expect(onSessionChange).not.toHaveBeenCalled();
+      fail = false;
+      await user.click(screen.getByRole("button", { name: "Sign out" }));
+      await screen.findByRole("heading", { name: "Signed out" });
+      expect(logout).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(onSessionChange).toHaveBeenCalledTimes(1));
+    });
+  });
+
+  it("scopes the account page styles away from other account screens", () => {
+    const css = readFileSync(new URL("./account.css", import.meta.url), "utf8");
+    const start = css.indexOf("Account profile and deletion page");
+    expect(start).toBeGreaterThan(0);
+    const block = css.slice(start);
+    const selectors = block
+      .split("\n")
+      .filter(
+        (line) =>
+          /\{\s*$/.test(line) && !line.startsWith(" ") && !line.startsWith("@"),
+      )
+      .flatMap((line) => line.replace(/\{\s*$/, "").split(","))
+      .map((selector) => selector.trim())
+      .filter((selector) => !selector.startsWith("@"));
+    for (const selector of selectors)
+      expect(selector).toMatch(
+        /^(\.main:has\(\.account-page\)|\.account-surface\.account-page|\.account-page|\.account-skeleton)/,
+      );
+  });
+
+  it("leaves other account screens on the base card geometry", async () => {
+    const { container } = mount(
+      <InvitationPage token="invitation-token" />,
+      (router) => {
+        router.service(AccountService, { getSession: () => session });
+        router.service(InvitationService, {
+          getInvitation: () => ({
+            invitation: {
+              id: "invite",
+              organizationName: "Studio",
+              email: session.email,
+              state: LifecycleState.PENDING,
+              expiresAt: future(),
+              role: Role.MEMBER,
+            },
+          }),
+        });
+      },
+    );
+    await screen.findByText("Studio");
+    expect(container.querySelector(".account-page")).toBeNull();
   });
 });
