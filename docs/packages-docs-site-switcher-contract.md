@@ -36,4 +36,4 @@
 - Update this contract and `docs/README.md` when a documentation destination, public label, accessibility contract, or package ownership changes.
 - Update `docs/apps-public-docs-foundation.md` when the shared selector changes the consolidated documentation surface.
 
-TaiRouter adds an owned content root at `apps/public-docs/docs/tairouter`, published at `/tairouter` with ten `/tairouter/guide/*` routes. The shared route catalog and site selector include these routes. This extends the existing project lists above; the single publisher, clean URLs, fixed port and validation rules also apply to TaiRouter. See [TaiRouter public documentation](apps-tairouter-docs-contract.md).
+TaiRouter is an open-source Delino Labs product. Its public guides are owned by `apps/labs-docs/docs/en/tairouter` and published at `https://docs.labs.delino.io/tairouter/`. This consolidated publisher and its site selector do not include TaiRouter. The former `/tairouter` routes have been removed without redirects or aliases. See [TaiRouter public documentation](apps-tairouter-docs-contract.md).

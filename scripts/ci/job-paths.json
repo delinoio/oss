@@ -361,7 +361,8 @@
       "pnpm-workspace.yaml",
       "turbo.json",
       "scripts/localization/**",
-      "docs/apps-labs-localization-contract.md"
+      "docs/apps-labs-localization-contract.md",
+      "docs/apps-tairouter-docs-contract.md"
     ],
     "workspace": "labs-docs",
     "workspacePaths": ["apps/labs-docs/**"]
@@ -380,7 +381,7 @@
       "rstack.config.ts",
       "tsconfig*.json",
       "apps/tairouter*/**",
-      "apps/public-docs/**",
+      "apps/labs-docs/**",
       "packages/tairouter*/**",
       "servers/tairouter/**",
       "cmds/tairouter/**",

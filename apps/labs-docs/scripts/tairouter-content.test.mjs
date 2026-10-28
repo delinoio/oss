@@ -6,7 +6,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const app = fileURLToPath(new URL("../", import.meta.url));
-const root = path.join(app, "docs/tairouter");
+const root = path.join(app, "docs/en/tairouter");
 async function markdownFiles(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
   const files = await Promise.all(
@@ -46,9 +46,13 @@ test("public pages have resolvable local links and no internal contract links", 
 });
 
 test("every public page is reachable from standard-theme navigation", async () => {
-  const config = await readFile(path.join(app, "rspress.config.ts"), "utf8");
+  const pages = JSON.parse(
+    await readFile(path.join(app, "scripts/tairouter-pages.json"), "utf8"),
+  );
   const linked = new Set(
-    [...config.matchAll(/link:\s*["']([^"']+)["']/g)].map((match) => match[1]),
+    pages.map(({ page }) =>
+      page === "index" ? "/tairouter/" : `/tairouter/${page}`,
+    ),
   );
   for (const file of await markdownFiles(root)) {
     const relative = path.relative(root, file).replaceAll(path.sep, "/");
@@ -70,4 +74,19 @@ test("every public page is reachable from standard-theme navigation", async () =
       ),
     );
   }
+});
+
+test("TaiRouter has explicit source-only coverage for every English guide", async () => {
+  const registry = JSON.parse(
+    await readFile(path.join(app, "i18n/locales.json"), "utf8"),
+  );
+  const pages = (await markdownFiles(root))
+    .map(
+      (file) =>
+        `tairouter/${path.relative(root, file).replaceAll(path.sep, "/")}`,
+    )
+    .sort();
+  assert.deepEqual([...registry.sourceOnly.pages].sort(), pages);
+  const config = await readFile(path.join(app, "rspress.config.ts"), "utf8");
+  assert.match(config, /tairouterPages\.map/);
 });

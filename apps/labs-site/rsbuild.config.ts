@@ -3,15 +3,37 @@ import { defineConfig } from "@rsbuild/core";
 import { readFileSync } from "node:fs";
 import registry from "./i18n/locales.json";
 
-const entries = registry.locales.map(({ lang }) => {
-  const name = lang === registry.sourceLang ? "index" : `${lang}/index`;
+const languages = registry.locales.map((locale) => ({
+  ...locale,
+  path: `${locale.lang === registry.sourceLang ? "" : `/${locale.lang}`}/tairouter/`,
+}));
+
+const escapeHtml = (value: string) =>
+  value.replace(
+    /[&<>"']/g,
+    (character) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        character
+      ]!,
+  );
+
+const entries = registry.locales.flatMap(({ lang, label }) => {
+  const prefix = lang === registry.sourceLang ? "" : `${lang}/`;
   const messages: Record<string, string> = JSON.parse(
     readFileSync(
       new URL(`./i18n/messages/${lang}.json`, import.meta.url),
       "utf8",
     ),
   );
-  return { name, lang, title: messages.title };
+  return [false, true].map((product) => ({
+    name: `${prefix}${product ? "tairouter/" : ""}index`,
+    lang,
+    label,
+    product,
+    messages,
+    title: product ? messages.productTitle : messages.title,
+    path: `/${prefix}${product ? "tairouter/" : ""}`,
+  }));
 });
 
 export default defineConfig({
@@ -21,14 +43,26 @@ export default defineConfig({
     ),
   },
   html: {
-    template: "./index.html",
+    template: ({ entryName }) =>
+      entries.find(({ name }) => name === entryName)!.product
+        ? "./tairouter.html"
+        : "./index.html",
     title: ({ entryName }) =>
       entries.find(({ name }) => name === entryName)!.title,
     templateParameters: ({ entryName }) => {
       const entry = entries.find(({ name }) => name === entryName)!;
       return {
         language: entry.lang,
-        canonical: `https://labs.delino.io${entry.lang === registry.sourceLang ? "/" : `/${entry.lang}/`}`,
+        canonical: `https://labs.delino.io${entry.path}`,
+        productPath: entry.path,
+        languageLabel: entry.label,
+        languages,
+        t: (key: string) => {
+          const message = entry.messages[key];
+          if (!message)
+            throw new Error(`Missing marketing message: ${entry.lang}/${key}`);
+          return escapeHtml(message);
+        },
       };
     },
   },

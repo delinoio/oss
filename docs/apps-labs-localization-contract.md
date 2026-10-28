@@ -9,9 +9,9 @@ English (`en`) is the source language. Both apps register Korean (`ko`), Japanes
 (`de`) and Brazilian Portuguese (`pt-BR`). English URLs remain unprefixed;
 other languages use `/<lang>/`. Language selection is explicit, with no browser
 language redirect. Rspress owns documentation navigation, search, language
-selection and HTML language metadata. The marketing scaffold remains blank and
-non-indexable; its localized static entries translate its title catalog without
-adding marketing content or controls.
+selection and HTML language metadata. The marketing root scaffold remains blank and non-indexable. The TaiRouter
+product page uses `/tairouter/` and `/<lang>/tairouter/`, localized catalog text
+and an explicit language menu; its product routes permit indexing.
 
 Documentation source pages live in `apps/labs-docs/docs/en`. Target pages live in
 sibling language directories. Only these curated public pages and app catalogs
@@ -61,8 +61,13 @@ Checks reject missing/stale output, extra keys/pages, changed placeholders, code
 spans, code fences, link destinations, heading structure or structural frontmatter.
 The tool localizes absolute internal Markdown links after validating output.
 MDX and symbolic links are rejected. The inherited exact `sourceOnly` policy is
-available only for an explicit owning product requirement; neither Labs app
-declares such exemptions. Structural checks do not establish linguistic accuracy.
+available only for an explicit owning product requirement; Labs Docs declares the eleven migrated `tairouter/*.md` and
+`tairouter/guide/*.md` pages by exact path as English-only under the TaiRouter
+public documentation contract. This initial publication preserves the complete
+English guidance without labelling it as translated content. Every localized
+Labs sidebar labels the group as English and links to those unprefixed routes.
+All other Labs documentation pages and all marketing catalog messages require
+registered translations. Structural checks do not establish linguistic accuracy.
 
 ## Authentication and inference
 

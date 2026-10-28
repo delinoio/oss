@@ -10,7 +10,7 @@
     "build:frontend": "pnpm build",
     "preview": "node ../../scripts/run-rspress-port.mjs labs-docs preview 46304 -",
     "test": "pnpm i18n:check && node --test ../../scripts/localization/*.test.mjs && pnpm build && pnpm ci:routes",
-    "ci:routes": "node scripts/validate-routes.mjs",
+    "ci:routes": "node --test scripts/tairouter-content.test.mjs && node scripts/validate-routes.mjs",
     "i18n:check": "node ../../scripts/localization/cli.mjs check",
     "i18n:translate": "node ../../scripts/localization/cli.mjs translate",
     "i18n:login": "node ../../scripts/localization/cli.mjs login",

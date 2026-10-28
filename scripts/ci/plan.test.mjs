@@ -630,7 +630,6 @@ test("integrated project docs select the public-docs workspace and shared inputs
       id,
       "source-format",
       "release-contracts",
-      "tairouter",
     ]);
     assert.equal(planJobs(event, paths).forced[id], false);
     for (const path of [
@@ -1320,6 +1319,7 @@ test("Labs docs own their app and force external build inputs on all CI events",
     assert.equal(local.forced[id], false);
     for (const path of [
       "docs/apps-labs-docs-foundation.md",
+      "docs/apps-tairouter-docs-contract.md",
       "scripts/run-rspress-port.mjs",
       "pnpm-lock.yaml",
     ]) {
@@ -1360,7 +1360,7 @@ test("TaiRouter validation follows affected selection and fails the aggregate on
       "packages/tairouter-client/src/gen/api.ts",
       "protos/tairouter/v1/management.proto",
       "apps/tairouter/src/main.tsx",
-      "apps/public-docs/docs/tairouter/index.md",
+      "apps/labs-docs/docs/en/tairouter/index.md",
       "scripts/tairouter/compose-smoke.py",
       "scripts/localization/cli.mjs",
       "packaging/tairouter/compose.yml",

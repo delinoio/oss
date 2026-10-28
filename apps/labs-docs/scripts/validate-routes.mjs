@@ -8,6 +8,9 @@ const registry = JSON.parse(
   await readFile(new URL("../i18n/locales.json", import.meta.url), "utf8"),
 );
 const routes = [];
+const tairouterPages = JSON.parse(
+  await readFile(new URL("./tairouter-pages.json", import.meta.url), "utf8"),
+);
 for (const { lang } of registry.locales) {
   const prefix = lang === registry.sourceLang ? "" : `/${lang}`;
   for (const page of ["index", "getting-started"]) {
@@ -23,6 +26,20 @@ for (const { lang } of registry.locales) {
       next: page === "index" ? `${prefix}/getting-started` : `${prefix}/`,
     });
   }
+}
+
+for (const { page } of tairouterPages) {
+  const markdown = await readFile(
+    new URL(`../docs/en/tairouter/${page}.md`, import.meta.url),
+    "utf8",
+  );
+  routes.push({
+    path: page === "index" ? "/tairouter/" : `/tairouter/${page}`,
+    file: `tairouter/${page}.html`,
+    heading: markdown.match(/^# (.+)$/m)[1],
+    lang: registry.sourceLang,
+    next: "/tairouter/guide/installation",
+  });
 }
 
 for (const route of routes) {
@@ -56,7 +73,10 @@ for (const route of routes) {
     const target = new URL(href, `${origin}${route.path}`);
     if (target.origin !== origin) continue;
     assert.ok(
-      routes.some((item) => item.path === target.pathname),
+      routes.some(
+        (item) =>
+          item.path.replace(/\/$/, "") === target.pathname.replace(/\/$/, ""),
+      ),
       `${route.path}: unknown or non-clean link ${target.pathname}`,
     );
   }

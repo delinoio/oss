@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 import { defineConfig } from "@rspress/core";
 import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import registry from "./i18n/locales.json";
+import tairouterPages from "./scripts/tairouter-pages.json";
 
 const themeText: Record<string, Record<string, string>> = {};
 const locales = registry.locales.map((locale) => {
@@ -36,6 +38,16 @@ const locales = registry.locales.map((locale) => {
             },
           ],
         },
+        {
+          text: messages.tairouter,
+          items: tairouterPages.map(({ page, label }) => ({
+            text: messages[label],
+            // Rspress prefixes root-relative sidebar links with the active
+            // locale. An absolute URL keeps English-only guides on real routes.
+            link: `${prefix ? "https://docs.labs.delino.io" : ""}${page === "index" ? "/tairouter/" : `/tairouter/${page}`}`,
+            ...(page === "index" ? { activeMatch: "^/tairouter/$" } : {}),
+          })),
+        },
       ],
     },
   };
@@ -65,6 +77,22 @@ export default defineConfig({
     return defaults;
   },
   builderConfig: {
+    tools: {
+      rspack: (config) => {
+        config.module ??= {};
+        config.module.rules ??= [];
+        config.module.rules.push({
+          test: /[\\/]@rspress[\\/]core[\\/]dist[\\/]theme[\\/]components[\\/]Nav[\\/]hooks\.js$/,
+          use: [
+            {
+              loader: fileURLToPath(
+                new URL("./scripts/english-guides-loader.cjs", import.meta.url),
+              ),
+            },
+          ],
+        });
+      },
+    },
     server: {
       strictPort: process.env.DELINO_RSPRESS_STRICT_PORT === "1",
     },

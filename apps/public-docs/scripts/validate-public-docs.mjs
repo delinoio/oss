@@ -18,7 +18,6 @@ const selectorDestinations = [
   "/async-commit-hook/",
   "/clibox/",
   "/pnport/",
-  "/tairouter/",
 ];
 const projectSecuritySlugs = new Set([
   "runmoor",
@@ -337,6 +336,12 @@ const expectedAsyncHeaders = `/async-commit-hook/*
 `;
 if (headers !== expectedAsyncHeaders)
   failures.push("aggregate async security headers are missing or incorrect");
+
+for (const retired of ["docs/tairouter", "doc_build/tairouter"]) {
+  if (await exists(path.resolve(retired))) {
+    failures.push("TaiRouter must be published by Labs Docs only");
+  }
+}
 
 if (failures.length > 0) {
   console.error("Public docs project validation failed:");

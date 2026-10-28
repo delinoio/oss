@@ -25,7 +25,7 @@ Provide a standalone static marketing site for Delino Labs at `https://labs.deli
 - The canonical origin is `https://labs.delino.io`; the site is independent of `oss.delino.io` and its documentation routes.
 - Use TypeScript and Rsbuild for this browser/static-site component, following the static-site default. No backend service, RPC, database, or account is required.
 - Cloudflare Pages is the deployment target. Build configuration does not establish DNS, a Pages project, or a live deployment.
-- The scaffold provides an empty HTML content slot. Marketing content, design, forms, and analytics require separate product work.
+- The root remains a reserved, non-indexable scaffold. `/tairouter/` and its registered language variants publish the TaiRouter product page. TaiRouter means Team AI Router and is an open-source Delino Labs product. Product links lead to the Labs documentation and source repository; no hosted service, pricing, analytics or signup flow is provided.
 
 ## Change Policy
 

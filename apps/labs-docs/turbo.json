@@ -8,7 +8,8 @@
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/docs/apps-labs-docs-foundation.md",
         "$TURBO_ROOT$/scripts/localization/**",
-        "$TURBO_ROOT$/docs/apps-labs-localization-contract.md"
+        "$TURBO_ROOT$/docs/apps-labs-localization-contract.md",
+        "$TURBO_ROOT$/docs/apps-tairouter-docs-contract.md"
       ],
       "outputs": [],
       "env": ["CI_CACHE_CONTEXT"]
