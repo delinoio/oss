@@ -322,7 +322,7 @@ describe("create API key failure", () => {
         revokeKey,
       }),
     );
-    await user.click(await screen.findByRole("button", { name: "Revoke" }));
+    await user.click(await screen.findByRole("button", { name: "Revoke Old" }));
     await user.click(screen.getByRole("button", { name: "Revoke key" }));
     await waitFor(() => expect(revokeKey).toHaveBeenCalled());
     await user.click(screen.getByRole("button", { name: "Cancel" }));

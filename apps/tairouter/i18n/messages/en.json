@@ -1538,5 +1538,14 @@
   "thisActionCannotBeUndone": "This action cannot be undone.",
   "whatWillHappen": "What will happen",
   "removesAllYourMembershipsAndPersonal": "Removes all your memberships and personal identity.",
-  "survivingUsageAndAuditRecordsAre": "Surviving usage and audit records are anonymized."
+  "survivingUsageAndAuditRecordsAre": "Surviving usage and audit records are anonymized.",
+  "type": "Type",
+  "createdColumn": "Created",
+  "identifierUnavailable": "Identifier unavailable",
+  "yourApiKeys": "Your API keys",
+  "revokeNamedKey": "Revoke {value0}",
+  "apiKeyPages": "API key pages",
+  "youNoLongerHaveAccessToTheseApiKeys": "You no longer have access to these API keys. Choose an organization you belong to.",
+  "showingTheLastLoadedApiKeysTheLatest": "Showing the last loaded API keys. The latest refresh failed.",
+  "youAreOfflineTheseApiKeysMayBeOut": "You are offline. These API keys may be out of date."
 }

@@ -117,7 +117,9 @@ describe("personal key lifecycle", () => {
         revokeKey,
       }),
     );
-    await user.click(await screen.findByRole("button", { name: "Revoke" }));
+    await user.click(
+      await screen.findByRole("button", { name: "Revoke Laptop" }),
+    );
     expect(document.activeElement?.textContent).toBe("Cancel");
     expect(revokeKey).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Revoke key" }));
@@ -283,7 +285,9 @@ describe("organization boundary", () => {
       });
     });
     await screen.findByText("Old personal key");
-    await user.click(screen.getByRole("button", { name: "Revoke" }));
+    await user.click(
+      screen.getByRole("button", { name: "Revoke Old personal key" }),
+    );
     expect(screen.getByRole("dialog")).toBeTruthy();
     await user.click(
       screen.getAllByRole("button", { name: "Switch organization" })[0],
