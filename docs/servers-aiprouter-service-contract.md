@@ -8,6 +8,19 @@ Owns `servers/aiprouter`: the Go service, authorization enforcement, inference a
 
 Go in the root module `github.com/delinoio/oss`. PostgreSQL is authoritative. Implement anew; do not bundle opencodex as a server engine.
 
+## Internal package boundaries
+
+The service remains one executable and one deployment. `go run ./servers/aiprouter` and `go build ./servers/aiprouter` retain their entry point.
+
+- `servers/aiprouter/main.go` owns process logging, arguments, and exit status.
+- `servers/aiprouter/internal/service` owns startup, shutdown, maintenance commands, management RPCs, inference admission and routing adapters, workers, and their integration tests. It composes the internal packages and shared `packages/aiprouter` mechanisms.
+- `servers/aiprouter/internal/config` owns environment parsing, deployment validation, and configured operator identity checks.
+- `servers/aiprouter/internal/console` owns static artifact serving, canonical console routes, and safe authentication return targets.
+- `servers/aiprouter/internal/auth` owns OIDC discovery, browser login, session cookies, origin checks, and the authentication store interface. The service implements that interface with PostgreSQL. Session handler construction does not perform discovery; serving starts only after successful discovery.
+- `servers/aiprouter/internal/observability` owns request identifiers, HTTP instrumentation, Prometheus registration and health updates, and tracing setup.
+
+Dependencies flow from the executable into `service`, then into the other internal packages. Authentication uses configuration and console return-target validation. Observability owns its request context key. Leaf packages do not import `service`; internal packages are not public library interfaces. Existing authorization, lifecycle, route, metric, and deployment contracts continue to apply. Tests live beside the package that owns the behavior; cross-domain tests remain in `service`.
+
 ## Users and Operators
 
 Organization owners, administrators, members, and separately configured instance operators. Roles and authority are defined below.
