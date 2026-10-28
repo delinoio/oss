@@ -1661,3 +1661,95 @@ dialog.connection-editor {
   outline: 2px solid #1d4ed8;
   outline-offset: -2px;
 }
+
+/* Connection model discovery dialog. Scoped so other dialogs keep the shared layout. */
+dialog.models-dialog {
+  width: min(720px, calc(100% - 32px));
+  max-height: calc(100dvh - 32px);
+  padding: 24px;
+  border-radius: 12px;
+}
+.models-dialog .dialog-heading {
+  margin-bottom: 4px;
+}
+.models-dialog-subtitle {
+  margin: 0 0 16px;
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+}
+.models-dialog input[type="search"] {
+  min-height: 44px;
+}
+.models-list {
+  list-style: none;
+  margin: 16px 0;
+  padding: 0;
+  border-top: 1px solid var(--border);
+}
+.model-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 16px;
+  padding: 16px 0;
+  border-bottom: 1px solid var(--border);
+}
+.model-name {
+  font-size: 16px;
+  overflow-wrap: anywhere;
+}
+.model-id {
+  grid-column: 1;
+  font-size: 14px;
+  color: var(--secondary);
+  overflow-wrap: anywhere;
+  word-break: break-all;
+  user-select: text;
+}
+.model-limits {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  display: flex;
+  gap: 24px;
+  margin: 0;
+  font-size: 14px;
+}
+.model-limits dt {
+  color: var(--secondary);
+}
+.model-limits dd {
+  margin: 0;
+  font-weight: 600;
+}
+.models-state {
+  margin: 16px 0;
+}
+.models-state h3 {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+.models-state p {
+  margin: 0 0 12px;
+  color: var(--secondary);
+}
+.models-dialog-footer {
+  margin-top: 16px;
+}
+.models-dialog-footer p {
+  margin: 0 0 12px;
+  color: var(--secondary);
+}
+@media (max-width: 767px) {
+  dialog.models-dialog {
+    width: calc(100% - 32px);
+    padding: 16px;
+  }
+  .model-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .model-limits {
+    grid-column: 1;
+    grid-row: auto;
+    flex-direction: column;
+    gap: 8px;
+  }
+}

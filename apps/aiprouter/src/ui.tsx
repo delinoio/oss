@@ -144,9 +144,12 @@ export function Notice({
 export function ErrorNotice({
   error,
   retry,
+  retryLabel,
 }: {
   error: unknown;
   retry?: () => void;
+  /** Overrides the default "Try again" action label. */
+  retryLabel?: string;
 }) {
   useLocale();
   if (!error) return null;
@@ -164,7 +167,9 @@ export function ErrorNotice({
           })}
         </p>
       )}
-      {retry && <Button onClick={retry}>{translate("tryAgain")}</Button>}
+      {retry && (
+        <Button onClick={retry}>{retryLabel ?? translate("tryAgain")}</Button>
+      )}
     </Notice>
   );
 }

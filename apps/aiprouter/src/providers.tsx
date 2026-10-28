@@ -35,6 +35,7 @@ import {
   Dialog,
   ErrorNotice,
   Loading,
+  RefreshStatus,
   EmptyState,
   Badge,
   Notice,
@@ -83,7 +84,19 @@ export function ProvidersPage({ organization }: PageProps) {
   // Timestamp of a confirmed disconnect whose focus target may disappear with the list row.
   const [restoreFocus, setRestoreFocus] = useState<number>();
   const listTarget = useRef<HTMLDivElement>(null);
-  const [models, setModels] = useState<ProviderConnection>();
+  // The selection is bound to the organization it was made in, so a scope change never queries with a stale pair.
+  const [modelsSelection, setModelsSelection] = useState<{
+    connection: ProviderConnection;
+    organizationId: string;
+  }>();
+  const models =
+    modelsSelection?.organizationId === organization.id
+      ? modelsSelection.connection
+      : undefined;
+  const setModels = (connection: ProviderConnection | undefined) =>
+    setModelsSelection(
+      connection && { connection, organizationId: organization.id },
+    );
   const [oauth, setOauth] = useState<ProviderOAuth>();
   const [oauthMethod, setOauthMethod] = useState<ProviderOAuthMethod>();
   const [oauthSetup, setOauthSetup] = useState<{
@@ -101,7 +114,21 @@ export function ProvidersPage({ organization }: PageProps) {
   useEffect(() => {
     setRemove(undefined);
     setAttempted(undefined);
+    setModels(undefined);
   }, [organization.id]);
+  // Dialog cleanup restores focus to the View models button; fall back to the list when its row is gone.
+  const modelsWasOpen = useRef(false);
+  useEffect(() => {
+    if (models) {
+      modelsWasOpen.current = true;
+      return;
+    }
+    if (!modelsWasOpen.current) return;
+    modelsWasOpen.current = false;
+    const active = document.activeElement;
+    if (!active || active === document.body || !active.isConnected)
+      listTarget.current?.focus();
+  }, [models]);
   useEffect(() => {
     if (restoreFocus === undefined) return;
     const active = document.activeElement;
@@ -316,6 +343,7 @@ export function ProvidersPage({ organization }: PageProps) {
       {models && (
         <ModelsDialog
           organizationId={organization.id}
+          organizationName={organization.name}
           connection={models}
           onClose={() => setModels(undefined)}
         />
@@ -1136,61 +1164,152 @@ function OAuthDialog({
   );
 }
 
+/** Discovery states that never share copy so an error cannot read as an empty result. */
+enum ModelsViewState {
+  Loading = "loading",
+  Offline = "offline",
+  Failed = "failed",
+  Empty = "empty",
+  NoMatch = "no-match",
+  List = "list",
+}
+
+function tokenLimit(value: bigint | undefined) {
+  if (value === undefined) return translate("unknown");
+  return value === 1n
+    ? translate("oneToken")
+    : translate("tokenCount", { value0: formatNumber(value) });
+}
+
 function ModelsDialog({
   organizationId,
+  organizationName,
   connection,
   onClose,
 }: {
   organizationId: string;
+  organizationName: string;
   connection: ProviderConnection;
   onClose: () => void;
 }) {
   useLocale();
   const [search, setSearch] = useState("");
+  // The request scope is only the organization and connection; search never reaches the server.
   const query = useQuery(ProviderService.method.listProviderModels, {
     organizationId,
     connectionId: connection.id,
   });
-  const models = query.data?.models.filter((m) =>
-    `${m.id} ${m.displayName}`.toLowerCase().includes(search.toLowerCase()),
+  const returned = query.data?.models;
+  const needle = search.toLowerCase();
+  const models = returned?.filter(
+    (m) =>
+      m.id.toLowerCase().includes(needle) ||
+      m.displayName.toLowerCase().includes(needle),
   );
+  const code = query.error ? ConnectError.from(query.error).code : undefined;
+  const denied =
+    code === Code.PermissionDenied || code === Code.Unauthenticated;
+  const paused = query.fetchStatus === "paused";
+  const stale = returned !== undefined && (query.isRefetchError || paused);
+  const state = !returned
+    ? query.isError
+      ? ModelsViewState.Failed
+      : paused
+        ? ModelsViewState.Offline
+        : ModelsViewState.Loading
+    : returned.length === 0
+      ? ModelsViewState.Empty
+      : models?.length === 0
+        ? ModelsViewState.NoMatch
+        : ModelsViewState.List;
+  const retry = () => void query.refetch();
   return (
     <Dialog
       title={translate("modelsFrom", { value0: connection.name })}
       onClose={onClose}
+      wide
+      className="models-dialog"
     >
+      <p className="models-dialog-subtitle">
+        {translate("onlyYoursIn", { value0: organizationName })}
+      </p>
       <Field label={translate("findAModel")}>
         <input
           autoFocus
           type="search"
+          placeholder={translate("searchModelNameOrId")}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </Field>
-      <ErrorNotice error={query.error} />
-      {query.isPending ? (
-        <Loading />
-      ) : models?.length === 0 ? (
-        <p>{translate("noMatchingModels")}</p>
-      ) : (
-        <ul>
-          {models?.map((m) => (
-            <li key={m.id}>
-              <strong>{m.displayName || m.id}</strong>
-              <br />
-              <code>{m.id}</code>
-              <p>
-                {translate("contextOutput", {
-                  value0: formatNumber(m.contextLimit),
-                  value1: formatNumber(m.outputLimit),
-                })}
-              </p>
+      {query.error && (
+        <ErrorNotice
+          error={query.error}
+          retry={denied ? undefined : retry}
+          retryLabel={translate("retry")}
+        />
+      )}
+      {query.error && denied && (
+        <Notice tone="warning">{translate("modelsAccessNotConfirmed")}</Notice>
+      )}
+      {stale && !query.error && (
+        <Notice tone="warning">{translate("modelsOfflineStale")}</Notice>
+      )}
+      {stale && query.error && (
+        <Notice tone="warning">{translate("modelsMayBeOutOfDate")}</Notice>
+      )}
+      {returned && !stale && <RefreshStatus updating={query.isFetching} />}
+      {state === ModelsViewState.Loading && (
+        <Loading label={translate("loadingModels")} />
+      )}
+      {state === ModelsViewState.Offline && (
+        <Notice tone="warning">{translate("modelsOfflineNone")}</Notice>
+      )}
+      {state === ModelsViewState.Empty && (
+        <div className="models-state" role="status">
+          <h3>{translate("noModelsReturnedForThisConnection")}</h3>
+          <p>{translate("theProviderReturnedAnEmptyModelList")}</p>
+          <Button onClick={retry} disabled={query.isFetching}>
+            {translate("retry")}
+          </Button>
+        </div>
+      )}
+      {state === ModelsViewState.NoMatch && (
+        <div className="models-state" role="status">
+          <h3>{translate("noMatchingModels")}</h3>
+          <Button onClick={() => setSearch("")}>
+            {translate("clearFilters")}
+          </Button>
+        </div>
+      )}
+      {state === ModelsViewState.List && (
+        <ul className="models-list" aria-label={translate("modelsListLabel")}>
+          {models?.map((m, index) => (
+            <li key={`${index}:${m.id}`} className="model-row">
+              <strong className="model-name">{m.displayName || m.id}</strong>
+              <code className="model-id">{m.id}</code>
+              <dl className="model-limits">
+                <div>
+                  <dt>{translate("contextLimitLabel")}</dt>
+                  <dd>{tokenLimit(m.contextLimit)}</dd>
+                </div>
+                <div>
+                  <dt>{translate("output")}</dt>
+                  <dd>{tokenLimit(m.outputLimit)}</dd>
+                </div>
+              </dl>
             </li>
           ))}
         </ul>
       )}
-      <p>{translate("useAModelIdWhenConfiguringA")}</p>
-      <Button onClick={onClose}>{translate("done")}</Button>
+      <div className="models-dialog-footer">
+        <p>{translate("useAModelIdWhenConfiguringA")}</p>
+        <div className="actions">
+          <Button variant="primary" onClick={onClose}>
+            {translate("done")}
+          </Button>
+        </div>
+      </div>
     </Dialog>
   );
 }
