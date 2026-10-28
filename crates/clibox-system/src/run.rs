@@ -5952,39 +5952,193 @@ mod lifecycle_tests {
         assert_eq!(error.code, Code::TerminationTimeout);
     }
 
+    /// Process state observed for a fixture-owned pid. Only `Exited` counts
+    /// as completed cleanup; `Unknown` is never treated as success.
+    #[cfg(unix)]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    enum ProcessState {
+        /// The pid is absent (ESRCH) or an exited process that is retained
+        /// as an unreaped zombie.
+        Exited,
+        /// The process still exists and has not exited.
+        Running,
+        /// The state could not be established, for example because the
+        /// platform probe failed or the caller may not inspect the process.
+        Unknown,
+    }
+
+    /// Reads the state of one pid without signaling it.
+    #[cfg(unix)]
+    fn probe_process_state(pid: libc::pid_t) -> ProcessState {
+        if pid <= 0 {
+            return ProcessState::Unknown;
+        }
+        // Signal zero only tests existence; it never delivers a signal.
+        if unsafe { libc::kill(pid, 0) } == -1 {
+            return match io::Error::last_os_error().raw_os_error() {
+                Some(libc::ESRCH) => ProcessState::Exited,
+                // EPERM and every other failure leave the state unproven.
+                _ => ProcessState::Unknown,
+            };
+        }
+        existing_process_state(pid)
+    }
+
+    /// Distinguishes an exited, unreaped zombie from a running process for a
+    /// pid that signal zero reports as present.
+    #[cfg(target_os = "linux")]
+    fn existing_process_state(pid: libc::pid_t) -> ProcessState {
+        match fs::read(format!("/proc/{pid}/stat")) {
+            Ok(stat) => linux_stat_process_state(&stat),
+            // The process vanished between the two probes.
+            Err(error) if error.kind() == io::ErrorKind::NotFound => ProcessState::Exited,
+            Err(_) => ProcessState::Unknown,
+        }
+    }
+
+    #[cfg(target_os = "macos")]
+    fn existing_process_state(pid: libc::pid_t) -> ProcessState {
+        let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::zeroed();
+        let Ok(bytes) = libc::c_int::try_from(std::mem::size_of::<libc::proc_bsdinfo>()) else {
+            return ProcessState::Unknown;
+        };
+        let observed = unsafe {
+            libc::proc_pidinfo(
+                pid,
+                libc::PROC_PIDTBSDINFO,
+                0,
+                info.as_mut_ptr().cast(),
+                bytes,
+            )
+        };
+        if observed == 0 {
+            return match io::Error::last_os_error().raw_os_error() {
+                Some(libc::ESRCH) => ProcessState::Exited,
+                _ => ProcessState::Unknown,
+            };
+        }
+        if observed != bytes {
+            return ProcessState::Unknown;
+        }
+        let info = unsafe { info.assume_init() };
+        if info.pbi_status == libc::SZOMB {
+            ProcessState::Exited
+        } else {
+            ProcessState::Running
+        }
+    }
+
+    /// Other Unix platforms have no zombie probe, so a present pid is never
+    /// proven to have exited.
+    #[cfg(all(unix, not(any(target_os = "linux", target_os = "macos"))))]
+    fn existing_process_state(_pid: libc::pid_t) -> ProcessState {
+        ProcessState::Unknown
+    }
+
+    /// Classifies the contents of `/proc/<pid>/stat`.
+    #[cfg(unix)]
+    fn linux_stat_process_state(stat: &[u8]) -> ProcessState {
+        // comm may contain spaces and parentheses, so parse only after the
+        // final closing parenthesis. The separator that follows it yields an
+        // empty leading field, which must be skipped to reach the state.
+        let Some(closing) = stat.iter().rposition(|byte| *byte == b')') else {
+            return ProcessState::Unknown;
+        };
+        let state = stat[closing + 1..]
+            .split(u8::is_ascii_whitespace)
+            .find(|field| !field.is_empty());
+        match state {
+            Some(b"Z") | Some(b"X") | Some(b"x") => ProcessState::Exited,
+            Some([_]) => ProcessState::Running,
+            _ => ProcessState::Unknown,
+        }
+    }
+
+    /// Delivers fixture signals. Tests inject a recorder so teardown can be
+    /// asserted without real pid reuse or signaling unrelated processes.
+    #[cfg(unix)]
+    trait SignalSink {
+        fn kill(&mut self, target: libc::pid_t, signal: libc::c_int);
+    }
+
+    #[cfg(unix)]
+    struct SystemSignals;
+
+    #[cfg(unix)]
+    impl SignalSink for SystemSignals {
+        fn kill(&mut self, target: libc::pid_t, signal: libc::c_int) {
+            unsafe {
+                libc::kill(target, signal);
+            }
+        }
+    }
+
     /// Owns the processes of a supervision fixture so a failed assertion or a
     /// preparation timeout never leaves a shell or its background descendant
     /// running.
+    ///
+    /// Each identifier is an `Option` that is `Some` only while the fixture
+    /// still owns it. Once cleanup is confirmed the identifier is cleared, so
+    /// the destructor never signals a pid the operating system may have
+    /// reused. `0` is never stored: signaling it would address the caller's
+    /// own process group.
     #[cfg(unix)]
-    struct FixtureProcesses {
-        group: libc::pid_t,
+    struct FixtureProcesses<S: SignalSink = SystemSignals> {
+        group: Option<libc::pid_t>,
         descendant: Option<libc::pid_t>,
+        signals: S,
+        preparation_watchdog: Duration,
+        reap_watchdog: Duration,
     }
 
     #[cfg(unix)]
     impl FixtureProcesses {
+        fn new(group: u32) -> Self {
+            Self::with_signals(group, SystemSignals)
+        }
+    }
+
+    #[cfg(unix)]
+    impl<S: SignalSink> FixtureProcesses<S> {
         /// Bounds fixture preparation only. It is independent of the
         /// execution deadline under test, so a slow host delays the test
         /// instead of changing its outcome.
         const PREPARATION_WATCHDOG: Duration = Duration::from_secs(60);
         const REAP_WATCHDOG: Duration = Duration::from_secs(30);
 
-        fn new(group: u32) -> Self {
+        fn with_signals(group: u32, signals: S) -> Self {
+            let group = libc::pid_t::try_from(group)
+                .ok()
+                .filter(|group| *group > 0)
+                .expect("a fixture group must be a positive pid");
             Self {
-                group: group as libc::pid_t,
+                group: Some(group),
                 descendant: None,
+                signals,
+                preparation_watchdog: Self::PREPARATION_WATCHDOG,
+                reap_watchdog: Self::REAP_WATCHDOG,
             }
         }
 
+        /// Shortens both bounds so failure paths can be exercised quickly.
+        fn with_watchdogs(mut self, preparation: Duration, reap: Duration) -> Self {
+            self.preparation_watchdog = preparation;
+            self.reap_watchdog = reap;
+            self
+        }
+
         fn wait_for_descendant(&mut self, marker: &Path) -> libc::pid_t {
-            let watchdog = Instant::now() + Self::PREPARATION_WATCHDOG;
+            let watchdog = Instant::now() + self.preparation_watchdog;
             loop {
                 // The marker is complete only after the shell terminates the
-                // line; a partial write must not be parsed.
+                // line; a partial write must not be parsed. A non-positive
+                // pid would address a group or every process, never one
+                // descendant.
                 if let Some(pid) = fs::read_to_string(marker)
                     .ok()
                     .filter(|contents| contents.ends_with('\n'))
                     .and_then(|contents| contents.trim().parse::<libc::pid_t>().ok())
+                    .filter(|pid| *pid > 0)
                 {
                     self.descendant = Some(pid);
                     return pid;
@@ -5994,20 +6148,31 @@ mod lifecycle_tests {
                     "fixture preparation failed: the shell did not publish a descendant pid \
                      marker at {} within {:?}",
                     marker.display(),
-                    Self::PREPARATION_WATCHDOG,
+                    self.preparation_watchdog,
                 );
                 thread::sleep(Duration::from_millis(5));
             }
         }
 
+        /// Waits until the descendant has exited. An absent pid and an
+        /// exited-but-unreaped zombie both count as exited.
         fn confirm_descendant_absent(&mut self, pid: libc::pid_t) {
-            let watchdog = Instant::now() + Self::REAP_WATCHDOG;
+            self.confirm_descendant_exited(pid, probe_process_state);
+        }
+
+        fn confirm_descendant_exited(
+            &mut self,
+            pid: libc::pid_t,
+            mut probe: impl FnMut(libc::pid_t) -> ProcessState,
+        ) {
+            let watchdog = Instant::now() + self.reap_watchdog;
             loop {
-                if unsafe { libc::kill(pid, 0) } == -1
-                    && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
-                {
-                    // The pid is gone and may be reused; never signal it again.
-                    self.descendant = None;
+                if probe(pid) == ProcessState::Exited {
+                    // The pid may be reused once it is gone; never signal it
+                    // again. This is independent of the group state.
+                    if self.descendant == Some(pid) {
+                        self.descendant = None;
+                    }
                     return;
                 }
                 assert!(
@@ -6017,17 +6182,24 @@ mod lifecycle_tests {
                 thread::sleep(Duration::from_millis(5));
             }
         }
+
+        /// Ends ownership of the leader and its process group. Call it only
+        /// after supervision returned and the owned tree is confirmed done,
+        /// because the reaped leader pid may be reused from then on.
+        fn disarm_group(&mut self) {
+            self.group = None;
+        }
     }
 
     #[cfg(unix)]
-    impl Drop for FixtureProcesses {
+    impl<S: SignalSink> Drop for FixtureProcesses<S> {
         fn drop(&mut self) {
-            unsafe {
-                libc::kill(-self.group, libc::SIGKILL);
-                libc::kill(self.group, libc::SIGKILL);
-                if let Some(pid) = self.descendant {
-                    libc::kill(pid, libc::SIGKILL);
-                }
+            if let Some(group) = self.group.take() {
+                self.signals.kill(-group, libc::SIGKILL);
+                self.signals.kill(group, libc::SIGKILL);
+            }
+            if let Some(pid) = self.descendant.take() {
+                self.signals.kill(pid, libc::SIGKILL);
             }
         }
     }
@@ -6067,6 +6239,291 @@ mod lifecycle_tests {
 
         assert!(matches!(outcome, Outcome::Code(124)));
         fixture.confirm_descendant_absent(descendant);
+        // The leader was reaped inside supervise_spawned and the descendant
+        // is gone, so no fixture identifier remains valid to signal.
+        fixture.disarm_group();
+    }
+
+    /// Records every signal instead of delivering it.
+    #[cfg(unix)]
+    #[derive(Clone, Default)]
+    struct RecordingSignals(std::rc::Rc<std::cell::RefCell<Vec<(libc::pid_t, libc::c_int)>>>);
+
+    #[cfg(unix)]
+    impl RecordingSignals {
+        fn calls(&self) -> Vec<(libc::pid_t, libc::c_int)> {
+            self.0.borrow().clone()
+        }
+    }
+
+    #[cfg(unix)]
+    impl SignalSink for RecordingSignals {
+        fn kill(&mut self, target: libc::pid_t, signal: libc::c_int) {
+            self.0.borrow_mut().push((target, signal));
+        }
+    }
+
+    #[cfg(unix)]
+    const MODEL_GROUP: u32 = 41001;
+    #[cfg(unix)]
+    const MODEL_DESCENDANT: libc::pid_t = 41002;
+
+    #[cfg(unix)]
+    fn modeled_fixture(signals: &RecordingSignals) -> FixtureProcesses<RecordingSignals> {
+        let mut fixture = FixtureProcesses::with_signals(MODEL_GROUP, signals.clone())
+            .with_watchdogs(Duration::from_millis(50), Duration::from_millis(50));
+        fixture.descendant = Some(MODEL_DESCENDANT);
+        fixture
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn disarmed_fixture_emits_no_signals_after_confirmed_cleanup() {
+        let signals = RecordingSignals::default();
+        let mut fixture = modeled_fixture(&signals);
+
+        fixture.confirm_descendant_exited(MODEL_DESCENDANT, |_| ProcessState::Exited);
+        fixture.disarm_group();
+        drop(fixture);
+
+        assert_eq!(signals.calls(), Vec::new());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn descendant_confirmation_disarms_only_the_descendant() {
+        let signals = RecordingSignals::default();
+        let mut fixture = modeled_fixture(&signals);
+
+        fixture.confirm_descendant_exited(MODEL_DESCENDANT, |_| ProcessState::Exited);
+        assert_eq!(fixture.descendant, None);
+        assert_eq!(fixture.group, Some(MODEL_GROUP as libc::pid_t));
+        drop(fixture);
+
+        // The still-owned group keeps its fallback; the descendant is never
+        // signaled again and no zero or unrelated target appears.
+        assert_eq!(
+            signals.calls(),
+            vec![
+                (-(MODEL_GROUP as libc::pid_t), libc::SIGKILL),
+                (MODEL_GROUP as libc::pid_t, libc::SIGKILL),
+            ],
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn disarming_the_group_keeps_a_still_owned_descendant_fallback() {
+        let signals = RecordingSignals::default();
+        let mut fixture = modeled_fixture(&signals);
+
+        fixture.disarm_group();
+        drop(fixture);
+
+        assert_eq!(signals.calls(), vec![(MODEL_DESCENDANT, libc::SIGKILL)]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn armed_fixture_signals_group_leader_and_descendant_on_drop() {
+        let signals = RecordingSignals::default();
+        let fixture = modeled_fixture(&signals);
+
+        drop(fixture);
+
+        assert_eq!(
+            signals.calls(),
+            vec![
+                (-(MODEL_GROUP as libc::pid_t), libc::SIGKILL),
+                (MODEL_GROUP as libc::pid_t, libc::SIGKILL),
+                (MODEL_DESCENDANT, libc::SIGKILL),
+            ],
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_preparation_keeps_the_group_and_leader_fallback() {
+        let signals = RecordingSignals::default();
+        let home = tempfile::tempdir().unwrap();
+        let marker = home.path().join("never-published");
+        let sink = signals.clone();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let mut fixture = FixtureProcesses::with_signals(MODEL_GROUP, sink)
+                .with_watchdogs(Duration::from_millis(30), Duration::from_millis(30));
+            fixture.wait_for_descendant(&marker);
+        }));
+
+        assert!(result.is_err());
+        assert_eq!(
+            signals.calls(),
+            vec![
+                (-(MODEL_GROUP as libc::pid_t), libc::SIGKILL),
+                (MODEL_GROUP as libc::pid_t, libc::SIGKILL),
+            ],
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn non_positive_marker_pids_are_never_adopted() {
+        let signals = RecordingSignals::default();
+        let home = tempfile::tempdir().unwrap();
+        let marker = home.path().join("descendant-pid");
+        fs::write(&marker, "0\n").unwrap();
+        let sink = signals.clone();
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let mut fixture = FixtureProcesses::with_signals(MODEL_GROUP, sink)
+                .with_watchdogs(Duration::from_millis(30), Duration::from_millis(30));
+            fixture.wait_for_descendant(&marker);
+        }));
+
+        assert!(result.is_err());
+        assert!(signals.calls().iter().all(|(target, _)| *target != 0));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn running_or_unknown_descendants_fail_confirmation_within_the_bound() {
+        for state in [ProcessState::Running, ProcessState::Unknown] {
+            let signals = RecordingSignals::default();
+            let sink = signals.clone();
+            let started = Instant::now();
+
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                let mut fixture = FixtureProcesses::with_signals(MODEL_GROUP, sink)
+                    .with_watchdogs(Duration::from_millis(30), Duration::from_millis(30));
+                fixture.descendant = Some(MODEL_DESCENDANT);
+                fixture.confirm_descendant_exited(MODEL_DESCENDANT, |_| state);
+            }));
+
+            assert!(result.is_err(), "{state:?} must not count as exited");
+            assert!(started.elapsed() < Duration::from_secs(5));
+            // The failed confirmation keeps every fallback signal.
+            assert_eq!(
+                signals.calls(),
+                vec![
+                    (-(MODEL_GROUP as libc::pid_t), libc::SIGKILL),
+                    (MODEL_GROUP as libc::pid_t, libc::SIGKILL),
+                    (MODEL_DESCENDANT, libc::SIGKILL),
+                ],
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn linux_stat_state_skips_the_empty_leading_field() {
+        assert_eq!(
+            linux_stat_process_state(b"12 (sh) Z 1 12 12 0 -1"),
+            ProcessState::Exited
+        );
+        assert_eq!(
+            linux_stat_process_state(b"12 (a ) Z b) S 1 12"),
+            ProcessState::Running
+        );
+        assert_eq!(
+            linux_stat_process_state(b"12 (sleep) R 1 12"),
+            ProcessState::Running
+        );
+        assert_eq!(
+            linux_stat_process_state(b"12 (sleep) X 1 12"),
+            ProcessState::Exited
+        );
+        assert_eq!(
+            linux_stat_process_state(b"12 (sleep"),
+            ProcessState::Unknown
+        );
+        assert_eq!(
+            linux_stat_process_state(b"12 (sleep)  "),
+            ProcessState::Unknown
+        );
+        assert_eq!(
+            linux_stat_process_state(b"12 (sleep) SS 1"),
+            ProcessState::Unknown
+        );
+    }
+
+    #[cfg(all(unix, any(target_os = "linux", target_os = "macos")))]
+    #[test]
+    fn retained_zombie_descendant_satisfies_confirmation_promptly() {
+        use std::process::{Command, Stdio};
+
+        let mut child = Command::new("true").stdin(Stdio::null()).spawn().unwrap();
+        let pid = child.id() as libc::pid_t;
+        let signals = RecordingSignals::default();
+        let mut fixture = FixtureProcesses::with_signals(MODEL_GROUP, signals.clone());
+        fixture.descendant = Some(pid);
+        let started = Instant::now();
+
+        // The child is never waited on before confirmation, so it can only
+        // become a zombie, never an absent pid.
+        fixture.confirm_descendant_absent(pid);
+
+        assert!(
+            started.elapsed() < FixtureProcesses::<RecordingSignals>::REAP_WATCHDOG / 2,
+            "a zombie must not consume the reap watchdog",
+        );
+        assert_eq!(fixture.descendant, None);
+        assert_eq!(
+            unsafe { libc::kill(pid, 0) },
+            0,
+            "the exited child must still be retained as an unreaped zombie",
+        );
+        fixture.disarm_group();
+        drop(fixture);
+        assert_eq!(signals.calls(), Vec::new());
+        child.wait().unwrap();
+    }
+
+    #[cfg(all(unix, any(target_os = "linux", target_os = "macos")))]
+    #[test]
+    fn reaped_descendant_pid_is_reported_as_exited() {
+        use std::process::{Command, Stdio};
+
+        let mut child = Command::new("true").stdin(Stdio::null()).spawn().unwrap();
+        let pid = child.id() as libc::pid_t;
+        child.wait().unwrap();
+
+        assert_eq!(probe_process_state(pid), ProcessState::Exited);
+    }
+
+    #[cfg(all(unix, any(target_os = "linux", target_os = "macos")))]
+    #[test]
+    fn live_descendant_is_running_and_fails_confirmation() {
+        use std::process::{Command, Stdio};
+
+        let mut child = Command::new("sleep")
+            .arg("30")
+            .stdin(Stdio::null())
+            .spawn()
+            .unwrap();
+        let pid = child.id() as libc::pid_t;
+        let signals = RecordingSignals::default();
+        let sink = signals.clone();
+
+        assert_eq!(probe_process_state(pid), ProcessState::Running);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let mut fixture = FixtureProcesses::with_signals(MODEL_GROUP, sink)
+                .with_watchdogs(Duration::from_millis(30), Duration::from_millis(100));
+            fixture.descendant = Some(pid);
+            fixture.confirm_descendant_absent(pid);
+        }));
+
+        assert!(result.is_err());
+        // Reclaim the live process only through the test's own handle.
+        child.kill().unwrap();
+        child.wait().unwrap();
+        assert!(signals.calls().contains(&(pid, libc::SIGKILL)));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unprobeable_pids_are_unknown() {
+        assert_eq!(probe_process_state(0), ProcessState::Unknown);
+        assert_eq!(probe_process_state(-1), ProcessState::Unknown);
     }
 
     #[test]
