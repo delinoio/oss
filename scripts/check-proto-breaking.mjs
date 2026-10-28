@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { projectTaiRouterRename } from "./ci/protocol-rename.mjs";
 
 const buf = fileURLToPath(
   new URL("../node_modules/@bufbuild/buf/bin/buf", import.meta.url),
@@ -30,6 +31,11 @@ try {
     original,
   );
   const baseline = JSON.parse(readFileSync(original, "utf8"));
+  if (baseline.file.some((file) => file.package === "aiprouter.v1")) {
+    const current = join(temporary, "tairouter-current.json");
+    run("build", "--as-file-descriptor-set", "--output", current);
+    projectTaiRouterRename(baseline, JSON.parse(readFileSync(current, "utf8")));
+  }
   // Go bindings moved beside the ach schema. Accept only that exact forward
   // migration, leaving FILE checks active for fields, other files and future
   // Go package changes. Remove this projection once supported baselines no

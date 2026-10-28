@@ -45,5 +45,5 @@
 - [Prebuilt dependency distribution](../docs/repository-prebuilt-dependencies-contract.md)
 - [Repository Workflow Contract](../docs/repository-workflow-contract.md)
 
-- [AIPRouter](../docs/project-aiprouter.md)
-- [AIPRouter domain contract](../docs/apps-aiprouter-console-contract.md)
+- [TaiRouter](../docs/project-tairouter.md)
+- [TaiRouter domain contract](../docs/apps-tairouter-console-contract.md)
