@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale } from "./i18n";
-import { pageHref } from "./routes";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   NATIVE_SETTINGS_SUMMARY_ID,
@@ -32,6 +31,8 @@ import {
 import { useApi, type PageProps, pageSize } from "./api";
 import { useAction } from "./actions";
 import { usePersonalResources } from "./resources";
+import { PoolDeleteDialog } from "./pool-delete";
+import { useRestoreHeadingFocus } from "./focus-restore";
 import { RouteDeleteDialog } from "./route-delete";
 import { utf8ByteLength } from "./validation";
 import {
@@ -41,7 +42,6 @@ import {
   Field,
   Dialog,
   DialogSize,
-  ConfirmDialog,
   ErrorNotice,
   ErrorSummary,
   type ErrorSummaryItem,
@@ -68,9 +68,15 @@ export function PoolsPage({ organization }: PageProps) {
     pools,
     routes,
   } = usePersonalResources(organization.id);
+  const { headingRef, requestRestore } = useRestoreHeadingFocus(query);
+  // A confirmation is bound to the organization it was opened in.
+  useEffect(() => {
+    setRemove(undefined);
+  }, [organization.id]);
   return (
     <>
       <PageHeader
+        headingRef={headingRef}
         title={translate("accountPools")}
         description={translate("onlyYoursIn", { value0: organization.name })}
         action={
@@ -166,9 +172,10 @@ export function PoolsPage({ organization }: PageProps) {
         />
       )}
       {remove && (
-        <ConfirmDialog
-          title={translate("delete_3d83de", { value0: remove.name })}
-          confirmLabel={translate("deletePool")}
+        <PoolDeleteDialog
+          pool={remove}
+          organizationId={organization.id}
+          organizationName={organization.name}
           onClose={() => setRemove(undefined)}
           pending={action.pending}
           error={action.error}
@@ -179,17 +186,14 @@ export function PoolsPage({ organization }: PageProps) {
                   organizationId: organization.id,
                   poolId: remove.id,
                 }),
-              () => setRemove(undefined),
+              () => {
+                setRemove(undefined);
+                requestRestore();
+              },
               translate("poolDeleted"),
             );
           }}
-        >
-          {translate("connectionsRemainAvailableRoutesUsingThisPool")}
-          <a href={pageHref("routing", organization.id)}>
-            {translate("reviewRouting")}
-          </a>
-          .
-        </ConfirmDialog>
+        />
       )}
     </>
   );
@@ -658,9 +662,6 @@ export function RoutingPage({ organization }: PageProps) {
   const [token, setToken] = useState("");
   const [edit, setEdit] = useState<Route | true>();
   const [remove, setRemove] = useState<Route>();
-  // Timestamp of a confirmed deletion whose focus target may disappear with the list row.
-  const [restoreFocus, setRestoreFocus] = useState<number>();
-  const headingRef = useRef<HTMLHeadingElement>(null);
   const query = useQuery(RoutingService.method.listRoutes, {
     organizationId: organization.id,
     page: { pageSize, pageToken: token },
@@ -674,26 +675,7 @@ export function RoutingPage({ organization }: PageProps) {
   useEffect(() => {
     setRemove(undefined);
   }, [organization.id]);
-  // Dialog cleanup restores focus to the invoking Delete button; fall back to the page heading once its row is gone.
-  useEffect(() => {
-    if (restoreFocus === undefined) return;
-    const active = document.activeElement;
-    if (!active || active === document.body || !active.isConnected) {
-      headingRef.current?.focus();
-      setRestoreFocus(undefined);
-    } else if (
-      query.fetchStatus === "idle" &&
-      Math.max(query.dataUpdatedAt, query.errorUpdatedAt) >= restoreFocus
-    ) {
-      setRestoreFocus(undefined);
-    }
-  }, [
-    restoreFocus,
-    query.data,
-    query.fetchStatus,
-    query.dataUpdatedAt,
-    query.errorUpdatedAt,
-  ]);
+  const { headingRef, requestRestore } = useRestoreHeadingFocus(query);
   return (
     <>
       <PageHeader
@@ -816,7 +798,7 @@ export function RoutingPage({ organization }: PageProps) {
                 }),
               () => {
                 setRemove(undefined);
-                setRestoreFocus(Date.now());
+                requestRestore();
               },
               translate("routeDeleted"),
             );
