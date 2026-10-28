@@ -254,8 +254,18 @@ export function ProvidersPage({ organization }: PageProps) {
       {edit && (
         <ConnectionEditor
           connection={edit === true ? undefined : edit}
+          organizationName={organization.name}
           providers={catalog.data?.providers ?? []}
-          error={action.error ?? catalog.error}
+          catalogStatus={
+            catalog.isPending
+              ? CatalogStatus.Loading
+              : catalog.isError && !catalog.data
+                ? CatalogStatus.Unavailable
+                : CatalogStatus.Ready
+          }
+          catalogError={catalog.error}
+          onRetryCatalog={() => void catalog.refetch()}
+          error={action.error}
           pending={action.pending}
           onClose={() => setEdit(undefined)}
           onSave={(values) => {
@@ -392,26 +402,62 @@ type ConnectionValues = ReturnType<typeof configurationValues> & {
   authKind: ProviderAuthKind;
   secret: string;
 };
+/** Load state of the provider catalog that backs the create variant. */
+enum CatalogStatus {
+  Loading = "loading",
+  Unavailable = "unavailable",
+  Ready = "ready",
+}
+/** Editor fields that can carry an associated validation message. */
+enum EditorField {
+  Provider = "provider",
+  Authentication = "authentication",
+  Name = "name",
+  BaseUrl = "baseUrl",
+  Secret = "secret",
+  Configuration = "configuration",
+}
+type EditorErrors = Partial<Record<EditorField, string>>;
+function isAbsoluteUrl(value: string) {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
 function ConnectionEditor({
   connection,
+  organizationName,
   providers,
+  catalogStatus,
+  catalogError,
+  onRetryCatalog,
   onClose,
   onSave,
   pending,
   error,
 }: {
   connection?: ProviderConnection;
+  organizationName: string;
   providers: ProviderDefinition[];
+  catalogStatus: CatalogStatus;
+  catalogError: unknown;
+  onRetryCatalog: () => void;
   onClose: () => void;
   onSave: (v: ConnectionValues) => void;
   pending: boolean;
   error: unknown;
 }) {
   useLocale();
+  const ids = useId();
+  const fieldId = (field: EditorField) => `${ids}-${field}`;
+  const summaryRef = useRef<HTMLDivElement>(null);
   const [configuration, setConfiguration] = useState(() =>
     configurationDraft(connection),
   );
-  const [validationError, setValidationError] = useState("");
+  const [errors, setErrors] = useState<EditorErrors>({});
+  const [attempt, setAttempt] = useState(0);
   const [providerId, setProvider] = useState(connection?.providerId ?? "");
   const [name, setName] = useState(connection?.name ?? "");
   const [baseUrl, setBase] = useState(connection?.baseUrl ?? "");
@@ -422,163 +468,371 @@ function ConnectionEditor({
   const [reveal, setReveal] = useState(false);
   const [search, setSearch] = useState("");
   const provider = providers.find((p) => p.id === providerId);
+  const query = search.toLowerCase();
+  const matchesSearch = (p: ProviderDefinition) =>
+    `${p.displayName} ${p.id}`.toLowerCase().includes(query);
+  const visibleProviders = providers.filter(
+    (p) => p.id === providerId || matchesSearch(p),
+  );
+  const catalogReady =
+    catalogStatus === CatalogStatus.Ready && providers.length > 0;
+  const noMatch =
+    catalogReady && !!search && !providers.some((p) => matchesSearch(p));
+  const isOauthCreate = authKind === ProviderAuthKind.OAUTH && !connection;
+  const entries = (Object.values(EditorField) as EditorField[])
+    .filter((field) => errors[field])
+    .map((field) => ({ field, message: errors[field] as string }));
+  useEffect(() => {
+    if (attempt > 0) summaryRef.current?.focus();
+  }, [attempt]);
+  const clearError = (field: EditorField) =>
+    setErrors((current) => {
+      if (!current[field]) return current;
+      const { [field]: _removed, ...rest } = current;
+      return rest;
+    });
+  const submit = () => {
+    if (pending) return;
+    const next: EditorErrors = {};
+    if (!connection) {
+      if (!providerId)
+        next[EditorField.Provider] = translate("chooseAProvider");
+      if (!authKind)
+        next[EditorField.Authentication] = translate("chooseAuthentication");
+    }
+    if (!name.trim()) next[EditorField.Name] = translate("enterAnAccountLabel");
+    if (authKind !== ProviderAuthKind.OAUTH && baseUrl.trim()) {
+      if (!isAbsoluteUrl(baseUrl.trim()))
+        next[EditorField.BaseUrl] = translate("enterAFullUrlSuchAsHttps");
+    }
+    if (authKind === ProviderAuthKind.API_KEY && !connection && !secret)
+      next[EditorField.Secret] = translate("enterAnApiKey");
+    let advanced: ReturnType<typeof configurationValues> | undefined;
+    try {
+      advanced = configurationValues(configuration);
+    } catch (failure) {
+      next[EditorField.Configuration] =
+        failure instanceof Error
+          ? failure.message
+          : translate("checkTheConnectionSettings");
+    }
+    setErrors(next);
+    if (!advanced || Object.keys(next).length) {
+      setAttempt((value) => value + 1);
+      return;
+    }
+    onSave({
+      ...advanced,
+      providerId,
+      name: name.trim(),
+      baseUrl: baseUrl.trim(),
+      authKind,
+      // A key typed for another authentication method must never be sent.
+      secret: authKind === ProviderAuthKind.API_KEY ? secret : "",
+    });
+  };
+  const providerLabel =
+    provider?.displayName ?? connection?.providerId ?? providerId;
   return (
     <Dialog
       title={
         connection ? translate("editConnection") : translate("connectProvider")
       }
       onClose={onClose}
+      initialFocus="[data-initial-focus]"
+      wide
+      className="connection-editor"
     >
+      <p className="connection-editor-subtitle">
+        {connection
+          ? translate("connectionIdentitySummary", {
+              value0: connection.name,
+              value1: providerLabel,
+              value2: organizationName,
+            })
+          : translate("onlyYoursIn", { value0: organizationName })}
+      </p>
       <form
+        noValidate
         onSubmit={(e) => {
           e.preventDefault();
-          try {
-            const advanced = configurationValues(configuration);
-            setValidationError("");
-            onSave({
-              ...advanced,
-              providerId,
-              name: name.trim(),
-              baseUrl: baseUrl.trim(),
-              authKind,
-              secret,
-            });
-          } catch (error) {
-            setValidationError(
-              error instanceof Error
-                ? error.message
-                : translate("checkTheConnectionSettings"),
-            );
-          }
+          submit();
         }}
       >
-        {!connection && (
-          <>
-            <Field label={translate("findAProvider")}>
-              <input
-                type="search"
-                autoFocus
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </Field>
-            <Field label={translate("provider")}>
-              <select
-                required
-                value={providerId}
-                onChange={(e) => {
-                  const p = providers.find((p) => p.id === e.target.value);
-                  setProvider(e.target.value);
-                  setConfiguration(configurationDraft());
-                  setAuth(p?.authKinds[0] ?? ProviderAuthKind.UNSPECIFIED);
-                }}
-              >
-                <option value="">
-                  {translate("chooseASupportedProvider")}
-                </option>
-                {providers
-                  .filter(
-                    (p) =>
-                      p.id === providerId ||
-                      `${p.displayName} ${p.id}`
-                        .toLowerCase()
-                        .includes(search.toLowerCase()),
-                  )
-                  .map((p) => (
+        {entries.length > 0 && (
+          <div
+            className="notice danger form-error-summary"
+            role="alert"
+            tabIndex={-1}
+            ref={summaryRef}
+          >
+            <p>
+              <strong>{translate("fixTheseItemsBeforeSaving")}</strong>
+            </p>
+            <ul>
+              {entries.map(({ field, message }) => (
+                <li key={field}>
+                  {field === EditorField.Configuration ? (
+                    message
+                  ) : (
+                    <a
+                      href={`#${fieldId(field)}`}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        document.getElementById(fieldId(field))?.focus();
+                      }}
+                    >
+                      {message}
+                    </a>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        <section
+          className="connection-group"
+          aria-labelledby={`${ids}-group-provider`}
+        >
+          <h3 id={`${ids}-group-provider`}>
+            {translate("providerAndAuthentication")}
+          </h3>
+          {connection ? (
+            <>
+              <dl className="connection-identity">
+                <div>
+                  <dt>{translate("provider")}</dt>
+                  <dd>{providerLabel}</dd>
+                </div>
+                <div>
+                  <dt>{translate("authentication")}</dt>
+                  <dd>{authLabel[connection.authKind]}</dd>
+                </div>
+              </dl>
+              <p className="connection-helper">
+                {translate("providerAndAuthenticationCannotBeChanged")}
+              </p>
+            </>
+          ) : (
+            <>
+              <Field label={translate("findAProvider")}>
+                <input
+                  type="search"
+                  data-initial-focus
+                  placeholder={translate("searchSupportedProviders")}
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </Field>
+              {catalogStatus === CatalogStatus.Loading && (
+                <div className="notice" role="status" aria-busy="true">
+                  {translate("loadingSupportedProviders")}
+                </div>
+              )}
+              {catalogStatus === CatalogStatus.Unavailable && (
+                <ErrorNotice error={catalogError} retry={onRetryCatalog} />
+              )}
+              {catalogStatus === CatalogStatus.Ready &&
+                providers.length === 0 && (
+                  <div className="notice warning" role="status">
+                    <p>{translate("noSupportedProvidersAreAvailable")}</p>
+                    <Button onClick={onRetryCatalog}>
+                      {translate("tryAgain")}
+                    </Button>
+                  </div>
+                )}
+              {noMatch && (
+                <div className="notice warning" role="status">
+                  <p>
+                    {translate("noSupportedProvidersMatch", { value0: search })}
+                  </p>
+                  <Button onClick={() => setSearch("")}>
+                    {translate("clearSearch")}
+                  </Button>
+                </div>
+              )}
+              <Field label={translate("provider")} error={errors.provider}>
+                <select
+                  id={fieldId(EditorField.Provider)}
+                  required
+                  disabled={!catalogReady}
+                  value={providerId}
+                  onChange={(e) => {
+                    const p = providers.find((p) => p.id === e.target.value);
+                    setProvider(e.target.value);
+                    setConfiguration(configurationDraft());
+                    setAuth(p?.authKinds[0] ?? ProviderAuthKind.UNSPECIFIED);
+                    // A secret typed for one provider must not carry over to another.
+                    setSecret("");
+                    setReveal(false);
+                    setErrors({});
+                  }}
+                >
+                  <option value="">
+                    {translate("chooseASupportedProvider")}
+                  </option>
+                  {visibleProviders.map((p) => (
                     <option key={p.id} value={p.id}>
                       {p.displayName}
                     </option>
                   ))}
-              </select>
-            </Field>
-            <Field label={translate("authentication")}>
-              <select
-                required
-                value={authKind}
-                onChange={(e) => setAuth(Number(e.target.value))}
+                </select>
+              </Field>
+              <Field
+                label={translate("authentication")}
+                error={errors.authentication}
               >
-                {!provider && (
-                  <option value={0}>{translate("chooseAProviderFirst")}</option>
-                )}
-                {provider?.authKinds.map((k) => (
-                  <option key={k} value={k}>
-                    {authLabel[k]}
-                  </option>
-                ))}
-              </select>
-            </Field>
-          </>
-        )}
-        <Field label={translate("accountLabel")}>
-          <input
-            required
-            autoFocus={!!connection}
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </Field>
-        {authKind !== ProviderAuthKind.OAUTH && (
-          <Field
-            label={translate("baseUrlOptional")}
-            hint={translate("leaveEmptyToUseTheProviderDefault")}
-          >
+                <select
+                  id={fieldId(EditorField.Authentication)}
+                  required
+                  value={authKind}
+                  onChange={(e) => {
+                    setAuth(Number(e.target.value));
+                    setSecret("");
+                    setReveal(false);
+                    clearError(EditorField.Authentication);
+                    clearError(EditorField.Secret);
+                  }}
+                >
+                  {!provider && (
+                    <option value={0}>
+                      {translate("chooseAProviderFirst")}
+                    </option>
+                  )}
+                  {provider?.authKinds.map((k) => (
+                    <option key={k} value={k}>
+                      {authLabel[k]}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+            </>
+          )}
+        </section>
+        <section
+          className="connection-group"
+          aria-labelledby={`${ids}-group-account`}
+        >
+          <h3 id={`${ids}-group-account`}>{translate("accountDetails")}</h3>
+          <Field label={translate("accountLabel")} error={errors.name}>
             <input
-              type="url"
-              value={baseUrl}
-              onChange={(e) => setBase(e.target.value)}
+              id={fieldId(EditorField.Name)}
+              required
+              data-initial-focus={connection ? true : undefined}
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value);
+                clearError(EditorField.Name);
+              }}
             />
           </Field>
-        )}
-        {authKind === ProviderAuthKind.API_KEY && (
-          <>
+          {authKind !== ProviderAuthKind.OAUTH && (
             <Field
-              label={
-                connection
-                  ? translate("replacementApiKeyOptional")
-                  : translate("apiKey")
-              }
-              hint={translate("storedSecretsAreNeverShownAgain")}
+              label={translate("baseUrlOptional")}
+              hint={translate("leaveEmptyToUseTheProviderDefault")}
+              error={errors.baseUrl}
             >
               <input
-                type={reveal ? "text" : "password"}
-                autoComplete="new-password"
-                required={!connection}
-                value={secret}
-                onChange={(e) => setSecret(e.target.value)}
+                id={fieldId(EditorField.BaseUrl)}
+                type="url"
+                placeholder={translate("providerDefault")}
+                value={baseUrl}
+                onChange={(e) => {
+                  setBase(e.target.value);
+                  clearError(EditorField.BaseUrl);
+                }}
               />
             </Field>
-            <Button aria-pressed={reveal} onClick={() => setReveal((v) => !v)}>
-              {reveal ? translate("hideKey") : translate("revealKey")}
-            </Button>
-          </>
-        )}
-        {authKind === ProviderAuthKind.OAUTH && !connection ? (
+          )}
+          {authKind === ProviderAuthKind.API_KEY && (
+            <div className="connection-secret">
+              <Field
+                label={
+                  connection
+                    ? translate("replacementApiKeyOptional")
+                    : translate("apiKey")
+                }
+                hint={
+                  connection
+                    ? translate("leaveEmptyToKeepTheCurrentKey")
+                    : translate("storedSecretsAreNeverShownAgain")
+                }
+                error={errors.secret}
+              >
+                <input
+                  id={fieldId(EditorField.Secret)}
+                  type={reveal ? "text" : "password"}
+                  autoComplete="new-password"
+                  required={!connection}
+                  value={secret}
+                  onChange={(e) => {
+                    setSecret(e.target.value);
+                    clearError(EditorField.Secret);
+                  }}
+                />
+              </Field>
+              <Button
+                aria-pressed={reveal}
+                aria-controls={fieldId(EditorField.Secret)}
+                onClick={() => setReveal((v) => !v)}
+              >
+                {reveal ? translate("hideKey") : translate("revealKey")}
+              </Button>
+            </div>
+          )}
+          {authKind === ProviderAuthKind.NO_AUTH && (
+            <p className="connection-helper">
+              {translate("thisAuthenticationMethodNeedsNoApiKey")}
+            </p>
+          )}
+        </section>
+        {isOauthCreate ? (
           <Notice>
             {translate("afterAuthorizationEditThisConnectionToConfigure")}
           </Notice>
         ) : (
-          <ConfigurationFields
-            draft={configuration}
-            onChange={setConfiguration}
-            providerId={providerId}
-            connection={connection}
-          />
-        )}
-        {validationError && <Notice tone="danger">{validationError}</Notice>}
-        <ErrorNotice error={error} />
-        <div className="actions">
-          <Button onClick={onClose}>{translate("cancel")}</Button>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={pending || !providerId || !name.trim() || !authKind}
+          <section
+            className="connection-group"
+            aria-labelledby={`${ids}-group-settings`}
           >
-            {pending
-              ? translate("message_23e39291d6")
-              : authKind === ProviderAuthKind.OAUTH && !connection
-                ? translate("continueWithOauth")
-                : translate("saveConnection")}
-          </Button>
+            <h3 id={`${ids}-group-settings`}>
+              {translate("connectionSettings")}
+            </h3>
+            <ConfigurationFields
+              draft={configuration}
+              onChange={(draft) => {
+                setConfiguration(draft);
+                clearError(EditorField.Configuration);
+              }}
+              providerId={providerId}
+              connection={connection}
+            />
+          </section>
+        )}
+        <ErrorNotice error={error} retry={submit} />
+        {pending && (
+          <p className="mutation-status" role="status">
+            {translate("message_c5ca36dfc7")}
+          </p>
+        )}
+        <div className="connection-editor-footer">
+          <p className="connection-editor-privacy">
+            {translate("yourCredentialsStayPrivateToYou")}
+          </p>
+          <div className="actions">
+            <Button onClick={onClose}>{translate("cancel")}</Button>
+            <Button
+              type="submit"
+              variant="primary"
+              disabled={pending || (!connection && !catalogReady)}
+            >
+              {pending
+                ? translate("message_23e39291d6")
+                : isOauthCreate
+                  ? translate("continueWithOauth")
+                  : translate("saveConnection")}
+            </Button>
+          </div>
         </div>
       </form>
     </Dialog>
