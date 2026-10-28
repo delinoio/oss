@@ -1330,5 +1330,7 @@
   "loadingPersonalConnectionsAndPoolsSaveIs": "Loading personal connections and pools… Save is unavailable until they load.",
   "personalConnectionsAndPoolsCouldNotBe": "Personal connections and pools could not be loaded. Save is unavailable until they load.",
   "noPersonalConnectionsOrPoolsAvailable": "No personal connections or pools available.",
-  "hostedHelperSettingsCouldNotBeRefreshed": "Hosted helper settings could not be refreshed, so the settings shown may be out of date. Save is unavailable until they load."
+  "hostedHelperSettingsCouldNotBeRefreshed": "Hosted helper settings could not be refreshed, so the settings shown may be out of date. Save is unavailable until they load.",
+  "hostedSectionConfigured": "Configured",
+  "noSavedConfiguration": "No saved configuration"
 }

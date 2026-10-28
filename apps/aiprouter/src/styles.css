@@ -1472,3 +1472,72 @@ dialog.hosted-dialog {
     flex: 1 1 100%;
   }
 }
+/* Hosted helpers sections: outlined cards with independent disclosures. */
+.hosted-section {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  padding: 16px;
+  margin: 0 0 24px;
+  min-width: 0;
+}
+.hosted-section-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.hosted-section-header h3 {
+  margin: 0;
+  font-size: 18px;
+}
+.hosted-section-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 8px;
+  margin-left: -8px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.hosted-section-toggle:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.hosted-section-chevron {
+  width: 16px;
+  text-align: center;
+}
+.hosted-section-summary,
+.hosted-section-absent {
+  margin: 0;
+  color: var(--secondary);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+.hosted-section-body {
+  margin-top: 8px;
+}
+.hosted-section-body[hidden] {
+  display: none;
+}
+.hosted-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: 0 16px;
+}
+@media (max-width: 767px) {
+  .hosted-section {
+    padding: 12px;
+  }
+  .hosted-grid {
+    grid-template-columns: 1fr;
+  }
+}
