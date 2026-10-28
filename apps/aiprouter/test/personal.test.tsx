@@ -653,7 +653,7 @@ describe("routing and pools", () => {
     expect(createPool).not.toHaveBeenCalled();
     await user.clear(screen.getByLabelText("Pool name"));
     await user.type(screen.getByLabelText("Pool name"), "New pool");
-    await user.click(screen.getAllByRole("button", { name: "Move up" })[1]);
+    await user.click(screen.getByRole("button", { name: "Move up Second" }));
     await user.click(screen.getByRole("button", { name: "Save pool" }));
     await waitFor(() => expect(createPool).toHaveBeenCalledOnce());
     expect(createPool.mock.calls[0][0]).toMatchObject({

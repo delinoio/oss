@@ -288,6 +288,8 @@ export enum DialogSize {
   Wide = "wide",
   /** Up to 880px, used by the large editor dialogs. */
   Large = "large",
+  /** Up to 760px, used by the pool editor dialog. */
+  Editor = "editor",
 }
 export function Dialog({
   title,
