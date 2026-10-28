@@ -1139,3 +1139,173 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* Organization audit */
+.admin-audit-helper,
+.admin-filter-sheet-description {
+  margin: 0 0 16px;
+  color: #4e5968;
+  font-size: 14px;
+}
+.admin-audit-filters h2:focus {
+  outline: none;
+}
+.admin-audit-filters h2:focus-visible {
+  outline: 3px solid #1d4ed8;
+  outline-offset: 3px;
+}
+.admin-audit-filter-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+.admin-audit-filter-grid label,
+.admin-filter-sheet-fields label {
+  margin-bottom: 0;
+}
+.admin-audit-clear {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+}
+@media (min-width: 640px) {
+  .admin-audit-filter-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .admin-audit-actor {
+    grid-column: 1 / -1;
+  }
+  .admin-audit-clear {
+    grid-column: 1 / -1;
+  }
+}
+@media (min-width: 1024px) {
+  .admin-audit-filter-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .admin-audit-actor,
+  .admin-audit-clear {
+    grid-column: auto;
+  }
+}
+.admin-filter-sheet {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.admin-filter-summary {
+  margin: 0;
+  color: #4e5968;
+  font-size: 14px;
+}
+.admin-filter-sheet-fields {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.admin-dialog-heading h2:focus {
+  outline: none;
+}
+.admin-dialog-heading h2:focus-visible {
+  outline: 3px solid #1d4ed8;
+  outline-offset: 3px;
+}
+.admin-audit-timezone {
+  margin: 0 0 16px;
+  color: #4e5968;
+  font-size: 14px;
+}
+.admin-range-pause p {
+  margin: 0 0 8px;
+}
+.admin-stale {
+  background: #f7f8fa;
+  color: #4e5968;
+  padding: 12px 16px;
+  border-radius: 8px;
+  margin-bottom: 16px;
+}
+.admin-stale p {
+  margin: 0;
+}
+.admin-audit-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.admin-audit-table th,
+.admin-audit-table td {
+  text-align: left;
+  vertical-align: top;
+  padding: 14px 12px;
+  border-top: 1px solid #e0e5ec;
+  overflow-wrap: anywhere;
+}
+.admin-audit-table th {
+  border-top: 0;
+  border-bottom: 1px solid #d8dde5;
+  color: #4e5968;
+  font-size: 14px;
+}
+.admin-outcome {
+  display: inline-block;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.admin-outcome-neutral {
+  background: #f2f4f6;
+  color: #4e5968;
+}
+.admin-outcome-success {
+  background: #ecfdf3;
+  color: #067647;
+}
+.admin-outcome-danger {
+  background: #fff0ed;
+  color: #b42318;
+}
+.admin-audit-cards {
+  display: grid;
+  gap: 16px;
+}
+.admin-audit-card {
+  border: 1px solid #e0e5ec;
+  border-radius: 12px;
+  padding: 16px;
+  min-width: 0;
+}
+.admin-audit-card h3 {
+  overflow-wrap: anywhere;
+}
+.admin-audit-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 0 0 8px;
+  color: #4e5968;
+}
+.admin-audit-card dl {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+.admin-audit-card dt {
+  color: #4e5968;
+  font-size: 14px;
+}
+.admin-audit-card dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+@media (prefers-reduced-motion: no-preference) {
+  .admin-workspace .admin-skeleton {
+    transition: opacity 0.2s;
+  }
+}
+.admin-empty-detail {
+  display: block;
+  margin-top: 4px;
+}

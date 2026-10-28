@@ -18,8 +18,8 @@ if (!HTMLDialogElement.prototype.close)
 // (jsdom default 1024) and notifies listeners on "resize" events.
 function matchesWidth(query: string) {
   const width = window.innerWidth;
-  const min = /\(min-width:\s*(\d+)px\)/.exec(query);
-  const max = /\(max-width:\s*(\d+)px\)/.exec(query);
+  const min = /\(min-width:\s*(\d+(?:\.\d+)?)px\)/.exec(query);
+  const max = /\(max-width:\s*(\d+(?:\.\d+)?)px\)/.exec(query);
   return (!min || width >= Number(min[1])) && (!max || width <= Number(max[1]));
 }
 Object.defineProperty(window, "matchMedia", {
