@@ -981,6 +981,97 @@ dialog.create-key-dialog {
   }
 }
 
+/* Revoke API key confirmation. Scoped so other Dialog and ConfirmDialog consumers are unchanged. */
+dialog.revoke-key-dialog {
+  width: min(480px, calc(100% - 48px));
+  max-height: calc(100dvh - 48px);
+  padding: 24px;
+  border-radius: 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+.revoke-key-dialog .dialog-heading {
+  margin-bottom: 16px;
+}
+.revoke-key-dialog .dialog-heading h2 {
+  font-size: 24px;
+  font-weight: 600;
+}
+.revoke-key-dialog .dialog-heading .button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.revoke-key-dialog p {
+  margin: 0 0 16px;
+}
+.revoke-key-identity {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 16px;
+  border-radius: 8px;
+  background: #f3f4f6;
+}
+.revoke-key-identity > div {
+  min-width: 0;
+}
+.revoke-key-identity dt {
+  font-size: 14px;
+  color: var(--secondary);
+}
+.revoke-key-identity dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.revoke-key-identity .revoke-key-name {
+  font-weight: 600;
+}
+.revoke-key-dialog .revoke-key-consequence {
+  padding: 16px;
+  border: 1px solid #fecdca;
+  border-radius: 8px;
+  background: #fef3f2;
+  color: #191f28;
+}
+.revoke-key-dialog .revoke-key-irreversible {
+  color: var(--secondary);
+}
+.revoke-key-dialog .revoke-key-status {
+  font-size: 14px;
+  color: var(--secondary);
+}
+.revoke-key-dialog .revoke-key-status:empty {
+  display: none;
+}
+.revoke-key-dialog .revoke-key-actions {
+  margin-top: 8px;
+}
+.revoke-key-dialog .revoke-key-actions .button.danger {
+  background: var(--danger);
+  border-color: var(--danger);
+  color: #fff;
+}
+.revoke-key-dialog .revoke-key-actions .button.danger:disabled {
+  background: #8f2d24;
+  border-color: #8f2d24;
+  cursor: not-allowed;
+}
+@media (max-width: 480px) {
+  dialog.revoke-key-dialog {
+    width: calc(100% - 32px);
+    max-height: calc(100dvh - 32px);
+    padding: 16px;
+  }
+  .revoke-key-dialog .revoke-key-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .revoke-key-dialog .revoke-key-actions > .button {
+    width: 100%;
+  }
+}
+
 /* One-time API key result dialog. Scoped so other dialogs are unchanged. */
 dialog.key-result {
   width: min(560px, calc(100% - 32px));
