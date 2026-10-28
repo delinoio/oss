@@ -382,7 +382,9 @@ describe("create API key scope reset", () => {
     await user.click(
       await screen.findByRole("button", { name: "Discard and switch" }),
     );
-    await waitFor(() => expect(window.location.search).toContain("two"));
+    await waitFor(() =>
+      expect(window.location.pathname).toBe("/organizations/two/keys"),
+    );
     expect(screen.queryByRole("dialog", { name: "Create API key" })).toBeNull();
     dialog = await openCreate(user);
     expect(
