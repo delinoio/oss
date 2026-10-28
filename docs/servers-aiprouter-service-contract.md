@@ -57,6 +57,8 @@ Organization owners, administrators, members, and separately configured instance
 
 Serve the console document and permit local OIDC return targets for every canonical page in the [console page-route contract](apps-aiprouter-console-contract.md#page-routes). Keep unknown paths and authentication, inference, and management API paths outside the console fallback. Reject retired paths and legacy navigation selectors in console requests and OIDC return targets. Use `/overview` as the default OIDC return target and `/invitation` for invitation email links. Route support does not grant management authority.
 
+Serve `/manifest.webmanifest` as `application/manifest+json` with revalidation (`Cache-Control: no-cache`). Serve installation icons through the existing static asset boundary. These public metadata assets do not expand the console document or OIDC return-target allowlists.
+
 ### OIDC, web sessions, and onboarding
 
 - Support only an operator-configured generic OIDC identity provider; no email/password login.
