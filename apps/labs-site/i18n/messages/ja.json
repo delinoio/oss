@@ -49,5 +49,20 @@
   "startDocs": "ドキュメントから始める",
   "licenseLink": "GitHubのApache-2.0",
   "releaseNote": "デプロイ前にリリースの提供状況と互換性を確認してください。実際のプロバイダーと本番環境の検証は別途必要です。",
-  "compatibility": "互換性"
+  "compatibility": "互換性",
+  "homeEyebrow": "オープンソース。Delinoが開発。",
+  "homeDescription": "TaiRouterはDelino Labsが開発する、オープンソースのセルフホスト型Team AI Routerです。",
+  "homeProducts": "製品",
+  "homeOpen": "設計からオープンソース",
+  "homeWorkflows": "実際の作業に役立つツール",
+  "homeSource": "ソースを見る",
+  "homeFeatured": "注目の製品",
+  "homeRouterTagline": "あなたのチーム。あなたのAI。あなたのルール。",
+  "homeRouterDescription": "個人のプロバイダー認証情報とワークスペースのルーティングに対応する、セルフホスト型Team AI Router。",
+  "homeRouterExplore": "TaiRouterを見る",
+  "homeRoutingAlt": "AliceとBobはそれぞれ自分のプロバイダー認証情報を使います。TaiRouterは各自のリクエストを、その人のプロバイダー接続にルーティングします。",
+  "homeRoutingNote": "概念図です。認証情報とプロバイダー接続はメンバーごとに分かれています。",
+  "homeDocumentation": "ドキュメント",
+  "homeClosingTitle": "開かれた開発。",
+  "homeClosingDescription": "コードとドキュメントを読み、自分に合う形で活用しましょう。"
 }

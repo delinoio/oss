@@ -1,10 +1,2 @@
 User-agent: *
-Allow: /tairouter/
-Allow: /ko/tairouter/
-Allow: /ja/tairouter/
-Allow: /zh-Hans/tairouter/
-Allow: /es/tairouter/
-Allow: /fr/tairouter/
-Allow: /de/tairouter/
-Allow: /pt-BR/tairouter/
-Disallow: /
+Allow: /
