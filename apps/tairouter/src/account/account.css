@@ -761,6 +761,54 @@
   box-sizing: border-box;
   width: 100%;
 }
+.device-unverified {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 1px solid #d5dbe3;
+  border-left: 4px solid #b42318;
+  border-radius: 8px;
+  background: #fff;
+  color: #191f28;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.device-result {
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid #d5dbe3;
+  border-radius: 8px;
+  background: #f2f4f6;
+}
+.device-result:empty {
+  display: none;
+}
+.device-result[data-state="APPROVED"] {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+.device-result h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+.device-result p {
+  margin: 0;
+}
+.device-recovery {
+  margin: 0 0 24px;
+  padding: 0 0 0 16px;
+  border-left: 2px solid #d5dbe3;
+  color: #4e5968;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.device-recovery h3 {
+  margin: 0 0 4px;
+  color: #191f28;
+  font-size: 14px;
+}
+.device-recovery p {
+  margin: 0;
+}
 .device-details {
   margin: 0 0 24px;
 }
