@@ -167,4 +167,4 @@ Update this contract, the project index, and affected producer/consumer contract
 
 ## Monorepo integration
 
-Use `pnpm dev:aiprouter` for local Compose evaluation and `pnpm dev:aiprouter:source` for configured source development and `.github/workflows/aiprouter.yml` for affected fixture validation. These replace the standalone repository root commands and CI workflow. Public docs are built through `apps/public-docs`, including all existing AIPRouter guides. Stage future release assets under the `aiprouter@v<version>` tag namespace; staging does not publish artifacts.
+Use `pnpm dev:aiprouter` for local Compose evaluation and `pnpm dev:aiprouter:source` for configured source development and the centrally planned `aiprouter` job in `.github/workflows/CI.yml` for affected fixture validation. These replace the standalone repository root commands and CI workflow. Public docs are built through `apps/public-docs`, including all existing AIPRouter guides. Stage future release assets under the `aiprouter@v<version>` tag namespace; staging does not publish artifacts.

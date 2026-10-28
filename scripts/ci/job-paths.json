@@ -365,5 +365,30 @@
     ],
     "workspace": "labs-docs",
     "workspacePaths": ["apps/labs-docs/**"]
+  },
+  "aiprouter": {
+    "paths": [
+      "AGENTS.md",
+      ".nvmrc",
+      "go.mod",
+      "go.sum",
+      "package.json",
+      "pnpm-lock.yaml",
+      "pnpm-workspace.yaml",
+      "buf*.yaml",
+      "buf*.yml",
+      "rstack.config.ts",
+      "tsconfig*.json",
+      "apps/aiprouter*/**",
+      "apps/public-docs/**",
+      "packages/aiprouter*/**",
+      "servers/aiprouter/**",
+      "cmds/aiprouter/**",
+      "protos/aiprouter/**",
+      "scripts/aiprouter/**",
+      "scripts/localization/**",
+      "packaging/aiprouter/**",
+      "docs/**"
+    ]
   }
 }

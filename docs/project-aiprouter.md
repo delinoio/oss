@@ -29,6 +29,8 @@ Root `pnpm dev:aiprouter` provides the local Compose evaluation described in the
 
 The service workspace manifest and package-level Turbo configuration expose its Go development command to root `pnpm dev:aiprouter:source`. The console and consolidated public documentation workspace commands join the same persistent, uncached Turbo task under the [workflow contract](repository-workflow-contract.md#development).
 
+Affected validation runs in the centrally planned `aiprouter` job in `.github/workflows/CI.yml`. The [workflow contract](repository-workflow-contract.md) owns selection and final result aggregation; the [operations contract](servers-aiprouter-operations-contract.md) owns validation coverage and acceptance boundaries.
+
 ## Domain Contract Documents
 
 - [servers-aiprouter-service-contract](servers-aiprouter-service-contract.md)
