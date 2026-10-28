@@ -2,7 +2,7 @@
 
 ## Scope
 
-Own `apps/labs-site`, the standalone static marketing site for Delino Labs. The scaffold reserves the content slot without selecting a marketing design or publishing product claims.
+Own `apps/labs-site`, the standalone static marketing site for Delino Labs. The root scaffold reserves its content slot. The TaiRouter product page presents the approved marketing design and source-backed product behavior.
 
 ## Runtime and Language
 
@@ -17,7 +17,10 @@ Visitors access the public marketing site. Maintainers author content and build 
 - Canonical origin: `https://labs.delino.io`.
 - Route `/` uses `index.html`; `src/index.ts` is the browser entry point for future enhancements. Content must remain available in HTML without JavaScript.
 - A top-level `public/404.html` prevents Pages from treating the site as a single-page application. Unknown routes must return HTTP 404 on the production host.
-- The scaffold is intentionally blank and uses `noindex` plus a disallowing `robots.txt`. Replace these directives when approved marketing content is ready for publication.
+- Root language entries remain blank and use `noindex`. `/tairouter/` and `/<lang>/tairouter/` use `tairouter.html`, include canonical and alternate-language metadata, and permit indexing. `robots.txt` allows only these product paths.
+- TaiRouter means **Team AI Router**, an open-source Delino Labs product. The product page uses an off-white background, near-black typography, cobalt actions and a static personal-routing illustration. Its hierarchy is a product introduction, personal accounts/routing/self-hosting features, client setup guidance, and documentation/source calls to action. Keep the illustration conceptual; do not present it as a live console or imply shared credentials.
+- All product content is available without JavaScript. Marketing text comes from the eight language catalogs at build time. The native language menu remains usable without JavaScript; the optional browser entry adds Escape and outside-click dismissal. Mobile uses one column, wrapping actions and navigation. Preserve visible keyboard focus, skip navigation, headings and diagram alternative text.
+- Documentation links target `https://docs.labs.delino.io/tairouter/`; source and license links target the repository on GitHub. Use illustrative endpoint/model values and preserve release and compatibility limits. No invented provider acceptance, performance figures, testimonials, pricing or hosted-service availability is published.
 - `pnpm dev:labs-site` starts development at `http://127.0.0.1:46312` with strict port binding. The shared development wrapper rejects host/port overrides, forwards signals, and waits for shutdown.
 - Cloudflare Pages project name: `labs-site`. Build from the repository root with `pnpm --filter labs-site build`; publish `apps/labs-site/dist`. The app-local `wrangler.toml` identifies the project and output directory.
 - Attach `labs.delino.io` through Pages custom-domain configuration and complete its DNS validation. Do not treat the canonical URL or Wrangler file as proof of domain ownership or deployment.
@@ -42,7 +45,7 @@ Rsbuild owns build and development diagnostics. The affected CI runner records t
 ## Build and Test
 
 - Install at the repository root with `pnpm install --frozen-lockfile`.
-- Run `pnpm test` from `apps/labs-site` for TypeScript checking and a production build.
+- Run `pnpm test` from `apps/labs-site` for localization fixtures, TypeScript checking, a production build and static route/content checks. Check each product language, canonical/alternate links, documentation/source actions and preserved blank roots. Inspect desktop and mobile layouts and language-menu keyboard dismissal when changing the page.
 - `pnpm --filter labs-site build` generates `dist/` for deployment.
 - `pnpm --filter labs-site preview` serves the build on strict loopback port `46313`.
 - Root `pnpm format` and `pnpm format:check` own formatting with the exact comparison required by the workflow contract.
