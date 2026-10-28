@@ -32,6 +32,7 @@ import {
 import { useApi, type PageProps, pageSize } from "./api";
 import { useAction } from "./actions";
 import { usePersonalResources } from "./resources";
+import { RouteDeleteDialog } from "./route-delete";
 import { utf8ByteLength } from "./validation";
 import {
   PageHeader,
@@ -657,6 +658,9 @@ export function RoutingPage({ organization }: PageProps) {
   const [token, setToken] = useState("");
   const [edit, setEdit] = useState<Route | true>();
   const [remove, setRemove] = useState<Route>();
+  // Timestamp of a confirmed deletion whose focus target may disappear with the list row.
+  const [restoreFocus, setRestoreFocus] = useState<number>();
+  const headingRef = useRef<HTMLHeadingElement>(null);
   const query = useQuery(RoutingService.method.listRoutes, {
     organizationId: organization.id,
     page: { pageSize, pageToken: token },
@@ -666,9 +670,34 @@ export function RoutingPage({ organization }: PageProps) {
     pools,
     routes,
   } = usePersonalResources(organization.id);
+  // A confirmation is bound to the organization it was opened in.
+  useEffect(() => {
+    setRemove(undefined);
+  }, [organization.id]);
+  // Dialog cleanup restores focus to the invoking Delete button; fall back to the page heading once its row is gone.
+  useEffect(() => {
+    if (restoreFocus === undefined) return;
+    const active = document.activeElement;
+    if (!active || active === document.body || !active.isConnected) {
+      headingRef.current?.focus();
+      setRestoreFocus(undefined);
+    } else if (
+      query.fetchStatus === "idle" &&
+      Math.max(query.dataUpdatedAt, query.errorUpdatedAt) >= restoreFocus
+    ) {
+      setRestoreFocus(undefined);
+    }
+  }, [
+    restoreFocus,
+    query.data,
+    query.fetchStatus,
+    query.dataUpdatedAt,
+    query.errorUpdatedAt,
+  ]);
   return (
     <>
       <PageHeader
+        headingRef={headingRef}
         title={translate("yourRouting")}
         description={translate("onlyYoursIn", { value0: organization.name })}
         action={
@@ -772,9 +801,9 @@ export function RoutingPage({ organization }: PageProps) {
         />
       )}
       {remove && (
-        <ConfirmDialog
-          title={translate("deleteRoute", { value0: remove.modelId })}
-          confirmLabel={translate("deleteRoute_032ad8")}
+        <RouteDeleteDialog
+          route={remove}
+          organizationName={organization.name}
           onClose={() => setRemove(undefined)}
           pending={action.pending}
           error={action.error}
@@ -785,13 +814,14 @@ export function RoutingPage({ organization }: PageProps) {
                   organizationId: organization.id,
                   routeId: remove.id,
                 }),
-              () => setRemove(undefined),
+              () => {
+                setRemove(undefined);
+                setRestoreFocus(Date.now());
+              },
               translate("routeDeleted"),
             );
           }}
-        >
-          {translate("newRequestsForThisAliasCanNo")}
-        </ConfirmDialog>
+        />
       )}
     </>
   );
