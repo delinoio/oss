@@ -120,7 +120,7 @@ describe("provider configuration mutations", () => {
         (r) => providerRoutes(r, update, source),
       );
       await user.click(
-        await screen.findByRole("button", { name: "Edit connection" }),
+        await screen.findByRole("button", { name: /^Edit connection/ }),
       );
       await user.click(screen.getByText("Advanced connection settings"));
       await user.selectOptions(
@@ -192,7 +192,7 @@ describe("provider configuration mutations", () => {
       (r) => providerRoutes(r, update, source),
     );
     await user.click(
-      await screen.findByRole("button", { name: "Edit connection" }),
+      await screen.findByRole("button", { name: /^Edit connection/ }),
     );
     await user.selectOptions(
       screen.getByLabelText("API format"),
@@ -216,7 +216,7 @@ describe("provider configuration mutations", () => {
       (r) => providerRoutes(r, update),
     );
     await user.click(
-      await screen.findByRole("button", { name: "Edit connection" }),
+      await screen.findByRole("button", { name: /^Edit connection/ }),
     );
     await user.click(screen.getByText("Advanced connection settings"));
     await user.click(screen.getByText("Request compatibility policies"));
@@ -284,7 +284,7 @@ describe("provider configuration mutations", () => {
         (r) => providerRoutes(r, update, source),
       );
       await user.click(
-        await screen.findByRole("button", { name: "Edit connection" }),
+        await screen.findByRole("button", { name: /^Edit connection/ }),
       );
       await user.click(screen.getByText("Advanced connection settings"));
       await user.click(screen.getByText("Request compatibility policies"));
@@ -356,7 +356,7 @@ describe("provider configuration mutations", () => {
       (r) => providerRoutes(r, update),
     );
     await user.click(
-      await screen.findByRole("button", { name: "Edit connection" }),
+      await screen.findByRole("button", { name: /^Edit connection/ }),
     );
     await user.type(screen.getByLabelText("Account label"), " renamed");
     await user.click(screen.getByRole("button", { name: "Save connection" }));
@@ -379,7 +379,7 @@ describe("provider configuration mutations", () => {
       (r) => providerRoutes(r, update),
     );
     await user.click(
-      await screen.findByRole("button", { name: "Edit connection" }),
+      await screen.findByRole("button", { name: /^Edit connection/ }),
     );
     await user.click(screen.getByText("Advanced connection settings"));
     await user.selectOptions(
@@ -438,7 +438,7 @@ describe("provider configuration mutations", () => {
       (r) => providerRoutes(r, update),
     );
     await user.click(
-      await screen.findByRole("button", { name: "Edit connection" }),
+      await screen.findByRole("button", { name: /^Edit connection/ }),
     );
     await user.click(screen.getByText("Advanced connection settings"));
     await user.selectOptions(

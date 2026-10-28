@@ -1071,6 +1071,132 @@ dialog.key-result {
     flex: 1 1 100%;
   }
 }
+
+/* Providers list: one collection panel of rows, then quiet entry cards. */
+.connection-list {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  background: #fff;
+  border: 1px solid #e0e5ec;
+  border-radius: 12px;
+  overflow: hidden;
+}
+.connection-row {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.connection-row + .connection-row {
+  border-top: 1px solid #e0e5ec;
+}
+.connection-identity {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+.connection-identity > div {
+  min-width: 0;
+  flex: 1;
+}
+.connection-identity h2,
+.connection-identity p {
+  margin: 0;
+}
+.connection-identity h2 {
+  font-size: 18px;
+}
+.connection-identity p {
+  color: #4e5968;
+}
+.connection-identity .badge {
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.connection-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  margin: 0;
+}
+.connection-meta > div {
+  min-width: 0;
+}
+.connection-meta dt {
+  font-size: 14px;
+  color: #4e5968;
+}
+.connection-meta dd {
+  margin: 0;
+  font-weight: 600;
+}
+.connection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.connection-actions .button.danger {
+  margin-left: auto;
+}
+.entry-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin: 32px 0 0;
+}
+.entry-card {
+  margin: 0;
+  padding: 20px;
+  background: #fbfcfd;
+}
+.entry-card h2 {
+  font-size: 16px;
+}
+.entry-card p {
+  color: #4e5968;
+  font-size: 14px;
+}
+@media (max-width: 767px) {
+  .connection-list {
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    overflow: visible;
+    display: grid;
+    gap: 16px;
+  }
+  .connection-row {
+    background: #fff;
+    border: 1px solid #e0e5ec;
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .connection-row + .connection-row {
+    border-top: 1px solid #e0e5ec;
+  }
+  .connection-identity {
+    flex-wrap: wrap;
+  }
+  .connection-identity .badge {
+    margin-left: 0;
+  }
+  .connection-meta {
+    flex-direction: column;
+  }
+  .connection-actions .button {
+    flex: 1 1 100%;
+  }
+  .connection-actions .button.danger {
+    margin-left: 0;
+  }
+  .entry-cards {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Connect a client page. Scoped classes only; no sticky positioning and no fixed heights. */
 .connect-context {
   display: flex;

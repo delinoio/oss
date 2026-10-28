@@ -120,7 +120,9 @@ function mount(fixture: Fixture, org = organization) {
   };
 }
 async function openDisconnect(user: ReturnType<typeof userEvent.setup>) {
-  const buttons = await screen.findAllByRole("button", { name: "Disconnect" });
+  const buttons = await screen.findAllByRole("button", {
+    name: /^Disconnect (?!provider$)/,
+  });
   await user.click(buttons[0]!);
   return screen.getByRole("dialog");
 }
@@ -173,7 +175,9 @@ describe("provider disconnect confirmation", () => {
     const deleteProviderConnection = rs.fn(() => ({}));
     mount({ deleteProviderConnection });
     const trigger = (
-      await screen.findAllByRole("button", { name: "Disconnect" })
+      await screen.findAllByRole("button", {
+        name: /^Disconnect (?!provider$)/,
+      })
     )[0]!;
     await user.click(trigger);
     const dialog = screen.getByRole("dialog", {
@@ -510,7 +514,9 @@ describe("provider disconnect confirmation", () => {
       expect(within(first).getAllByRole("alert").length).toBeGreaterThan(0),
     );
     await user.click(within(first).getByRole("button", { name: "Cancel" }));
-    const buttons = screen.getAllByRole("button", { name: "Disconnect" });
+    const buttons = screen.getAllByRole("button", {
+      name: /^Disconnect (?!provider$)/,
+    });
     await user.click(buttons[1]!);
     const second = screen.getByRole("dialog");
     expect(within(second).getByText("Connection ID: c2")).toBeTruthy();
@@ -535,7 +541,9 @@ describe("provider disconnect confirmation", () => {
     // Dismiss while the request keeps running, then open the other connection.
     fireEvent(first, new Event("cancel", { cancelable: true }));
     expect(screen.queryByRole("dialog")).toBeNull();
-    const buttons = screen.getAllByRole("button", { name: "Disconnect" });
+    const buttons = screen.getAllByRole("button", {
+      name: /^Disconnect (?!provider$)/,
+    });
     await user.click(buttons[1]!);
     const second = screen.getByRole("dialog");
     expect(within(second).getByText("Connection ID: c2")).toBeTruthy();
