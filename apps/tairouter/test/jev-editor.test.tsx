@@ -108,7 +108,7 @@ async function edit() {
   const heading = await screen.findByRole("heading", { name: "smart-route" });
   await userEvent.click(
     within(heading.closest("section")!).getByRole("button", {
-      name: "Edit route",
+      name: /^Edit route /,
     }),
   );
 }

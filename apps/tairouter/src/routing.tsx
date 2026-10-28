@@ -33,6 +33,9 @@ import { useAction } from "./actions";
 import { usePersonalResources } from "./resources";
 import { PoolDeleteDialog } from "./pool-delete";
 import { useRestoreHeadingFocus } from "./focus-restore";
+import { RouteCard, useRoutingFocus } from "./route-list";
+import { pageHref } from "./routes";
+import { Code, ConnectError } from "@connectrpc/connect";
 import { RouteDeleteDialog } from "./route-delete";
 import { utf8ByteLength } from "./validation";
 import {
@@ -49,8 +52,8 @@ import {
   EmptyState,
   Notice,
   Pagination,
-  Badge,
   enumLabel,
+  useOnline,
 } from "./ui";
 export function PoolsPage({ organization }: PageProps) {
   useLocale();
@@ -659,6 +662,7 @@ export function RoutingPage({ organization }: PageProps) {
   useLocale();
   const api = useApi();
   const action = useAction();
+  const online = useOnline();
   const [token, setToken] = useState("");
   const [edit, setEdit] = useState<Route | true>();
   const [remove, setRemove] = useState<Route>();
@@ -675,11 +679,23 @@ export function RoutingPage({ organization }: PageProps) {
   useEffect(() => {
     setRemove(undefined);
   }, [organization.id]);
-  const { headingRef, requestRestore } = useRestoreHeadingFocus(query);
+  const focus = useRoutingFocus(query);
+  const listCode = query.error
+    ? ConnectError.from(query.error).code
+    : undefined;
+  const accessDenied =
+    listCode === Code.PermissionDenied || listCode === Code.Unauthenticated;
+  // Cached rows are not authorization; they are hidden once access is denied.
+  const rows = accessDenied ? undefined : query.data?.routes;
+  const stale = !!rows && (!!query.error || !online);
+  const navigate = (next: string) => {
+    focus.beginNavigation();
+    setToken(next);
+  };
   return (
     <>
       <PageHeader
-        headingRef={headingRef}
+        headingRef={focus.listHeadingRef}
         title={translate("yourRouting")}
         description={translate("onlyYoursIn", { value0: organization.name })}
         action={
@@ -690,66 +706,102 @@ export function RoutingPage({ organization }: PageProps) {
       />
       <Notice>{translate("modelAliasesChooseYourPrimaryAndFallback")}</Notice>
       {action.feedback}
-      <ErrorNotice error={query.error} retry={() => void query.refetch()} />
-      {query.isPending ? (
-        <Loading />
-      ) : query.data?.routes.length === 0 ? (
-        <EmptyState title={translate("configureYourFirstModelRoute")}>
-          {translate("addAProviderConnectionThenMapA")}
-        </EmptyState>
-      ) : (
-        <div className="records">
-          {query.data?.routes.map((route) => (
-            <Card key={route.id} className="record">
-              <div>
-                <h2>{route.modelId}</h2>
-                <Badge>
-                  {route.enabled ? translate("enabled") : translate("disabled")}
-                </Badge>
-                <p>
-                  {route.strategy === RoutingStrategy.JEV
-                    ? "JEV"
-                    : enumLabel(RoutingStrategy[route.strategy])}
-                </p>
-                <ol>
-                  {route.targets
-                    .toSorted((a, b) => a.priority - b.priority)
-                    .map((t, i) => (
-                      <li key={i}>
-                        {translate("weight_4e5c69", {
-                          value0:
-                            t.target.case === "connectionId"
-                              ? (accounts.data?.find(
-                                  (c) => c.id === t.target.value,
-                                )?.name ?? translate("unavailableConnection"))
-                              : (pools.data?.find(
-                                  (p) => p.id === t.target.value,
-                                )?.name ?? translate("message_071b530243")),
-                          value1: t.modelId,
-                          value2: t.weight,
-                        })}
-                      </li>
-                    ))}
-                </ol>
-              </div>
-              <div className="actions">
-                <Button onClick={() => setEdit(route)}>
-                  {translate("editRoute")}
-                </Button>
-                <Button variant="danger" onClick={() => setRemove(route)}>
-                  {translate("delete")}
-                </Button>
-              </div>
-            </Card>
-          ))}
-        </div>
-      )}
-      <Pagination
-        next={query.data?.page?.nextPageToken}
-        onNext={setToken}
-        onFirst={() => setToken("")}
-        hasPrevious={!!token}
+      <ErrorNotice
+        error={query.error}
+        retry={accessDenied ? undefined : () => void query.refetch()}
       />
+      {stale && (
+        <Notice tone="warning">{translate("routingMayBeOutOfDate")}</Notice>
+      )}
+      {query.isPending ? (
+        <div className="loading-state" role="status" aria-busy="true">
+          <p>{translate("loadingRouting")}</p>
+          <div className="route-skeletons" aria-hidden="true">
+            <div className="skeleton" />
+            <div className="skeleton" />
+            <div className="skeleton" />
+          </div>
+        </div>
+      ) : rows && rows.length === 0 ? (
+        <Card className="empty route-empty">
+          <h2 ref={focus.emptyHeadingRef} tabIndex={-1}>
+            {token
+              ? translate("noRoutesOnThisPage")
+              : translate("configureYourFirstModelRoute")}
+          </h2>
+          <p>
+            {token
+              ? translate("useFirstPageToReturnToYourRoutes")
+              : translate("addAProviderConnectionThenMapA")}
+          </p>
+          {!token && (
+            <>
+              {[
+                {
+                  key: "connections",
+                  result: accounts,
+                  message: translate("connectionDetailsUnavailable"),
+                  retry: translate("tryAgainLoadingConnections"),
+                },
+                {
+                  key: "pools",
+                  result: pools,
+                  message: translate("poolDetailsUnavailable"),
+                  retry: translate("tryAgainLoadingPools"),
+                },
+              ].map(
+                ({ key, result, message, retry }) =>
+                  result.isError && (
+                    <Notice key={key} tone="warning">
+                      {message}
+                      <div className="actions">
+                        <Button
+                          disabled={result.isFetching}
+                          onClick={() => void result.refetch()}
+                        >
+                          {retry}
+                        </Button>
+                      </div>
+                    </Notice>
+                  ),
+              )}
+              <div className="actions">
+                <a
+                  className="button"
+                  href={pageHref("providers", organization.id)}
+                >
+                  {translate("viewProviders")}
+                </a>
+              </div>
+            </>
+          )}
+        </Card>
+      ) : rows ? (
+        <ul className="route-list" aria-label={translate("yourRoutes")}>
+          {rows.map((route) => (
+            <li key={route.id}>
+              <RouteCard
+                route={route}
+                connections={accounts}
+                pools={pools}
+                headingRef={focus.routeHeadingRef(route.id)}
+                onEdit={() => setEdit(route)}
+                onDelete={() => setRemove(route)}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <Pagination
+        next={rows ? query.data?.page?.nextPageToken : undefined}
+        onNext={navigate}
+        onFirst={() => navigate("")}
+        hasPrevious={!!token}
+        pending={query.isFetching}
+      />
+      <p className="visually-hidden" role="status" aria-live="polite">
+        {focus.announcement}
+      </p>
       {edit && (
         <RouteEditor
           organizationName={organization.name}
@@ -797,8 +849,10 @@ export function RoutingPage({ organization }: PageProps) {
                   routeId: remove.id,
                 }),
               () => {
+                const list = query.data?.routes ?? [];
+                const at = list.findIndex((item) => item.id === remove.id);
                 setRemove(undefined);
-                requestRestore();
+                focus.requestRestore(list[at + 1]?.id);
               },
               translate("routeDeleted"),
             );

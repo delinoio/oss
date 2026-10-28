@@ -76,9 +76,9 @@ function mount(fixture: Fixture) {
   );
 }
 async function openDelete(user: ReturnType<typeof userEvent.setup>, index = 0) {
-  const trigger = (await screen.findAllByRole("button", { name: "Delete" }))[
-    index
-  ]!;
+  const trigger = (
+    await screen.findAllByRole("button", { name: /^Delete route / })
+  )[index]!;
   await user.click(trigger);
   return { trigger, dialog: screen.getByRole("dialog") };
 }

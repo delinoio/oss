@@ -92,7 +92,7 @@ async function openEdit(name: string) {
   const heading = await screen.findByRole("heading", { name });
   await userEvent.click(
     within(heading.closest("section")!).getByRole("button", {
-      name: "Edit route",
+      name: /^Edit route /,
     }),
   );
   return screen.findByRole("dialog", { name: "Edit routing" });
