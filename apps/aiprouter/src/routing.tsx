@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale } from "./i18n";
 import { pageHref } from "./routes";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   NativePoolFields,
   nativePoolError,
@@ -640,6 +640,165 @@ function targetErrors(
         : translate("weightMustBeAWholeNumberFrom"),
   };
 }
+/** Service-enforced JEV decision and reasoning retention bounds. */
+enum JevLimit {
+  TimeoutMinMs = 1000,
+  TimeoutMaxMs = 120000,
+  PinMinSeconds = 60,
+  PinMaxSeconds = 86400,
+  ServiceModelUnits = 512,
+  DefaultLimitedPercent = 70,
+  DefaultNearlyExhaustedPercent = 90,
+}
+enum RetentionLimit {
+  MaxPercent = 100,
+  MaxTokens = 4294967295,
+}
+type JevDecisionErrors = {
+  source?: string;
+  serviceModel?: string;
+  timeout?: string;
+  pin?: string;
+  moderate?: string;
+  limited?: string;
+  nearlyExhausted?: string;
+};
+const percentError = () => translate("useAFinitePercentageFrom0To");
+const isPercent = (value: number) =>
+  Number.isFinite(value) && value >= 0 && value <= RetentionLimit.MaxPercent;
+/**
+ * Validates the JEV decision draft. Quota thresholds are validated even when
+ * advisory signals are off, and an explicit zero stays distinct from omitted.
+ */
+function jevDecisionErrors(
+  jev: JevDecisionConfig,
+  source: string,
+): JevDecisionErrors {
+  const tiers = jev.decisionQuotaTiers;
+  const errors: JevDecisionErrors = {};
+  if (source === "route") {
+    if (!jev.decisionModel)
+      errors.source = translate("chooseADecisionRouteAlias");
+  } else {
+    if (!jev.decisionConnectionId)
+      errors.source = translate("chooseADecisionConnection");
+    if (jev.decisionServiceModel.length > JevLimit.ServiceModelUnits)
+      errors.serviceModel = translate(
+        "decisionServiceModelMustBeCharactersOr",
+        {
+          value0: JevLimit.ServiceModelUnits,
+        },
+      );
+  }
+  const timeout = jev.decisionTimeoutMs;
+  if (
+    !Number.isInteger(timeout) ||
+    !(
+      timeout === 0 ||
+      (timeout >= JevLimit.TimeoutMinMs && timeout <= JevLimit.TimeoutMaxMs)
+    )
+  )
+    errors.timeout = translate("decisionTimeoutMustBe0OrA");
+  const pin = jev.sessionPinTtlSeconds;
+  if (
+    !Number.isInteger(pin) ||
+    !(
+      pin === 0 ||
+      (pin >= JevLimit.PinMinSeconds && pin <= JevLimit.PinMaxSeconds)
+    )
+  )
+    errors.pin = translate("sessionPinDurationMustBe0Or");
+  if (!tiers) return errors;
+  if (tiers.moderate !== undefined && !isPercent(tiers.moderate))
+    errors.moderate = percentError();
+  if (tiers.limited !== undefined && !isPercent(tiers.limited))
+    errors.limited = percentError();
+  if (tiers.nearlyExhausted !== undefined && !isPercent(tiers.nearlyExhausted))
+    errors.nearlyExhausted = percentError();
+  const limited = tiers.limited ?? JevLimit.DefaultLimitedPercent;
+  const nearly =
+    tiers.nearlyExhausted ?? JevLimit.DefaultNearlyExhaustedPercent;
+  if (
+    !errors.moderate &&
+    tiers.moderate !== undefined &&
+    Number.isFinite(limited) &&
+    tiers.moderate >= limited
+  )
+    errors.moderate = translate("moderateMustBeBelowLimitedEffective", {
+      value0: limited,
+    });
+  if (
+    !errors.limited &&
+    !errors.nearlyExhausted &&
+    Number.isFinite(limited) &&
+    Number.isFinite(nearly) &&
+    limited >= nearly
+  ) {
+    // Blame the field the user actually set; both may be defaults only when
+    // the defaults themselves are ordered, so one of them is always explicit.
+    if (tiers.limited !== undefined)
+      errors.limited = translate("limitedMustBeBelowNearlyExhaustedEffective", {
+        value0: nearly,
+      });
+    else
+      errors.nearlyExhausted = translate(
+        "nearlyExhaustedMustBeAboveLimitedEffective",
+        { value0: limited },
+      );
+  }
+  return errors;
+}
+type RetentionErrors = { percent?: string; tokens?: string };
+/** Validates optional retention limits, including while retention is disabled. */
+function retentionLimitErrors(
+  retention: ReasoningRetentionConfig | undefined,
+): RetentionErrors {
+  const errors: RetentionErrors = {};
+  if (!retention) return errors;
+  if (
+    retention.maxContextPercent !== undefined &&
+    !isPercent(retention.maxContextPercent)
+  )
+    errors.percent = translate("contextLimitMustBeAPercentageFrom");
+  if (
+    retention.maxTokens !== undefined &&
+    !(
+      Number.isInteger(retention.maxTokens) &&
+      retention.maxTokens >= 0 &&
+      retention.maxTokens <= RetentionLimit.MaxTokens
+    )
+  )
+    errors.tokens = translate("tokenLimitMustBeAWholeNumber");
+  return errors;
+}
+/**
+ * A details disclosure that opens itself when it contains a blocking error so
+ * the error and its control are never hidden.
+ */
+function Disclosure({
+  summary,
+  forceOpen,
+  children,
+}: {
+  summary: string;
+  forceOpen: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(false);
+  useEffect(() => {
+    if (forceOpen) setOpen(true);
+  }, [forceOpen]);
+  return (
+    <details
+      className="route-disclosure"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>{summary}</summary>
+      {children}
+    </details>
+  );
+}
 /** Draft target with a stable row key so reordering keeps row identity. */
 type TargetDraft = TargetValue & { key: number };
 type RouteValues = {
@@ -683,40 +842,14 @@ function RouteEditor({
   const [retention, setRetention] = useState<
     ReasoningRetentionConfig | undefined
   >(route?.reasoningRetention);
-  const validRetention =
-    !retention ||
-    ((retention.maxContextPercent === undefined ||
-      (Number.isFinite(retention.maxContextPercent) &&
-        retention.maxContextPercent >= 0 &&
-        retention.maxContextPercent <= 100)) &&
-      (retention.maxTokens === undefined ||
-        (Number.isInteger(retention.maxTokens) &&
-          retention.maxTokens >= 0 &&
-          retention.maxTokens <= 4294967295)));
   const [decisionSource, setDecisionSource] = useState(
     route?.jevDecision?.decisionModel ? "route" : "connection",
   );
   const tiers = jev.decisionQuotaTiers;
-  const effectiveLimited = tiers?.limited ?? 70;
-  const effectiveNearlyExhausted = tiers?.nearlyExhausted ?? 90;
-  const validQuota =
-    [tiers?.moderate, tiers?.limited, tiers?.nearlyExhausted].every(
-      (value) =>
-        value === undefined ||
-        (Number.isFinite(value) && value >= 0 && value <= 100),
-    ) &&
-    (tiers?.moderate === undefined || tiers.moderate < effectiveLimited) &&
-    effectiveLimited < effectiveNearlyExhausted;
-  const validJev =
-    (jev.decisionTimeoutMs === 0 ||
-      (jev.decisionTimeoutMs >= 1000 && jev.decisionTimeoutMs <= 120000)) &&
-    Number.isInteger(jev.decisionTimeoutMs) &&
-    (jev.sessionPinTtlSeconds === 0 ||
-      (jev.sessionPinTtlSeconds >= 60 && jev.sessionPinTtlSeconds <= 86400)) &&
-    Number.isInteger(jev.sessionPinTtlSeconds) &&
-    (decisionSource === "route"
-      ? !!jev.decisionModel
-      : !!jev.decisionConnectionId);
+  const jevErrors = jevDecisionErrors(jev, decisionSource);
+  const validJev = !Object.values(jevErrors).some(Boolean);
+  const retentionErrors = retentionLimitErrors(retention);
+  const validRetention = !retentionErrors.percent && !retentionErrors.tokens;
   const [strategy, setStrategy] = useState(
     route?.strategy ?? RoutingStrategy.FALLBACK,
   );
@@ -814,20 +947,38 @@ function RouteEditor({
         fieldId: `route-target-${t.key}-weight`,
       });
   });
-  if (strategy === RoutingStrategy.JEV && !validJev)
+  if (strategy === RoutingStrategy.JEV) {
+    const jevItems: [string, string | undefined, string][] = [
+      [
+        "jev-source",
+        shown(jevErrors.source, true),
+        decisionSource === "route" ? "route-jev-route" : "route-jev-connection",
+      ],
+      ["jev-service-model", jevErrors.serviceModel, "route-jev-service-model"],
+      ["jev-timeout", jevErrors.timeout, "route-jev-timeout"],
+      ["jev-pin", jevErrors.pin, "route-jev-pin"],
+      ["quota-moderate", jevErrors.moderate, "route-quota-moderate"],
+      ["quota-limited", jevErrors.limited, "route-quota-limited"],
+      [
+        "quota-nearly",
+        jevErrors.nearlyExhausted,
+        "route-quota-nearlyExhausted",
+      ],
+    ];
+    for (const [key, message, fieldId] of jevItems)
+      if (message) summary.push({ key, message, fieldId });
+  }
+  if (retentionErrors.percent)
     summary.push({
-      key: "jev",
-      message: translate("selectADecisionSourceAndUseThe"),
+      key: "retention-percent",
+      message: retentionErrors.percent,
+      fieldId: "route-retention-percent",
     });
-  if (strategy === RoutingStrategy.JEV && !validQuota)
+  if (retentionErrors.tokens)
     summary.push({
-      key: "quota",
-      message: translate("useValidQuotaThresholdsModerateBelowLimited"),
-    });
-  if (!validRetention)
-    summary.push({
-      key: "retention",
-      message: translate("useARetentionContextPercentageFrom0"),
+      key: "retention-tokens",
+      message: retentionErrors.tokens,
+      fieldId: "route-retention-tokens",
     });
   const canSave =
     !pending &&
@@ -835,7 +986,7 @@ function RouteEditor({
     !countError &&
     rowErrors.every((e) => !e.source && !e.model && !e.weight) &&
     validRetention &&
-    (strategy !== RoutingStrategy.JEV || (validJev && validQuota));
+    (strategy !== RoutingStrategy.JEV || validJev);
   const updateTarget = (key: number, patch: Partial<TargetValue>) =>
     setTargets((old) =>
       old.map((x) => (x.key === key ? { ...x, ...patch } : x)),
@@ -921,11 +1072,17 @@ function RouteEditor({
           </label>
         </section>
         {strategy === RoutingStrategy.JEV && (
-          <fieldset>
+          <fieldset
+            className="route-section jev-section"
+            aria-describedby="route-jev-help"
+          >
             <legend>{translate("jevDecisionSettings")}</legend>
-            <p>{translate("chooseAnIndependentPersonalDecisionServiceOr")}</p>
+            <p id="route-jev-help" className="section-hint">
+              {translate("chooseAnIndependentPersonalDecisionServiceOr")}
+            </p>
             <Field label={translate("decisionSource")}>
               <select
+                id="route-jev-source"
                 value={decisionSource}
                 onChange={(e) => {
                   setDecisionSource(e.target.value);
@@ -944,12 +1101,14 @@ function RouteEditor({
               </select>
             </Field>
             {decisionSource === "connection" ? (
-              <>
+              <div className="field-grid">
                 <Field
                   label={translate("decisionConnection")}
                   hint={translate("chooseAJevOrCustomDecisionService")}
+                  error={shown(jevErrors.source, true)}
                 >
                   <select
+                    id="route-jev-connection"
                     required
                     value={jev.decisionConnectionId}
                     onChange={(e) =>
@@ -977,20 +1136,27 @@ function RouteEditor({
                 </Field>
                 <Field
                   label={translate("decisionServiceModel")}
-                  hint={translate("customSystemoneBackendModelTheCanonicalJev")}
+                  hint={translate("customSystemoneBackendModelUpTo512")}
+                  error={jevErrors.serviceModel}
                 >
                   <input
-                    maxLength={512}
+                    id="route-jev-service-model"
+                    maxLength={JevLimit.ServiceModelUnits}
                     value={jev.decisionServiceModel}
                     onChange={(e) =>
                       setJev({ ...jev, decisionServiceModel: e.target.value })
                     }
                   />
                 </Field>
-              </>
+              </div>
             ) : (
-              <Field label={translate("decisionRouteAlias")}>
+              <Field
+                label={translate("decisionRouteAlias")}
+                hint={translate("onlyOrdinaryPersonalRoutesAreListedThe")}
+                error={shown(jevErrors.source, true)}
+              >
                 <select
+                  id="route-jev-route"
                   required
                   value={jev.decisionModel}
                   onChange={(e) =>
@@ -1028,41 +1194,58 @@ function RouteEditor({
                 </select>
               </Field>
             )}
-            <Field
-              label={translate("decisionTimeoutMs")}
-              hint={translate("zeroUses4000MsOtherwise1000120000")}
+            <div className="field-grid">
+              <Field
+                label={translate("decisionTimeoutMs")}
+                hint={translate("zeroUses4000MsOtherwise1000120000")}
+                error={jevErrors.timeout}
+              >
+                <input
+                  id="route-jev-timeout"
+                  type="number"
+                  min={0}
+                  max={JevLimit.TimeoutMaxMs}
+                  step={1}
+                  value={jev.decisionTimeoutMs}
+                  onChange={(e) =>
+                    setJev({
+                      ...jev,
+                      decisionTimeoutMs: Number(e.target.value),
+                    })
+                  }
+                />
+              </Field>
+              <Field
+                label={translate("sessionPinDurationSeconds")}
+                hint={translate("zeroDisablesPinningOtherwise6086400Seconds")}
+                error={jevErrors.pin}
+              >
+                <input
+                  id="route-jev-pin"
+                  type="number"
+                  min={0}
+                  max={JevLimit.PinMaxSeconds}
+                  step={1}
+                  value={jev.sessionPinTtlSeconds}
+                  onChange={(e) =>
+                    setJev({
+                      ...jev,
+                      sessionPinTtlSeconds: Number(e.target.value),
+                    })
+                  }
+                />
+              </Field>
+            </div>
+            <Disclosure
+              summary={translate("advisoryQuotaSignals")}
+              forceOpen={
+                !!(
+                  jevErrors.moderate ||
+                  jevErrors.limited ||
+                  jevErrors.nearlyExhausted
+                )
+              }
             >
-              <input
-                type="number"
-                min={0}
-                max={120000}
-                step={1}
-                value={jev.decisionTimeoutMs}
-                onChange={(e) =>
-                  setJev({ ...jev, decisionTimeoutMs: Number(e.target.value) })
-                }
-              />
-            </Field>
-            <Field
-              label={translate("sessionPinDurationSeconds")}
-              hint={translate("zeroDisablesPinningOtherwise6086400Seconds")}
-            >
-              <input
-                type="number"
-                min={0}
-                max={86400}
-                step={1}
-                value={jev.sessionPinTtlSeconds}
-                onChange={(e) =>
-                  setJev({
-                    ...jev,
-                    sessionPinTtlSeconds: Number(e.target.value),
-                  })
-                }
-              />
-            </Field>
-            <details>
-              <summary>{translate("advisoryQuotaSignals")}</summary>
               <label className="check">
                 <input
                   type="checkbox"
@@ -1073,7 +1256,9 @@ function RouteEditor({
                 />
                 {translate("enableAdvisoryQuotaSignals")}
               </label>
-              <p>{translate("shareAvailableQuotaSignalsWithTheDecision")}</p>
+              <p className="section-hint">
+                {translate("shareAvailableQuotaSignalsWithTheDecision")}
+              </p>
               <label className="check">
                 <input
                   type="checkbox"
@@ -1091,61 +1276,61 @@ function RouteEditor({
               </label>
               {tiers && (
                 <>
-                  <p>{translate("thresholdsAreQuotaUsedInPercentEach")}</p>
-                  {(
-                    [
+                  <p className="section-hint">
+                    {translate("thresholdsAreQuotaUsedInPercentFrom")}
+                  </p>
+                  <div className="field-grid tier-grid">
+                    {(
                       [
-                        "moderate",
-                        translate("moderateQuotaUsed"),
-                        translate("emptyNoModerateTier"),
-                      ],
-                      [
-                        "limited",
-                        translate("limitedQuotaUsed"),
-                        translate("empty70"),
-                      ],
-                      [
-                        "nearlyExhausted",
-                        translate("nearlyExhaustedQuotaUsed"),
-                        translate("empty90"),
-                      ],
-                    ] as const
-                  ).map(([key, label, hint]) => (
-                    <Field key={key} label={label} hint={hint}>
-                      <input
-                        type="number"
-                        min={0}
-                        max={100}
-                        step="any"
-                        value={tiers[key] ?? ""}
-                        onChange={(e) =>
-                          setJev({
-                            ...jev,
-                            decisionQuotaTiers: create(JevQuotaTiersSchema, {
-                              ...tiers,
-                              [key]:
-                                e.target.value === ""
-                                  ? undefined
-                                  : Number(e.target.value),
-                            }),
-                          })
-                        }
-                      />
-                    </Field>
-                  ))}
+                        [
+                          "moderate",
+                          translate("moderateQuotaUsed"),
+                          translate("emptyNoModerateTier"),
+                        ],
+                        [
+                          "limited",
+                          translate("limitedQuotaUsed"),
+                          translate("empty70"),
+                        ],
+                        [
+                          "nearlyExhausted",
+                          translate("nearlyExhaustedQuotaUsed"),
+                          translate("empty90"),
+                        ],
+                      ] as const
+                    ).map(([key, label, hint]) => (
+                      <Field
+                        key={key}
+                        label={label}
+                        hint={hint}
+                        error={jevErrors[key]}
+                      >
+                        <input
+                          id={`route-quota-${key}`}
+                          type="number"
+                          min={0}
+                          max={100}
+                          step="any"
+                          value={tiers[key] ?? ""}
+                          onChange={(e) =>
+                            setJev({
+                              ...jev,
+                              decisionQuotaTiers: create(JevQuotaTiersSchema, {
+                                ...tiers,
+                                [key]:
+                                  e.target.value === ""
+                                    ? undefined
+                                    : Number(e.target.value),
+                              }),
+                            })
+                          }
+                        />
+                      </Field>
+                    ))}
+                  </div>
                 </>
               )}
-              {!validQuota && (
-                <Notice tone="warning">
-                  {translate("useFinitePercentagesFrom0To100")}
-                </Notice>
-              )}
-            </details>
-            {!validJev && (
-              <Notice tone="warning">
-                {translate("selectADecisionSourceAndUseThe")}
-              </Notice>
-            )}
+            </Disclosure>
           </fieldset>
         )}
         <section
@@ -1385,9 +1570,11 @@ function RouteEditor({
             </p>
           )}
         </section>
-        <details>
-          <summary>{translate("reasoningRetention")}</summary>
-          <label>
+        <Disclosure
+          summary={translate("reasoningRetention")}
+          forceOpen={!!(retentionErrors.percent || retentionErrors.tokens)}
+        >
+          <label className="check">
             <input
               type="checkbox"
               checked={retention !== undefined}
@@ -1401,12 +1588,12 @@ function RouteEditor({
             />
             {translate("configureReasoningRetention")}
           </label>
-          <p>
+          <p className="section-hint">
             {translate("removingThisConfigurationDisablesRetentionWhenSaved")}
           </p>
           {retention && (
             <>
-              <label>
+              <label className="check">
                 <input
                   type="checkbox"
                   checked={retention.enabled}
@@ -1421,61 +1608,64 @@ function RouteEditor({
                 />
                 {translate("retainReadableReasoningDuringCompaction")}
               </label>
-              <Field
-                label={translate("contextLimit")}
-                hint={translate("emptyOrZeroUses20OfThe")}
-              >
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  step="any"
-                  value={retention.maxContextPercent ?? ""}
-                  onChange={(e) =>
-                    setRetention(
-                      create(ReasoningRetentionConfigSchema, {
-                        ...retention,
-                        maxContextPercent:
-                          e.target.value === ""
-                            ? undefined
-                            : Number(e.target.value),
-                      }),
-                    )
-                  }
-                />
-              </Field>
-              <Field
-                label={translate("tokenLimit")}
-                hint={translate("emptyOrZeroUses100000Tokens")}
-              >
-                <input
-                  type="number"
-                  min="0"
-                  max="4294967295"
-                  step="1"
-                  value={retention.maxTokens ?? ""}
-                  onChange={(e) =>
-                    setRetention(
-                      create(ReasoningRetentionConfigSchema, {
-                        ...retention,
-                        maxTokens:
-                          e.target.value === ""
-                            ? undefined
-                            : Number(e.target.value),
-                      }),
-                    )
-                  }
-                />
-              </Field>
-              {!validRetention && (
-                <Notice tone="warning">
-                  {translate("useAPercentageFrom0To100")}
-                </Notice>
-              )}
+              <div className="field-grid">
+                <Field
+                  label={translate("contextLimit")}
+                  hint={translate("emptyOrZeroUses20OfThe")}
+                  error={retentionErrors.percent}
+                >
+                  <input
+                    id="route-retention-percent"
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="any"
+                    value={retention.maxContextPercent ?? ""}
+                    onChange={(e) =>
+                      setRetention(
+                        create(ReasoningRetentionConfigSchema, {
+                          ...retention,
+                          maxContextPercent:
+                            e.target.value === ""
+                              ? undefined
+                              : Number(e.target.value),
+                        }),
+                      )
+                    }
+                  />
+                </Field>
+                <Field
+                  label={translate("tokenLimit")}
+                  hint={translate("emptyOrZeroUses100000Tokens")}
+                  error={retentionErrors.tokens}
+                >
+                  <input
+                    id="route-retention-tokens"
+                    type="number"
+                    min="0"
+                    max="4294967295"
+                    step="1"
+                    value={retention.maxTokens ?? ""}
+                    onChange={(e) =>
+                      setRetention(
+                        create(ReasoningRetentionConfigSchema, {
+                          ...retention,
+                          maxTokens:
+                            e.target.value === ""
+                              ? undefined
+                              : Number(e.target.value),
+                        }),
+                      )
+                    }
+                  />
+                </Field>
+              </div>
             </>
           )}
-        </details>
-        <p>{translate("savingReplacesTheCompleteRouteChangingAway")}</p>
+        </Disclosure>
+        <p className="section-hint">
+          {translate("savingReplacesTheCompleteRouteChangingAway")}
+        </p>
         <ErrorSummary errors={summary} />
         {partial && (
           <Notice tone="warning">
