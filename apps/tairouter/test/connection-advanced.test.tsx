@@ -73,7 +73,7 @@ function mountEditor(update: (request: unknown) => object) {
 async function openEditor() {
   const user = userEvent.setup();
   await user.click(
-    await screen.findByRole("button", { name: "Edit connection" }),
+    await screen.findByRole("button", { name: /^Edit connection/ }),
   );
   const dialog = await screen.findByRole("dialog");
   const advanced = within(dialog)

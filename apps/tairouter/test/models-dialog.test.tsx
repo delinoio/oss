@@ -117,7 +117,9 @@ function mount(
   };
 }
 async function open(user: ReturnType<typeof userEvent.setup>, index = 0) {
-  const buttons = await screen.findAllByRole("button", { name: "View models" });
+  const buttons = await screen.findAllByRole("button", {
+    name: /^View models/,
+  });
   const trigger = buttons[index]!;
   await user.click(trigger);
   return { trigger, dialog: await screen.findByRole("dialog") };
@@ -294,7 +296,7 @@ describe("connection models dialog", () => {
     await within(dialog).findByText("model-alpha");
     await user.click(await screen.findByRole("button", { name: "Done" }));
     await user.click(
-      (await screen.findAllByRole("button", { name: "View models" }))[0]!,
+      (await screen.findAllByRole("button", { name: /^View models/ }))[0]!,
     );
     const reopened = await screen.findByRole("dialog");
     await waitFor(() =>

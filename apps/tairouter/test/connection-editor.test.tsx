@@ -387,7 +387,7 @@ describe("edit variant", () => {
       page(r, { updateProviderConnection }, undefined, [saved]),
     );
     await user.click(
-      await screen.findByRole("button", { name: "Edit connection" }),
+      await screen.findByRole("button", { name: /^Edit connection/ }),
     );
     const dialog = await screen.findByRole("dialog", {
       name: "Edit connection",
@@ -426,7 +426,7 @@ describe("edit variant", () => {
       page(r, { updateProviderConnection }, undefined, [saved]),
     );
     await user.click(
-      await screen.findByRole("button", { name: "Edit connection" }),
+      await screen.findByRole("button", { name: /^Edit connection/ }),
     );
     await user.type(
       await screen.findByLabelText("Replacement API key (optional)"),
@@ -450,7 +450,7 @@ describe("edit variant", () => {
     });
     mount(renderPage(), (r) => page(r, {}, undefined, [oauth]));
     await user.click(
-      await screen.findByRole("button", { name: "Edit connection" }),
+      await screen.findByRole("button", { name: /^Edit connection/ }),
     );
     const dialog = await screen.findByRole("dialog", {
       name: "Edit connection",

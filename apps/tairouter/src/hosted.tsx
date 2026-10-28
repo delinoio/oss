@@ -161,7 +161,7 @@ export function HostedHelpers({
     );
   }
   return (
-    <Card>
+    <Card className="entry-card">
       <h2>{translate("hostedHelpers")}</h2>
       <p>{translate("chooseYourOwnAccountsForWebSearch")}</p>
       <Button onClick={openDialog}>

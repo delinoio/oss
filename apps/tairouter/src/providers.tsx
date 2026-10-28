@@ -72,6 +72,22 @@ export const authLabel: Record<number, string> = {
     return translate("noAuthentication");
   },
 };
+function connectionTone(
+  state: ConnectionState,
+): "success" | "warning" | "danger" | "neutral" {
+  switch (state) {
+    case ConnectionState.READY:
+      return "success";
+    case ConnectionState.ERROR:
+      return "danger";
+    case ConnectionState.AUTHORIZATION_REQUIRED:
+    case ConnectionState.COOLDOWN:
+      return "warning";
+    // Disabled and unrecognized states stay neutral so they never look healthy or alarming.
+    default:
+      return "neutral";
+  }
+}
 export function ProvidersPage({ organization }: PageProps) {
   useLocale();
   const api = useApi();
@@ -111,6 +127,7 @@ export function ProvidersPage({ organization }: PageProps) {
   });
   const catalog = useQuery(ProviderService.method.listProviderCatalog, {});
   const { pools, routes } = usePersonalResources(organization.id);
+  const needle = search.toLowerCase();
   // An organization switch must not carry a scoped confirmation into another organization.
   useEffect(() => {
     setRemove(undefined);
@@ -144,8 +161,17 @@ export function ProvidersPage({ organization }: PageProps) {
     }
   }, [restoreFocus, query.data, query.fetchStatus, query.dataUpdatedAt]);
   const records = query.data?.connections.filter((c) =>
-    `${c.name} ${c.providerId}`.toLowerCase().includes(search.toLowerCase()),
+    `${c.name} ${c.providerId}`.toLowerCase().includes(needle),
   );
+  const online = useOnline();
+  const listCode = query.error
+    ? ConnectError.from(query.error).code
+    : undefined;
+  const accessDenied =
+    listCode === Code.PermissionDenied || listCode === Code.Unauthenticated;
+  const providerName = (providerId: string) =>
+    catalog.data?.providers.find((p) => p.id === providerId)?.displayName ??
+    providerId;
   return (
     <>
       <PageHeader
@@ -158,24 +184,44 @@ export function ProvidersPage({ organization }: PageProps) {
         }
       />
       <Notice>{translate("privateToYouYourProvidersAndRouting")}</Notice>
-      <div className="actions">
-        <a className="button" href={pageHref("pools", organization.id)}>
-          {translate("manageAccountPools")}
-        </a>
-      </div>
-      <HostedHelpers
-        organizationId={organization.id}
-        organizationName={organization.name}
-      />
       {action.feedback}
-      <Field label={translate("searchYourConnections")}>
+      <Field
+        label={translate("searchYourConnections")}
+        hint={translate("searchThisPageByAccountOrProvider")}
+      >
         <input
           type="search"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </Field>
-      <ErrorNotice error={query.error} retry={() => void query.refetch()} />
+      {accessDenied ? (
+        <Notice tone="warning">
+          {translate("youNoLongerHaveAccessToTheseProviders")}
+        </Notice>
+      ) : (
+        <ErrorNotice error={query.error} retry={() => void query.refetch()} />
+      )}
+      {query.error && query.data && !accessDenied && (
+        <Notice tone="warning">
+          {translate("showingTheLastLoadedConnectionsTheLatest")}
+        </Notice>
+      )}
+      {!online && query.data && (
+        <Notice tone="warning">
+          {translate("youAreOfflineTheseConnectionsMayBeOut")}
+        </Notice>
+      )}
+      {catalog.error && (
+        <Notice tone="warning">
+          {translate("providerNamesCouldNotBeLoadedShowingProvider")}
+          <div className="actions">
+            <Button onClick={() => void catalog.refetch()}>
+              {translate("tryAgain")}
+            </Button>
+          </div>
+        </Notice>
+      )}
       <div
         ref={listTarget}
         className="providers-list"
@@ -184,8 +230,8 @@ export function ProvidersPage({ organization }: PageProps) {
         tabIndex={-1}
       >
         {query.isPending ? (
-          <Loading />
-        ) : records?.length === 0 ? (
+          <Loading label={translate("loadingYourConnections")} />
+        ) : query.data && records?.length === 0 ? (
           <EmptyState
             title={
               search
@@ -197,81 +243,103 @@ export function ProvidersPage({ organization }: PageProps) {
                 <Button onClick={() => setSearch("")}>
                   {translate("clearFilters")}
                 </Button>
-              ) : undefined
+              ) : (
+                <Button variant="primary" onClick={() => setEdit(true)}>
+                  {translate("connectProvider")}
+                </Button>
+              )
             }
           >
             {translate("onlyYouCanUseTheseProviderAccounts")}
           </EmptyState>
-        ) : (
-          <div className="grid">
-            {records?.map((c) => (
-              <Card key={c.id}>
-                <div className="record-title">
-                  <span className="provider-mark" aria-hidden="true">
-                    {c.providerId.slice(0, 2).toUpperCase()}
-                  </span>
-                  <div>
-                    <h2>{c.name}</h2>
-                    <p>
-                      {catalog.data?.providers.find(
-                        (p) => p.id === c.providerId,
-                      )?.displayName ?? c.providerId}
-                    </p>
+        ) : records && records.length > 0 ? (
+          <ul
+            className="connection-list"
+            aria-label={translate("yourProviderConnections")}
+          >
+            {records.map((c) => {
+              const reconnectNeeded =
+                c.state === ConnectionState.AUTHORIZATION_REQUIRED;
+              return (
+                <li key={c.id} className="connection-row">
+                  <div className="connection-identity">
+                    <span className="provider-mark" aria-hidden="true">
+                      {c.providerId.slice(0, 2).toUpperCase()}
+                    </span>
+                    <div>
+                      <h2>{c.name}</h2>
+                      <p>{providerName(c.providerId)}</p>
+                    </div>
+                    <Badge tone={connectionTone(c.state)}>
+                      {connectionLabel[c.state] ?? translate("unknownStatus")}
+                    </Badge>
                   </div>
-                </div>
-                <Badge
-                  tone={
-                    c.state === ConnectionState.READY
-                      ? "success"
-                      : c.state === ConnectionState.ERROR
-                        ? "danger"
-                        : "warning"
-                  }
-                >
-                  {connectionLabel[c.state] ?? translate("unknownStatus")}
-                </Badge>
-                <p>
-                  {translate("personalAccount_938eac", {
-                    value0: authLabel[c.authKind],
-                  })}
-                </p>
-                <p>{translate("added", { value0: formatDate(c.createdAt) })}</p>
-                {c.cooldownUntil && (
-                  <p>
-                    {translate("coolingDownUntil", {
-                      value0: formatDate(c.cooldownUntil),
-                    })}
-                  </p>
-                )}
-                <div className="actions">
-                  <Button onClick={() => setEdit(c)}>
-                    {translate("editConnection")}
-                  </Button>
-                  <Button onClick={() => setModels(c)}>
-                    {translate("viewModels")}
-                  </Button>
-                  {c.authKind === ProviderAuthKind.OAUTH && (
+                  <dl className="connection-meta">
+                    <div>
+                      <dt>{translate("authentication")}</dt>
+                      <dd>{authLabel[c.authKind] ?? translate("unknown")}</dd>
+                    </div>
+                    <div>
+                      <dt>{translate("addedLabel")}</dt>
+                      <dd>{formatDate(c.createdAt)}</dd>
+                    </div>
+                    {c.cooldownUntil && (
+                      <div>
+                        <dt>{translate("coolingDownUntilLabel")}</dt>
+                        <dd>{formatDate(c.cooldownUntil)}</dd>
+                      </div>
+                    )}
+                  </dl>
+                  <div className="connection-actions">
                     <Button
-                      disabled={action.pending}
-                      onClick={() =>
-                        setOauthSetup({
-                          providerId: c.providerId,
-                          name: c.name,
-                          connectionId: c.id,
-                        })
-                      }
+                      aria-label={translate("editConnectionFor", {
+                        value0: c.name,
+                      })}
+                      onClick={() => setEdit(c)}
                     >
-                      {translate("reconnect")}
+                      {translate("editConnection")}
                     </Button>
-                  )}
-                  <Button variant="danger" onClick={() => setRemove(c)}>
-                    {translate("disconnect")}
-                  </Button>
-                </div>
-              </Card>
-            ))}
-          </div>
-        )}
+                    <Button
+                      aria-label={translate("viewModelsFor", {
+                        value0: c.name,
+                      })}
+                      onClick={() => setModels(c)}
+                    >
+                      {translate("viewModels")}
+                    </Button>
+                    {c.authKind === ProviderAuthKind.OAUTH && (
+                      <Button
+                        variant={reconnectNeeded ? "primary" : "secondary"}
+                        aria-label={translate("reconnectFor", {
+                          value0: c.name,
+                        })}
+                        disabled={action.pending}
+                        onClick={() =>
+                          setOauthSetup({
+                            providerId: c.providerId,
+                            name: c.name,
+                            connectionId: c.id,
+                          })
+                        }
+                      >
+                        {translate("reconnect")}
+                      </Button>
+                    )}
+                    <Button
+                      variant="danger"
+                      aria-label={translate("disconnectFor", {
+                        value0: c.name,
+                      })}
+                      onClick={() => setRemove(c)}
+                    >
+                      {translate("disconnect")}
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
       </div>
       <Pagination
         next={query.data?.page?.nextPageToken}
@@ -279,6 +347,19 @@ export function ProvidersPage({ organization }: PageProps) {
         onFirst={() => setToken("")}
         hasPrevious={!!token}
       />
+      <div className="entry-cards">
+        <Card className="entry-card">
+          <h2>{translate("accountPools")}</h2>
+          <p>{translate("groupYourPersonalConnectionsForRouting")}</p>
+          <a className="button" href={pageHref("pools", organization.id)}>
+            {translate("manageAccountPools")}
+          </a>
+        </Card>
+        <HostedHelpers
+          organizationId={organization.id}
+          organizationName={organization.name}
+        />
+      </div>
       {edit && (
         <ConnectionEditor
           connection={edit === true ? undefined : edit}
@@ -351,6 +432,7 @@ export function ProvidersPage({ organization }: PageProps) {
       )}
       {oauthSetup && (
         <OAuthSetup
+          providerId={oauthSetup.providerId}
           provider={catalog.data?.providers.find(
             (p) => p.id === oauthSetup.providerId,
           )}
@@ -1348,24 +1430,64 @@ const oauthMethodLabels: Record<number, string> = {
     return translate("nativeCallback");
   },
 };
+const oauthUrlFieldKeys = new Set([
+  "redirectUri",
+  "startUrl",
+  "baseUrl",
+  "authBaseUrl",
+  "portalUrl",
+  "registerUrl",
+]);
+function isValidUrl(value: string) {
+  try {
+    new URL(value);
+    return true;
+  } catch {
+    return false;
+  }
+}
 function OAuthSetup({
   provider,
+  providerId,
   pending,
   error,
   onClose,
   onSave,
 }: {
   provider?: ProviderDefinition;
+  providerId: string;
   pending: boolean;
   error: unknown;
   onClose: () => void;
   onSave: (options: OAuthOptions) => void;
 }) {
   useLocale();
+  const formRef = useRef<HTMLFormElement>(null);
+  const errorId = useId();
+  const beforeId = useId();
   const [method, setMethod] = useState<ProviderOAuthMethod | undefined>();
   const [values, setValues] = useState<Record<string, string>>({});
-  const update = (key: string, value: string) =>
+  const [invalid, setInvalid] = useState<Record<string, boolean>>({});
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  // Incremented once per failed submission so autofocus runs only after a
+  // failed submit, never when editing clears a field's invalid flag.
+  const [focusAttempt, setFocusAttempt] = useState(0);
+  // The shared page action may still hold an unrelated earlier failure when the
+  // dialog opens; only show failures produced by this dialog's own submission.
+  const initialError = useRef(error);
+  const visibleError = error === initialError.current ? undefined : error;
+  const update = (key: string, value: string) => {
     setValues((old) => ({ ...old, [key]: value }));
+    setInvalid((old) => (old[key] ? { ...old, [key]: false } : old));
+  };
+  useEffect(() => {
+    if (focusAttempt === 0) return;
+    // Move focus to the first field that failed validation, opening the
+    // advanced disclosure first so the control is reachable.
+    formRef.current
+      ?.querySelector<HTMLElement>('[aria-invalid="true"]')
+      ?.focus();
+  }, [focusAttempt]);
   const fields = [
     ["loginProvider", translate("loginProvider")],
     ["ssoRegion", translate("ssoRegion")],
@@ -1377,72 +1499,133 @@ function OAuthSetup({
     ["registerUrl", translate("registrationUrl")],
     ["clientId", translate("clientId")],
   ] as const;
+  const invalidHint = (key: string) =>
+    invalid[key] ? (
+      <span className="oauth-field-error">{translate("enterAValidUrl")}</span>
+    ) : undefined;
+  const describedBy = visibleError ? errorId : undefined;
   return (
     <Dialog
       title={translate("authorize", {
-        value0: provider?.displayName ?? "provider",
+        value0: provider?.displayName ?? providerId,
       })}
       onClose={onClose}
+      className="oauth-setup"
+      initialFocus="[data-initial-focus]"
     >
+      <p className="oauth-intro">
+        {translate("useTheCallbackAndRegionalSettingsRequired")}
+        <br />
+        <small>{translate("leaveOptionalSettingsEmptyToUseThe")}</small>
+      </p>
       <form
+        ref={formRef}
+        noValidate
+        aria-describedby={describedBy}
         onSubmit={(e) => {
           e.preventDefault();
+          if (pending) return;
           const options: OAuthOptions = { method };
+          const failed: Record<string, boolean> = {};
           for (const [key, value] of Object.entries(values)) {
-            if (value.trim()) Object.assign(options, { [key]: value.trim() });
+            const trimmed = value.trim();
+            if (!trimmed) continue;
+            if (oauthUrlFieldKeys.has(key) && !isValidUrl(trimmed))
+              failed[key] = true;
+            Object.assign(options, { [key]: trimmed });
           }
+          if (Object.keys(failed).length) {
+            if (Object.keys(failed).some((key) => key !== "redirectUri"))
+              setAdvancedOpen(true);
+            setInvalid(failed);
+            setFocusAttempt((attempt) => attempt + 1);
+            return;
+          }
+          setInvalid({});
           onSave(options);
         }}
       >
-        <Notice>
-          {translate("useTheCallbackAndRegionalSettingsRequired")}
-        </Notice>
-        {!!provider?.oauthMethods.length && (
-          <Field label={translate("authorizationMethod")}>
-            <select
-              value={method ?? ""}
-              onChange={(e) =>
-                setMethod(e.target.value ? Number(e.target.value) : undefined)
+        <fieldset className="oauth-group">
+          <legend>{translate("authorization")}</legend>
+          {!!provider?.oauthMethods.length && (
+            <Field
+              label={translate("authorizationMethod")}
+              hint={translate("availableMethodsDependOnTheSelectedProvider")}
+            >
+              <select
+                aria-describedby={describedBy}
+                value={method ?? ""}
+                onChange={(e) =>
+                  setMethod(e.target.value ? Number(e.target.value) : undefined)
+                }
+              >
+                <option value="">{translate("providerDefault")}</option>
+                {provider.oauthMethods
+                  .filter((m) => m !== ProviderOAuthMethod.UNSPECIFIED)
+                  .map((m) => (
+                    <option key={m} value={m}>
+                      {oauthMethodLabels[m] ?? translate("providerMethod")}
+                    </option>
+                  ))}
+              </select>
+            </Field>
+          )}
+          <div className="oauth-callback">
+            <Field
+              label={translate("callbackUri")}
+              hint={
+                <>
+                  {translate("requiredForNativeCallbacksAndMostPkce")}{" "}
+                  {translate("theServerDoesNotStartALocalListener")}
+                  {invalidHint("redirectUri")}
+                </>
               }
             >
-              <option value="">{translate("providerDefault")}</option>
-              {provider.oauthMethods
-                .filter((m) => m !== ProviderOAuthMethod.UNSPECIFIED)
-                .map((m) => (
-                  <option key={m} value={m}>
-                    {oauthMethodLabels[m] ?? translate("providerMethod")}
-                  </option>
-                ))}
-            </select>
-          </Field>
-        )}
-        <Field
-          label={translate("callbackUri")}
-          hint={translate("requiredForNativeCallbacksAndMostPkce")}
-        >
-          <input
-            autoFocus
-            type="url"
-            autoComplete="off"
-            value={values.redirectUri ?? ""}
-            onChange={(e) => update("redirectUri", e.target.value)}
-          />
-        </Field>
-        <details>
-          <summary>{translate("regionalAndAdvancedProviderSettings")}</summary>
-          {fields.map(([key, label]) => (
-            <Field key={key} label={label}>
               <input
-                type={key.toLowerCase().endsWith("url") ? "url" : "text"}
+                data-initial-focus
+                type="url"
                 autoComplete="off"
+                aria-describedby={describedBy}
+                aria-invalid={invalid.redirectUri ? true : undefined}
+                value={values.redirectUri ?? ""}
+                onChange={(e) => update("redirectUri", e.target.value)}
+              />
+            </Field>
+          </div>
+        </fieldset>
+        <section className="oauth-before" aria-labelledby={beforeId}>
+          <strong id={beforeId}>{translate("beforeYouContinue")}</strong>
+          <p>{translate("useTheCallbackUriRegisteredWithYour")}</p>
+        </section>
+        <details
+          className="oauth-advanced"
+          open={advancedOpen}
+          onToggle={(e) => setAdvancedOpen(e.currentTarget.open)}
+        >
+          <summary>
+            <span>{translate("regionalAndAdvancedProviderSettings")}</span>
+            <small>{translate("loginProviderRegionsUrlsAndClientId")}</small>
+          </summary>
+          {fields.map(([key, label]) => (
+            <Field key={key} label={label} hint={invalidHint(key)}>
+              <input
+                type={oauthUrlFieldKeys.has(key) ? "url" : "text"}
+                autoComplete="off"
+                aria-describedby={describedBy}
+                aria-invalid={invalid[key] ? true : undefined}
                 value={values[key] ?? ""}
                 onChange={(e) => update(key, e.target.value)}
               />
             </Field>
           ))}
         </details>
-        <ErrorNotice error={error} />
-        <div className="actions">
+        <div id={errorId}>
+          <ErrorNotice error={visibleError} />
+        </div>
+        <p className="visually-hidden" role="status">
+          {pending ? translate("message_bbe5fc3b9e") : ""}
+        </p>
+        <div className="actions oauth-setup-footer">
           <Button onClick={onClose}>{translate("cancel")}</Button>
           <Button type="submit" variant="primary" disabled={pending}>
             {pending
