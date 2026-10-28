@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import { t as translate, useLocale } from "./i18n";
 import { pageHref } from "./routes";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   NativePoolFields,
   nativePoolError,
@@ -31,6 +31,7 @@ import {
 import { useApi, type PageProps, pageSize } from "./api";
 import { useAction } from "./actions";
 import { usePersonalResources } from "./resources";
+import { utf8ByteLength } from "./validation";
 import {
   PageHeader,
   Button,
@@ -40,6 +41,8 @@ import {
   DialogSize,
   ConfirmDialog,
   ErrorNotice,
+  ErrorSummary,
+  type ErrorSummaryItem,
   Loading,
   EmptyState,
   Notice,
@@ -562,6 +565,83 @@ type TargetValue = {
   priority: number;
   weight: number;
 };
+/** Service-enforced route limits mirrored by the editor. */
+enum RouteLimit {
+  AliasBytes = 512,
+  ModelIdBytes = 512,
+  MaxTargets = 100,
+  MaxJevTargets = 64,
+  MinWeight = 1,
+  MaxWeight = 1000,
+}
+const targetCountMessage = {
+  direct: () => translate("directRoutingNeedsExactlyOneTarget"),
+  jev: () =>
+    translate("jevRoutingNeeds1ToTargets", {
+      value0: RouteLimit.MaxJevTargets,
+    }),
+  ordinary: () =>
+    translate("thisRoutingStrategyNeeds1ToTargets", {
+      value0: RouteLimit.MaxTargets,
+    }),
+};
+/** Returns the group error for the draft target count, if any. */
+function targetCountError(
+  strategy: RoutingStrategy,
+  count: number,
+): string | undefined {
+  if (strategy === RoutingStrategy.DIRECT)
+    return count === 1 ? undefined : targetCountMessage.direct();
+  if (strategy === RoutingStrategy.JEV)
+    return count >= 1 && count <= RouteLimit.MaxJevTargets
+      ? undefined
+      : targetCountMessage.jev();
+  return count >= 1 && count <= RouteLimit.MaxTargets
+    ? undefined
+    : targetCountMessage.ordinary();
+}
+type TargetErrors = {
+  source?: string;
+  model?: string;
+  weight?: string;
+  sourceRequired: boolean;
+  modelRequired: boolean;
+};
+/** Validates one draft target. Required-field errors are flagged separately. */
+function targetErrors(
+  t: TargetValue,
+  accounts: ProviderConnection[],
+  pools: Pool[],
+): TargetErrors {
+  const known =
+    t.target.case === "connectionId"
+      ? accounts.some((a) => a.id === t.target.value)
+      : pools.some((p) => p.id === t.target.value);
+  return {
+    sourceRequired: !t.target.value,
+    modelRequired: !t.modelId.trim(),
+    source: !t.target.value
+      ? translate("chooseAConnectionOrPool")
+      : known
+        ? undefined
+        : translate("thisConnectionOrPoolIsUnavailableChoose"),
+    model: !t.modelId.trim()
+      ? translate("providerModelIdIsRequired")
+      : utf8ByteLength(t.modelId) > RouteLimit.ModelIdBytes
+        ? translate("providerModelIdMustBeUtf8", {
+            value0: RouteLimit.ModelIdBytes,
+          })
+        : undefined,
+    weight:
+      Number.isInteger(t.weight) &&
+      t.weight >= RouteLimit.MinWeight &&
+      t.weight <= RouteLimit.MaxWeight
+        ? undefined
+        : translate("weightMustBeAWholeNumberFrom"),
+  };
+}
+/** Draft target with a stable row key so reordering keeps row identity. */
+type TargetDraft = TargetValue & { key: number };
 type RouteValues = {
   reasoningRetention?: ReasoningRetentionConfig;
   jevDecision?: JevDecisionConfig;
@@ -641,22 +721,125 @@ function RouteEditor({
     route?.strategy ?? RoutingStrategy.FALLBACK,
   );
   const [enabled, setEnabled] = useState(route?.enabled ?? true);
-  const [targets, setTargets] = useState<TargetValue[]>(
-    route?.targets
-      .filter(
-        (t): t is RouteTarget & { target: TargetValue["target"] } =>
-          !!t.target.case,
-      )
-      .map((t) => ({
-        target: t.target,
-        modelId: t.modelId,
-        reasoningEfforts: [...t.reasoningEfforts],
-        modelProfile: t.modelProfile,
-        priority: t.priority,
-        weight: t.weight,
-      }))
-      .toSorted((a, b) => a.priority - b.priority) ?? [],
+  const nextKey = useRef(0);
+  const [targets, setTargets] = useState<TargetDraft[]>(
+    () =>
+      route?.targets
+        .filter(
+          (t): t is RouteTarget & { target: TargetValue["target"] } =>
+            !!t.target.case,
+        )
+        .map((t) => ({
+          key: nextKey.current++,
+          target: t.target,
+          modelId: t.modelId,
+          reasoningEfforts: [...t.reasoningEfforts],
+          modelProfile: t.modelProfile,
+          priority: t.priority,
+          weight: t.weight,
+        }))
+        .toSorted((a, b) => a.priority - b.priority) ?? [],
   );
+  // Required-field errors stay quiet until the user interacts with the form.
+  const [touched, setTouched] = useState(false);
+  const [announcement, setAnnouncement] = useState("");
+  const focusRequest = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    if (focusRequest.current) {
+      document.getElementById(focusRequest.current)?.focus();
+      focusRequest.current = undefined;
+    }
+  });
+  const trimmedName = name.trim();
+  const aliasError = !trimmedName
+    ? { message: translate("modelAliasIsRequired"), required: true }
+    : utf8ByteLength(trimmedName) > RouteLimit.AliasBytes
+      ? {
+          message: translate("modelAliasMustBeUtf8Bytes", {
+            value0: RouteLimit.AliasBytes,
+          }),
+          required: false,
+        }
+      : existingNames.includes(trimmedName)
+        ? {
+            message: translate("thisNameIsAlreadyInUseChoose"),
+            required: false,
+          }
+        : undefined;
+  const countError = targetCountError(strategy, targets.length);
+  const rowErrors = targets.map((t) => targetErrors(t, accounts, pools));
+  const shown = (message: string | undefined, required: boolean) =>
+    message && (touched || !required) ? message : undefined;
+  const summary: ErrorSummaryItem[] = [];
+  if (aliasError && shown(aliasError.message, aliasError.required))
+    summary.push({
+      key: "alias",
+      message: aliasError.message,
+      fieldId: "route-alias",
+    });
+  if (shown(countError, true))
+    summary.push({
+      key: "target-count",
+      message: countError!,
+      fieldId: "route-add-target",
+    });
+  targets.forEach((t, i) => {
+    const e = rowErrors[i]!;
+    const label = translate("target_5a2ba5", { value0: i + 1 });
+    if (shown(e.source, e.sourceRequired))
+      summary.push({
+        key: `${t.key}-source`,
+        message: translate("message_6a776812d7", {
+          value0: label,
+          value1: e.source,
+        }),
+        fieldId: `route-target-${t.key}-source`,
+      });
+    if (shown(e.model, e.modelRequired))
+      summary.push({
+        key: `${t.key}-model`,
+        message: translate("message_6a776812d7", {
+          value0: label,
+          value1: e.model,
+        }),
+        fieldId: `route-target-${t.key}-model`,
+      });
+    if (e.weight)
+      summary.push({
+        key: `${t.key}-weight`,
+        message: translate("message_6a776812d7", {
+          value0: label,
+          value1: e.weight,
+        }),
+        fieldId: `route-target-${t.key}-weight`,
+      });
+  });
+  if (strategy === RoutingStrategy.JEV && !validJev)
+    summary.push({
+      key: "jev",
+      message: translate("selectADecisionSourceAndUseThe"),
+    });
+  if (strategy === RoutingStrategy.JEV && !validQuota)
+    summary.push({
+      key: "quota",
+      message: translate("useValidQuotaThresholdsModerateBelowLimited"),
+    });
+  if (!validRetention)
+    summary.push({
+      key: "retention",
+      message: translate("useARetentionContextPercentageFrom0"),
+    });
+  const canSave =
+    !pending &&
+    !aliasError &&
+    !countError &&
+    rowErrors.every((e) => !e.source && !e.model && !e.weight) &&
+    validRetention &&
+    (strategy !== RoutingStrategy.JEV || (validJev && validQuota));
+  const updateTarget = (key: number, patch: Partial<TargetValue>) =>
+    setTargets((old) =>
+      old.map((x) => (x.key === key ? { ...x, ...patch } : x)),
+    );
   return (
     <Dialog
       title={route ? translate("editRouting") : translate("createRoute")}
@@ -665,61 +848,78 @@ function RouteEditor({
       size={DialogSize.Large}
     >
       <form
+        onChange={() => setTouched(true)}
         onSubmit={(e) => {
           e.preventDefault();
+          if (!canSave) return;
           onSave({
             reasoningRetention: retention,
-            modelId: name.trim(),
+            modelId: trimmedName,
             jevDecision: strategy === RoutingStrategy.JEV ? jev : undefined,
             strategy,
             enabled,
-            targets: targets.map((t, i) => ({ ...t, priority: i })),
+            targets: targets.map(({ key: _key, ...t }, i) => ({
+              ...t,
+              priority: i,
+            })),
           });
         }}
       >
-        <Field label={translate("modelAlias")}>
-          <input
-            autoFocus
-            required
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </Field>
-        <Field label={translate("routingStrategy")}>
-          <select
-            value={strategy}
-            onChange={(e) => {
-              const next = Number(e.target.value);
-              setStrategy(next);
-              if (next !== RoutingStrategy.JEV) {
-                setJev(create(JevDecisionConfigSchema));
-                setDecisionSource("connection");
-              }
-            }}
-          >
-            {[
-              RoutingStrategy.DIRECT,
-              RoutingStrategy.FALLBACK,
-              RoutingStrategy.WEIGHTED,
-              RoutingStrategy.ROUND_ROBIN,
-              RoutingStrategy.JEV,
-            ].map((s) => (
-              <option key={s} value={s}>
-                {s === RoutingStrategy.JEV
-                  ? "JEV"
-                  : enumLabel(RoutingStrategy[s])}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <label className="check">
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => setEnabled(e.target.checked)}
-          />
-          {translate("enabled")}
-        </label>
+        <section className="route-section" aria-labelledby="route-details">
+          <h3 id="route-details">{translate("routeDetails")}</h3>
+          <div className="field-grid">
+            <Field
+              label={translate("modelAlias")}
+              error={shown(aliasError?.message, aliasError?.required ?? false)}
+            >
+              <input
+                id="route-alias"
+                autoFocus
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </Field>
+            <Field
+              label={translate("routingStrategy")}
+              hint={translate("retryBehaviorFollowsEachProviderSPolicy")}
+            >
+              <select
+                value={strategy}
+                onChange={(e) => {
+                  const next = Number(e.target.value);
+                  setStrategy(next);
+                  if (next !== RoutingStrategy.JEV) {
+                    setJev(create(JevDecisionConfigSchema));
+                    setDecisionSource("connection");
+                  }
+                }}
+              >
+                {[
+                  RoutingStrategy.DIRECT,
+                  RoutingStrategy.FALLBACK,
+                  RoutingStrategy.WEIGHTED,
+                  RoutingStrategy.ROUND_ROBIN,
+                  RoutingStrategy.JEV,
+                ].map((s) => (
+                  <option key={s} value={s}>
+                    {s === RoutingStrategy.JEV
+                      ? "JEV"
+                      : enumLabel(RoutingStrategy[s])}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          <label className="check">
+            <input
+              type="checkbox"
+              checked={enabled}
+              onChange={(e) => setEnabled(e.target.checked)}
+            />
+            {translate("enabled")}
+          </label>
+        </section>
         {strategy === RoutingStrategy.JEV && (
           <fieldset>
             <legend>{translate("jevDecisionSettings")}</legend>
@@ -948,7 +1148,243 @@ function RouteEditor({
             )}
           </fieldset>
         )}
-        <p>{translate("savingReplacesTheCompleteRouteChangingAway")}</p>
+        <section
+          className="route-section"
+          aria-labelledby="route-targets-heading"
+          aria-describedby={countError ? "route-targets-error" : undefined}
+          role="group"
+        >
+          <h3 id="route-targets-heading">{translate("orderedTargets")}</h3>
+          <p className="section-hint">
+            {strategy === RoutingStrategy.DIRECT
+              ? translate("directRoutingUsesExactlyOneTarget")
+              : strategy === RoutingStrategy.JEV
+                ? translate("jevSupportsUpToTargets", {
+                    value0: RouteLimit.MaxJevTargets,
+                  })
+                : translate("upToTargetsTargetsAreListedIn", {
+                    value0: RouteLimit.MaxTargets,
+                  })}
+          </p>
+          {targets.map((t, i) => {
+            const rowId = `route-target-${t.key}`;
+            const e = rowErrors[i]!;
+            return (
+              <fieldset className="target-card" key={t.key}>
+                <legend>
+                  {translate("disconnectScopeLine", {
+                    value0: i + 1,
+                    value1:
+                      i === 0
+                        ? translate("message_efe10c80ec")
+                        : translate("fallback", { value0: i }),
+                  })}
+                </legend>
+                <div className="field-grid">
+                  <Field
+                    label={translate("connectionOrPool")}
+                    error={shown(e.source, e.sourceRequired)}
+                  >
+                    <select
+                      id={`${rowId}-source`}
+                      value={`${t.target.case}:${t.target.value}`}
+                      required
+                      onChange={(ev) => {
+                        const [kind, ...value] = ev.target.value.split(":");
+                        updateTarget(t.key, {
+                          target: {
+                            case: kind as "connectionId" | "poolId",
+                            value: value.join(":"),
+                          },
+                        });
+                      }}
+                    >
+                      <option value="">{translate("chooseATarget")}</option>
+                      {!accounts.some(
+                        (a) =>
+                          t.target.case === "connectionId" &&
+                          a.id === t.target.value,
+                      ) &&
+                        !pools.some(
+                          (p) =>
+                            t.target.case === "poolId" &&
+                            p.id === t.target.value,
+                        ) &&
+                        t.target.value && (
+                          <option value={`${t.target.case}:${t.target.value}`}>
+                            {translate("unavailableTarget")}
+                          </option>
+                        )}
+                      {accounts
+                        .filter(
+                          (a) =>
+                            a.state === ConnectionState.READY ||
+                            t.target.value === a.id,
+                        )
+                        .map((a) => (
+                          <option key={a.id} value={`connectionId:${a.id}`}>
+                            {a.state !== ConnectionState.READY
+                              ? translate("unavailable", { value0: a.name })
+                              : a.name}
+                          </option>
+                        ))}
+                      {pools.map((p) => (
+                        <option key={p.id} value={`poolId:${p.id}`}>
+                          {translate("pool", { value0: p.name })}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  <Field
+                    label={translate("providerModelId")}
+                    error={shown(e.model, e.modelRequired)}
+                  >
+                    <input
+                      id={`${rowId}-model`}
+                      required
+                      value={t.modelId}
+                      onChange={(ev) =>
+                        updateTarget(t.key, { modelId: ev.target.value })
+                      }
+                    />
+                  </Field>
+                </div>
+                <Field
+                  label={translate("weight_81d27e")}
+                  hint={translate("wholeNumberFrom1To1000Weighted")}
+                  error={e.weight}
+                >
+                  <input
+                    id={`${rowId}-weight`}
+                    type="number"
+                    min={RouteLimit.MinWeight}
+                    max={RouteLimit.MaxWeight}
+                    value={t.weight}
+                    onChange={(ev) =>
+                      updateTarget(t.key, { weight: Number(ev.target.value) })
+                    }
+                  />
+                </Field>
+                <details>
+                  <summary>
+                    {translate("targetReasoningAndModelProfile")}
+                  </summary>
+                  <fieldset>
+                    <legend>{translate("allowedReasoningEfforts")}</legend>
+                    {Object.values(JevEffort).map((effort) => (
+                      <label className="check" key={effort}>
+                        <input
+                          type="checkbox"
+                          checked={t.reasoningEfforts.includes(effort)}
+                          onChange={(ev) =>
+                            updateTarget(t.key, {
+                              reasoningEfforts: ev.target.checked
+                                ? [...t.reasoningEfforts, effort]
+                                : t.reasoningEfforts.filter(
+                                    (v) => v !== effort,
+                                  ),
+                            })
+                          }
+                        />
+                        {effort}
+                      </label>
+                    ))}
+                  </fieldset>
+                  <Field
+                    label={translate("modelProfile")}
+                    hint={translate(
+                      "optionalModelDescriptionForJevDecisionsUp",
+                    )}
+                  >
+                    <textarea
+                      maxLength={512}
+                      value={t.modelProfile}
+                      onChange={(ev) =>
+                        updateTarget(t.key, { modelProfile: ev.target.value })
+                      }
+                    />
+                  </Field>
+                </details>
+                <div className="actions">
+                  <Button
+                    id={`${rowId}-up`}
+                    disabled={i === 0}
+                    onClick={() => {
+                      setTouched(true);
+                      setTargets((old) => {
+                        const next = [...old];
+                        [next[i - 1], next[i]] = [next[i]!, next[i - 1]!];
+                        return next;
+                      });
+                      focusRequest.current =
+                        i - 1 === 0 ? `${rowId}-remove` : `${rowId}-up`;
+                      setAnnouncement(
+                        translate("movedTargetUpToPosition", {
+                          value0: i + 1,
+                          value1: i,
+                        }),
+                      );
+                    }}
+                  >
+                    {translate("moveUp")}
+                  </Button>
+                  <Button
+                    id={`${rowId}-remove`}
+                    onClick={() => {
+                      setTouched(true);
+                      const neighbor = targets[i + 1] ?? targets[i - 1];
+                      focusRequest.current = neighbor
+                        ? `route-target-${neighbor.key}-remove`
+                        : "route-add-target";
+                      setTargets((old) => old.filter((x) => x.key !== t.key));
+                      setAnnouncement(
+                        translate(
+                          targets.length - 1 === 1
+                            ? "removedTargetTargetRemaining"
+                            : "removedTargetTargetsRemaining",
+                          { value0: i + 1, value1: targets.length - 1 },
+                        ),
+                      );
+                    }}
+                  >
+                    {translate("removeTarget")}
+                  </Button>
+                </div>
+              </fieldset>
+            );
+          })}
+          <Button
+            id="route-add-target"
+            aria-describedby={countError ? "route-targets-error" : undefined}
+            onClick={() => {
+              const key = nextKey.current++;
+              setTouched(true);
+              setTargets((old) => [
+                ...old,
+                {
+                  key,
+                  target: { case: "connectionId", value: "" },
+                  modelId: "",
+                  reasoningEfforts: [],
+                  modelProfile: "",
+                  priority: old.length,
+                  weight: 1,
+                },
+              ]);
+              focusRequest.current = `route-target-${key}-source`;
+              setAnnouncement(
+                translate("addedTarget", { value0: targets.length + 1 }),
+              );
+            }}
+          >
+            {translate("addTarget")}
+          </Button>
+          {shown(countError, true) && (
+            <p id="route-targets-error" className="group-error">
+              {countError}
+            </p>
+          )}
+        </section>
         <details>
           <summary>{translate("reasoningRetention")}</summary>
           <label>
@@ -1039,190 +1475,8 @@ function RouteEditor({
             </>
           )}
         </details>
-        <h3>{translate("orderedTargets")}</h3>
-        {targets.map((t, i) => (
-          <fieldset key={i}>
-            <legend>
-              {i === 0
-                ? translate("message_efe10c80ec")
-                : translate("fallback", { value0: i })}
-            </legend>
-            <Field label={translate("connectionOrPool")}>
-              <select
-                value={`${t.target.case}:${t.target.value}`}
-                required
-                onChange={(e) => {
-                  const [kind, ...value] = e.target.value.split(":");
-                  setTargets((old) =>
-                    old.map((x, j) =>
-                      j === i
-                        ? {
-                            ...x,
-                            target: {
-                              case: kind as "connectionId" | "poolId",
-                              value: value.join(":"),
-                            },
-                          }
-                        : x,
-                    ),
-                  );
-                }}
-              >
-                <option value="">{translate("chooseATarget")}</option>
-                {!accounts.some(
-                  (a) =>
-                    t.target.case === "connectionId" && a.id === t.target.value,
-                ) &&
-                  !pools.some(
-                    (p) =>
-                      t.target.case === "poolId" && p.id === t.target.value,
-                  ) &&
-                  t.target.value && (
-                    <option value={`${t.target.case}:${t.target.value}`}>
-                      {translate("unavailableTarget")}
-                    </option>
-                  )}
-                {accounts
-                  .filter(
-                    (a) =>
-                      a.state === ConnectionState.READY ||
-                      t.target.value === a.id,
-                  )
-                  .map((a) => (
-                    <option key={a.id} value={`connectionId:${a.id}`}>
-                      {a.name}
-                      {a.state !== ConnectionState.READY
-                        ? " (unavailable)"
-                        : ""}
-                    </option>
-                  ))}
-                {pools.map((p) => (
-                  <option key={p.id} value={`poolId:${p.id}`}>
-                    {translate("pool", { value0: p.name })}
-                  </option>
-                ))}
-              </select>
-            </Field>
-            <Field label={translate("providerModelId")}>
-              <input
-                required
-                value={t.modelId}
-                onChange={(e) =>
-                  setTargets((old) =>
-                    old.map((x, j) =>
-                      j === i ? { ...x, modelId: e.target.value } : x,
-                    ),
-                  )
-                }
-              />
-            </Field>
-            <Field label={translate("weight_81d27e")}>
-              <input
-                type="number"
-                min={1}
-                max={1000}
-                value={t.weight}
-                onChange={(e) =>
-                  setTargets((old) =>
-                    old.map((x, j) =>
-                      j === i ? { ...x, weight: Number(e.target.value) } : x,
-                    ),
-                  )
-                }
-              />
-            </Field>
-            <details>
-              <summary>{translate("targetReasoningAndModelProfile")}</summary>
-              <fieldset>
-                <legend>{translate("allowedReasoningEfforts")}</legend>
-                {Object.values(JevEffort).map((effort) => (
-                  <label className="check" key={effort}>
-                    <input
-                      type="checkbox"
-                      checked={t.reasoningEfforts.includes(effort)}
-                      onChange={(e) =>
-                        setTargets((old) =>
-                          old.map((x, j) =>
-                            j === i
-                              ? {
-                                  ...x,
-                                  reasoningEfforts: e.target.checked
-                                    ? [...x.reasoningEfforts, effort]
-                                    : x.reasoningEfforts.filter(
-                                        (v) => v !== effort,
-                                      ),
-                                }
-                              : x,
-                          ),
-                        )
-                      }
-                    />
-                    {effort}
-                  </label>
-                ))}
-              </fieldset>
-              <Field
-                label={translate("modelProfile")}
-                hint={translate("optionalModelDescriptionForJevDecisionsUp")}
-              >
-                <textarea
-                  maxLength={512}
-                  value={t.modelProfile}
-                  onChange={(e) =>
-                    setTargets((old) =>
-                      old.map((x, j) =>
-                        j === i ? { ...x, modelProfile: e.target.value } : x,
-                      ),
-                    )
-                  }
-                />
-              </Field>
-            </details>
-            <div className="actions">
-              <Button
-                disabled={i === 0}
-                onClick={() =>
-                  setTargets((old) => {
-                    const next = [...old];
-                    [next[i - 1], next[i]] = [next[i], next[i - 1]];
-                    return next;
-                  })
-                }
-              >
-                {translate("moveUp")}
-              </Button>
-              <Button
-                onClick={() =>
-                  setTargets((old) => old.filter((_, j) => j !== i))
-                }
-              >
-                {translate("removeTarget")}
-              </Button>
-            </div>
-          </fieldset>
-        ))}
-        <Button
-          onClick={() =>
-            setTargets((old) => [
-              ...old,
-              {
-                target: { case: "connectionId", value: "" },
-                modelId: "",
-                reasoningEfforts: [],
-                modelProfile: "",
-                priority: old.length,
-                weight: 1,
-              },
-            ])
-          }
-        >
-          {translate("addTarget")}
-        </Button>
-        {strategy === RoutingStrategy.DIRECT && targets.length !== 1 && (
-          <Notice tone="warning">
-            {translate("directRoutingNeedsExactlyOneTarget")}
-          </Notice>
-        )}
+        <p>{translate("savingReplacesTheCompleteRouteChangingAway")}</p>
+        <ErrorSummary errors={summary} />
         {partial && (
           <Notice tone="warning">
             {translate("thisEditorShowsTheFirstConnectionsAnd", {
@@ -1231,33 +1485,17 @@ function RouteEditor({
           </Notice>
         )}
         <ErrorNotice error={error} />
-        {existingNames.includes(name.trim()) && (
-          <Notice tone="danger">
-            {translate("thisNameIsAlreadyInUseChoose")}
-          </Notice>
-        )}
+        <div
+          className="visually-hidden"
+          role="status"
+          aria-live="polite"
+          aria-atomic="true"
+        >
+          {pending ? translate("savingRouting") : announcement}
+        </div>
         <div className="actions">
           <Button onClick={onClose}>{translate("cancel")}</Button>
-          <Button
-            type="submit"
-            variant="primary"
-            disabled={
-              pending ||
-              !validRetention ||
-              !name.trim() ||
-              existingNames.includes(name.trim()) ||
-              !targets.length ||
-              (strategy === RoutingStrategy.JEV &&
-                (!validJev || !validQuota || targets.length > 64)) ||
-              targets.some((t) =>
-                t.target.case === "connectionId"
-                  ? !accounts.some((a) => a.id === t.target.value)
-                  : !pools.some((p) => p.id === t.target.value),
-              ) ||
-              targets.some((t) => !t.target.value || !t.modelId.trim()) ||
-              (strategy === RoutingStrategy.DIRECT && targets.length !== 1)
-            }
-          >
+          <Button type="submit" variant="primary" disabled={!canSave}>
             {translate("saveRouting")}
           </Button>
         </div>

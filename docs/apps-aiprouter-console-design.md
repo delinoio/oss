@@ -104,6 +104,16 @@ Editor dialogs share these primitives in `apps/aiprouter/src/ui.tsx` and `apps/a
 - `Dialog` accepts an optional `subtitle` (also exposed as the dialog description, together with any `describedBy` id) and a `DialogSize` option: `Default` (520px), `Wide` (720px) and `Large` (up to 880px with 32px, 24px and 16px padding on desktop, tablet and mobile). The legacy `wide` prop maps to `DialogSize.Wide`. The `.field-grid` class lays out two columns and collapses to one below 600px.
 - The routing editor uses `DialogSize.Large` and the subtitle “Only yours in {organization}.”
 
+### Routing editor
+
+The Create route / Edit routing dialog reads in this order: Route details, JEV decision settings (JEV only), Ordered targets, Reasoning retention, the consequence note, the error summary and server errors, then Cancel / Save routing. All sections save only through Save routing.
+
+- Route details: Model alias (focused on open, required, trimmed on save), Routing strategy (default Fallback for new routes) and Enabled (default true) with the note “Retry behavior follows each provider's policy.” The trimmed alias must be unique among the other routes and at most 512 UTF-8 bytes (`utf8ByteLength`, never `maxlength`).
+- Ordered targets are outlined cards labelled with the numeric position and Primary / Fallback n. Each card has Connection or pool, Provider model ID (non-blank after trim, sent unchanged, at most 512 UTF-8 bytes), Weight (1–1000 with an associated explanation; the service accepts a wider Weighted range and this boundary is intentionally unchanged), the Target reasoning and model profile disclosure, Move up and Remove target. Rows keep a stable identity while reordering; priority equals position on save. A saved target that is no longer available stays selectable as “Unavailable target” and blocks Save.
+- Target count rules are part of the Save predicate and surface as a group error associated with Add target: Direct exactly 1, JEV 1–64, Fallback / Weighted / Round robin 1–100. The 64-target cap applies only to JEV. An excess draft keeps every row; it never truncates.
+- Field errors use `Field` `error` (`aria-invalid` and `aria-describedby`). The error summary lists every cause that disables Save with links to the owning controls, including JEV and retention causes. Required-field errors stay quiet until the user first changes the form; limit, duplicate and unavailable-target errors show immediately.
+- A polite live region announces Move up, Add target, Remove target and the saving state; blocking errors use the assertive error summary and server error alert. Move, add and remove restore focus to a logical control in the same card list. Server rejection keeps the dialog, draft and selections; success closes the dialog only after the server confirms.
+
 ## API keys and client connection
 
 Key list: name, masked identifier, ordinary/CLI type, created date, expiry or “No expiry,” status and Revoke. Create form asks for name and expiry, with an explicit no-expiry option. One-time result shows a copyable raw key, warning “This key is shown only once,” and Done. Do not persist the raw value in browser storage or subsequent list views. Copy confirmation is announced accessibly. Leaving the result never suggests that the same secret can be recovered.
