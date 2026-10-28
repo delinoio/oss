@@ -3,6 +3,7 @@ import { t as translate, useLocale } from "./i18n";
 import { pageHref } from "./routes";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
+  NATIVE_SETTINGS_SUMMARY_ID,
   NativePoolFields,
   nativePoolError,
   nativeProvider,
@@ -364,8 +365,14 @@ function PoolEditor({
         fieldId: `pool-member-${m.connectionId}-weight`,
       });
   });
-  // Native validation is listed by the native settings disclosure itself and
-  // only gates Save here, so its message is never duplicated in the summary.
+  // The full native message is shown inside the (auto-opened) disclosure; the
+  // summary links to it so keyboard users can reach the fix.
+  if (nativeError)
+    summary.push({
+      key: "native",
+      message: `Native OAuth pool settings: ${nativeError}`,
+      fieldId: NATIVE_SETTINGS_SUMMARY_ID,
+    });
   const canSave =
     !pending &&
     dependenciesReady &&

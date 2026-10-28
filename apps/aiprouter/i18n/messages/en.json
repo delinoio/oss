@@ -237,7 +237,6 @@
   "theFirstMatchingRuleSelectsAnOrdered": "The first matching rule selects an ordered subset of this pool. Rules apply only while native pooling is enabled.",
   "addModelRule": "Add model rule",
   "nativePooling": "Native pooling",
-  "defaultEnablesNativePoolingWhenThisPool": "Default enables native pooling when this pool is created. Choose Disabled to opt out.",
   "anUnspecifiedSavedValueIsDisabledChoose": "An unspecified saved value is disabled. Choose Enabled to opt in.",
   "defaultQuota": "Default (quota)",
   "nativeSelectionStrategy": "Native selection strategy",
@@ -1407,5 +1406,9 @@
   "connection_b38d9d": "connection",
   "addedConnectionInThisPool": "Added {value0}. {value1} connection in this pool.",
   "addedConnectionsInThisPool": "Added {value0}. {value1} connections in this pool.",
-  "savingPool": "Saving pool…"
+  "savingPool": "Saving pool…",
+  "uncheckedMeansNoPoolLevelNativeSettings": "Unchecked means no pool-level native settings are saved. Member overrides below stay available.",
+  "clearingRemovesDraftNativeSettingsCreatingAn": "Clearing removes draft native settings. Creating an eligible OAuth pool enables native pooling by default; configure Native pooling as Disabled to opt out. Generic affinity is unchanged.",
+  "enterAWholeNumberFromTo": "Enter a whole number from {value0} to {value1}.",
+  "eligibleOauthPoolsEnableNativePoolingOn": "Eligible OAuth pools enable native pooling on create, even without pool-level settings. Keep configuration checked and choose Disabled to opt out."
 }
