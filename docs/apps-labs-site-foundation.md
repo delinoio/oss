@@ -2,7 +2,7 @@
 
 ## Scope
 
-Own `apps/labs-site`, the standalone static marketing site for Delino Labs. The root introduces Delino Labs and links to its products, documentation and source. The TaiRouter product page presents the approved marketing design and source-backed product behavior.
+Own `apps/labs-site`, the standalone static marketing site for Delino Labs. The root presents TaiRouter under the Delino Labs brand and links to its documentation and source. The TaiRouter product page presents the approved marketing design and source-backed product behavior.
 
 ## Runtime and Language
 
@@ -28,11 +28,11 @@ Visitors access the public marketing site. Maintainers author content and build 
 
 ## Landing page
 
-The home page uses the same off-white, near-black and cobalt visual language as the TaiRouter product page. Its hierarchy is a Delino Labs introduction with product/source actions, a static product-map illustration, a featured TaiRouter section, developer-tool cards for binpm, nodeup and cargo-mono, and a closing source call to action. The map is decorative and does not imply integration between the products. The TaiRouter illustration is conceptual, with separate personal credential paths and generic provider labels.
+The home page uses the same off-white, near-black and cobalt visual language as the TaiRouter product page. Its hierarchy is a TaiRouter introduction under the Delino Labs brand with product/documentation actions, a decorative static routing motif, a featured TaiRouter section, and a closing source call to action. The home page promotes TaiRouter only. The TaiRouter illustration is conceptual, with separate personal credential paths and generic provider labels.
 
-The product action scrolls to the featured section. TaiRouter links to the same-language product route and the English Labs guides. Developer-tool documentation links target `https://oss.delino.io/binpm/`, `https://oss.delino.io/nodeup/` and `https://oss.delino.io/cargo-mono/`. The main Docs link targets `https://docs.labs.delino.io/`. Marketing copy describes source-backed capabilities without promising hosted services, release availability or performance. No signup, pricing, visitor telemetry or external assets are introduced.
+The main navigation product action scrolls to the featured section. The hero product action links to the same-language TaiRouter page. TaiRouter links to the same-language product route and the English Labs guides. The main Docs link targets `https://docs.labs.delino.io/`. Marketing copy describes source-backed capabilities without promising hosted services, release availability or performance. No signup, pricing, visitor telemetry or external assets are introduced.
 
-At narrow widths, the hero, featured section and tool cards become a single column; navigation and actions wrap. Keep content available without JavaScript, touch targets at least 44 pixels, visible keyboard focus, a skip link and native language navigation with Escape dismissal. Long translations must wrap without horizontal scrolling. Root language selection stays on the landing page; product language selection stays on the product page.
+At narrow widths, the hero and featured section become a single column; navigation and actions wrap. Keep content available without JavaScript, touch targets at least 44 pixels, visible keyboard focus, a skip link and native language navigation with Escape dismissal. Long translations must wrap without horizontal scrolling. Root language selection stays on the landing page; product language selection stays on the product page.
 
 ## Localization
 

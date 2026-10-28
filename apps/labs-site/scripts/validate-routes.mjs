@@ -23,14 +23,15 @@ for (const { lang } of registry.locales) {
   assert.doesNotMatch(html, /name="robots" content="noindex"/);
   assert.ok(html.includes('id="home-title"'));
   assert.ok(html.includes('id="products"'));
-  assert.ok(html.includes('id="tools-title"'));
-  assert.ok(html.includes('href="#products"'));
   assert.ok(html.includes(`href="/${prefix}tairouter/"`));
   assert.ok(html.includes('href="https://docs.labs.delino.io/"'));
   assert.ok(html.includes('href="https://docs.labs.delino.io/tairouter/"'));
   assert.ok(html.includes('href="https://github.com/delinoio/oss"'));
   for (const tool of ["binpm", "nodeup", "cargo-mono"]) {
-    assert.ok(html.includes(`href="https://oss.delino.io/${tool}/"`));
+    assert.ok(
+      !html.includes(tool),
+      `${lang}: unexpected developer-tool promotion`,
+    );
   }
   assert.ok(
     html.includes('hreflang="x-default" href="https://labs.delino.io/"'),
@@ -83,13 +84,11 @@ for (const { lang } of registry.locales) {
     );
   }
   for (const message of [
-    "homeHeadline",
-    "homeHeadlineAccent",
+    "heroTeam",
+    "heroAI",
+    "heroRules",
     "homeDescription",
     "homeRouterDescription",
-    "homeBinpmDescription",
-    "homeNodeupDescription",
-    "homeCargoDescription",
     "homeClosingTitle",
   ]) {
     assert.ok(

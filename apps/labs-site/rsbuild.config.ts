@@ -59,26 +59,6 @@ export default defineConfig({
         productPath: `/${entry.lang === registry.sourceLang ? "" : `${entry.lang}/`}tairouter/`,
         languageLabel: entry.label,
         languages: languages(entry.product),
-        tools: [
-          {
-            name: "binpm",
-            symbol: "◇",
-            description: "homeBinpmDescription",
-            href: "https://oss.delino.io/binpm/",
-          },
-          {
-            name: "nodeup",
-            symbol: "⬡",
-            description: "homeNodeupDescription",
-            href: "https://oss.delino.io/nodeup/",
-          },
-          {
-            name: "cargo-mono",
-            symbol: "▱",
-            description: "homeCargoDescription",
-            href: "https://oss.delino.io/cargo-mono/",
-          },
-        ],
         t: (key: string) => {
           const message = entry.messages[key];
           if (!message)
