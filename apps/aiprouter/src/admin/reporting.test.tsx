@@ -359,8 +359,14 @@ describe("price collection compare-and-swap", () => {
       within(dialog).getByRole("button", { name: "Refresh prices for review" }),
     );
     await within(dialog).findByRole("heading", { name: "Current saved price" });
+    const reviewPanel = within(dialog).getByRole("region", {
+      name: "Current price review",
+    });
     expect(
-      within(dialog).getByText("Input: 2 per million tokens"),
+      reviewPanel.querySelector("dt")?.nextElementSibling?.textContent,
+    ).toBe("2");
+    expect(
+      within(reviewPanel).getByText("USD per million tokens"),
     ).toBeTruthy();
     expect(f.set).toHaveBeenCalledTimes(1);
     await user.click(
@@ -600,5 +606,431 @@ describe("price override list presentation", () => {
       pageSize: 100,
       pageToken: "next",
     });
+  });
+});
+
+function pagedPriceFixture(
+  pages: Record<
+    string,
+    { overrides: Record<string, unknown>[]; revision: string; next?: string }
+  >,
+) {
+  const set = rs.fn(),
+    list = rs.fn();
+  mount(<Prices />, (router) =>
+    router.service(OperatorService, {
+      listPriceOverrides: (request) => {
+        list(request);
+        const page = pages[request.page?.pageToken ?? ""];
+        if (!page) throw new ConnectError("Unavailable", Code.Unavailable);
+        return {
+          overrides: page.overrides,
+          revision: page.revision,
+          page: { nextPageToken: page.next ?? "" },
+        };
+      },
+      setPriceOverride: (request) => {
+        set(request);
+        return { revision: "1" };
+      },
+    }),
+  );
+  return { set, list };
+}
+const identity = (modelId: string, serviceTier: string, rates = {}) => ({
+  id: `${modelId}-${serviceTier}`,
+  providerId: "example-ai",
+  modelId,
+  serviceTier,
+  rates: { currency: "USD", ...rates },
+});
+describe("price editor structure", () => {
+  it("groups identity and rates with helpers, keeps edit identity read-only and focuses Currency", async () => {
+    pagedPriceFixture({
+      "": {
+        revision: "1",
+        overrides: [identity("atlas-chat", "priority", { input: "1.25" })],
+      },
+    });
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: /^Edit override for/ }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Edit price override" });
+    expect(
+      within(dialog).getByRole("group", { name: "Price identity" }),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByRole("group", { name: "Token rates" }),
+    ).toBeTruthy();
+    for (const name of ["Provider ID", "Model ID", "Service tier"])
+      expect(
+        (within(dialog).getByRole("textbox", { name }) as HTMLInputElement)
+          .readOnly,
+      ).toBe(true);
+    expect(
+      within(dialog).getByRole("textbox", { name: "Service tier" }),
+    ).toHaveProperty("value", "priority");
+    expect(
+      within(dialog).getByText(
+        "Leave empty to apply when no tier-specific override matches.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByText("USD is currently supported."),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByText(
+        "Blank means unknown. Enter 0 only for a confirmed zero price.",
+      ),
+    ).toBeTruthy();
+    expect(document.activeElement).toBe(
+      within(dialog).getByRole("textbox", { name: "Currency" }),
+    );
+    expect(
+      within(dialog).getByRole("button", { name: "Close dialog" }),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByRole("button", { name: "Refresh prices for review" }),
+    ).toBeTruthy();
+  });
+  it("focuses Provider ID on Add, marks no rate as required and submits exact optional decimals", async () => {
+    const f = pagedPriceFixture({ "": { revision: "1", overrides: [] } });
+    const user = userEvent.setup();
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Add price override",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Add price override" }),
+    );
+    const dialog = screen.getByRole("dialog", { name: "Add price override" });
+    const field = (name: string) =>
+      within(dialog).getByRole("textbox", { name }) as HTMLInputElement;
+    expect(document.activeElement).toBe(field("Provider ID"));
+    expect(field("Currency").value).toBe("USD");
+    for (const name of ["Provider ID", "Model ID", "Currency"])
+      expect(field(name).required).toBe(true);
+    for (const name of [
+      "Service tier",
+      "Input",
+      "Output",
+      "Cache read",
+      "Cache write",
+      "Short cache write",
+      "Long cache write",
+    ])
+      expect(field(name).required).toBe(false);
+    await user.type(field("Provider ID"), "example-ai");
+    await user.type(field("Model ID"), "atlas-chat");
+    await user.clear(field("Currency"));
+    await user.type(field("Currency"), "usd");
+    expect(field("Currency").value).toBe("USD");
+    await user.type(field("Input"), "1.25");
+    await user.type(field("Output"), "5.00");
+    await user.type(field("Cache read"), "0");
+    await user.type(field("Short cache write"), "1.50");
+    await user.type(field("Long cache write"), "2.00");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Save override" }),
+    );
+    await waitFor(() => expect(f.set).toHaveBeenCalledTimes(1));
+    const request = f.set.mock.lastCall?.[0];
+    expect(request).toMatchObject({
+      expectedRevision: "1",
+      providerId: "example-ai",
+      modelId: "atlas-chat",
+      serviceTier: "",
+      rates: {
+        currency: "USD",
+        input: "1.25",
+        output: "5.00",
+        cacheRead: "0",
+        cacheWriteShort: "1.50",
+        cacheWriteLong: "2.00",
+      },
+    });
+    expect(request.rates.cacheWrite).toBeUndefined();
+  });
+});
+describe("price conflict review panel", () => {
+  it("shows the separate current saved price, announces adoption and moves focus to Save without submitting", async () => {
+    const f = pagedPriceFixture({
+      "": {
+        revision: "1",
+        overrides: [identity("atlas-chat", "", { input: "2", cacheRead: "0" })],
+      },
+    });
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: /^Edit override for/ }),
+    );
+    const dialog = screen.getByRole("dialog");
+    const input = within(dialog).getByRole("textbox", {
+      name: "Input",
+    }) as HTMLInputElement;
+    await user.clear(input);
+    await user.type(input, "9.5");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Refresh prices for review" }),
+    );
+    const panel = await within(dialog).findByRole("region", {
+      name: "Current price review",
+    });
+    expect(
+      within(panel).getByRole("heading", { name: "Current saved price" }),
+    ).toBeTruthy();
+    expect(within(panel).getByText("Currency: USD")).toBeTruthy();
+    expect(
+      within(panel).getByText("example-ai / atlas-chat (All tiers (fallback))"),
+    ).toBeTruthy();
+    const values = [...panel.querySelectorAll("dd")].map(
+      (dd) => dd.textContent,
+    );
+    expect(values).toEqual([
+      "2",
+      "Unknown",
+      "0",
+      "Unknown",
+      "Unknown",
+      "Unknown",
+    ]);
+    expect(
+      within(panel).getByText(
+        "Your entered rates have not changed. Saving replaces this current price for future requests only.",
+      ),
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByRole("heading", { name: "Your entered rates" }),
+    ).toBeTruthy();
+    expect(input.value).toBe("9.5");
+    expect(
+      (
+        within(dialog).getByRole("button", {
+          name: "Save override",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    await user.click(
+      within(dialog).getByRole("button", { name: "Use reviewed revision" }),
+    );
+    const save = within(dialog).getByRole("button", { name: "Save override" });
+    expect((save as HTMLButtonElement).disabled).toBe(false);
+    expect(document.activeElement).toBe(save);
+    expect(
+      within(dialog).getByText(
+        "Reviewed revision selected. Your entries are unchanged.",
+      ),
+    ).toBeTruthy();
+    expect(input.value).toBe("9.5");
+    expect(f.set).not.toHaveBeenCalled();
+  });
+  it("distinguishes empty, default and priority selectors when matching the review", async () => {
+    pagedPriceFixture({
+      "": {
+        revision: "1",
+        overrides: [
+          identity("atlas-chat", "default", { input: "2.00" }),
+          identity("atlas-chat", "priority", { input: "7.00" }),
+        ],
+      },
+    });
+    const user = userEvent.setup();
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Add price override",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Add price override" }),
+    );
+    const dialog = screen.getByRole("dialog");
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Provider ID" }),
+      "example-ai",
+    );
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Model ID" }),
+      "atlas-chat",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Refresh prices for review" }),
+    );
+    expect(
+      await within(dialog).findByText(
+        "No override exists for this provider, model and tier.",
+      ),
+    ).toBeTruthy();
+    // An identity change invalidates the displayed review.
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Service tier" }),
+      "default",
+    );
+    expect(
+      within(dialog).queryByRole("region", { name: "Current price review" }),
+    ).toBeNull();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Refresh prices for review" }),
+    );
+    const panel = await within(dialog).findByRole("region", {
+      name: "Current price review",
+    });
+    expect(
+      within(panel).getByText("example-ai / atlas-chat (Tier: default)"),
+    ).toBeTruthy();
+    expect(panel.querySelector("dd")?.textContent).toBe("2.00");
+  });
+  it("finds a later-page match with one stable revision across pages", async () => {
+    const f = pagedPriceFixture({
+      "": { revision: "5", overrides: [identity("other", "")], next: "t2" },
+      t2: {
+        revision: "5",
+        overrides: [identity("atlas-chat", "", { input: "3" })],
+      },
+    });
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole("button", { name: "Next page" }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: /^Edit override for example-ai \/ atlas-chat/,
+      }),
+    );
+    const dialog = screen.getByRole("dialog");
+    f.list.mockClear();
+    await user.click(
+      within(dialog).getByRole("button", { name: "Refresh prices for review" }),
+    );
+    const panel = await within(dialog).findByRole("region", {
+      name: "Current price review",
+    });
+    expect(panel.querySelector("dd")?.textContent).toBe("3");
+    // The scan always starts from the empty token with 100 records per page.
+    expect(f.list.mock.calls.map((call) => call[0].page)).toMatchObject([
+      { pageSize: 100, pageToken: "" },
+      { pageSize: 100, pageToken: "t2" },
+    ]);
+  });
+  it("rejects a snapshot whose revision changes across pages", async () => {
+    pagedPriceFixture({
+      "": { revision: "5", overrides: [identity("a", "")], next: "t2" },
+      t2: { revision: "6", overrides: [identity("b", "")] },
+    });
+    const user = userEvent.setup();
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Add price override",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Add price override" }),
+    );
+    const dialog = screen.getByRole("dialog");
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Provider ID" }),
+      "example-ai",
+    );
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Model ID" }),
+      "missing",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Refresh prices for review" }),
+    );
+    await waitFor(() =>
+      expect(within(dialog).getAllByRole("alert").length).toBeGreaterThan(0),
+    );
+    expect(
+      within(dialog).queryByRole("region", { name: "Current price review" }),
+    ).toBeNull();
+    expect(
+      (
+        within(dialog).getByRole("button", {
+          name: "Refresh prices for review",
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
+  });
+  it("rejects a repeated page token", async () => {
+    pagedPriceFixture({
+      "": { revision: "5", overrides: [identity("a", "")], next: "loop" },
+      loop: { revision: "5", overrides: [identity("b", "")], next: "loop" },
+    });
+    const user = userEvent.setup();
+    await waitFor(() =>
+      expect(
+        (
+          screen.getByRole("button", {
+            name: "Add price override",
+          }) as HTMLButtonElement
+        ).disabled,
+      ).toBe(false),
+    );
+    await user.click(
+      screen.getByRole("button", { name: "Add price override" }),
+    );
+    const dialog = screen.getByRole("dialog");
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Provider ID" }),
+      "example-ai",
+    );
+    await user.type(
+      within(dialog).getByRole("textbox", { name: "Model ID" }),
+      "missing",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Refresh prices for review" }),
+    );
+    await waitFor(() =>
+      expect(within(dialog).getAllByRole("alert").length).toBeGreaterThan(0),
+    );
+    expect(
+      within(dialog).queryByRole("region", { name: "Current price review" }),
+    ).toBeNull();
+  });
+  it("shows the delete-specific review helper and focuses the delete action after adoption", async () => {
+    const f = pagedPriceFixture({
+      "": { revision: "1", overrides: [identity("atlas-chat", "priority")] },
+    });
+    const user = userEvent.setup();
+    await user.click(
+      await screen.findByRole("button", { name: /^Delete override for/ }),
+    );
+    const dialog = screen.getByRole("dialog");
+    await user.type(within(dialog).getByRole("textbox"), "atlas-chat");
+    await user.click(
+      within(dialog).getByRole("button", { name: "Refresh prices for review" }),
+    );
+    const panel = await within(dialog).findByRole("region", {
+      name: "Current price review",
+    });
+    expect(
+      within(panel).getByText(
+        "Review does not delete this override. Deletion affects future requests only.",
+      ),
+    ).toBeTruthy();
+    expect(within(dialog).getByRole("textbox")).toHaveProperty(
+      "value",
+      "atlas-chat",
+    );
+    await user.click(
+      within(dialog).getByRole("button", { name: "Use reviewed revision" }),
+    );
+    expect(document.activeElement).toBe(
+      within(dialog).getByRole("button", { name: "Delete price override" }),
+    );
+    expect(f.set).not.toHaveBeenCalled();
   });
 });
