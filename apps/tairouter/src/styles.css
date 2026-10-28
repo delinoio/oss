@@ -2864,3 +2864,165 @@ dialog.models-dialog {
     flex: 1 1 140px;
   }
 }
+
+/* Account pools list: full-width pool cards with an ordered, labeled member grid. Scoped so shared .record consumers stay unchanged. */
+.pool-list {
+  list-style: none;
+  margin: 24px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 16px;
+}
+.pool-list > li {
+  min-width: 0;
+}
+.pool-card {
+  margin: 0;
+  padding: 24px;
+}
+.pool-card-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.pool-card-title {
+  min-width: 0;
+  flex: 1 1 240px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.pool-card-title h2 {
+  margin: 0;
+  min-width: 0;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+.pool-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.pool-empty h2:focus-visible,
+.pool-list h2:focus-visible {
+  outline: 2px solid #1d4ed8;
+  outline-offset: 4px;
+}
+.pool-members-title {
+  margin: 20px 0 0;
+  font-weight: 600;
+}
+.pool-members-empty,
+.pool-members-note {
+  margin: 12px 0 0;
+  color: #4e5968;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.pool-members-header,
+.pool-member {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) 96px;
+  gap: 8px 16px;
+  align-items: start;
+}
+.pool-members-header {
+  margin-top: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #e0e5ec;
+  color: #4e5968;
+  font-size: 14px;
+  font-weight: 600;
+}
+.pool-members {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.pool-member {
+  padding: 12px;
+  border-radius: 8px;
+  overflow-wrap: anywhere;
+}
+.pool-member + .pool-member {
+  border-top: 1px solid #e0e5ec;
+}
+.pool-member > div {
+  min-width: 0;
+}
+.pool-member-order,
+.pool-member-weight {
+  font-weight: 600;
+}
+.pool-member-name {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+.pool-member-muted {
+  color: #4e5968;
+  font-size: 14px;
+}
+.pool-member-warning {
+  color: #7a4b00;
+  font-weight: 600;
+}
+.pool-member-missing {
+  background: #fff7e0;
+  border: 1px solid #f5c26b;
+}
+.pool-member-missing + .pool-member,
+.pool-member + .pool-member-missing {
+  border-top-color: #f5c26b;
+}
+/* On desktop the column header names the fields; the per-item labels stay available to assistive technology. */
+.pool-member-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.pool-skeletons {
+  display: grid;
+  gap: 16px;
+}
+.pool-skeletons .skeleton {
+  height: 140px;
+}
+@media (max-width: 767px) {
+  .pool-card {
+    padding: 16px;
+  }
+  .pool-members-header {
+    display: none;
+  }
+  .pool-member {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 12px;
+  }
+  .pool-member > div {
+    display: grid;
+    gap: 2px;
+  }
+  .pool-member-label {
+    position: static;
+    width: auto;
+    height: auto;
+    margin: 0;
+    overflow: visible;
+    clip-path: none;
+    white-space: normal;
+    color: #4e5968;
+    font-size: 14px;
+  }
+  .pool-card-actions .button {
+    flex: 1 1 140px;
+  }
+}
