@@ -4,6 +4,7 @@ package service
 import (
 	"bytes"
 	"encoding/json"
+	"strconv"
 	"testing"
 	"time"
 
@@ -26,6 +27,8 @@ func TestProviderServiceTierValidation(t *testing.T) {
 		{"WIRE-MODEL": true, "wire-model": true},
 		{"WIRE-MODEL": false, "wire-model": false},
 		{"K-MODEL": true, "K-MODEL": false},
+		{"S-MODEL": false, "ſ-model": false},
+		{"Σ-MODEL": true, "ς-model": false},
 	} {
 		if err := validateProviderConfiguration("custom", serviceTierConfig(models, nil)); connect.CodeOf(err) != connect.CodeInvalidArgument {
 			t.Fatalf("folded duplicate accepted: %v, %v", models, err)
@@ -36,10 +39,45 @@ func TestProviderServiceTierValidation(t *testing.T) {
 		{},
 		{Policy: &v1.ProviderPolicyOverrides{}},
 		serviceTierConfig(map[string]bool{"WiRe-MoDeL": false}, ptr(false)),
+		serviceTierConfig(map[string]bool{"ß-model": true, "ss-model": false}, nil),
+		serviceTierConfig(map[string]bool{"é-model": true, "e\u0301-model": false}, nil),
 	} {
 		if err := validateProviderConfiguration("custom", config); err != nil {
 			t.Fatalf("valid configuration rejected: %v", err)
 		}
+	}
+}
+
+func TestProviderServiceTierValidationLargeMap(t *testing.T) {
+	models := make(map[string]bool, 16385)
+	for i := 0; i < 16384; i++ {
+		models["wire-model-"+strconv.Itoa(i)] = false
+	}
+	models["MiXeD-CAse"] = false
+	if err := validateProviderConfiguration("custom", serviceTierConfig(models, nil)); err != nil {
+		t.Fatal(err)
+	}
+	if value, exists := models["MiXeD-CAse"]; !exists || value || len(models) != 16385 {
+		t.Fatal("validation changed the configured keys or values")
+	}
+}
+
+func BenchmarkProviderServiceTierValidation(b *testing.B) {
+	for _, count := range []int{100, 1000, 10000} {
+		b.Run(strconv.Itoa(count), func(b *testing.B) {
+			models := make(map[string]bool, count)
+			for i := 0; i < count; i++ {
+				models["wire-model-"+strconv.Itoa(i)] = false
+			}
+			config := serviceTierConfig(models, nil)
+			b.ReportAllocs()
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				if err := validateProviderConfiguration("custom", config); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
 	}
 }
 
