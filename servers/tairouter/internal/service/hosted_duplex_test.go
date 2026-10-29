@@ -337,7 +337,16 @@ func TestHostedCursorDuplexFailureStopsBothDirections(t *testing.T) {
 			defer srv.Close()
 			ctx, cancel := context.WithTimeout(context.Background(), 250*time.Millisecond)
 			defer cancel()
-			x := &hostedTransport{base: srv.URL, policy: inference.DestinationPolicy{ApprovedOrigins: []string{srv.URL}}, gate: func(c context.Context, start func(context.Context) error) error { return start(c) }, record: func(context.Context, string, store.Usage) error { mu.Lock(); receipts++; mu.Unlock(); return nil }}
+			x := &hostedTransport{base: srv.URL, policy: inference.DestinationPolicy{ApprovedOrigins: []string{srv.URL}}, gate: func(c context.Context, start func(context.Context) error) error { return start(c) }, record: func(context.Context, string, store.Usage) error {
+				mu.Lock()
+				receipts++
+				fail := kind == "append-failure" && receipts == 2
+				mu.Unlock()
+				if fail {
+					return errors.New("receipt unavailable")
+				}
+				return nil
+			}}
 			in := inference.AdapterInput{Principal: inference.Principal{OrganizationID: "org", UserID: "user"}, Target: inference.Target{Provider: "cursor", BaseURL: srv.URL, Model: "claude-4.6-sonnet", Wire: cursor.Wire, Auth: inference.OAuth}, Credential: inference.Credential{AccountID: "account", Secret: "fixture-only-token"}, Operation: inference.Generate, Wire: inference.Chat, Body: json.RawMessage(`{"messages":[{"role":"user","content":"hello"}]}`)}
 			r, _, err := cursor.New().Execute(ctx, in, x, nil)
 			if err == nil {
@@ -349,6 +358,9 @@ func TestHostedCursorDuplexFailureStopsBothDirections(t *testing.T) {
 			mu.Unlock()
 			if err == nil || !gotAppend || gotReceipts != 2 {
 				t.Fatalf("failure=%v append=%t receipts=%d", err, gotAppend, gotReceipts)
+			}
+			if kind == "append-failure" && !errors.Is(err, inference.ErrUnavailable) {
+				t.Fatalf("run receipt failure hidden: %v", err)
 			}
 		})
 	}

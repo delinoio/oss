@@ -358,9 +358,7 @@ func runDuplex(ctx context.Context, cancel context.CancelCauseFunc, first *time.
 		if !stop() {
 			<-callbackDone
 		}
-		if resultErr == nil {
-			resultErr = closeErr
-		}
+		resultErr = errors.Join(resultErr, closeErr)
 	}()
 	workers.Add(2)
 	go func() {
