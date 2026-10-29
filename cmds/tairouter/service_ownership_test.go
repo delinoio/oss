@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -20,6 +21,8 @@ type ownershipRunner struct {
 	calls        [][]string
 	taskXML      string
 	queryErr     error
+	stopped      bool
+	endErr       error
 	unloaded     bool
 	afterBootout func()
 }
@@ -57,6 +60,15 @@ func (r *ownershipRunner) Run(_ context.Context, name string, args ...string) (s
 		if r.afterBootout != nil {
 			r.afterBootout()
 		}
+	}
+	if r.platform == "windows" && len(args) > 0 && args[0] == "/End" {
+		if r.endErr != nil {
+			return "", r.endErr
+		}
+		if r.stopped {
+			return "", errWindowsTaskNotRunning
+		}
+		r.stopped = true
 	}
 	return "ok", nil
 }
@@ -387,5 +399,68 @@ func TestDisconnectPreservesForeignServiceAndCleansSelectedProfile(t *testing.T)
 				t.Fatal("owner definition removed:", err)
 			}
 		})
+	}
+}
+
+func TestWindowsRemoveStoppedOwnedTask(t *testing.T) {
+	for _, stopFirst := range []bool{false, true} {
+		t.Run(fmt.Sprint(stopFirst), func(t *testing.T) {
+			owner, _, runner, p := setupOwnedService(t, "windows")
+			if stopFirst {
+				if err := owner.Stop(context.Background(), p); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				runner.stopped = true
+			}
+			if err := owner.Remove(context.Background(), p); err != nil {
+				t.Fatal(err)
+			}
+			deleted := false
+			for _, call := range runner.calls {
+				if len(call) > 1 && call[1] == "/Delete" {
+					deleted = true
+				}
+			}
+			if !deleted {
+				t.Fatal("owned stopped task was not deleted")
+			}
+		})
+	}
+}
+
+func TestWindowsRemovePreservesTaskOnUnknownStopFailure(t *testing.T) {
+	owner, _, runner, p := setupOwnedService(t, "windows")
+	runner.endErr = errors.New("unknown scheduler failure")
+	if err := owner.Remove(context.Background(), p); err == nil {
+		t.Fatal("stop failure ignored")
+	}
+	for _, call := range runner.calls {
+		if len(call) > 1 && call[1] == "/Delete" {
+			t.Fatal("task deleted after stop failure")
+		}
+	}
+}
+
+func TestWindowsTaskNotRunningResult(t *testing.T) {
+	args := []string{"/End", "/TN", "tairouter-default", "/HRESULT"}
+	unsignedCode := uint32(0x8004130B)
+	for _, code := range []int{int(unsignedCode), -2147216629} {
+		if !windowsTaskNotRunning("schtasks.exe", args, code) {
+			t.Fatalf("not-running result rejected: %d", code)
+		}
+	}
+	for _, command := range [][]string{{"/Query", "/TN", "task", "/HRESULT"}, {"/Delete", "/TN", "task", "/HRESULT"}, {"/End", "/TN", "task"}, {"/End", "/TN", "", "/HRESULT"}} {
+		if windowsTaskNotRunning("schtasks.exe", command, -2147216629) {
+			t.Fatal("unrelated command accepted")
+		}
+	}
+	for _, code := range []int{0, 1, 5, -2147024891} {
+		if windowsTaskNotRunning("schtasks.exe", args, code) {
+			t.Fatal("unrelated result accepted")
+		}
+	}
+	if windowsTaskNotRunning("other.exe", args, -2147216629) {
+		t.Fatal("unrelated executable accepted")
 	}
 }

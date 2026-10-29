@@ -19,12 +19,27 @@ type Runner interface {
 }
 type NativeRunner struct{}
 
+var errWindowsTaskNotRunning = errors.New("owned Windows task is not running")
+
+func windowsTaskNotRunning(name string, args []string, exitCode int) bool {
+	// /HRESULT exposes a locale-independent Task Scheduler result. Only the
+	// stop operation may treat an already stopped task as successful.
+	return name == "schtasks.exe" && len(args) == 4 && args[0] == "/End" &&
+		args[1] == "/TN" && args[2] != "" && args[3] == "/HRESULT" &&
+		uint32(exitCode) == 0x8004130B
+}
+
 func (NativeRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
 	b, e := exec.CommandContext(ctx, name, args...).Output()
 	if e != nil {
 		var exit *exec.ExitError
-		if ctx.Err() == nil && name == "launchctl" && len(args) == 2 && args[0] == "print" && errors.As(e, &exit) && launchAgentAbsentDiagnostic(string(exit.Stderr), args[1]) {
-			return "", errLaunchAgentNotLoaded
+		if ctx.Err() == nil && errors.As(e, &exit) {
+			if name == "launchctl" && len(args) == 2 && args[0] == "print" && launchAgentAbsentDiagnostic(string(exit.Stderr), args[1]) {
+				return "", errLaunchAgentNotLoaded
+			}
+			if windowsTaskNotRunning(name, args, exit.ExitCode()) {
+				return "", errWindowsTaskNotRunning
+			}
 		}
 		return "", errors.New("native service command failed; inspect the OS service manager")
 	}
@@ -168,7 +183,10 @@ func (s UserServices) Stop(ctx context.Context, p Profile) error {
 	case "darwin":
 		_, e = s.Runner.Run(ctx, "launchctl", "bootout", "gui/"+s.UID+"/"+s.name(p))
 	case "windows":
-		_, e = s.Runner.Run(ctx, "schtasks.exe", "/End", "/TN", s.name(p))
+		_, e = s.Runner.Run(ctx, "schtasks.exe", "/End", "/TN", s.name(p), "/HRESULT")
+		if errors.Is(e, errWindowsTaskNotRunning) {
+			e = nil
+		}
 	default:
 		e = errors.New("unsupported service OS")
 	}
