@@ -294,8 +294,24 @@ func TestNativeExpiredCARecoveryRefusalsAndReplay(t *testing.T) {
 		if b, _, _ := readConfig(path); string(b) != "changed" {
 			t.Fatal("conflicting file was overwritten")
 		}
+		if b, _, _ := readConfig(filepath.Join(root, "authority.json")); string(b) != string(oldAuthorityFromJournal(t, root)) {
+			t.Fatal("preflight conflict changed authority")
+		}
 		if _, err = os.Stat(filepath.Join(root, "renewal.json")); err != nil {
 			t.Fatal("recovery journal was lost")
 		}
 	})
+}
+
+func oldAuthorityFromJournal(t *testing.T, root string) []byte {
+	t.Helper()
+	b, _, err := readConfig(filepath.Join(root, "renewal.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var journal nativeCARenewal
+	if err = json.Unmarshal(b, &journal); err != nil {
+		t.Fatal(err)
+	}
+	return journal.Old["authority.json"]
 }

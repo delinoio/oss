@@ -181,19 +181,24 @@ func (c *nativeRuntimeController) applyCARenewal(ctx context.Context, req Native
 		return err
 	}
 	d := Disk{Root: root, Protection: c.disk.Protection}
+	currentFiles := make(map[string][]byte, len(nativeCARenewalFiles))
 	for _, name := range nativeCARenewalFiles {
 		path := filepath.Join(root, name)
 		current, present, err := readConfig(path)
 		if err != nil || !present {
 			return errors.New("native renewal file is missing or unreadable; preserve journal")
 		}
-		if bytes.Equal(current, journal.New[name]) {
-			continue
-		}
-		if !bytes.Equal(current, journal.Old[name]) {
+		if !bytes.Equal(current, journal.New[name]) && !bytes.Equal(current, journal.Old[name]) {
 			return errors.New("native renewal file changed; preserve journal and ownership evidence")
 		}
-		if err = nativeDurableWrite(d, path, journal.New[name], compareFile(path, current, true)); err != nil {
+		currentFiles[name] = current
+	}
+	for _, name := range nativeCARenewalFiles {
+		if bytes.Equal(currentFiles[name], journal.New[name]) {
+			continue
+		}
+		path := filepath.Join(root, name)
+		if err = nativeDurableWrite(d, path, journal.New[name], compareFile(path, currentFiles[name], true)); err != nil {
 			return err
 		}
 	}
