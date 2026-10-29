@@ -15,6 +15,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -206,6 +207,24 @@ func validConfiguredModel(model string) bool {
 	}
 	return true
 }
+
+// SimpleFold includes equivalents that ToLower does not merge, such as long s
+// and ASCII s. Use one rune per fold cycle without changing configured keys.
+func serviceTierModelFoldKey(model string) string {
+	var key strings.Builder
+	key.Grow(len(model))
+	for _, r := range model {
+		folded := r
+		for next := unicode.SimpleFold(r); next != r; next = unicode.SimpleFold(next) {
+			if next < folded {
+				folded = next
+			}
+		}
+		key.WriteRune(folded)
+	}
+	return key.String()
+}
+
 func validateProviderConfiguration(provider string, config *v1.ProviderConfiguration) error {
 	if config == nil {
 		return nil
@@ -242,6 +261,16 @@ func validateProviderConfiguration(provider string, config *v1.ProviderConfigura
 	for _, path := range []*string{config.ResponsesPath, config.ChatCompletionsPath} {
 		if path != nil && (!configurable || !validConfiguredPath(*path)) {
 			return invalid("invalid provider endpoint path")
+		}
+	}
+	if policy := config.Policy; policy != nil {
+		keys := make(map[string]struct{}, len(policy.ModelSupportsServiceTier))
+		for model := range policy.ModelSupportsServiceTier {
+			key := serviceTierModelFoldKey(model)
+			if _, exists := keys[key]; exists {
+				return invalid("duplicate service-tier model override")
+			}
+			keys[key] = struct{}{}
 		}
 	}
 	if repair := config.GetPolicy().GetResponsesItemIdRepair(); repair != nil {
