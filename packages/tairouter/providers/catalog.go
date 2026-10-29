@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 )
 
 const Revision = "88aaa754566d119b6b8fc898f8fb47602387d82e"
@@ -139,26 +140,43 @@ func Catalog() []Preset {
 	raw = append(raw, json.RawMessage(exaPresetJSON))
 	out := make([]Preset, 0, len(raw))
 	for _, b := range raw {
-		var p Preset
-		if err := json.Unmarshal(b, &p); err != nil {
-			panic(err)
-		}
-		p.Metadata = bytes.Clone(b)
-		switch p.Wire {
-		case "qoder", "codebuddy", "claude-cli":
-			p.Excluded = true
-		}
-		out = append(out, p)
+		out = append(out, decodePreset(b))
 	}
 	return out
 }
-func Lookup(id string) (Preset, bool) {
+
+func decodePreset(b json.RawMessage) Preset {
+	var p Preset
+	if err := json.Unmarshal(b, &p); err != nil {
+		panic(err)
+	}
+	p.Metadata = bytes.Clone(b)
+	switch p.Wire {
+	case "qoder", "codebuddy", "claude-cli":
+		p.Excluded = true
+	}
+	return p
+}
+
+// Index immutable snapshot bytes once. Decoding only the requested row avoids
+// repeatedly decoding unrelated providers during route reconstruction, while
+// each returned preset still owns all of its maps, slices and pointers.
+var lookupRows = sync.OnceValue(func() map[string]json.RawMessage {
+	rows := make(map[string]json.RawMessage)
 	for _, p := range Catalog() {
-		if p.ID == id {
-			return p, true
+		if _, exists := rows[p.ID]; !exists {
+			rows[p.ID] = p.Metadata
 		}
 	}
-	return Preset{}, false
+	return rows
+})
+
+func Lookup(id string) (Preset, bool) {
+	b, ok := lookupRows()[id]
+	if !ok {
+		return Preset{}, false
+	}
+	return decodePreset(b), true
 }
 
 // Connection contains private data. Never serialize it into a public catalog response.

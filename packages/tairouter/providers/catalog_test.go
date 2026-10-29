@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -171,5 +172,75 @@ func TestDiscoveryFilters(t *testing.T) {
 		if predicate(row, tc.p) != tc.want {
 			t.Fatalf("predicate mismatch %+v", tc.p)
 		}
+	}
+}
+
+func TestLookupMatchesCatalogAndOwnsReferences(t *testing.T) {
+	for _, want := range Catalog() {
+		got, ok := Lookup(want.ID)
+		if !ok || !reflect.DeepEqual(got, want) {
+			t.Fatalf("lookup differs from catalog for %s", want.ID)
+		}
+		mutatePresetReferences(reflect.ValueOf(&got).Elem())
+		again, ok := Lookup(want.ID)
+		if !ok || !reflect.DeepEqual(again, want) {
+			t.Fatalf("lookup exposed shared state for %s", want.ID)
+		}
+	}
+	if got, ok := Lookup("unknown-provider"); ok || !reflect.DeepEqual(got, Preset{}) {
+		t.Fatal("unknown lookup changed")
+	}
+}
+
+// Corrupt each reference-backed value to exercise nested maps, pointer-valued
+// capabilities and slices added to the snapshot without selecting one provider.
+func mutatePresetReferences(v reflect.Value) {
+	switch v.Kind() {
+	case reflect.Struct:
+		for i := 0; i < v.NumField(); i++ {
+			mutatePresetReferences(v.Field(i))
+		}
+	case reflect.Pointer:
+		if !v.IsNil() {
+			mutatePresetReferences(v.Elem())
+		}
+	case reflect.Slice:
+		for i := 0; i < v.Len(); i++ {
+			mutatePresetReferences(v.Index(i))
+		}
+	case reflect.Map:
+		for _, key := range v.MapKeys() {
+			value := reflect.New(v.Type().Elem()).Elem()
+			value.Set(v.MapIndex(key))
+			mutatePresetReferences(value)
+			v.SetMapIndex(key, value)
+		}
+	case reflect.String:
+		if v.CanSet() {
+			v.SetString("mutated")
+		}
+	case reflect.Bool:
+		if v.CanSet() {
+			v.SetBool(!v.Bool())
+		}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		if v.CanSet() {
+			v.SetInt(v.Int() + 1)
+		}
+	case reflect.Uint8:
+		if v.CanSet() {
+			v.SetUint(v.Uint() ^ 1)
+		}
+	}
+}
+
+func BenchmarkLookup(b *testing.B) {
+	for _, id := range []string{"openai-apikey", "unknown-provider"} {
+		b.Run(id, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				Lookup(id)
+			}
+		})
 	}
 }
