@@ -141,14 +141,20 @@ func linuxDefinitionOwned(content, profile, root string) bool {
 	var command string
 	count := 0
 	for _, line := range strings.Split(content, "\n") {
-		if strings.HasPrefix(line, "ExecStart=") {
+		key, value, assignment := strings.Cut(line, "=")
+		if !assignment {
+			continue
+		}
+		// systemd ignores whitespace around '='; count resets and overrides too.
+		key, value = strings.TrimSpace(key), strings.TrimSpace(value)
+		if key == "ExecStart" {
 			count++
 			if count != 1 {
 				return false
 			}
-			command = strings.TrimPrefix(line, "ExecStart=")
+			command = value
 		}
-		if strings.HasPrefix(line, "ExecStartPre=") || strings.HasPrefix(line, "ExecStartPost=") {
+		if key == "ExecStartPre" || key == "ExecStartPost" {
 			return false
 		}
 	}

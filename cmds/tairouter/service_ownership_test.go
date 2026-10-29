@@ -120,6 +120,31 @@ func TestServiceTeardownRequiresStateRootOwnership(t *testing.T) {
 	}
 }
 
+func TestServiceTeardownRejectsSpacedSystemdOverrides(t *testing.T) {
+	for _, separator := range []string{" =", "= ", " = ", "\t=\t"} {
+		t.Run(separator, func(t *testing.T) {
+			owner, other, runner, p := setupOwnedService(t, "linux")
+			unit, err := os.ReadFile(owner.path(p))
+			if err != nil {
+				t.Fatal(err)
+			}
+			foreign := `"/apps/tairouter" "relay" "--profile" "` + p.Name + `" "--state-dir" "` + other.Disk.Root + `"`
+			for _, extra := range []string{"ExecStart" + separator + "\nExecStart" + separator + foreign, "ExecStartPre" + separator + foreign, "ExecStartPost" + separator + foreign} {
+				if err := os.WriteFile(owner.path(p), append(append([]byte(nil), unit...), []byte("\n[Service]\n"+extra+"\n")...), 0600); err != nil {
+					t.Fatal(err)
+				}
+				before := runner.destructiveCalls()
+				if err := owner.Stop(context.Background(), p); !errors.Is(err, errRelayOwnership) {
+					t.Fatalf("override authorized teardown: %v", err)
+				}
+				if runner.destructiveCalls() != before {
+					t.Fatal("overridden service received a stop command")
+				}
+			}
+		})
+	}
+}
+
 func TestServiceTeardownRejectsUnverifiableOwnership(t *testing.T) {
 	for _, platform := range []string{"linux", "darwin", "windows"} {
 		t.Run(platform, func(t *testing.T) {
