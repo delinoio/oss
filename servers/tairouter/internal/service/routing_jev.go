@@ -641,7 +641,17 @@ func jevMessagesEvidence(rows []any) []any {
 				}
 			case "tool_result":
 				if role == "user" {
-					items = append(items, map[string]any{"role": role, "type": "function_call_output", "call_id": part["tool_use_id"], "output": routingText(part["content"]), "__jev_text_group": rowIndex})
+					result := map[string]any{"role": role, "type": "function_call_output", "call_id": part["tool_use_id"], "output": routingText(part["content"]), "__jev_text_group": rowIndex}
+					content, _ := part["content"].([]any)
+					for _, block := range content {
+						image, _ := block.(map[string]any)
+						switch image["type"] {
+						case "image", "input_image", "image_url":
+							// Keep the marker on this result to preserve step order and the history window.
+							result["content"] = []any{map[string]any{"type": "input_image"}}
+						}
+					}
+					items = append(items, result)
 				}
 			case "input_image", "image_url":
 				items = append(items, map[string]any{"role": role, "content": []any{map[string]any{"type": part["type"]}}, "__jev_text_group": rowIndex})

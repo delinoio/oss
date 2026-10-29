@@ -84,6 +84,44 @@ func TestJEVNativeMessagesEvidence(t *testing.T) {
 	}
 }
 
+func TestJEVNativeMessagesToolImageEvidence(t *testing.T) {
+	for _, source := range []string{`{"type":"base64","media_type":"image/png","data":"IMAGE_SECRET"}`, `{"type":"url","url":"https://private.test/screenshot"}`} {
+		for _, text := range []string{"", "Screenshot captured"} {
+			body := json.RawMessage(`{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"capture","name":"screenshot","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"capture","content":[{"type":"text","text":"` + text + `"},{"type":"image","source":` + source + `}]}]}]}`)
+			before := append([]byte(nil), body...)
+			state := buildJEVState(body, jevTestCandidates())
+			step := state["step"].(map[string]any)
+			if state["signals"].(map[string]any)["has_image"] != true || step["type"] != "tool_step" || step["tool_call"].(map[string]any)["name"] != "screenshot" || step["last_tool_output_tail"] != text || !jevHasState(state) {
+				t.Fatalf("missing tool image evidence or changed step: %v", state)
+			}
+			choices, _ := jevChoices(jevTestCandidates())
+			for _, endpoint := range []string{jevCanonicalURL, "https://custom.test/systemone", "https://ai-gateway.vercel.sh/v1/decisions"} {
+				request, err := jevRequest("jev-latest", endpoint, endpoint != jevCanonicalURL, state, choices)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, secret := range []string{"IMAGE_SECRET", "private.test", "image/png", "base64"} {
+					if strings.Contains(string(request), secret) {
+						t.Fatalf("decision leaked tool image source: %s", request)
+					}
+				}
+			}
+			if !reflect.DeepEqual([]byte(body), before) {
+				t.Fatal("input body changed")
+			}
+		}
+	}
+	blocks := []any{map[string]any{"type": "tool_result", "tool_use_id": "capture", "content": []any{map[string]any{"type": "image"}}}}
+	for range 6 {
+		blocks = append(blocks, map[string]any{"type": "text", "text": "later"})
+	}
+	body, _ := json.Marshal(map[string]any{"messages": []any{map[string]any{"role": "user", "content": blocks}}})
+	state := buildJEVState(body, nil)
+	if state["signals"].(map[string]any)["has_image"] != false || state["step"].(map[string]any)["type"] != "user_turn" {
+		t.Fatalf("old tool image changed the recent window or latest step: %v", state)
+	}
+}
+
 func TestJEVNativeMessagesToolEvidence(t *testing.T) {
 	for name, result := range map[string]string{
 		"string": `"1 fail: expected 2 got 3"`,
