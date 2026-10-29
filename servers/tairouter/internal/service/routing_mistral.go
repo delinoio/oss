@@ -203,13 +203,9 @@ func (a *inferenceAdapter) observeMistral(ctx context.Context, in inference.Adap
 	a.mu.Unlock()
 	return nil
 }
-func (a *inferenceAdapter) leaveMistral(ctx context.Context, lease store.Lease) {
-	a.mu.Lock()
-	states := a.mistral
-	a.mistral = nil
-	a.mu.Unlock()
-	for _, state := range states {
-		if e := a.s.LeaveMistralHold(ctx, lease, state.ticket); e != nil {
+func (a *inferenceAdapter) leaveMistral(ctx context.Context, lease store.Lease, tickets []string) {
+	for _, ticket := range tickets {
+		if e := a.s.LeaveMistralHold(ctx, lease, ticket); e != nil {
 			a.telemetry.Event(ctx, "mistral_waiter_release_failed")
 		}
 	}

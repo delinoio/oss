@@ -68,24 +68,35 @@ func (a *inferenceAdapter) Admit(ctx context.Context, raw string) (inference.Pri
 	}
 	prices, e := currentPricingSnapshot(ctx, a.s, a.prices)
 	if e != nil {
-		a.releaseLease(l)
+		a.releaseLease(l, nil)
 		return inference.Principal{}, nil, inferenceError(e)
 	}
 	a.mu.Lock()
 	a.prices = prices
 	a.lease = l
+	// A socket reuses its adapter, but every admitted turn owns new waiters.
+	states := make(map[string]mistralWait)
+	a.mistral = states
 	a.mu.Unlock()
 	var once sync.Once
 	release := func() {
 		once.Do(func() {
-			a.releaseLease(l)
+			a.releaseLease(l, states)
 		})
 	}
 
 	return inference.Principal{OrganizationID: l.Principal.Scope.OrganizationID, UserID: l.Principal.Scope.UserID, KeyID: l.Principal.KeyID, MembershipGeneration: l.Principal.Scope.Generation}, release, nil
 }
-func (a *inferenceAdapter) releaseLease(l store.Lease) {
-	cleanup := func(ctx context.Context) { a.leaveMistral(ctx, l) }
+func (a *inferenceAdapter) releaseLease(l store.Lease, states map[string]mistralWait) {
+	// Snapshot this admission's tickets before release can run asynchronously.
+	// An older callback must never inspect the adapter's next turn.
+	a.mu.Lock()
+	tickets := make([]string, 0, len(states))
+	for _, state := range states {
+		tickets = append(tickets, state.ticket)
+	}
+	a.mu.Unlock()
+	cleanup := func(ctx context.Context) { a.leaveMistral(ctx, l, tickets) }
 	if a.releaseCompleted != nil {
 		a.releaseCompleted(l, cleanup)
 		return

@@ -128,7 +128,7 @@ func newProviderAcceptance(t *testing.T, provider, model string, upstream http.H
 	// Use a real TLS socket and the core's guarded first write, not an adapter or executor stub.
 	certKey, e := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	acceptanceOK(t, e)
-	certTemplate := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"ollama.com", "api.deepseek.com", "fixture.openai.azure.com", "api.commandcode.ai", "commandcode.ai", "www.workbuddy.ai", "api.xiaomimimo.com", "api.z.ai", "api.x.ai", "ark.cn-beijing.volces.com", "provider.example", "aiplatform.googleapis.com", "us-central1-aiplatform.googleapis.com"}, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
+	certTemplate := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"ollama.com", "api.deepseek.com", "fixture.openai.azure.com", "api.commandcode.ai", "api.mistral.ai", "commandcode.ai", "www.workbuddy.ai", "api.xiaomimimo.com", "api.z.ai", "api.x.ai", "ark.cn-beijing.volces.com", "provider.example", "aiplatform.googleapis.com", "us-central1-aiplatform.googleapis.com"}, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(time.Hour), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}}
 	der, e := x509.CreateCertificate(rand.Reader, certTemplate, certTemplate, &certKey.PublicKey, certKey)
 	acceptanceOK(t, e)
 	cert, e := x509.ParseCertificate(der)

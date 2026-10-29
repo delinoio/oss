@@ -284,7 +284,7 @@ func TestNativeFamilyTerminalNetworkFailureReleasesProbe(t *testing.T) {
 			}
 			// The no-header branch deliberately skips immediate observation:
 			// durable admission release must retain and settle the obligation.
-			a.releaseLease(l)
+			a.releaseLease(l, nil)
 			_, rawKey, e := a.s.IssueKey(ctx, scopeOf(p), "next-family", nil)
 			if e != nil {
 				t.Fatal(e)
