@@ -184,7 +184,7 @@ func TestDisconnectPreservesForeignServiceAndCleansSelectedProfile(t *testing.T)
 			app := Application{Disk: other.Disk, Store: store, Services: other, API: func(string) (ClientAPI, error) { return api, nil }, Prompt: answer(true), Out: io.Discard}
 			before := runner.destructiveCalls()
 			err = app.Disconnect(context.Background(), &state, p)
-			if err == nil || !strings.Contains(err.Error(), "relay stop failed") || !strings.Contains(err.Error(), "login service removal incomplete") {
+			if err == nil || !strings.Contains(err.Error(), "relay stop blocked by an ownership conflict") || !strings.Contains(err.Error(), "login service removal blocked by an ownership conflict") {
 				t.Fatalf("ownership conflict not reported: %v", err)
 			}
 			if runner.destructiveCalls() != before || len(store.values) != 0 {

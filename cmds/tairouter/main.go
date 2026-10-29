@@ -409,10 +409,18 @@ func (a *Application) Disconnect(ctx context.Context, s *State, p Profile) error
 		}
 	}
 	if e = a.Services.Stop(context.WithoutCancel(ctx), p); e != nil {
-		failures = append(failures, "relay stop failed; stop it with the OS service manager")
+		if errors.Is(e, errRelayOwnership) {
+			failures = append(failures, "relay stop blocked by an ownership conflict; use the original state directory or OS service manager")
+		} else {
+			failures = append(failures, "relay stop failed; stop it with the OS service manager")
+		}
 	}
 	if e = a.Services.Remove(context.WithoutCancel(ctx), p); e != nil {
-		failures = append(failures, "login service removal incomplete")
+		if errors.Is(e, errRelayOwnership) {
+			failures = append(failures, "login service removal blocked by an ownership conflict")
+		} else {
+			failures = append(failures, "login service removal incomplete")
+		}
 	}
 	restore := a.Prompt.Confirm("Restore settings owned by this profile? Conflicts retain protected backups for manual recovery.")
 	for client, record := range s.Records {

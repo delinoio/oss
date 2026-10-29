@@ -12,6 +12,8 @@ import (
 	"strings"
 )
 
+var errRelayOwnership = errors.New("relay ownership cannot be verified; preserve the service and manage it from its original state directory or the OS service manager")
+
 // A service name is shared by every state root under one OS user. Teardown
 // must prove which root the registered job launches before changing that job.
 func (s UserServices) verifyOwnership(ctx context.Context, p Profile) error {
@@ -21,7 +23,7 @@ func (s UserServices) verifyOwnership(ctx context.Context, p Profile) error {
 	if !filepath.IsAbs(s.Disk.Root) {
 		return errors.New("relay ownership cannot be verified: state directory is not absolute")
 	}
-	conflict := errors.New("relay ownership cannot be verified; preserve the service and manage it from its original state directory or the OS service manager")
+	conflict := errRelayOwnership
 	switch s.OS {
 	case "linux":
 		out, err := s.Runner.Run(ctx, "systemctl", "--user", "show", s.name(p)+".service", "--property=FragmentPath,DropInPaths,NeedDaemonReload,LoadState")
