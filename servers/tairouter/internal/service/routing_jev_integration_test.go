@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/packages/tairouter/inference"
+	"github.com/delinoio/oss/packages/tairouter/providers"
 	"github.com/delinoio/oss/packages/tairouter/store"
 	v1 "github.com/delinoio/oss/protos/tairouter/v1"
 	"google.golang.org/protobuf/proto"
@@ -258,5 +259,183 @@ func TestJEVComposedServiceAndModelRouting(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestJEVSemanticSelectorsSurviveEligibilityAndDispatch(t *testing.T) {
+	for _, tc := range []struct {
+		name, selector                                 string
+		retention, fast, modelBackend, mixed, failOpen bool
+	}{
+		{name: "retention-service-mixed", selector: "combo", retention: true, mixed: true},
+		{name: "retention-model", selector: "combo", retention: true, modelBackend: true},
+		{name: "retention-fail-open", selector: "combo", retention: true, mixed: true, failOpen: true},
+		{name: "fast-service", selector: "combo--fast", fast: true, mixed: true},
+		{name: "ordinary-control", selector: "combo", mixed: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			a, sc, key := dispatchFixture(t)
+			var decisions, sends atomic.Int32
+			choice := "invalid-choice"
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				if r.URL.Path == "/systemone" {
+					decisions.Add(1)
+					_, _ = fmt.Fprintf(w, `{"answers":{"route":{"choice":%q}}}`, choice)
+					return
+				}
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+				}
+				if body["model"] == "decision-model" {
+					decisions.Add(1)
+					_, _ = fmt.Fprintf(w, `{"id":"decision","object":"chat.completion","model":"decision-model","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":%q}}]}`, fmt.Sprintf(`{"choice":%q}`, choice))
+					return
+				}
+				sends.Add(1)
+				if r.URL.Path != "/v1/chat/completions" || body["model"] != "selected" {
+					t.Errorf("unexpected inference request: %s %v", r.URL.Path, body)
+				}
+				if tc.fast && body["service_tier"] != "priority" {
+					t.Errorf("fast policy missing from wire: %v", body)
+				}
+				_, _ = w.Write([]byte(`{"id":"response","object":"chat.completion","model":"selected","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"selected target"}}]}`))
+			}))
+			defer upstream.Close()
+			d := providerData{Metadata: &v1.ProviderConnection{Id: "selected", OrganizationId: sc.OrganizationID, ProviderId: "custom", BaseUrl: upstream.URL + "/v1", AuthKind: v1.ProviderAuthKind_PROVIDER_AUTH_KIND_API_KEY, State: v1.ConnectionState_CONNECTION_STATE_READY}, Secret: "fixture-key"}
+			if tc.fast {
+				d.Metadata.Configuration = &v1.ProviderConfiguration{Policy: &v1.ProviderPolicyOverrides{SupportsServiceTier: proto.Bool(true)}}
+			}
+			putRoutingProvider(t, a, sc, d)
+			target, err := targetForContext(context.Background(), d, "selected")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var retention *v1.ReasoningRetentionConfig
+			if tc.retention {
+				retention = &v1.ReasoningRetentionConfig{Enabled: true}
+				if err := applyReasoningRetention(retention, &target); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.fast {
+				if err := applyFastTarget(context.Background(), d, "selected", &target); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if !tc.failOpen {
+				choice = selectionKey(target) + ":none"
+			}
+			decisionWire := v1.ProviderWire_PROVIDER_WIRE_JEV_DECISION
+			putRoutingProvider(t, a, sc, providerData{Metadata: &v1.ProviderConnection{Id: "decision", OrganizationId: sc.OrganizationID, ProviderId: "custom", BaseUrl: upstream.URL + "/systemone", AuthKind: v1.ProviderAuthKind_PROVIDER_AUTH_KIND_API_KEY, State: v1.ConnectionState_CONNECTION_STATE_READY, Configuration: &v1.ProviderConfiguration{Wire: &decisionWire}}, Secret: "decision-key"})
+			cfg := &v1.JevDecisionConfig{DecisionConnectionId: "decision", DecisionServiceModel: "tev1", SessionPinTtlSeconds: 60}
+			if tc.modelBackend {
+				cfg.DecisionModel = "decision-route"
+				putRoutingProvider(t, a, sc, providerData{Metadata: &v1.ProviderConnection{Id: "model-decision", OrganizationId: sc.OrganizationID, ProviderId: "custom", BaseUrl: upstream.URL + "/v1", AuthKind: v1.ProviderAuthKind_PROVIDER_AUTH_KIND_API_KEY, State: v1.ConnectionState_CONNECTION_STATE_READY}, Secret: "decision-key"})
+				putRoutingRoute(t, a, sc, &v1.Route{Id: "decision-route", ModelId: "decision-route", Enabled: true, Strategy: v1.RoutingStrategy_ROUTING_STRATEGY_DIRECT, Targets: []*v1.RouteTarget{{Target: &v1.RouteTarget_ConnectionId{ConnectionId: "model-decision"}, ModelId: "decision-model"}}})
+			}
+			targets := []*v1.RouteTarget{{Target: &v1.RouteTarget_ConnectionId{ConnectionId: "selected"}, ModelId: "selected"}}
+			if tc.mixed {
+				control := providerData{Metadata: &v1.ProviderConnection{Id: "control", OrganizationId: sc.OrganizationID, ProviderId: "custom", BaseUrl: upstream.URL + "/v1", AuthKind: v1.ProviderAuthKind_PROVIDER_AUTH_KIND_API_KEY, State: v1.ConnectionState_CONNECTION_STATE_READY}, Secret: "control-key"}
+				if tc.fast {
+					control.Metadata.Configuration = &v1.ProviderConfiguration{Policy: &v1.ProviderPolicyOverrides{SupportsServiceTier: proto.Bool(true)}}
+				}
+				putRoutingProvider(t, a, sc, control)
+				targets = append(targets, &v1.RouteTarget{Target: &v1.RouteTarget_ConnectionId{ConnectionId: "control"}, ModelId: "control"})
+			}
+			putRoutingRoute(t, a, sc, &v1.Route{Id: "combo", ModelId: "combo", Enabled: true, Strategy: v1.RoutingStrategy_ROUTING_STRATEGY_JEV, JevDecision: cfg, ReasoningRetention: retention, Targets: targets})
+			for i := 0; i < 2; i++ {
+				instance := &inferenceAdapter{s: a.s, telemetry: a.telemetry}
+				h, err := inference.New(inference.Config{Authorizer: instance, Router: instance, Credentials: instance, Negotiator: instance, Usage: instance, Destinations: inference.DestinationPolicy{ApprovedOrigins: []string{upstream.URL}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(fmt.Sprintf(`{"model":%q,"messages":[{"role":"user","content":"Choose"}]}`, tc.selector)))
+				req.Header.Set("Authorization", "Bearer "+key)
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("session-id", "semantic-selector-session")
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, req)
+				if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "selected target") {
+					t.Fatalf("inference HTTP %d: %s", w.Code, w.Body.String())
+				}
+			}
+			wantDecisions := int32(1)
+			if tc.failOpen {
+				wantDecisions = 2 // Invalid decisions fail open, but do not create a reusable pin.
+			}
+			if decisions.Load() != wantDecisions || sends.Load() != 2 {
+				t.Fatalf("decision=%d inference=%d; pin or dispatch failed", decisions.Load(), sends.Load())
+			}
+			if tc.fast {
+				d.Metadata.Configuration.Policy.SupportsServiceTier = proto.Bool(false)
+				putRoutingProvider(t, a, sc, d)
+				instance := &inferenceAdapter{s: a.s, telemetry: a.telemetry}
+				h, err := inference.New(inference.Config{Authorizer: instance, Router: instance, Credentials: instance, Negotiator: instance, Usage: instance, Destinations: inference.DestinationPolicy{ApprovedOrigins: []string{upstream.URL}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(`{"model":"combo--fast","messages":[{"role":"user","content":"Choose"}]}`))
+				req.Header.Set("Authorization", "Bearer "+key)
+				req.Header.Set("Content-Type", "application/json")
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, req)
+				if w.Code < 400 || sends.Load() != 2 {
+					t.Fatalf("removed Fast support still dispatched: HTTP %d, sends %d", w.Code, sends.Load())
+				}
+			}
+		})
+	}
+}
+
+func TestJEVNativeMessagesPreferenceSurvivesEligibility(t *testing.T) {
+	for _, preference := range []*bool{nil, proto.Bool(false), proto.Bool(true)} {
+		name := "default"
+		if preference != nil {
+			name = fmt.Sprint(*preference)
+		}
+		t.Run(name, func(t *testing.T) {
+			a, sc, key := dispatchFixture(t)
+			ctx := context.Background()
+			d := providerData{Metadata: &v1.ProviderConnection{Id: "anthropic", OrganizationId: sc.OrganizationID, ProviderId: "anthropic", AuthKind: v1.ProviderAuthKind_PROVIDER_AUTH_KIND_OAUTH, State: v1.ConnectionState_CONNECTION_STATE_READY}, Credential: &providers.Credential{Scope: sc, Provider: "anthropic", AccessToken: "fixture-token"}}
+			putRoutingProvider(t, a, sc, d)
+			pool := &v1.Pool{Id: "pool", NativeOptions: &v1.NativePoolOptions{Enabled: proto.Bool(true), NativeMessages: preference}, Members: []*v1.PoolMember{{ConnectionId: d.Metadata.Id}}}
+			raw, err := json.Marshal(pool)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := a.s.PutPrivate(ctx, sc, string(poolKind), pool.Id, raw); err != nil {
+				t.Fatal(err)
+			}
+			wire := v1.ProviderWire_PROVIDER_WIRE_JEV_DECISION
+			putRoutingProvider(t, a, sc, providerData{Metadata: &v1.ProviderConnection{Id: "decision", OrganizationId: sc.OrganizationID, ProviderId: "custom", BaseUrl: "https://decision.example/systemone", AuthKind: v1.ProviderAuthKind_PROVIDER_AUTH_KIND_API_KEY, State: v1.ConnectionState_CONNECTION_STATE_READY, Configuration: &v1.ProviderConfiguration{Wire: &wire}}, Secret: "decision-key"})
+			route := &v1.Route{Id: "combo", ModelId: "combo", Enabled: true, Strategy: v1.RoutingStrategy_ROUTING_STRATEGY_JEV, JevDecision: &v1.JevDecisionConfig{DecisionConnectionId: "decision", DecisionServiceModel: "tev1"}, Targets: []*v1.RouteTarget{{Target: &v1.RouteTarget_PoolId{PoolId: pool.Id}, ModelId: "claude-opus-5"}}}
+			putRoutingRoute(t, a, sc, route)
+			p := admitRouting(t, a, key)
+			target, err := targetForContext(ctx, d, "claude-opus-5")
+			if err != nil {
+				t.Fatal(err)
+			}
+			target.ForceMessagesTranslation = preference != nil && !*preference
+			_, version, err := a.providerVersion(ctx, sc, d.Metadata.Id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := store.SelectionRequest{GroupID: "route/combo/pool/pool", Model: target.Model, Version: selectionVersion(struct {
+				Route *v1.Route
+				Pool  *v1.Pool
+			}{route, pool}), Candidates: []store.SelectionCandidate{{ID: d.Metadata.Id, Version: version}}}
+			selection := routeSelection{request: request, target: target, provider: "anthropic", pool: pool}
+			selections := map[string]routeSelection{selectionKey(target): selection}
+			out, err := a.selectJEVRouteInput(ctx, p, route, inference.Route{Targets: []inference.Target{target}}, selections, json.RawMessage(`{"model":"combo","messages":[{"role":"user","content":"hello"}]}`), inference.DestinationPolicy{}, nil)
+			if err != nil || len(out.Targets) != 1 || out.Targets[0].ForceMessagesTranslation != target.ForceMessagesTranslation {
+				t.Fatalf("JEV eligibility lost pool translation: target=%+v err=%v", out.Targets, err)
+			}
+			credential, err := credentialFor(ctx, d, out.Targets[0])
+			if err != nil || credential.AccountID != d.Metadata.Id {
+				t.Fatalf("selected credential lost pool translation: %+v %v", credential, err)
+			}
+		})
 	}
 }
