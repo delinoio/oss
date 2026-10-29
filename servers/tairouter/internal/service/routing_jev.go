@@ -596,6 +596,106 @@ func jevOutput(v any) string {
 	}
 	return ""
 }
+
+// Normalize native Messages blocks only for decision evidence. The original
+// request body remains available to the inference adapter without projection.
+func jevMessagesEvidence(rows []any) []any {
+	native := false
+	for _, row := range rows {
+		message, _ := row.(map[string]any)
+		blocks, _ := message["content"].([]any)
+		for _, block := range blocks {
+			part, _ := block.(map[string]any)
+			switch part["type"] {
+			case "image", "tool_use", "tool_result":
+				native = true
+			}
+		}
+	}
+	if !native {
+		return rows
+	}
+	items := make([]any, 0, len(rows))
+	for rowIndex, row := range rows {
+		message, _ := row.(map[string]any)
+		role, _ := message["role"].(string)
+		blocks, ok := message["content"].([]any)
+		if !ok {
+			items = append(items, row)
+			continue
+		}
+		for _, block := range blocks {
+			part, _ := block.(map[string]any)
+			switch part["type"] {
+			case "text", "input_text", "output_text":
+				if text, ok := part["text"].(string); ok {
+					items = append(items, map[string]any{"role": role, "content": text, "__jev_text_group": rowIndex})
+				}
+			case "image":
+				if role == "user" {
+					items = append(items, map[string]any{"role": role, "content": []any{map[string]any{"type": "input_image"}}, "__jev_text_group": rowIndex})
+				}
+			case "tool_use":
+				if role == "assistant" {
+					items = append(items, map[string]any{"role": role, "type": "function_call", "call_id": part["id"], "name": part["name"], "__jev_text_group": rowIndex})
+				}
+			case "tool_result":
+				if role == "user" {
+					result := map[string]any{"role": role, "type": "function_call_output", "call_id": part["tool_use_id"], "output": routingText(part["content"]), "__jev_text_group": rowIndex}
+					content, _ := part["content"].([]any)
+					for _, block := range content {
+						image, _ := block.(map[string]any)
+						switch image["type"] {
+						case "image", "input_image", "image_url":
+							// Keep the marker on this result to preserve step order and the history window.
+							result["content"] = []any{map[string]any{"type": "input_image"}}
+						}
+					}
+					items = append(items, result)
+				}
+			case "input_image", "image_url":
+				items = append(items, map[string]any{"role": role, "content": []any{map[string]any{"type": part["type"]}}, "__jev_text_group": rowIndex})
+			}
+		}
+	}
+	return items
+}
+
+func jevTextRun(rows []any, index int) string {
+	message, _ := rows[index].(map[string]any)
+	role, _ := message["role"].(string)
+	// JSON-supplied values cannot have the internal integer marker type.
+	group, grouped := message["__jev_text_group"].(int)
+	if !grouped {
+		if text, ok := message["content"].(string); ok {
+			return text
+		}
+		return routingText(message["content"])
+	}
+	parts := []string{}
+	for i := index; i >= 0; i-- {
+		message, _ := rows[i].(map[string]any)
+		currentRole, _ := message["role"].(string)
+		text, ok := message["content"].(string)
+		currentGroup, currentGrouped := message["__jev_text_group"].(int)
+		if currentRole != role || currentGrouped != grouped || currentGroup != group {
+			break
+		}
+		if ok {
+			parts = append(parts, text)
+		}
+	}
+	for i, j := 0, len(parts)-1; i < j; i, j = i+1, j-1 {
+		parts[i], parts[j] = parts[j], parts[i]
+	}
+	return strings.Join(parts, "\n")
+}
+
+type jevTextEvidence struct {
+	task      string
+	assistant string
+}
+
 func buildJEVState(raw json.RawMessage, candidates []jevCandidate) map[string]any {
 	var b map[string]any
 	_ = json.Unmarshal(raw, &b)
@@ -605,12 +705,16 @@ func buildJEVState(raw json.RawMessage, candidates []jevCandidate) map[string]an
 	}
 	task, assistant := "", ""
 	image, tool := false, false
+	textEvidence := map[int]jevTextEvidence{}
 	step := map[string]any{"type": "other"}
 	if s, ok := input.(string); ok {
 		task = jevTask(s)
 		step["type"] = "user_turn"
 	}
 	rows, _ := input.([]any)
+	if b["input"] == nil {
+		rows = jevMessagesEvidence(rows)
+	}
 	for i := len(rows) - 1; i >= 0; i-- {
 		m, _ := rows[i].(map[string]any)
 		if i >= len(rows)-6 {
@@ -625,11 +729,29 @@ func buildJEVState(raw json.RawMessage, candidates []jevCandidate) map[string]an
 				}
 			}
 		}
-		if task == "" && m["role"] == "user" {
-			task = jevTask(routingText(m["content"]))
-		}
-		if assistant == "" && m["role"] == "assistant" {
-			assistant = jevTail(jevVisible(routingText(m["content"]), false), 240)
+		if group, grouped := m["__jev_text_group"].(int); grouped {
+			evidence, ok := textEvidence[group]
+			if !ok {
+				text := jevTextRun(rows, i)
+				evidence = jevTextEvidence{
+					task:      jevTask(text),
+					assistant: jevTail(jevVisible(text, false), 240),
+				}
+				textEvidence[group] = evidence
+			}
+			if task == "" && m["role"] == "user" {
+				task = evidence.task
+			}
+			if assistant == "" && m["role"] == "assistant" {
+				assistant = evidence.assistant
+			}
+		} else {
+			if task == "" && m["role"] == "user" {
+				task = jevTask(jevTextRun(rows, i))
+			}
+			if assistant == "" && m["role"] == "assistant" {
+				assistant = jevTail(jevVisible(jevTextRun(rows, i), false), 240)
+			}
 		}
 	}
 	if len(rows) > 0 {

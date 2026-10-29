@@ -21,6 +21,233 @@ import (
 func jevTestCandidates() []jevCandidate {
 	return []jevCandidate{{Key: "first", Provider: "p", Model: "m1", Efforts: []jevEffort{jevLow}}, {Key: "second", Provider: "p", Model: "m2", Efforts: []jevEffort{jevHigh}}}
 }
+
+func TestJEVClientTextGroupMarker(t *testing.T) {
+	for _, field := range []string{"messages", "input"} {
+		for _, role := range []string{"user", "assistant"} {
+			for _, marker := range []string{`{}`, `[]`, `null`, `true`, `0`, `"group"`} {
+				t.Run(field+"/"+role+"/"+marker, func(t *testing.T) {
+					body := json.RawMessage(`{"` + field + `":[{"role":"` + role + `","content":"Explain this result","__jev_text_group":` + marker + `}]}`)
+					original := append([]byte(nil), body...)
+					control := json.RawMessage(`{"` + field + `":[{"role":"` + role + `","content":"Explain this result"}]}`)
+					got := buildJEVState(body, jevTestCandidates())
+					want := buildJEVState(control, jevTestCandidates())
+					if !reflect.DeepEqual(got, want) {
+						t.Fatalf("client marker changed evidence: got %v, want %v", got, want)
+					}
+					if !reflect.DeepEqual([]byte(body), original) {
+						t.Fatal("input body changed")
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestJEVNativeMessagesEvidence(t *testing.T) {
+	candidates := jevTestCandidates()
+	choices, err := jevChoices(candidates)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{
+		"messages-base64": `{"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","data":"IMAGE_SECRET"}}]}]}`,
+		"messages-url":    `{"messages":[{"role":"user","content":[{"type":"text","text":"Inspect this"},{"type":"image","source":{"type":"url","url":"https://private.test/image"}}]}]}`,
+		"chat":            `{"messages":[{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,IMAGE_SECRET"}}]}]}`,
+		"responses":       `{"input":[{"role":"user","content":[{"type":"input_image","image_url":"data:image/png;base64,IMAGE_SECRET"}]}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			original := json.RawMessage(body)
+			before := append([]byte(nil), original...)
+			state := buildJEVState(original, candidates)
+			if state["signals"].(map[string]any)["has_image"] != true || !jevHasState(state) {
+				t.Fatalf("missing image evidence: %v", state)
+			}
+			if !reflect.DeepEqual([]byte(original), before) {
+				t.Fatal("input body changed")
+			}
+			for _, endpoint := range []string{jevCanonicalURL, "https://custom.test/systemone", "https://ai-gateway.vercel.sh/v1/decisions"} {
+				request, err := jevRequest("jev-latest", endpoint, endpoint != jevCanonicalURL, state, choices)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, secret := range []string{"IMAGE_SECRET", "private.test", "data:image", "base64"} {
+					if strings.Contains(string(request), secret) {
+						t.Fatalf("decision leaked image source: %s", request)
+					}
+				}
+			}
+		})
+	}
+	if jevHasState(buildJEVState(json.RawMessage(`{"messages":[{"role":"user","content":[]}]}`), candidates)) {
+		t.Fatal("empty Messages state became actionable")
+	}
+}
+
+func TestJEVNativeMessagesToolImageEvidence(t *testing.T) {
+	for _, source := range []string{`{"type":"base64","media_type":"image/png","data":"IMAGE_SECRET"}`, `{"type":"url","url":"https://private.test/screenshot"}`} {
+		for _, text := range []string{"", "Screenshot captured"} {
+			body := json.RawMessage(`{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"capture","name":"screenshot","input":{}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"capture","content":[{"type":"text","text":"` + text + `"},{"type":"image","source":` + source + `}]}]}]}`)
+			before := append([]byte(nil), body...)
+			state := buildJEVState(body, jevTestCandidates())
+			step := state["step"].(map[string]any)
+			if state["signals"].(map[string]any)["has_image"] != true || step["type"] != "tool_step" || step["tool_call"].(map[string]any)["name"] != "screenshot" || step["last_tool_output_tail"] != text || !jevHasState(state) {
+				t.Fatalf("missing tool image evidence or changed step: %v", state)
+			}
+			choices, _ := jevChoices(jevTestCandidates())
+			for _, endpoint := range []string{jevCanonicalURL, "https://custom.test/systemone", "https://ai-gateway.vercel.sh/v1/decisions"} {
+				request, err := jevRequest("jev-latest", endpoint, endpoint != jevCanonicalURL, state, choices)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, secret := range []string{"IMAGE_SECRET", "private.test", "image/png", "base64"} {
+					if strings.Contains(string(request), secret) {
+						t.Fatalf("decision leaked tool image source: %s", request)
+					}
+				}
+			}
+			if !reflect.DeepEqual([]byte(body), before) {
+				t.Fatal("input body changed")
+			}
+		}
+	}
+	blocks := []any{map[string]any{"type": "tool_result", "tool_use_id": "capture", "content": []any{map[string]any{"type": "image"}}}}
+	for range 6 {
+		blocks = append(blocks, map[string]any{"type": "text", "text": "later"})
+	}
+	body, _ := json.Marshal(map[string]any{"messages": []any{map[string]any{"role": "user", "content": blocks}}})
+	state := buildJEVState(body, nil)
+	if state["signals"].(map[string]any)["has_image"] != false || state["step"].(map[string]any)["type"] != "user_turn" {
+		t.Fatalf("old tool image changed the recent window or latest step: %v", state)
+	}
+}
+
+func TestJEVNativeMessagesToolEvidence(t *testing.T) {
+	for name, result := range map[string]string{
+		"string": `"1 fail: expected 2 got 3"`,
+		"blocks": `[{"type":"text","text":"1 fail: expected 2 got 3"},{"type":"thinking","thinking":"THINKING_SECRET"}]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			body := json.RawMessage(`{"system":"SYSTEM_SECRET","messages":[{"role":"user","content":"Fix the failing test"},{"role":"assistant","content":[{"type":"text","text":"I will run it"},{"type":"tool_use","id":"c","name":"exec_command","input":{"secret":"ARGUMENT_SECRET"}},{"type":"thinking","thinking":"THINKING_SECRET","signature":"SIGNATURE_SECRET"}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"c","content":` + result + `}]}]}`)
+			before := append([]byte(nil), body...)
+			state := buildJEVState(body, jevTestCandidates())
+			step := state["step"].(map[string]any)
+			if state["task"] != "Fix the failing test" || state["previous_assistant"] != "I will run it" || state["signals"].(map[string]any)["tool_history"] != true || step["type"] != "tool_step" || step["last_tool_output_tail"] != "1 fail: expected 2 got 3" || step["tool_call"].(map[string]any)["name"] != "exec_command" {
+				t.Fatalf("incomplete tool evidence: %v", state)
+			}
+			if !reflect.DeepEqual([]byte(body), before) {
+				t.Fatal("input body changed")
+			}
+			choices, _ := jevChoices(jevTestCandidates())
+			for _, endpoint := range []string{jevCanonicalURL, "https://custom.test/systemone", "https://ai-gateway.vercel.sh/v1/decisions"} {
+				request, err := jevRequest("jev-latest", endpoint, endpoint != jevCanonicalURL, state, choices)
+				if err != nil {
+					t.Fatal(err)
+				}
+				for _, secret := range []string{"SYSTEM_SECRET", "ARGUMENT_SECRET", "THINKING_SECRET", "SIGNATURE_SECRET"} {
+					if strings.Contains(string(request), secret) {
+						t.Fatalf("decision leaked excluded content: %s", request)
+					}
+				}
+			}
+		})
+	}
+	for name, body := range map[string]string{
+		"unmatched": `{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"other","name":"wrong"}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"missing","content":"result"}]}]}`,
+		"missing":   `{"messages":[{"role":"user","content":[{"type":"tool_result","content":"result"}]}]}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			step := buildJEVState(json.RawMessage(body), nil)["step"].(map[string]any)
+			if step["type"] != "tool_step" || step["last_tool_output_tail"] != "result" || step["tool_call"] != nil {
+				t.Fatalf("invented tool name: %v", step)
+			}
+		})
+	}
+	for name, content := range map[string]string{
+		"result-last": `[{"type":"text","text":"before"},{"type":"tool_result","tool_use_id":"b","content":"second result"}]`,
+		"text-last":   `[{"type":"tool_result","tool_use_id":"b","content":"second result"},{"type":"text","text":"after"}]`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			body := json.RawMessage(`{"messages":[{"role":"assistant","content":[{"type":"tool_use","id":"a","name":"first"},{"type":"tool_use","id":"b","name":"second"}]},{"role":"user","content":` + content + `}]}`)
+			state := buildJEVState(body, nil)
+			step := state["step"].(map[string]any)
+			if name == "result-last" && (step["type"] != "tool_step" || step["tool_call"].(map[string]any)["name"] != "second" || step["last_tool_output_tail"] != "second result") {
+				t.Fatalf("wrong last tool: %v", state)
+			}
+			if name == "text-last" && (step["type"] != "user_turn" || state["task"] != "after") {
+				t.Fatalf("wrong latest text: %v", state)
+			}
+		})
+	}
+	long := strings.Repeat("x", 700)
+	name := strings.Repeat("n", 200)
+	body, _ := json.Marshal(map[string]any{"messages": []any{map[string]any{"role": "user", "content": long}, map[string]any{"role": "assistant", "content": []any{map[string]any{"type": "text", "text": long}, map[string]any{"type": "tool_use", "id": "c", "name": name}}}, map[string]any{"role": "user", "content": []any{map[string]any{"type": "tool_result", "tool_use_id": "c", "content": long}}}}})
+	state := buildJEVState(body, nil)
+	if len(state["task"].(string)) != 500 || len(state["previous_assistant"].(string)) != 240 || len(state["step"].(map[string]any)["last_tool_output_tail"].(string)) != 520 || len(state["step"].(map[string]any)["tool_call"].(map[string]any)["name"].(string)) != 160 {
+		t.Fatalf("native evidence was not bounded: %v", state)
+	}
+	var blocks []any
+	blocks = append(blocks, map[string]any{"type": "image"})
+	for range 6 {
+		blocks = append(blocks, map[string]any{"type": "text", "text": "later"})
+	}
+	window, _ := json.Marshal(map[string]any{"messages": []any{map[string]any{"role": "user", "content": blocks}}})
+	if buildJEVState(window, nil)["signals"].(map[string]any)["has_image"] != false {
+		t.Fatal("old native image escaped the six-item signal window")
+	}
+}
+
+func TestJEVNativeMessagesEnvelopeAcrossTextBlocks(t *testing.T) {
+	body := json.RawMessage(`{"messages":[{"role":"user","content":[{"type":"text","text":"Actual task <system-reminder>"},{"type":"text","text":"PRIVATE_CONTEXT</system-reminder>Continue task"},{"type":"image","source":{"type":"url","url":"https://private.test/image"}}]},{"role":"assistant","content":[{"type":"text","text":"Visible assistant <system-reminder>"},{"type":"text","text":"PRIVATE_ASSISTANT</system-reminder>"}]}]}`)
+	state := buildJEVState(body, jevTestCandidates())
+	if state["task"] != "Actual task \nContinue task" {
+		t.Fatalf("cross-block task visibility changed: %v", state["task"])
+	}
+	if state["previous_assistant"] != "Visible assistant" {
+		t.Fatalf("cross-block assistant visibility changed: %v", state["previous_assistant"])
+	}
+	if state["signals"].(map[string]any)["has_image"] != true {
+		t.Fatalf("native image signal was lost: %v", state)
+	}
+	interveningImage := json.RawMessage(`{"messages":[{"role":"user","content":[{"type":"text","text":"Actual task <system-reminder>"},{"type":"image","source":{"type":"url","url":"https://private.test/image"}},{"type":"text","text":"PRIVATE_CONTEXT</system-reminder>Continue task"}]}]}`)
+	state = buildJEVState(interveningImage, jevTestCandidates())
+	if state["task"] != "Actual task \nContinue task" {
+		t.Fatalf("envelope state was lost across an image block: %v", state["task"])
+	}
+	protectedBlocks := make([]any, 0, 4001)
+	for range 4000 {
+		protectedBlocks = append(protectedBlocks, map[string]any{"type": "text", "text": "<system-reminder>PRIVATE_CONTEXT</system-reminder>"})
+	}
+	protectedBlocks = append(protectedBlocks, map[string]any{"type": "image", "source": map[string]any{"type": "url", "url": "https://private.test/image"}})
+	longInput, _ := json.Marshal(map[string]any{"messages": []any{map[string]any{"role": "user", "content": protectedBlocks}}})
+	state = buildJEVState(longInput, nil)
+	if state["task"] != "" {
+		t.Fatalf("all-protected text produced an actionable task: %v", state["task"])
+	}
+	legacy, _ := json.Marshal(map[string]any{"messages": []any{
+		map[string]any{"role": "user", "content": "Earlier task"},
+		map[string]any{"role": "user", "content": "Latest task"},
+	}})
+	if buildJEVState(legacy, nil)["task"] != "Latest task" {
+		t.Fatalf("legacy message ordering changed: %v", buildJEVState(legacy, nil)["task"])
+	}
+	choices, err := jevChoices(jevTestCandidates())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, endpoint := range []string{jevCanonicalURL, "https://custom.test/systemone", "https://ai-gateway.vercel.sh/v1/decisions"} {
+		request, err := jevRequest("jev-latest", endpoint, endpoint != jevCanonicalURL, state, choices)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, secret := range []string{"PRIVATE_CONTEXT", "PRIVATE_ASSISTANT", "private.test"} {
+			if strings.Contains(string(request), secret) {
+				t.Fatalf("decision leaked protected cross-block content: %s", request)
+			}
+		}
+	}
+}
+
 func TestJEVBoundedStateAndProviderQuestions(t *testing.T) {
 	body := json.RawMessage(`{"input":[{"role":"user","content":"<system-reminder>private envelope</system-reminder>Fix the failing test"},{"role":"assistant","content":[{"type":"output_text","text":"I will run the test first."}]},{"type":"function_call","call_id":"c","name":"exec_command","arguments":"secret arguments"},{"type":"function_call_output","call_id":"c","output":"1 fail: expected 2 got 3"}],"instructions":"system secret","api_key":"credential"}`)
 	candidates := jevTestCandidates()
