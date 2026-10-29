@@ -546,3 +546,43 @@ func TestHostedDevinTerminalReceiptFailure(t *testing.T) {
 		})
 	}
 }
+
+func TestHostedAdapterRequestMethod(t *testing.T) {
+	for _, method := range []string{"", http.MethodPost, http.MethodGet} {
+		t.Run(map[string]string{"": "default", http.MethodPost: "explicit-post", http.MethodGet: "explicit-get"}[method], func(t *testing.T) {
+			expected := method
+			if expected == "" {
+				expected = http.MethodPost
+			}
+			var mu sync.Mutex
+			var sends, records int
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				mu.Lock()
+				sends++
+				mu.Unlock()
+				body, err := io.ReadAll(r.Body)
+				if err != nil || r.Method != expected || string(body) != "fixture-body" {
+					t.Errorf("request method=%s body=%s error=%v", r.Method, body, err)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = io.WriteString(w, "{}")
+			}))
+			defer srv.Close()
+			tr := &hostedTransport{base: srv.URL, policy: inference.DestinationPolicy{ApprovedOrigins: []string{srv.URL}}, gate: func(c context.Context, start func(context.Context) error) error { return start(c) }, record: func(context.Context, string, store.Usage) error { mu.Lock(); records++; mu.Unlock(); return nil }}
+			response, err := tr.Do(context.Background(), inference.AdapterRequest{Method: method, URL: srv.URL, Body: []byte("fixture-body")})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = io.Copy(io.Discard, response.Body)
+			if err = errors.Join(err, response.Body.Close()); err != nil {
+				t.Fatal(err)
+			}
+			mu.Lock()
+			actualSends, actualRecords := sends, records
+			mu.Unlock()
+			if actualSends != 1 || actualRecords != 1 {
+				t.Fatalf("sends=%d receipts=%d", actualSends, actualRecords)
+			}
+		})
+	}
+}

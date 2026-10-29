@@ -331,7 +331,12 @@ func (t *hostedTransport) Do(ctx context.Context, r inference.AdapterRequest) (*
 	if r.AttemptTimeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, r.AttemptTimeout)
 	}
-	req, e := http.NewRequestWithContext(ctx, r.Method, r.URL, bytes.NewReader(r.Body))
+	// Adapter requests use the core executor's POST default.
+	method := r.Method
+	if method == "" {
+		method = http.MethodPost
+	}
+	req, e := http.NewRequestWithContext(ctx, method, r.URL, bytes.NewReader(r.Body))
 	if e != nil {
 		if cancel != nil {
 			cancel()

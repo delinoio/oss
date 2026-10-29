@@ -89,6 +89,11 @@ func hostedValidationFixture(t *testing.T, mode string) {
 	var mu sync.Mutex
 	var sent []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		if req.Method != http.MethodPost {
+			t.Errorf("hosted Antigravity method=%s; want POST", req.Method)
+			http.Error(w, "POST required", http.StatusMethodNotAllowed)
+			return
+		}
 		var envelope map[string]any
 		if err := json.NewDecoder(req.Body).Decode(&envelope); err != nil {
 			t.Error(err)
