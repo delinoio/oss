@@ -32,12 +32,16 @@ type controllerTrust struct {
 	trusted                 bool
 	installs, removes       int
 	failInstall, failRemove bool
+	failStatus              bool
 	beforeInstall           func()
 }
 
 func (a *controllerTrust) Status(context.Context, *NativeCA) (NativeTrustStatus, error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	if a.failStatus {
+		return NativeTrustStatus{}, errors.New("fixture trust status failure")
+	}
 	return NativeTrustStatus{Trusted: a.trusted, Present: a.trusted}, nil
 }
 func (a *controllerTrust) Install(context.Context, *NativeCA) error {
@@ -78,9 +82,7 @@ func controllerFixture(t *testing.T) (*nativeRuntimeController, NativeRuntimeReq
 		return NativeCompatibilityAccount{}, errors.New("fixture account unavailable")
 	}, ObserveBuild: func(context.Context, NativeRuntimeRequest) (string, error) {
 		return NativeCompatibilityClaudeBuild, nil
-	}, EnsureCA: func(root string, hosts []string) (*NativeCA, error) {
-		return EnsureNativeCAWithOptions(root, NativeCAOptions{Platform: "darwin", DNSNames: hosts, Protection: controllerKeyProtection{}, FileProtection: NativeProtector{}})
-	}}
+	}, CAProtection: controllerKeyProtection{}}
 	return NewNativeRuntimeControllerWithOptions(disk, store, options).(*nativeRuntimeController), req, trust
 }
 func TestNativeControllerConsentAndPendingRecovery(t *testing.T) {
@@ -400,7 +402,7 @@ func TestNativeControllerCatalogSurfaces(t *testing.T) {
 
 func controllerConsent(t *testing.T, c *nativeRuntimeController, req NativeRuntimeRequest) NativeRuntimeConsent {
 	t.Helper()
-	ca, err := c.ca(req)
+	ca, err := c.ca(context.Background(), req)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -25,6 +25,7 @@ type NativeRuntimeOptions struct {
 	Platform            string
 	Trust               NativeTrustAdapter
 	EnsureCA            func(string, []string) (*NativeCA, error)
+	CAProtection        NativeKeyProtection
 	ObserveBuild        func(context.Context, NativeRuntimeRequest) (string, error)
 	ObserveInstallation func(context.Context, NativeRuntimeRequest) (NativeInstallationProof, error)
 	Account             func(context.Context, NativeRuntimeRequest) (NativeCompatibilityAccount, error)
@@ -123,7 +124,7 @@ func (c *nativeRuntimeController) observed(ctx context.Context, req NativeRuntim
 	return err
 }
 
-func (c *nativeRuntimeController) ca(req NativeRuntimeRequest) (*NativeCA, error) {
+func (c *nativeRuntimeController) ca(ctx context.Context, req NativeRuntimeRequest) (*NativeCA, error) {
 	root, err := c.root(req.Profile.Name)
 	if err != nil {
 		return nil, err
@@ -132,10 +133,13 @@ func (c *nativeRuntimeController) ca(req NativeRuntimeRequest) (*NativeCA, error
 	if err != nil {
 		return nil, err
 	}
+	if err = c.recoverExpiredCA(ctx, req, root, p.Hosts()); err != nil {
+		return nil, err
+	}
 	if c.options.EnsureCA != nil {
 		return c.options.EnsureCA(root, p.Hosts())
 	}
-	return EnsureNativeCAWithOptions(root, NativeCAOptions{Platform: c.options.Platform, DNSNames: p.Hosts(), FileProtection: c.disk.Protection})
+	return EnsureNativeCAWithOptions(root, NativeCAOptions{Platform: c.options.Platform, DNSNames: p.Hosts(), Protection: c.options.CAProtection, FileProtection: c.disk.Protection})
 }
 func (c *nativeRuntimeController) trust(root string) NativeTrustManager {
 	return NativeTrustManager{Root: root, Adapter: c.options.Trust, Protection: c.disk.Protection}
@@ -190,7 +194,7 @@ func (c *nativeRuntimeController) Plan(ctx context.Context, req NativeRuntimeReq
 	if err = c.checkPort(req); err != nil {
 		return plan, err
 	}
-	ca, err := c.ca(req)
+	ca, err := c.ca(ctx, req)
 	if err != nil {
 		return plan, err
 	}
@@ -251,7 +255,7 @@ func (c *nativeRuntimeController) Enable(ctx context.Context, req NativeRuntimeR
 	if exists && (r.Request != req || r.Consent != consent) {
 		return NativeRuntimeStatus{}, errors.New("native runtime configuration differs; disable it before changing consent or configuration")
 	}
-	ca, err := c.ca(req)
+	ca, err := c.ca(ctx, req)
 	if err != nil {
 		return NativeRuntimeStatus{}, err
 	}
@@ -492,7 +496,7 @@ func (c *nativeRuntimeController) Serve(ctx context.Context, name string) error 
 		release()
 		return errors.New("native installation changed")
 	}
-	ca, err := c.ca(r.Request)
+	ca, err := c.ca(ctx, r.Request)
 	if err != nil {
 		release()
 		return err
