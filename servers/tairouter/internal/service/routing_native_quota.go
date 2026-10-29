@@ -89,6 +89,11 @@ func mergeNativeQuota(old, update nativeQuotaSnapshot) nativeQuotaSnapshot {
 		old.Plan = update.Plan
 	}
 	for _, w := range update.Windows {
+		// A monthly primary supersedes earlier weekly evidence even after its
+		// previous weekly window was removed. Equal-time secondary evidence remains valid.
+		if w.Window == "weekly" && w.ObservedAt.Before(old.MonthlyPrimaryObservedAt) {
+			continue
+		}
 		found := false
 		for i, previous := range old.Windows {
 			if previous.Window == w.Window && previous.Family == w.Family {
