@@ -18,6 +18,7 @@ import (
 	"github.com/delinoio/oss/packages/tairouter/inference/hosted"
 	"github.com/delinoio/oss/packages/tairouter/store"
 	v1 "github.com/delinoio/oss/protos/tairouter/v1"
+	"github.com/delinoio/oss/servers/tairouter/internal/observability"
 )
 
 type hostedResolver struct {
@@ -262,22 +263,28 @@ func (r *hostedResolver) Resolve(ctx context.Context, req hosted.OperationReques
 			}
 		}
 	}
-	tr.record = func(c context.Context, id string, u store.Usage) error {
+	tr.record = hostedUsageRecorder(r.auth.telemetry, func(c context.Context, id string, u store.Usage) error {
+		return r.auth.s.RecordOperationUsage(c, lease, id, u)
+	})
+	return &hostedOperation{resolver: r, request: req, transport: tr, target: target, credential: cred, backend: backend, settings: c, wait: hostedDelay}, nil
+}
+
+func hostedUsageRecorder(telemetry *observability.Telemetry, record func(context.Context, string, store.Usage) error) func(context.Context, string, store.Usage) error {
+	return func(c context.Context, id string, u store.Usage) error {
 		if u.InputTokens == nil || u.OutputTokens == nil {
-			if r.auth.telemetry != nil {
-				r.auth.telemetry.Event(c, "hosted_usage_unknown")
+			if telemetry != nil {
+				telemetry.Event(c, "usage_unknown")
 			}
 		}
-		if !u.PriceKnown && r.auth.telemetry != nil {
-			r.auth.telemetry.Event(c, "hosted_cost_unknown")
+		if !u.PriceKnown && telemetry != nil {
+			telemetry.Event(c, "cost_unknown")
 		}
-		e := r.auth.s.RecordOperationUsage(c, lease, id, u)
-		if e != nil && r.auth.telemetry != nil {
-			r.auth.telemetry.Event(c, "hosted_usage_record_failed")
+		e := record(c, id, u)
+		if e != nil && telemetry != nil {
+			telemetry.Event(c, "usage_write_failed")
 		}
 		return e
 	}
-	return &hostedOperation{resolver: r, request: req, transport: tr, target: target, credential: cred, backend: backend, settings: c, wait: hostedDelay}, nil
 }
 func (o *hostedOperation) Execute(ctx context.Context, r hosted.OperationRequest) (result hosted.OperationResult, err error) {
 	// A client can cancel while an accepted asynchronous job waits between polls.
