@@ -6,6 +6,7 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -71,21 +72,47 @@ func (s UserServices) verifyOwnership(ctx context.Context, p Profile) error {
 			return fmt.Errorf("%w: task query failed", conflict)
 		}
 		var task struct {
-			Exec []struct {
-				Command   string `xml:"Command"`
-				Arguments string `xml:"Arguments"`
-			} `xml:"Actions>Exec"`
+			Actions struct {
+				Inner string `xml:",innerxml"`
+				Exec  []struct {
+					Command   string `xml:"Command"`
+					Arguments string `xml:"Arguments"`
+				} `xml:"Exec"`
+			} `xml:"Actions"`
 		}
-		if xml.Unmarshal([]byte(out), &task) != nil || len(task.Exec) != 1 || strings.TrimSpace(task.Exec[0].Command) == "" {
+		if xml.Unmarshal([]byte(out), &task) != nil || len(task.Actions.Exec) != 1 || !singleWindowsExec(task.Actions.Inner) || strings.TrimSpace(task.Actions.Exec[0].Command) == "" {
 			return conflict
 		}
-		args, ok := splitWindowsArgs(task.Exec[0].Arguments)
-		if !ok || !relayArgsOwned(append([]string{task.Exec[0].Command}, args...), p.Name, s.Disk.Root, true) {
+		args, ok := splitWindowsArgs(task.Actions.Exec[0].Arguments)
+		if !ok || !relayArgsOwned(append([]string{task.Actions.Exec[0].Command}, args...), p.Name, s.Disk.Root, true) {
 			return conflict
 		}
 		return nil
 	default:
 		return errors.New("unsupported service OS")
+	}
+}
+
+func singleWindowsExec(actions string) bool {
+	decoder := xml.NewDecoder(strings.NewReader("<Actions>" + actions + "</Actions>"))
+	depth, count := 0, 0
+	for {
+		token, err := decoder.Token()
+		if err != nil {
+			return errors.Is(err, io.EOF) && count == 1 && depth == 0
+		}
+		switch element := token.(type) {
+		case xml.StartElement:
+			if depth == 1 {
+				if element.Name.Local != "Exec" {
+					return false
+				}
+				count++
+			}
+			depth++
+		case xml.EndElement:
+			depth--
+		}
 	}
 }
 

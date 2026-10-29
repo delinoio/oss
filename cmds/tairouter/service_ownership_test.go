@@ -140,6 +140,12 @@ func TestServiceTeardownRejectsUnverifiableOwnership(t *testing.T) {
 			if err := owner.Remove(context.Background(), p); err == nil {
 				t.Fatal("malformed definition authorized removal")
 			}
+			if platform == "windows" {
+				runner.taskXML = `<Task><Actions><Exec><Command>/apps/tairouter</Command><Arguments>relay --profile ` + p.Name + ` --state-dir ` + windowsQuote(owner.Disk.Root) + `</Arguments></Exec><ComHandler/></Actions></Task>`
+				if err := owner.Remove(context.Background(), p); err == nil {
+					t.Fatal("additional task action authorized removal")
+				}
+			}
 			if platform != "windows" {
 				if err := os.Remove(owner.path(p)); err != nil {
 					t.Fatal(err)
