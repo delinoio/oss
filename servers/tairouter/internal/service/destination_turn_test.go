@@ -135,7 +135,7 @@ func waitSocketTurnReady(t *testing.T, ctx context.Context, conn *websocket.Conn
 }
 
 func TestDestinationPolicyRefreshesAcrossResponsesSocketTurns(t *testing.T) {
-	for _, change := range []string{"removed", "narrowed", "unchanged"} {
+	for _, change := range []string{"removed", "narrowed", "unchanged", "settings-unavailable"} {
 		t.Run(change, func(t *testing.T) {
 			var sends atomic.Int32
 			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -171,11 +171,21 @@ func TestDestinationPolicyRefreshesAcrossResponsesSocketTurns(t *testing.T) {
 				setTurnDestinations(t, f, nil)
 			case "narrowed":
 				setTurnDestinations(t, f, []store.AllowedDestination{{Origin: upstream.URL, AllowedCIDRs: []string{"10.0.0.0/8"}}})
+			case "settings-unavailable":
+				if _, err := f.db.ExecContext(ctx, `DROP TABLE "`+f.schema+`".settings`); err != nil {
+					t.Fatal(err)
+				}
 			}
 			code := sendTurn(t, ctx, conn, "second")
 			if change == "unchanged" {
 				if code != "" || sends.Load() != 2 {
 					t.Fatalf("unchanged approval: error=%q sends=%d", code, sends.Load())
+				}
+				return
+			}
+			if change == "settings-unavailable" {
+				if code != inference.ErrUnavailable.Code || sends.Load() != 1 {
+					t.Fatalf("settings failure dispatched upstream: error=%q sends=%d", code, sends.Load())
 				}
 				return
 			}

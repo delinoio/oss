@@ -11,7 +11,34 @@ import (
 	"time"
 
 	"github.com/delinoio/oss/packages/tairouter/providers"
+	"github.com/delinoio/oss/packages/tairouter/store"
 )
+
+func TestCommandCodeProfileUsesCurrentTurnDestinationRule(t *testing.T) {
+	for _, test := range []struct {
+		name, cidr  string
+		wantProfile int
+	}{{"allowed", "93.184.216.0/24", 1}, {"denied", "10.0.0.0/8", 0}} {
+		t.Run(test.name, func(t *testing.T) {
+			generations, profiles := 0, 0
+			f := newProviderAcceptance(t, "command-code", "glm-5.2", func(w http.ResponseWriter, r *http.Request) {
+				if r.Host == "commandcode.ai" {
+					profiles++
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+				generations++
+				w.WriteHeader(http.StatusUnprocessableEntity)
+				providerAcceptanceResponse(w, `{"error":{"message":"invalid reasoning_effort"}}`)
+			})
+			setTurnDestinations(t, f, []store.AllowedDestination{{Origin: "https://commandcode.ai", AllowedCIDRs: []string{test.cidr}}})
+			f.call("/v1/chat/completions", `{"model":"fixture","messages":[{"role":"user","content":"hello"}],"reasoning_effort":"high"}`, nil)
+			if generations != 1 || profiles != test.wantProfile {
+				t.Fatalf("profile rule: generations=%d profiles=%d wantProfile=%d", generations, profiles, test.wantProfile)
+			}
+		})
+	}
+}
 
 func TestProviderAcceptanceCommandCodeProfileRepair(t *testing.T) {
 	var mu sync.Mutex
