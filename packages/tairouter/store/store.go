@@ -113,7 +113,10 @@ func (s *Store) Migrate(ctx context.Context) error {
 			return e
 		}
 		_, e := tx.ExecContext(ctx, strings.NewReplacer("{{schema}}", s.schema, "{{temp}}", s.temp).Replace(migration+"\n"+migration2+"\n"+migration3+"\n"+migration4+"\n"+migration5+"\n"+migration6+"\n"+migration7+"\n"+migration8+"\n"+migration9+"\n"+migration10+"\n"+migration11+"\n"+migration12+"\n"+migration13))
-		return e
+		if e != nil {
+			return e
+		}
+		return s.migrateLiveAliases(ctx, tx)
 	})
 }
 func (s *Store) tx(ctx context.Context, f func(*sql.Tx) error) error {

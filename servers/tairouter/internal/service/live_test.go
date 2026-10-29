@@ -159,11 +159,11 @@ func TestLiveBindingRestorationRejectsInvalidState(t *testing.T) {
 				if marshalErr != nil {
 					t.Fatal(marshalErr)
 				}
-				if err = a.s.PutState(ctx, sc, core.Responses, "live/"+p.KeyID+"/alias", raw); err != nil {
+				if err = a.s.PutState(ctx, sc, core.LiveAlias, "live/"+p.KeyID+"/alias", raw); err != nil {
 					t.Fatal(err)
 				}
 			case "missing":
-				if err = a.s.DeleteState(ctx, sc, core.Responses, "live/"+p.KeyID+"/alias"); err != nil {
+				if err = a.s.DeleteState(ctx, sc, core.LiveAlias, "live/"+p.KeyID+"/alias"); err != nil {
 					t.Fatal(err)
 				}
 			case "other-key":
@@ -228,7 +228,7 @@ func TestLiveBindingPublicationGenerationAndEnvelope(t *testing.T) {
 	if err := a.SaveBinding(ctx, p, "alias", binding); err != nil {
 		t.Fatal(err)
 	}
-	raw, err := a.s.GetState(ctx, sc, core.Responses, "live/"+p.KeyID+"/alias")
+	raw, err := a.s.GetState(ctx, sc, core.LiveAlias, "live/"+p.KeyID+"/alias")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -241,7 +241,7 @@ func TestLiveBindingPublicationGenerationAndEnvelope(t *testing.T) {
 	if err = a.SaveBinding(ctx, p, "stale", binding); !errors.Is(err, inference.ErrContinuation) {
 		t.Fatalf("replaced account published alias: %v", err)
 	}
-	if _, err = a.s.GetState(ctx, sc, core.Responses, "live/"+p.KeyID+"/stale"); !errors.Is(err, store.ErrContinuation) {
+	if _, err = a.s.GetState(ctx, sc, core.LiveAlias, "live/"+p.KeyID+"/stale"); !errors.Is(err, store.ErrContinuation) {
 		t.Fatalf("stale alias became usable: %v", err)
 	}
 	if _, _, err = a.ResolveBinding(ctx, p, "alias"); !errors.Is(err, inference.ErrContinuation) {
@@ -280,7 +280,7 @@ func TestLiveBindingPublicationRace(t *testing.T) {
 	if publishErr != nil && !errors.Is(publishErr, inference.ErrContinuation) {
 		t.Fatal(publishErr)
 	}
-	raw, err := a.s.GetState(ctx, sc, core.Responses, "live/"+p.KeyID+"/race")
+	raw, err := a.s.GetState(ctx, sc, core.LiveAlias, "live/"+p.KeyID+"/race")
 	if publishErr != nil {
 		if !errors.Is(err, store.ErrContinuation) {
 			t.Fatalf("failed publication left state: %v", err)
