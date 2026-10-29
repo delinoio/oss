@@ -120,7 +120,11 @@ func TestHostedUsageRecorderTransportFailureAndCanceledCleanup(t *testing.T) {
 				}
 				return errors.New("secret-receipt-error")
 			})
-			_, err := tr.Do(ctx, inference.AdapterRequest{Method: "POST", URL: srv.URL})
+			resp, err := tr.Do(ctx, inference.AdapterRequest{Method: "POST", URL: srv.URL})
+			if err == nil {
+				_, err = io.Copy(io.Discard, resp.Body)
+				err = errors.Join(err, resp.Body.Close())
+			}
 			if records != 1 || !errors.Is(err, inference.ErrUnavailable) {
 				t.Fatalf("records=%d exchange error=%v", records, err)
 			}

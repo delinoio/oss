@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/delinoio/oss/packages/tairouter/inference"
@@ -42,6 +43,112 @@ func hostedRead(body io.ReadCloser, limit int64) ([]byte, error) {
 	}
 	return b, nil
 }
+
+func (t *hostedTransport) finishExchange(ctx context.Context, id uuid.UUID, u store.Usage, usage inference.Usage) error {
+	if t.record == nil {
+		return inference.ErrUnavailable
+	}
+	t.mu.Lock()
+	t.completed++
+	t.lastOutcome = u.Outcome
+	t.mu.Unlock()
+	if t.price != nil {
+		t.price(&u, usage)
+	}
+	cleanup, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+	defer cancel()
+	if err := t.record(cleanup, id.String(), u); err != nil {
+		return inference.ErrUnavailable
+	}
+	return nil
+}
+
+// hostedBody keeps the dispatched exchange alive until its consumer finishes.
+// The extra byte detects oversize responses without handing it to the adapter.
+type hostedBody struct {
+	mu          sync.Mutex
+	once        sync.Once
+	finished    atomic.Bool
+	readEnd     atomic.Value
+	reader      io.Reader
+	body        io.ReadCloser
+	ctx         context.Context
+	cancel      context.CancelFunc
+	stop        func() bool
+	t           *hostedTransport
+	id          uuid.UUID
+	u           store.Usage
+	limit       int64
+	contentType string
+	data        []byte
+	result      error
+}
+
+func (b *hostedBody) finish(outcome store.RequestOutcome, readErr error) error {
+	b.once.Do(func() {
+		end := io.ErrClosedPipe
+		if outcome == store.OutcomeSucceeded && readErr == nil {
+			end = io.EOF
+		}
+		if readErr != nil {
+			end = readErr
+		}
+		b.readEnd.Store(end)
+		b.finished.Store(true)
+		if errors.Is(b.ctx.Err(), context.Canceled) {
+			outcome = store.OutcomeCanceled
+		}
+		if b.cancel != nil {
+			b.cancel()
+		}
+		b.body.Close()
+		b.mu.Lock()
+		b.u.Outcome = outcome
+		var usage inference.Usage
+		if readErr == nil && outcome == store.OutcomeSucceeded {
+			usage = hostedReportedUsage(b.data, b.contentType)
+			b.u.InputTokens, b.u.OutputTokens = usage.InputTokens, usage.OutputTokens
+		}
+		b.mu.Unlock()
+		b.result = errors.Join(readErr, b.t.finishExchange(b.ctx, b.id, b.u, usage))
+		if b.stop != nil {
+			b.stop()
+		}
+	})
+	return b.result
+}
+
+func (b *hostedBody) Read(p []byte) (int, error) {
+	if b.finished.Load() {
+		return 0, b.readEnd.Load().(error)
+	}
+	n, err := b.reader.Read(p)
+	if b.finished.Load() {
+		return 0, b.readEnd.Load().(error)
+	}
+	b.mu.Lock()
+	remaining := int(b.limit) - len(b.data)
+	if n > remaining {
+		n = remaining
+		b.data = append(b.data, p[:n]...)
+		b.mu.Unlock()
+		return n, b.finish(store.OutcomeUnknown, &inference.Error{Status: 413, Code: "hosted_response_too_large"})
+	}
+	b.data = append(b.data, p[:n]...)
+	b.mu.Unlock()
+	if err != nil {
+		if err == io.EOF {
+			if finalErr := b.finish(store.OutcomeSucceeded, nil); finalErr != nil {
+				return n, finalErr
+			}
+			return n, io.EOF
+		}
+		return n, b.finish(store.OutcomeUnknown, err)
+	}
+	return n, nil
+}
+
+func (b *hostedBody) Close() error { return b.finish(store.OutcomeUnknown, nil) }
 
 // exchange records every physical exchange independently, including ambiguous
 // writes and canceled body reads. Accounting cleanup cannot dispatch more work.
@@ -111,21 +218,56 @@ func (t *hostedTransport) Do(ctx context.Context, r inference.AdapterRequest) (*
 	if e != nil || dest.Scheme != base.Scheme || dest.Host != base.Host || dest.User != nil {
 		return nil, inference.ErrDestination
 	}
+	var cancel context.CancelFunc
 	if r.AttemptTimeout > 0 {
-		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, r.AttemptTimeout)
-		defer cancel()
 	}
 	req, e := http.NewRequestWithContext(ctx, r.Method, r.URL, bytes.NewReader(r.Body))
 	if e != nil {
+		if cancel != nil {
+			cancel()
+		}
 		return nil, e
 	}
 	req.Header = r.Headers.Clone()
-	b, h, e := t.exchange(ctx, req, 32<<20)
+	id, e := uuid.NewV7()
 	if e != nil {
+		if cancel != nil {
+			cancel()
+		}
 		return nil, e
 	}
-	return &http.Response{StatusCode: 200, Header: h, Body: io.NopCloser(bytes.NewReader(b))}, nil
+	sent := false
+	u := store.Usage{Provider: t.provider, Model: t.model, Outcome: store.OutcomeUnknown}
+	resp, e := t.policy.Do(ctx, req, t.gate, func() { sent = true })
+	if e != nil {
+		if sent {
+			if errors.Is(ctx.Err(), context.Canceled) {
+				u.Outcome = store.OutcomeCanceled
+			}
+			e = errors.Join(e, t.finishExchange(ctx, id, u, inference.Usage{}))
+		}
+		if cancel != nil {
+			cancel()
+		}
+		return nil, e
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		resp.Body.Close()
+		u.Outcome = store.OutcomeUpstreamError
+		if resp.StatusCode == http.StatusTooManyRequests {
+			u.Outcome = store.OutcomeRateLimited
+		}
+		e = errors.Join(&inference.Error{Status: resp.StatusCode, Code: "hosted_upstream_error"}, t.finishExchange(ctx, id, u, inference.Usage{}))
+		if cancel != nil {
+			cancel()
+		}
+		return nil, e
+	}
+	b := &hostedBody{reader: io.LimitReader(resp.Body, (32<<20)+1), body: resp.Body, ctx: ctx, cancel: cancel, t: t, id: id, u: u, limit: 32 << 20, contentType: resp.Header.Get("Content-Type")}
+	b.stop = context.AfterFunc(ctx, func() { b.finish(store.OutcomeCanceled, ctx.Err()) })
+	resp.Body = b
+	return resp, nil
 }
 func (t *hostedTransport) json(ctx context.Context, method, path, secret string, body any, limit int64) ([]byte, error) {
 	var data io.Reader

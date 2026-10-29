@@ -344,7 +344,7 @@ type incomingFrame struct {
 
 // runDuplex owns and joins both workers before returning. BidiAppend waits never
 // prevent the frame reader from receiving the context/KV messages it must answer.
-func runDuplex(ctx context.Context, cancel context.CancelCauseFunc, first *time.Timer, r *http.Response, x inference.AdapterExecutor, built inference.AdapterRequest, initial []byte, s *Session, emit func([]Event) error, in inference.AdapterInput) ([]Event, bool, error) {
+func runDuplex(ctx context.Context, cancel context.CancelCauseFunc, first *time.Timer, r *http.Response, x inference.AdapterExecutor, built inference.AdapterRequest, initial []byte, s *Session, emit func([]Event) error, in inference.AdapterInput) (_ []Event, _ bool, resultErr error) {
 	frames := make(chan incomingFrame, 1)
 	sends := make(chan []byte)
 	acks := make(chan error, 1)
@@ -353,10 +353,13 @@ func runDuplex(ctx context.Context, cancel context.CancelCauseFunc, first *time.
 	stop := context.AfterFunc(ctx, func() { r.Body.Close(); close(callbackDone) })
 	defer func() {
 		cancel(context.Canceled)
-		r.Body.Close()
+		closeErr := r.Body.Close()
 		workers.Wait()
 		if !stop() {
 			<-callbackDone
+		}
+		if resultErr == nil {
+			resultErr = closeErr
 		}
 	}()
 	workers.Add(2)
@@ -495,6 +498,10 @@ func runDuplex(ctx context.Context, cancel context.CancelCauseFunc, first *time.
 			first.Stop()
 			if received.err != nil {
 				if received.err != io.EOF {
+					var transportErr *inference.Error
+					if errors.Is(received.err, inference.ErrUnavailable) || errors.As(received.err, &transportErr) && transportErr.Code == "hosted_response_too_large" {
+						return nil, false, received.err
+					}
 					return nil, false, protocolError("cursor_stream_truncated")
 				}
 				var err error
