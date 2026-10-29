@@ -17,6 +17,7 @@ import (
 )
 
 var errRelayOwnership = errors.New("relay ownership cannot be verified; preserve the service and manage it from its original state directory or the OS service manager")
+var errLaunchAgentNotLoaded = errors.New("owned launch agent is not loaded")
 
 // A service name is shared by every state root under one OS user. Teardown
 // must prove which root the registered job launches before changing that job.
@@ -53,22 +54,19 @@ func (s UserServices) verifyOwnership(ctx context.Context, p Profile) error {
 		}
 		return nil
 	case "darwin":
+		_, definition, err := s.launchAgentDefinition(p)
+		if err != nil {
+			return conflict
+		}
 		out, err := s.Runner.Run(ctx, "launchctl", "print", "gui/"+s.UID+"/"+s.name(p))
 		if err != nil {
+			if errors.Is(err, errLaunchAgentNotLoaded) {
+				return errLaunchAgentNotLoaded
+			}
 			return fmt.Errorf("%w: service query failed", conflict)
 		}
 		path, args, ok := launchctlIdentity(out)
-		if !ok || !sameServicePath(path, s.path(p), false) {
-			return conflict
-		}
-		content, exists, err := readConfig(s.path(p))
-		if err != nil || !exists {
-			return conflict
-		}
-		var definition struct {
-			Args []string `xml:"dict>array>string"`
-		}
-		if xml.Unmarshal(content, &definition) != nil || !relayArgsOwned(definition.Args, p.Name, s.Disk.Root, false) || !equalArgs(args, definition.Args) {
+		if !ok || !sameServicePath(path, s.path(p), false) || !equalArgs(args, definition) {
 			return conflict
 		}
 		return nil
@@ -97,6 +95,34 @@ func (s UserServices) verifyOwnership(ctx context.Context, p Profile) error {
 	default:
 		return errors.New("unsupported service OS")
 	}
+}
+
+func (s UserServices) launchAgentDefinition(p Profile) ([]byte, []string, error) {
+	content, exists, err := readConfig(s.path(p))
+	if err != nil || !exists {
+		return nil, nil, errRelayOwnership
+	}
+	var definition struct {
+		Args []string `xml:"dict>array>string"`
+	}
+	if xml.Unmarshal(content, &definition) != nil || !relayArgsOwned(definition.Args, p.Name, s.Disk.Root, false) {
+		return nil, nil, errRelayOwnership
+	}
+	return content, definition.Args, nil
+}
+
+func launchAgentAbsentDiagnostic(output, target string) bool {
+	parts := strings.Split(target, "/")
+	if len(parts) != 3 || parts[0] != "gui" {
+		return false
+	}
+	prefix := `Could not find service "` + parts[2] + `" in domain for user gui:`
+	for _, line := range strings.Split(output, "\n") {
+		if rest, ok := strings.CutPrefix(strings.TrimSpace(line), prefix); ok && strings.TrimSpace(rest) == parts[1] {
+			return true
+		}
+	}
+	return false
 }
 
 func decodeNativeTaskXML(output string, value any) error {

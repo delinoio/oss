@@ -22,6 +22,10 @@ type NativeRunner struct{}
 func (NativeRunner) Run(ctx context.Context, name string, args ...string) (string, error) {
 	b, e := exec.CommandContext(ctx, name, args...).Output()
 	if e != nil {
+		var exit *exec.ExitError
+		if ctx.Err() == nil && name == "launchctl" && len(args) == 2 && args[0] == "print" && errors.As(e, &exit) && launchAgentAbsentDiagnostic(string(exit.Stderr), args[1]) {
+			return "", errLaunchAgentNotLoaded
+		}
 		return "", errors.New("native service command failed; inspect the OS service manager")
 	}
 	return strings.TrimSpace(string(b)), nil
@@ -171,8 +175,9 @@ func (s UserServices) Stop(ctx context.Context, p Profile) error {
 	return e
 }
 func (s UserServices) Remove(ctx context.Context, p Profile) error {
-	if e := s.verifyOwnership(ctx, p); e != nil {
-		return e
+	ownership := s.verifyOwnership(ctx, p)
+	if ownership != nil && !(s.OS == "darwin" && errors.Is(ownership, errLaunchAgentNotLoaded)) {
+		return ownership
 	}
 	switch s.OS {
 	case "linux":
@@ -185,10 +190,25 @@ func (s UserServices) Remove(ctx context.Context, p Profile) error {
 		_, e := s.Runner.Run(ctx, "systemctl", "--user", "daemon-reload")
 		return e
 	case "darwin":
-		if e := s.Stop(ctx, p); e != nil {
+		before, _, e := s.launchAgentDefinition(p)
+		if e != nil {
 			return e
 		}
-		e := os.Remove(s.path(p))
+		// bootout removes the registered definition. A prior Stop may already
+		// have done that; the on-disk owned plist still needs removal.
+		if ownership == nil {
+			if _, e := s.Runner.Run(ctx, "launchctl", "bootout", "gui/"+s.UID+"/"+s.name(p)); e != nil {
+				return e
+			}
+		}
+		after, _, e := s.launchAgentDefinition(p)
+		if e != nil || !bytes.Equal(before, after) {
+			return errRelayOwnership
+		}
+		if e := ctx.Err(); e != nil {
+			return e
+		}
+		e = os.Remove(s.path(p))
 		if os.IsNotExist(e) {
 			return nil
 		}

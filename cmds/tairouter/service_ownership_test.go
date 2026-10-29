@@ -14,12 +14,14 @@ import (
 )
 
 type ownershipRunner struct {
-	platform string
-	owner    UserServices
-	profile  Profile
-	calls    [][]string
-	taskXML  string
-	queryErr error
+	platform     string
+	owner        UserServices
+	profile      Profile
+	calls        [][]string
+	taskXML      string
+	queryErr     error
+	unloaded     bool
+	afterBootout func()
 }
 
 func (r *ownershipRunner) Run(_ context.Context, name string, args ...string) (string, error) {
@@ -42,9 +44,18 @@ func (r *ownershipRunner) Run(_ context.Context, name string, args ...string) (s
 		case "linux":
 			return "FragmentPath=" + r.owner.path(r.profile) + "\nDropInPaths=\nNeedDaemonReload=no\nLoadState=loaded\n", nil
 		case "darwin":
+			if r.unloaded {
+				return "", errLaunchAgentNotLoaded
+			}
 			return "path = " + r.owner.path(r.profile) + "\narguments = {\n\t/apps/tairouter\n\trelay\n\t--profile\n\t" + r.profile.Name + "\n\t--state-dir\n\t" + r.owner.Disk.Root + "\n}\n", nil
 		case "windows":
 			return r.taskXML, nil
+		}
+	}
+	if r.platform == "darwin" && len(args) > 0 && args[0] == "bootout" {
+		r.unloaded = true
+		if r.afterBootout != nil {
+			r.afterBootout()
 		}
 	}
 	return "ok", nil
@@ -119,6 +130,71 @@ func TestServiceTeardownRequiresStateRootOwnership(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestServiceDarwinRemoveAfterBootout(t *testing.T) {
+	for _, stopped := range []bool{false, true} {
+		t.Run(map[bool]string{false: "loaded", true: "stopped"}[stopped], func(t *testing.T) {
+			owner, other, runner, p := setupOwnedService(t, "darwin")
+			if stopped {
+				if err := owner.Stop(context.Background(), p); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := runner.destructiveCalls()
+			if err := other.Remove(context.Background(), p); !errors.Is(err, errRelayOwnership) || runner.destructiveCalls() != before {
+				t.Fatalf("foreign plist was not preserved: %v", err)
+			}
+			if err := owner.Remove(context.Background(), p); err != nil {
+				t.Fatal(err)
+			}
+			if runner.destructiveCalls() != 1 {
+				t.Fatalf("bootout count = %d, want 1", runner.destructiveCalls())
+			}
+			if _, err := os.Stat(owner.path(p)); !os.IsNotExist(err) {
+				t.Fatal("owned login plist remains:", err)
+			}
+		})
+	}
+}
+
+func TestServiceDarwinPreservesReplacedPlist(t *testing.T) {
+	owner, other, runner, p := setupOwnedService(t, "darwin")
+	original, err := os.ReadFile(owner.path(p))
+	if err != nil {
+		t.Fatal(err)
+	}
+	foreign := strings.ReplaceAll(string(original), owner.Disk.Root, other.Disk.Root)
+	runner.afterBootout = func() {
+		if err := os.WriteFile(owner.path(p), []byte(foreign), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := owner.Remove(context.Background(), p); !errors.Is(err, errRelayOwnership) {
+		t.Fatalf("replacement plist authorized removal: %v", err)
+	}
+	after, err := os.ReadFile(owner.path(p))
+	if err != nil || string(after) != foreign {
+		t.Fatal("replacement plist was not preserved:", err)
+	}
+}
+
+func TestLaunchAgentAbsentDiagnostic(t *testing.T) {
+	for _, test := range []struct {
+		output string
+		absent bool
+	}{
+		{"Bad request.\nCould not find service \"relay\" in domain for user gui:501\n", true},
+		{"Could not find service \"relay\" in domain for user gui: 501", true},
+		{"Could not find service \"foreign\" in domain for user gui:501", false},
+		{"Could not find service \"relay\" in domain for user gui:502", false},
+		{"Could not find service \"relay\" in domain for user user:501", false},
+		{"Permission denied", false},
+	} {
+		if got := launchAgentAbsentDiagnostic(test.output, "gui/501/relay"); got != test.absent {
+			t.Fatalf("diagnostic classified as %v, want %v: %q", got, test.absent, test.output)
+		}
 	}
 }
 
