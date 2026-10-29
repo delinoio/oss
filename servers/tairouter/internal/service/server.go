@@ -28,18 +28,18 @@ type server struct {
 	releases              interface {
 		Submit(store.Lease, func(context.Context))
 	}
-	config     serverconfig.Config
-	store      *store.Store
+	config serverconfig.Config
+	store  *store.Store
 	// databasePing permits deterministic health checks without a PostgreSQL fixture.
 	databasePing func(context.Context) error
-	auth       *sessionauth.Auth
-	telemetry  *observability.Telemetry
-	sockets    sync.WaitGroup
-	artifacts  *artifacts.Service
-	priceMu    sync.Mutex
-	priceJSON  string
-	priceCache *pricing.Snapshot
-	console    http.Handler
+	auth         *sessionauth.Auth
+	telemetry    *observability.Telemetry
+	sockets      sync.WaitGroup
+	artifacts    *artifacts.Service
+	priceMu      sync.Mutex
+	priceJSON    string
+	priceCache   *pricing.Snapshot
+	console      http.Handler
 }
 
 func (s *server) handler() http.Handler {
