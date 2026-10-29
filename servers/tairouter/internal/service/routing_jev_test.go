@@ -149,6 +149,11 @@ func TestJEVNativeMessagesEnvelopeAcrossTextBlocks(t *testing.T) {
 	if state["signals"].(map[string]any)["has_image"] != true {
 		t.Fatalf("native image signal was lost: %v", state)
 	}
+	interveningImage := json.RawMessage(`{"messages":[{"role":"user","content":[{"type":"text","text":"Actual task <system-reminder>"},{"type":"image","source":{"type":"url","url":"https://private.test/image"}},{"type":"text","text":"PRIVATE_CONTEXT</system-reminder>Continue task"}]}]}`)
+	state = buildJEVState(interveningImage, jevTestCandidates())
+	if state["task"] != "Actual task \nContinue task" {
+		t.Fatalf("envelope state was lost across an image block: %v", state["task"])
+	}
 	legacy, _ := json.Marshal(map[string]any{"messages": []any{
 		map[string]any{"role": "user", "content": "Earlier task"},
 		map[string]any{"role": "user", "content": "Latest task"},

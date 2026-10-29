@@ -633,18 +633,18 @@ func jevMessagesEvidence(rows []any) []any {
 				}
 			case "image":
 				if role == "user" {
-					items = append(items, map[string]any{"role": role, "content": []any{map[string]any{"type": "input_image"}}})
+					items = append(items, map[string]any{"role": role, "content": []any{map[string]any{"type": "input_image"}}, "__jev_text_group": rowIndex})
 				}
 			case "tool_use":
 				if role == "assistant" {
-					items = append(items, map[string]any{"type": "function_call", "call_id": part["id"], "name": part["name"]})
+					items = append(items, map[string]any{"role": role, "type": "function_call", "call_id": part["id"], "name": part["name"], "__jev_text_group": rowIndex})
 				}
 			case "tool_result":
 				if role == "user" {
-					items = append(items, map[string]any{"type": "function_call_output", "call_id": part["tool_use_id"], "output": routingText(part["content"])})
+					items = append(items, map[string]any{"role": role, "type": "function_call_output", "call_id": part["tool_use_id"], "output": routingText(part["content"]), "__jev_text_group": rowIndex})
 				}
 			case "input_image", "image_url":
-				items = append(items, map[string]any{"role": role, "content": []any{map[string]any{"type": part["type"]}}})
+				items = append(items, map[string]any{"role": role, "content": []any{map[string]any{"type": part["type"]}}, "__jev_text_group": rowIndex})
 			}
 		}
 	}
@@ -667,10 +667,12 @@ func jevTextRun(rows []any, index int) string {
 		currentRole, _ := message["role"].(string)
 		text, ok := message["content"].(string)
 		currentGroup, currentGrouped := message["__jev_text_group"]
-		if !ok || currentRole != role || currentGrouped != grouped || (grouped && currentGroup != group) {
+		if currentRole != role || currentGrouped != grouped || currentGroup != group {
 			break
 		}
-		parts = append(parts, text)
+		if ok {
+			parts = append(parts, text)
+		}
 	}
 	for i, j := 0, len(parts)-1; i < j; i, j = i+1, j-1 {
 		parts[i], parts[j] = parts[j], parts[i]
