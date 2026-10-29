@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -16,7 +17,191 @@ import (
 	"github.com/delinoio/oss/packages/tairouter/core"
 	"github.com/delinoio/oss/packages/tairouter/inference"
 	"github.com/delinoio/oss/packages/tairouter/store"
+	v1 "github.com/delinoio/oss/protos/tairouter/v1"
 )
+
+type closedLiveSocket struct{}
+
+func (closedLiveSocket) Read(context.Context) ([]byte, error) { return nil, io.EOF }
+func (closedLiveSocket) Write(context.Context, []byte) error  { return nil }
+func (closedLiveSocket) Close() error                         { return nil }
+
+type recordingLiveDialer struct {
+	endpoint string
+	headers  http.Header
+}
+
+func (d *recordingLiveDialer) Dial(_ context.Context, endpoint string, headers http.Header, _ *http.Client) (inference.Socket, error) {
+	d.endpoint, d.headers = endpoint, headers.Clone()
+	return closedLiveSocket{}, nil
+}
+
+func TestLiveOfferAliasJoinsOriginalAccount(t *testing.T) {
+	var f *providerAcceptanceFixture
+	f = newProviderAcceptance(t, "custom", "gpt-live-1-codex", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/realtime/calls" || r.Header.Get("Authorization") != "Bearer "+f.secret {
+			t.Errorf("unexpected offer route or account: %s", r.URL.Path)
+		}
+		w.Header().Set("Location", "/v1/realtime/calls/call_original")
+		w.Header().Set("Content-Type", "application/sdp")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = io.WriteString(w, "answer")
+	})
+	offer := f.call("/v1/realtime/calls", `{"sdp":"offer","session":{"model":"fixture"}}`, nil)
+	if offer.Code != http.StatusCreated || !strings.HasPrefix(offer.Header().Get("Location"), "/v1/realtime/calls/") {
+		t.Fatalf("offer status=%d location=%s body=%s", offer.Code, offer.Header().Get("Location"), offer.Body.String())
+	}
+	alias := strings.TrimPrefix(offer.Header().Get("Location"), "/v1/realtime/calls/")
+	for _, tc := range []struct{ name, path string }{
+		{"realtime-call", "/v1/realtime/calls/" + alias},
+		{"realtime-query", "/v1/realtime?call_id=" + alias},
+		{"live-call", "/v1/live/" + alias},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			adapter := &inferenceAdapter{s: f.s, telemetry: f.srv.telemetry}
+			dialer := &recordingLiveDialer{}
+			h, err := inference.New(inference.Config{Authorizer: adapter, Router: adapter, Credentials: adapter, Usage: adapter, LiveBindings: adapter, SocketDialer: dialer, Destinations: *f.srv.inferenceDestinations})
+			if err != nil {
+				t.Fatal(err)
+			}
+			u, err := url.Parse(tc.path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = h.ServeRealtimeSocket(ctx, f.key, u.Path, u.Query(), closedLiveSocket{})
+			if dialer.endpoint != "https://provider.example/v1/realtime?call_id=call_original" || dialer.headers.Get("Authorization") != "Bearer "+f.secret {
+				t.Fatalf("alias joined wrong call or account: endpoint=%s authorization=%s", dialer.endpoint, dialer.headers.Get("Authorization"))
+			}
+		})
+	}
+}
+
+func TestLiveBindingRestoresCompiledPolicy(t *testing.T) {
+	for _, fast := range []bool{false, true} {
+		t.Run(map[bool]string{false: "custom", true: "fast-policy"}[fast], func(t *testing.T) {
+			a, sc, key := dispatchFixture(t)
+			d := saveRoutingFixture(t, a, sc, "live-account", "gpt-live-1-codex")
+			if fast {
+				yes := true
+				d.Metadata.Configuration = &v1.ProviderConfiguration{Policy: &v1.ProviderPolicyOverrides{SupportsServiceTier: &yes}}
+				putRoutingProvider(t, a, sc, d)
+			}
+			p := admitRouting(t, a, key)
+			ctx := context.Background()
+			target, err := targetForContext(ctx, d, "wire-model")
+			if err != nil || target.Policy == nil {
+				t.Fatalf("normal target: %+v, %v", target, err)
+			}
+			if fast {
+				if err = applyFastTarget(ctx, d, "wire-model", &target); err != nil {
+					t.Fatal(err)
+				}
+			}
+			target.ForceMessagesTranslation = true
+			target.ReasoningRetention = &inference.ReasoningRetentionPolicy{Enabled: true, MaxTokens: 100}
+			selected, err := a.SelectBound(ctx, p, target, d.Metadata.Id)
+			if err != nil || selected.CredentialVersion == "" {
+				t.Fatalf("direct selection: %+v, %v", selected, err)
+			}
+			binding := inference.LiveBinding{Target: target, AccountID: d.Metadata.Id, UpstreamCallID: "call_original", ServedCredentialVersion: selected.CredentialVersion, ExpiresAt: time.Now().Add(5 * time.Minute)}
+			if err = a.SaveBinding(ctx, p, "alias", binding); err != nil {
+				t.Fatal(err)
+			}
+			for _, adapter := range []*inferenceAdapter{a, {s: a.s}} {
+				principal := p
+				if adapter != a {
+					principal = admitRouting(t, adapter, key)
+				}
+				got, credential, err := adapter.ResolveBinding(ctx, principal, "alias")
+				if err != nil || credential.AccountID != binding.AccountID || credential.CredentialVersion != binding.ServedCredentialVersion || !sameSavedLiveLane(binding.Target, got.Target) || policyIdentity(got.Target) != policyIdentity(binding.Target) || got.UpstreamCallID != binding.UpstreamCallID || got.Target.Policy == nil {
+					t.Fatalf("restored binding: %+v, credential=%+v, error=%v", got, credential, err)
+				}
+			}
+		})
+	}
+}
+
+func TestLiveBindingRestorationRejectsInvalidState(t *testing.T) {
+	for _, variant := range []string{"expired", "missing", "other-key", "replaced", "paused", "deleted", "corrupt-endpoint", "corrupt-model", "corrupt-fast-policy"} {
+		t.Run(variant, func(t *testing.T) {
+			a, sc, key := dispatchFixture(t)
+			d := saveRoutingFixture(t, a, sc, "live-account", "gpt-live-1-codex")
+			p := admitRouting(t, a, key)
+			ctx := context.Background()
+			target, err := targetForContext(ctx, d, "wire-model")
+			if err != nil {
+				t.Fatal(err)
+			}
+			credential, err := a.SelectBound(ctx, p, target, d.Metadata.Id)
+			if err != nil {
+				t.Fatal(err)
+			}
+			binding := inference.LiveBinding{Target: target, AccountID: d.Metadata.Id, UpstreamCallID: "call_original", ServedCredentialVersion: credential.CredentialVersion, ExpiresAt: time.Now().Add(5 * time.Minute)}
+			if err = a.SaveBinding(ctx, p, "alias", binding); err != nil {
+				t.Fatal(err)
+			}
+			lookup := p
+			lookupKey := key
+			switch variant {
+			case "expired", "corrupt-endpoint", "corrupt-model", "corrupt-fast-policy":
+				if variant == "expired" {
+					binding.ExpiresAt = time.Now().Add(-time.Second)
+				} else if variant == "corrupt-endpoint" {
+					binding.Target.Endpoint = "https://other.example/v1"
+				} else if variant == "corrupt-model" {
+					binding.Target.Model = "other-model"
+				} else {
+					binding.Target.FastPolicy = &inference.FastPolicy{Eligible: true}
+				}
+				raw, marshalErr := json.Marshal(storedLiveBinding{Version: liveBindingEnvelopeVersion, Binding: binding})
+				if marshalErr != nil {
+					t.Fatal(marshalErr)
+				}
+				if err = a.s.PutState(ctx, sc, core.Responses, "live/"+p.KeyID+"/alias", raw); err != nil {
+					t.Fatal(err)
+				}
+			case "missing":
+				if err = a.s.DeleteState(ctx, sc, core.Responses, "live/"+p.KeyID+"/alias"); err != nil {
+					t.Fatal(err)
+				}
+			case "other-key":
+				_, raw, issueErr := a.s.IssueKey(ctx, sc, "other", nil)
+				if issueErr != nil {
+					t.Fatal(issueErr)
+				}
+				other := &inferenceAdapter{s: a.s, telemetry: a.telemetry}
+				lookup = admitRouting(t, other, raw)
+				lookupKey = raw
+				a = other
+			case "replaced":
+				d.Secret = "replacement"
+				putRoutingProvider(t, a, sc, d)
+			case "paused":
+				d.Metadata.State = v1.ConnectionState_CONNECTION_STATE_DISABLED
+				putRoutingProvider(t, a, sc, d)
+			case "deleted":
+				if err = a.s.DeletePrivate(ctx, sc, string(providerKind), d.Metadata.Id); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, _, err = a.ResolveBinding(ctx, lookup, "alias"); !errors.Is(err, inference.ErrContinuation) {
+				t.Fatalf("invalid binding accepted: %v", err)
+			}
+			dialer := &recordingLiveDialer{}
+			fresh := &inferenceAdapter{s: a.s, telemetry: a.telemetry}
+			h, err := inference.New(inference.Config{Authorizer: fresh, Router: fresh, Credentials: fresh, Usage: fresh, LiveBindings: fresh, SocketDialer: dialer, Destinations: inference.DestinationPolicy{ApprovedOrigins: []string{"https://provider.example/v1"}}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			_ = h.ServeRealtimeSocket(ctx, lookupKey, "/v1/realtime/calls/alias", nil, closedLiveSocket{})
+			if dialer.endpoint != "" {
+				t.Fatalf("invalid binding dialed upstream: %s", dialer.endpoint)
+			}
+		})
+	}
+}
 
 func liveBindingFixture(t *testing.T) (*inferenceAdapter, inference.Principal, core.Scope, providerData, inference.LiveBinding) {
 	t.Helper()
