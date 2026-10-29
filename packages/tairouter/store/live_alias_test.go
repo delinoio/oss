@@ -3,6 +3,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -95,6 +96,48 @@ func TestLiveAliasAbsoluteDeadlineAndExpiredBudget(t *testing.T) {
 	}
 	if got, _ := stateRows(t, s, sc, core.LiveAlias); got != 2 {
 		t.Fatalf("expired row consumed budget: %d", got)
+	}
+}
+
+func TestLiveAliasCiphertextBytesStayInTheirDomain(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	_, sc := tenant(t, s)
+	_, other := tenant(t, s)
+	for _, scope := range []core.Scope{sc, other} {
+		for _, kind := range []core.StateKind{core.Responses, core.LiveAlias} {
+			for _, id := range []string{"old", "new"} {
+				if err := s.PutState(ctx, scope, kind, id, []byte("encrypted payload")); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+	}
+	var oldSize, newSize int64
+	responseCount, responseBytes := stateRows(t, s, sc, core.Responses)
+	if err := s.db.QueryRow("SELECT size FROM "+s.temp+".states WHERE org_id=$1 AND user_id=$2 AND kind=$3 AND id='old'", sc.OrganizationID, sc.UserID, core.LiveAlias).Scan(&oldSize); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.db.QueryRow("SELECT size FROM "+s.temp+".states WHERE org_id=$1 AND user_id=$2 AND kind=$3 AND id='new'", sc.OrganizationID, sc.UserID, core.LiveAlias).Scan(&newSize); err != nil {
+		t.Fatal(err)
+	}
+	if oldSize <= 0 || newSize <= 0 {
+		t.Fatal("ciphertext sizes missing")
+	}
+	if err := s.tx(ctx, func(tx *sql.Tx) error { return s.pruneState(ctx, tx, sc, core.LiveAlias, 1000, newSize) }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetState(ctx, sc, core.LiveAlias, "old"); !errors.Is(err, ErrContinuation) {
+		t.Fatalf("old ciphertext not evicted: %v", err)
+	}
+	if _, err := s.GetState(ctx, sc, core.LiveAlias, "new"); err != nil {
+		t.Fatal(err)
+	}
+	if got, bytes := stateRows(t, s, sc, core.Responses); got != responseCount || bytes != responseBytes {
+		t.Fatalf("Responses charged: %d/%d", got, bytes)
+	}
+	if got, _ := stateRows(t, s, other, core.LiveAlias); got != 2 {
+		t.Fatalf("other tenant charged: %d", got)
 	}
 }
 

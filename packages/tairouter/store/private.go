@@ -134,12 +134,16 @@ func (s *Store) putState(ctx context.Context, sc core.Scope, kind core.StateKind
 		if e != nil {
 			return e
 		}
-		if _, e = tx.ExecContext(ctx, "DELETE FROM "+s.temp+".states WHERE org_id=$1 AND user_id=$2 AND kind=$3 AND expires_at<=clock_timestamp()", sc.OrganizationID, sc.UserID, kind); e != nil {
-			return e
-		}
-		_, e = tx.ExecContext(ctx, "DELETE FROM "+s.temp+".states WHERE org_id=$1 AND user_id=$2 AND kind=$3 AND (expires_at<=clock_timestamp() OR id IN (SELECT id FROM (SELECT id,row_number() OVER(ORDER BY created_at DESC,id DESC) AS n,sum(size) OVER(ORDER BY created_at DESC,id DESC) AS bytes FROM "+s.temp+".states WHERE org_id=$1 AND user_id=$2 AND kind=$3) q WHERE n>$4 OR bytes>$5))", sc.OrganizationID, sc.UserID, kind, count, max)
-		return e
+		return s.pruneState(ctx, tx, sc, kind, count, max)
 	})
+}
+
+func (s *Store) pruneState(ctx context.Context, tx *sql.Tx, sc core.Scope, kind core.StateKind, count int, max int64) error {
+	if _, err := tx.ExecContext(ctx, "DELETE FROM "+s.temp+".states WHERE org_id=$1 AND user_id=$2 AND kind=$3 AND expires_at<=clock_timestamp()", sc.OrganizationID, sc.UserID, kind); err != nil {
+		return err
+	}
+	_, err := tx.ExecContext(ctx, "DELETE FROM "+s.temp+".states WHERE org_id=$1 AND user_id=$2 AND kind=$3 AND id IN (SELECT id FROM (SELECT id,row_number() OVER(ORDER BY created_at DESC,id DESC) AS n,sum(size) OVER(ORDER BY created_at DESC,id DESC) AS bytes FROM "+s.temp+".states WHERE org_id=$1 AND user_id=$2 AND kind=$3) q WHERE n>$4 OR bytes>$5)", sc.OrganizationID, sc.UserID, kind, count, max)
+	return err
 }
 func (s *Store) GetState(ctx context.Context, sc core.Scope, kind core.StateKind, id string) (v []byte, e error) {
 	e = s.tx(ctx, func(tx *sql.Tx) error {
