@@ -29,14 +29,18 @@ type hostedResolver struct {
 	imageBytes, videoBytes int64
 }
 type hostedOperation struct {
-	resolver   *hostedResolver
-	request    hosted.OperationRequest
-	transport  *hostedTransport
-	target     inference.Target
-	credential inference.Credential
-	backend    string
-	settings   *v1.HostedSettings
-	wait       func(context.Context, time.Duration) error
+	resolver        *hostedResolver
+	request         hosted.OperationRequest
+	transport       *hostedTransport
+	target          inference.Target
+	credential      inference.Credential
+	backend         string
+	settings        *v1.HostedSettings
+	wait            func(context.Context, time.Duration) error
+	poolVersion     string
+	searchVersion   string
+	initialVersions map[string]string
+	recovered       bool
 }
 
 func hostedDelay(ctx context.Context, d time.Duration) error {
@@ -104,6 +108,8 @@ func (r *hostedResolver) Resolve(ctx context.Context, req hosted.OperationReques
 	var version string
 	var target inference.Target
 	var cred inference.Credential
+	var initialVersions map[string]string
+	var selectedPoolHash string
 	if backend == "routed" {
 		// A separate router shares only the admission, never the parent's selection state.
 		a := &inferenceAdapter{s: r.auth.s, lease: lease, telemetry: r.auth.telemetry, prices: r.auth.prices}
@@ -132,6 +138,7 @@ func (r *hostedResolver) Resolve(ctx context.Context, req hosted.OperationReques
 		if pool != nil {
 			choice.GroupID += "/" + pool.Id
 			choice.Version = selectionVersion(pool)
+			selectedPoolHash = choice.Version
 			switch pool.Strategy {
 			case v1.PoolStrategy_POOL_STRATEGY_ROUND_ROBIN:
 				choice.Strategy = store.SelectionRoundRobin
@@ -176,6 +183,7 @@ func (r *hostedResolver) Resolve(ctx context.Context, req hosted.OperationReques
 			}
 			choice.Candidates = append(choice.Candidates, store.SelectionCandidate{ID: m.ConnectionId, Version: v, Weight: weight, Priority: int(m.Priority)})
 		}
+		initialVersions = versions
 		receipt, e := r.auth.s.SelectAccount(ctx, lease, choice)
 		if e != nil {
 			return nil, inferenceError(e)
@@ -266,7 +274,124 @@ func (r *hostedResolver) Resolve(ctx context.Context, req hosted.OperationReques
 	tr.record = hostedUsageRecorder(r.auth.telemetry, func(c context.Context, id string, u store.Usage) error {
 		return r.auth.s.RecordOperationUsage(c, lease, id, u)
 	})
-	return &hostedOperation{resolver: r, request: req, transport: tr, target: target, credential: cred, backend: backend, settings: c, wait: hostedDelay}, nil
+	op := &hostedOperation{resolver: r, request: req, transport: tr, target: target, credential: cred, backend: backend, settings: c, wait: hostedDelay}
+	if req.Kind == hosted.Search && backend == "gemini" && selection != nil && selection.GetPoolId() != "" {
+		poolRaw, poolVersion, err := r.auth.s.GetPrivateVersion(ctx, scopeOf(req.Principal), string(poolKind), selection.GetPoolId())
+		if err != nil {
+			return nil, inferenceError(err)
+		}
+		var currentPool v1.Pool
+		if json.Unmarshal(poolRaw, &currentPool) != nil || selectionVersion(&currentPool) != selectedPoolHash {
+			return nil, inference.ErrNoCredential
+		}
+		op.poolVersion = poolVersion
+		op.searchVersion = selectionVersion(c.Search)
+		op.initialVersions = initialVersions
+		tr.validationRefusal = true
+	}
+	return op, nil
+}
+
+// recoverValidation keeps one refusal grant within this helper execution. The
+// alternate uses a fresh account snapshot and the original request's send budget.
+func (o *hostedOperation) recoverValidation(ctx context.Context, args map[string]any, original error) (hosted.OperationResult, error) {
+	if o.recovered || o.poolVersion == "" || ctx.Err() != nil {
+		return hosted.OperationResult{}, original
+	}
+	r := o.resolver
+	sc := scopeOf(o.request.Principal)
+	if err := r.auth.BeforeSend(ctx, o.request.Principal); err != nil {
+		return hosted.OperationResult{}, original
+	}
+	settings, err := readHostedSettings(ctx, r.auth.s, sc)
+	if err != nil || settings.Search == nil || selectionVersion(settings.Search) != o.searchVersion {
+		return hosted.OperationResult{}, original
+	}
+	poolID := settings.Search.GetTarget().GetPoolId()
+	if poolID == "" {
+		return hosted.OperationResult{}, original
+	}
+	raw, poolVersion, err := r.auth.s.GetPrivateVersion(ctx, sc, string(poolKind), poolID)
+	if err != nil || poolVersion != o.poolVersion {
+		return hosted.OperationResult{}, original
+	}
+	var pool v1.Pool
+	if json.Unmarshal(raw, &pool) != nil || pool.Id != poolID {
+		return hosted.OperationResult{}, original
+	}
+	lease, err := r.auth.current(o.request.Principal)
+	if err != nil {
+		return hosted.OperationResult{}, original
+	}
+	choice := store.SelectionRequest{GroupID: "hosted/search/" + poolID, Version: selectionVersion(&pool), Model: o.target.Model, Strategy: store.SelectionPriority, Exclude: []string{o.credential.AccountID}}
+	switch pool.Strategy {
+	case v1.PoolStrategy_POOL_STRATEGY_ROUND_ROBIN:
+		choice.Strategy = store.SelectionRoundRobin
+	case v1.PoolStrategy_POOL_STRATEGY_LEAST_RECENTLY_USED:
+		choice.Strategy = store.SelectionLRU
+	}
+	type sibling struct {
+		data    providerData
+		version string
+	}
+	available := map[string]sibling{}
+	for _, member := range pool.Members {
+		if member.ConnectionId == o.credential.AccountID {
+			continue
+		}
+		d, version, err := r.auth.providerVersion(ctx, sc, member.ConnectionId)
+		if err != nil {
+			if errors.Is(err, inference.ErrNoCredential) || errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrBusy) || errors.Is(err, store.ErrReauthentication) {
+				continue
+			}
+			return hosted.OperationResult{}, original
+		}
+		if !hostedEligible(d, "gemini") {
+			continue
+		}
+		if version != o.initialVersions[member.ConnectionId] {
+			continue
+		}
+		if _, ok := modelEvidence(d, o.target.Model, time.Now()); !ok {
+			continue
+		}
+		if d.Credential == nil || !d.Credential.ExpiresAt.IsZero() && !d.Credential.ExpiresAt.After(time.Now().Add(30*time.Second)) {
+			continue
+		}
+		available[member.ConnectionId] = sibling{d, version}
+		weight := int(member.Weight)
+		if weight < 1 {
+			weight = 1
+		}
+		choice.Candidates = append(choice.Candidates, store.SelectionCandidate{ID: member.ConnectionId, Version: version, Weight: weight, Priority: int(member.Priority)})
+	}
+	if len(choice.Candidates) == 0 {
+		return hosted.OperationResult{}, original
+	}
+	receipt, err := r.auth.s.SelectAccount(ctx, lease, choice)
+	if err != nil {
+		return hosted.OperationResult{}, original
+	}
+	selected := available[receipt.CandidateID]
+	target, err := targetForContext(ctx, selected.data, o.target.Model)
+	if err != nil {
+		return hosted.OperationResult{}, original
+	}
+	credential, err := credentialFor(ctx, selected.data, target)
+	if err != nil || credential.Secret == "" {
+		return hosted.OperationResult{}, original
+	}
+	target.BaseURL = o.target.BaseURL
+	transport := &hostedTransport{policy: o.transport.policy, base: target.BaseURL, provider: selected.data.Metadata.ProviderId, model: target.Model, record: o.transport.record, price: o.transport.price}
+	transport.gate = func(c context.Context, start func(context.Context) error) error {
+		return inferenceError(r.auth.s.WithAccountBoundDispatch(c, lease, credential.AccountID, selected.version, []store.PrivateBinding{{Kind: string(poolKind), ID: poolID, Version: poolVersion}}, start))
+	}
+	alternate := &hostedOperation{resolver: r, request: o.request, transport: transport, target: target, credential: credential, backend: o.backend, settings: settings, wait: o.wait, recovered: true}
+	result, err := alternate.model(ctx, args)
+	if err != nil && !transport.headersSeen.Load() {
+		return hosted.OperationResult{}, original
+	}
+	return result, err
 }
 
 func hostedUsageRecorder(telemetry *observability.Telemetry, record func(context.Context, string, store.Usage) error) func(context.Context, string, store.Usage) error {
