@@ -207,6 +207,13 @@ func hostedValidationFixture(t *testing.T, mode string) {
 	if op.credential.AccountID != "a" {
 		t.Fatal("parent account changed")
 	}
+	if mode == "success" || mode == "repeated refusal" {
+		for _, id := range []string{"a", "b"} {
+			if _, _, err := a.providerVersion(context.Background(), sc, id); err != nil {
+				t.Fatalf("validation refusal changed account %s: %v", id, err)
+			}
+		}
+	}
 	usage, err := a.s.ListUsage(context.Background(), sc, sc.UserID, 10)
 	if err != nil || len(usage) != len(want) {
 		t.Fatalf("usage=%d error=%v", len(usage), err)
