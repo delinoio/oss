@@ -244,6 +244,17 @@ func validateProviderConfiguration(provider string, config *v1.ProviderConfigura
 			return invalid("invalid provider endpoint path")
 		}
 	}
+	if policy := config.Policy; policy != nil {
+		keys := make([]string, 0, len(policy.ModelSupportsServiceTier))
+		for model := range policy.ModelSupportsServiceTier {
+			for _, previous := range keys {
+				if strings.EqualFold(model, previous) {
+					return invalid("duplicate service-tier model override")
+				}
+			}
+			keys = append(keys, model)
+		}
+	}
 	if repair := config.GetPolicy().GetResponsesItemIdRepair(); repair != nil {
 		for _, ids := range [][]string{repair.Message, repair.Reasoning} {
 			if len(ids) > 2000 {
