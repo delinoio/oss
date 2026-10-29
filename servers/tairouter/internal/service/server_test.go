@@ -23,6 +23,11 @@ import (
 )
 
 func serverStore(t *testing.T) *store.Store {
+	s, _ := serverStoreWithSchema(t)
+	return s
+}
+
+func serverStoreWithSchema(t *testing.T) (*store.Store, string) {
 	t.Helper()
 	dsn := os.Getenv("TAIROUTER_TEST_DATABASE_URL")
 	if dsn == "" {
@@ -52,7 +57,7 @@ func serverStore(t *testing.T) *store.Store {
 			db.Exec("DROP SCHEMA IF EXISTS " + schema + " CASCADE")
 		}
 	})
-	return s
+	return s, schema
 }
 func testIdentity(t *testing.T, s *store.Store, subject string) (store.User, string) {
 	t.Helper()
