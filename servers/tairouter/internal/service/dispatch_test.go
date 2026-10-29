@@ -19,7 +19,11 @@ import (
 
 func dispatchFixture(t *testing.T) (*inferenceAdapter, core.Scope, string) {
 	t.Helper()
-	s := serverStore(t)
+	return dispatchFixtureWithStore(t, serverStore(t))
+}
+
+func dispatchFixtureWithStore(t *testing.T, s *store.Store) (*inferenceAdapter, core.Scope, string) {
+	t.Helper()
 	u, _ := testIdentity(t, s, "dispatch")
 	o, e := s.CreateOrganization(context.Background(), u.ID, "Dispatch org")
 	if e != nil {

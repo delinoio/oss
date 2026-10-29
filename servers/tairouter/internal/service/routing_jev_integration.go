@@ -322,6 +322,13 @@ func (a *inferenceAdapter) selectJEVRouteInput(ctx context.Context, p inference.
 			if err != nil || !sameCredentialLane(group.target, target) {
 				continue
 			}
+			until, err := a.s.AccountCooldown(ctx, scopeOf(p), candidate.ID, group.request.Model)
+			if err != nil {
+				return false, inferenceError(err)
+			}
+			if until != nil && until.After(time.Now()) {
+				continue
+			}
 			supported := true
 			for _, e := range c.Efforts {
 				found := false
@@ -392,6 +399,13 @@ func (a *inferenceAdapter) selectJEVRouteInput(ctx context.Context, p inference.
 		}
 		if err != nil {
 			return out, inferenceError(err)
+		}
+		until, err := a.s.AccountCooldown(ctx, scopeOf(p), candidate.ID, group.request.Model)
+		if err != nil {
+			return out, inferenceError(err)
+		}
+		if until != nil && until.After(time.Now()) {
+			continue
 		}
 		evidence, ok := modelEvidence(d, target.Model, time.Now())
 		if !ok {
