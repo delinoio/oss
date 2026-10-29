@@ -56,6 +56,8 @@ Include only these default alert examples:
 - DB connectivity-check failure lasting one minute.
 - Cleanup failing three consecutive times, or no successful cleanup for 15 minutes.
 
+Each metrics scrape refreshes the database connectivity gauge with a request-bounded PostgreSQL ping before collection. A failed ping leaves the metrics response available so the database alert can evaluate the observed failure. Readiness uses the same three-second ping bound and retains its own response behavior.
+
 Cleanup runs every minute. Operators configure error-rate and capacity alerts themselves; no fixed 5% error-rate or 85% disk alert is required.
 
 Observability must not expand instance operators' whole-instance health/aggregate access into organization-internal inspection.
