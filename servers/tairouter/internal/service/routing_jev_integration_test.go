@@ -100,81 +100,104 @@ func TestJEVPinCompletionFailureFenceAndCancellation(t *testing.T) {
 }
 
 func TestJEVComposedServiceAndModelRouting(t *testing.T) {
-	for _, modelBackend := range []bool{false, true} {
-		t.Run(fmt.Sprint("model=", modelBackend), func(t *testing.T) {
-			a, sc, key := dispatchFixture(t)
-			ctx := context.Background()
-			var decisionSends, inferenceSends atomic.Int32
-			var choice string
-			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				var b map[string]any
-				if json.NewDecoder(r.Body).Decode(&b) != nil {
-					t.Error("invalid request")
-				}
-				w.Header().Set("Content-Type", "application/json")
-				if r.URL.Path == "/systemone" {
-					decisionSends.Add(1)
-					_, _ = fmt.Fprintf(w, `{"answers":{"route":{"choice":%q}}}`, choice)
-					return
-				}
-				if r.URL.Path != "/v1/chat/completions" {
-					t.Errorf("unexpected path %s", r.URL.Path)
-					w.WriteHeader(404)
-					return
-				}
-				text := "selected second"
-				if b["model"] == "decision-model" {
-					decisionSends.Add(1)
-					raw, _ := json.Marshal(map[string]string{"choice": choice})
-					text = string(raw)
-				} else {
-					inferenceSends.Add(1)
-					if b["model"] != "second" {
-						t.Error("wrong inference model")
+	requests := []struct {
+		name, path, body, evidence string
+	}{
+		{"chat-pin", "/v1/chat/completions", `{"model":"combo","messages":[{"role":"user","content":"Choose the best target"}]}`, "Choose the best target"},
+		{"messages-image", "/v1/messages", `{"model":"combo","max_tokens":32,"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg=="}}]}]}`, "has_image"},
+		{"messages-tool", "/v1/messages", `{"model":"combo","max_tokens":32,"messages":[{"role":"user","content":"Fix the test"},{"role":"assistant","content":[{"type":"tool_use","id":"c","name":"exec_command","input":{"secret":"HIDDEN_ARGUMENT"}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"c","content":"1 fail: expected 2 got 3"}]}]}`, "1 fail: expected 2 got 3"},
+	}
+	for _, request := range requests {
+		for _, modelBackend := range []bool{false, true} {
+			t.Run(fmt.Sprint(request.name, "/model=", modelBackend), func(t *testing.T) {
+				a, sc, key := dispatchFixture(t)
+				ctx := context.Background()
+				var decisionSends, inferenceSends atomic.Int32
+				var choice string
+				var decisionEvidence string
+				upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var b map[string]any
+					if json.NewDecoder(r.Body).Decode(&b) != nil {
+						t.Error("invalid request")
+					}
+					w.Header().Set("Content-Type", "application/json")
+					if r.URL.Path == "/systemone" {
+						decisionSends.Add(1)
+						raw, _ := json.Marshal(b)
+						decisionEvidence = string(raw)
+						_, _ = fmt.Fprintf(w, `{"answers":{"route":{"choice":%q}}}`, choice)
+						return
+					}
+					if r.URL.Path != "/v1/chat/completions" {
+						t.Errorf("unexpected path %s", r.URL.Path)
+						w.WriteHeader(404)
+						return
+					}
+					text := "selected second"
+					if b["model"] == "decision-model" {
+						decisionSends.Add(1)
+						raw, _ := json.Marshal(b)
+						decisionEvidence = string(raw)
+						raw, _ = json.Marshal(map[string]string{"choice": choice})
+						text = string(raw)
+					} else {
+						inferenceSends.Add(1)
+						if b["model"] != "second" {
+							t.Error("wrong inference model")
+						}
+					}
+					raw, _ := json.Marshal(map[string]any{"id": "response", "object": "chat.completion", "model": b["model"], "choices": []any{map[string]any{"index": 0, "finish_reason": "stop", "message": map[string]any{"role": "assistant", "content": text}}}, "usage": map[string]int{"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3}})
+					_, _ = w.Write(raw)
+				}))
+				defer upstream.Close()
+				for _, id := range []string{"first", "second", "model-decision"} {
+					d := providerData{Metadata: &v1.ProviderConnection{Id: id, OrganizationId: sc.OrganizationID, ProviderId: "custom", BaseUrl: upstream.URL + "/v1", AuthKind: v1.ProviderAuthKind_PROVIDER_AUTH_KIND_API_KEY, State: v1.ConnectionState_CONNECTION_STATE_READY}, Secret: "fixture-key"}
+					putRoutingProvider(t, a, sc, d)
+					if id == "second" {
+						target, e := targetFor(d, "second")
+						if e != nil {
+							t.Fatal(e)
+						}
+						choice = selectionKey(target) + ":none"
 					}
 				}
-				raw, _ := json.Marshal(map[string]any{"id": "response", "object": "chat.completion", "model": b["model"], "choices": []any{map[string]any{"index": 0, "finish_reason": "stop", "message": map[string]any{"role": "assistant", "content": text}}}, "usage": map[string]int{"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3}})
-				_, _ = w.Write(raw)
-			}))
-			defer upstream.Close()
-			for _, id := range []string{"first", "second", "model-decision"} {
-				d := providerData{Metadata: &v1.ProviderConnection{Id: id, OrganizationId: sc.OrganizationID, ProviderId: "custom", BaseUrl: upstream.URL + "/v1", AuthKind: v1.ProviderAuthKind_PROVIDER_AUTH_KIND_API_KEY, State: v1.ConnectionState_CONNECTION_STATE_READY}, Secret: "fixture-key"}
-				putRoutingProvider(t, a, sc, d)
-				if id == "second" {
-					target, e := targetFor(d, "second")
+				wire := v1.ProviderWire_PROVIDER_WIRE_JEV_DECISION
+				putRoutingProvider(t, a, sc, providerData{Metadata: &v1.ProviderConnection{Id: "decision", OrganizationId: sc.OrganizationID, ProviderId: "custom", BaseUrl: upstream.URL + "/systemone", AuthKind: v1.ProviderAuthKind_PROVIDER_AUTH_KIND_API_KEY, State: v1.ConnectionState_CONNECTION_STATE_READY, Configuration: &v1.ProviderConfiguration{Wire: &wire}}, Secret: "fixture-decision-key"})
+				cfg := &v1.JevDecisionConfig{DecisionConnectionId: "decision", DecisionServiceModel: "tev1"}
+				if request.name == "chat-pin" {
+					cfg.SessionPinTtlSeconds = 60
+				}
+				if modelBackend {
+					cfg.DecisionModel = "decision-route"
+					putRoutingRoute(t, a, sc, &v1.Route{Id: "decision-route", ModelId: "decision-route", Enabled: true, Strategy: v1.RoutingStrategy_ROUTING_STRATEGY_DIRECT, Targets: []*v1.RouteTarget{{Target: &v1.RouteTarget_ConnectionId{ConnectionId: "model-decision"}, ModelId: "decision-model"}}})
+				}
+				putRoutingRoute(t, a, sc, &v1.Route{Id: "combo", ModelId: "combo", Enabled: true, Strategy: v1.RoutingStrategy_ROUTING_STRATEGY_JEV, JevDecision: cfg, Targets: []*v1.RouteTarget{{Target: &v1.RouteTarget_ConnectionId{ConnectionId: "first"}, ModelId: "first"}, {Target: &v1.RouteTarget_ConnectionId{ConnectionId: "second"}, ModelId: "second"}}})
+				attempts := 1
+				if request.name == "chat-pin" {
+					attempts = 2
+				}
+				for i := 0; i < attempts; i++ {
+					instance := &inferenceAdapter{s: a.s, telemetry: a.telemetry}
+					h, e := inference.New(inference.Config{Authorizer: instance, Router: instance, Credentials: instance, Negotiator: instance, Usage: instance, Destinations: inference.DestinationPolicy{ApprovedOrigins: []string{upstream.URL}}})
 					if e != nil {
 						t.Fatal(e)
 					}
-					choice = selectionKey(target) + ":none"
+					req := httptest.NewRequest("POST", request.path, strings.NewReader(request.body)).WithContext(ctx)
+					req.Header.Set("Authorization", "Bearer "+key)
+					req.Header.Set("Content-Type", "application/json")
+					if request.name == "chat-pin" {
+						req.Header.Set("session-id", "fixture-session")
+					}
+					w := httptest.NewRecorder()
+					h.ServeHTTP(w, req)
+					if w.Code != 200 || !strings.Contains(w.Body.String(), "selected second") {
+						t.Fatalf("composition HTTP %d: %s", w.Code, w.Body.String())
+					}
 				}
-			}
-			wire := v1.ProviderWire_PROVIDER_WIRE_JEV_DECISION
-			putRoutingProvider(t, a, sc, providerData{Metadata: &v1.ProviderConnection{Id: "decision", OrganizationId: sc.OrganizationID, ProviderId: "custom", BaseUrl: upstream.URL + "/systemone", AuthKind: v1.ProviderAuthKind_PROVIDER_AUTH_KIND_API_KEY, State: v1.ConnectionState_CONNECTION_STATE_READY, Configuration: &v1.ProviderConfiguration{Wire: &wire}}, Secret: "fixture-decision-key"})
-			cfg := &v1.JevDecisionConfig{DecisionConnectionId: "decision", DecisionServiceModel: "tev1", SessionPinTtlSeconds: 60}
-			if modelBackend {
-				cfg.DecisionModel = "decision-route"
-				putRoutingRoute(t, a, sc, &v1.Route{Id: "decision-route", ModelId: "decision-route", Enabled: true, Strategy: v1.RoutingStrategy_ROUTING_STRATEGY_DIRECT, Targets: []*v1.RouteTarget{{Target: &v1.RouteTarget_ConnectionId{ConnectionId: "model-decision"}, ModelId: "decision-model"}}})
-			}
-			putRoutingRoute(t, a, sc, &v1.Route{Id: "combo", ModelId: "combo", Enabled: true, Strategy: v1.RoutingStrategy_ROUTING_STRATEGY_JEV, JevDecision: cfg, Targets: []*v1.RouteTarget{{Target: &v1.RouteTarget_ConnectionId{ConnectionId: "first"}, ModelId: "first"}, {Target: &v1.RouteTarget_ConnectionId{ConnectionId: "second"}, ModelId: "second"}}})
-			for i := 0; i < 2; i++ {
-				instance := &inferenceAdapter{s: a.s, telemetry: a.telemetry}
-				h, e := inference.New(inference.Config{Authorizer: instance, Router: instance, Credentials: instance, Negotiator: instance, Usage: instance, Destinations: inference.DestinationPolicy{ApprovedOrigins: []string{upstream.URL}}})
-				if e != nil {
-					t.Fatal(e)
+				if decisionSends.Load() != 1 || inferenceSends.Load() != int32(attempts) || !strings.Contains(decisionEvidence, request.evidence) || strings.Contains(decisionEvidence, "HIDDEN_ARGUMENT") || strings.Contains(decisionEvidence, "iVBORw0KGgo") {
+					t.Fatalf("decision=%d inference=%d; successful pin was not reused", decisionSends.Load(), inferenceSends.Load())
 				}
-				req := httptest.NewRequest("POST", "/v1/chat/completions", strings.NewReader(`{"model":"combo","messages":[{"role":"user","content":"Choose the best target"}]}`)).WithContext(ctx)
-				req.Header.Set("Authorization", "Bearer "+key)
-				req.Header.Set("Content-Type", "application/json")
-				req.Header.Set("session-id", "fixture-session")
-				w := httptest.NewRecorder()
-				h.ServeHTTP(w, req)
-				if w.Code != 200 || !strings.Contains(w.Body.String(), "selected second") {
-					t.Fatalf("composition HTTP %d: %s", w.Code, w.Body.String())
-				}
-			}
-			if decisionSends.Load() != 1 || inferenceSends.Load() != 2 {
-				t.Fatalf("decision=%d inference=%d; successful pin was not reused", decisionSends.Load(), inferenceSends.Load())
-			}
-		})
+			})
+		}
 	}
 }

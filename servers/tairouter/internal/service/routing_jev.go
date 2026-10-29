@@ -596,6 +596,61 @@ func jevOutput(v any) string {
 	}
 	return ""
 }
+
+// Normalize native Messages blocks only for decision evidence. The original
+// request body remains available to the inference adapter without projection.
+func jevMessagesEvidence(rows []any) []any {
+	native := false
+	for _, row := range rows {
+		message, _ := row.(map[string]any)
+		blocks, _ := message["content"].([]any)
+		for _, block := range blocks {
+			part, _ := block.(map[string]any)
+			switch part["type"] {
+			case "image", "tool_use", "tool_result":
+				native = true
+			}
+		}
+	}
+	if !native {
+		return rows
+	}
+	items := make([]any, 0, len(rows))
+	for _, row := range rows {
+		message, _ := row.(map[string]any)
+		role, _ := message["role"].(string)
+		blocks, ok := message["content"].([]any)
+		if !ok {
+			items = append(items, row)
+			continue
+		}
+		for _, block := range blocks {
+			part, _ := block.(map[string]any)
+			switch part["type"] {
+			case "text", "input_text", "output_text":
+				if text, ok := part["text"].(string); ok {
+					items = append(items, map[string]any{"role": role, "content": text})
+				}
+			case "image":
+				if role == "user" {
+					items = append(items, map[string]any{"role": role, "content": []any{map[string]any{"type": "input_image"}}})
+				}
+			case "tool_use":
+				if role == "assistant" {
+					items = append(items, map[string]any{"type": "function_call", "call_id": part["id"], "name": part["name"]})
+				}
+			case "tool_result":
+				if role == "user" {
+					items = append(items, map[string]any{"type": "function_call_output", "call_id": part["tool_use_id"], "output": routingText(part["content"])})
+				}
+			case "input_image", "image_url":
+				items = append(items, map[string]any{"role": role, "content": []any{map[string]any{"type": part["type"]}}})
+			}
+		}
+	}
+	return items
+}
+
 func buildJEVState(raw json.RawMessage, candidates []jevCandidate) map[string]any {
 	var b map[string]any
 	_ = json.Unmarshal(raw, &b)
@@ -611,6 +666,9 @@ func buildJEVState(raw json.RawMessage, candidates []jevCandidate) map[string]an
 		step["type"] = "user_turn"
 	}
 	rows, _ := input.([]any)
+	if b["input"] == nil {
+		rows = jevMessagesEvidence(rows)
+	}
 	for i := len(rows) - 1; i >= 0; i-- {
 		m, _ := rows[i].(map[string]any)
 		if i >= len(rows)-6 {
