@@ -5,10 +5,13 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/json"
 	"io"
 	"net"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -98,6 +101,182 @@ func TestNativeControllerInstallationGeneration(t *testing.T) {
 	}
 	if _, e := c.Enable(ctx, req, consent); e == nil {
 		t.Fatal("old plan enabled replacement")
+	}
+}
+
+func TestNativeControllerClaudeInstallationConsent(t *testing.T) {
+	for _, platform := range []string{"darwin", "windows"} {
+		for _, mode := range []NativeCompatibilityMode{NativeCompatibilityClaudeFirstParty, NativeCompatibilityClaudePicker} {
+			t.Run(platform+"/"+string(mode), func(t *testing.T) {
+				c, req, trust := controllerFixture(t)
+				c.options.Platform, req.Mode = platform, mode
+				proof := NativeInstallationProof{Build: req.Build, Root: "/Applications/Claude.app", ExecutableStamp: "exe-a", ManifestDigest: "manifest-a"}
+				if platform == "windows" {
+					proof.Root, proof.ManifestDigest = `C:\Users\fixture\Claude\claude.exe`, ""
+				}
+				c.options.ObserveInstallation = func(context.Context, NativeRuntimeRequest) (NativeInstallationProof, error) { return proof, nil }
+				ctx := context.Background()
+				plan, err := c.Plan(ctx, req)
+				if err != nil {
+					t.Fatal(err)
+				}
+				steady, err := c.Plan(ctx, req)
+				if err != nil || steady.PlanDigest != plan.PlanDigest {
+					t.Fatal("unchanged installation changed consent")
+				}
+				consent := NativeRuntimeConsent{Trust: true, Application: true, PlanFingerprint: plan.Fingerprint, PlanDigest: plan.PlanDigest}
+				a := proof
+				proof.ExecutableStamp = "exe-b"
+				if _, err := c.Enable(ctx, req, consent); err == nil || trust.installs != 0 {
+					t.Fatal("old consent reached trust after replacement")
+				}
+				proof = a
+				if _, err := c.Enable(ctx, req, consent); err == nil {
+					t.Fatal("A-B-A restored old consent")
+				}
+				restarted := NewNativeRuntimeControllerWithOptions(c.disk, c.credentials, c.options).(*nativeRuntimeController)
+				if _, err := restarted.Enable(ctx, req, consent); err == nil {
+					t.Fatal("restart restored old consent")
+				}
+				fresh, err := restarted.Plan(ctx, req)
+				if err != nil || fresh.PlanDigest == plan.PlanDigest {
+					t.Fatal("replacement did not renew plan")
+				}
+				consent.PlanDigest = fresh.PlanDigest
+				if _, err := restarted.Enable(ctx, req, consent); err != nil {
+					t.Fatal(err)
+				}
+				record, exists, err := restarted.load(req.Profile.Name)
+				if err != nil || !exists {
+					t.Fatal("runtime record missing", err)
+				}
+				proof.ExecutableStamp = "exe-b"
+				if restarted.installationMatches(ctx, record) {
+					t.Fatal("replacement matched runtime")
+				}
+				if err := restarted.Serve(ctx, req.Profile.Name); err == nil {
+					t.Fatal("Serve accepted replacement")
+				}
+				proof = a
+				if restarted.installationMatches(ctx, record) {
+					t.Fatal("A-B-A restored runtime")
+				}
+				root, _ := restarted.root(req.Profile.Name)
+				runtimePath := filepath.Join(root, "runtime.json")
+				raw, _, err := readConfig(runtimePath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				record.Installation = NativeInstallationProof{Build: req.Build, Generation: record.Installation.Generation}
+				legacy, err := json.Marshal(record)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(runtimePath, legacy, 0600); err != nil {
+					t.Fatal(err)
+				}
+				if restarted.installationMatches(ctx, record) {
+					t.Fatal("legacy runtime proof matched")
+				}
+				if err := restarted.Serve(ctx, req.Profile.Name); err == nil {
+					t.Fatal("Serve accepted legacy runtime")
+				}
+				if _, err := os.Stat(runtimePath); err != nil {
+					t.Fatal("legacy recovery record lost", err)
+				}
+				if err := os.WriteFile(runtimePath, raw, 0600); err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+	}
+}
+
+func TestNativeControllerClaudeInFlightReplacement(t *testing.T) {
+	for _, mode := range []NativeCompatibilityMode{NativeCompatibilityClaudeFirstParty, NativeCompatibilityClaudePicker} {
+		t.Run(string(mode), func(t *testing.T) {
+			ctx := context.Background()
+			c, req, trust := controllerFixture(t)
+			req.Mode = mode
+			proof := NativeInstallationProof{Build: req.Build, Root: "/Applications/Claude.app", ExecutableStamp: "a", ManifestDigest: "manifest"}
+			c.options.ObserveInstallation = func(context.Context, NativeRuntimeRequest) (NativeInstallationProof, error) { return proof, nil }
+			plan, err := c.Plan(ctx, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			consent := NativeRuntimeConsent{Trust: true, Application: true, PlanFingerprint: plan.Fingerprint, PlanDigest: plan.PlanDigest}
+			trust.beforeInstall = func() {
+				proof.ExecutableStamp = "b"
+				if _, err := c.installation(ctx, req); err != nil {
+					t.Error(err)
+				}
+				proof.ExecutableStamp = "a"
+			}
+			if _, err := c.Enable(ctx, req, consent); err == nil {
+				t.Fatal("installation change during activation accepted")
+			}
+			trust.beforeInstall = nil
+			if err := c.Serve(ctx, req.Profile.Name); err == nil {
+				t.Fatal("pending activation was served")
+			}
+			fresh, err := c.Plan(ctx, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			consent.PlanDigest = fresh.PlanDigest
+			// The pending record retains consent for the old plan; use a fresh fixture
+			// for the independent catalog boundary.
+			c2, req2, _ := controllerFixture(t)
+			req2.Mode = mode
+			c2.options.ObserveInstallation = func(context.Context, NativeRuntimeRequest) (NativeInstallationProof, error) { return proof, nil }
+			newPlan, err := c2.Plan(ctx, req2)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := c2.Enable(ctx, req2, NativeRuntimeConsent{Trust: true, Application: true, PlanFingerprint: newPlan.Fingerprint, PlanDigest: newPlan.PlanDigest}); err != nil {
+				t.Fatal(err)
+			}
+			c2.options.Models = func(context.Context, Profile, string) ([]ClientModel, error) {
+				proof.ExecutableStamp = "b"
+				return []ClientModel{{ID: "fixture", Name: "Fixture"}}, nil
+			}
+			c2.options.CLIModels = func(context.Context, Profile, string) ([]ClientModel, error) { return nil, nil }
+			c2.options.Run = func(context.Context, NativeTLSConfig) error {
+				t.Error("runtime launched after replacement")
+				return nil
+			}
+			if err := c2.Serve(ctx, req2.Profile.Name); err == nil {
+				t.Fatal("catalog change accepted")
+			}
+		})
+	}
+}
+
+func TestNativeControllerClaudeLegacyObservationRequiresNewPlan(t *testing.T) {
+	c, req, _ := controllerFixture(t)
+	ctx := context.Background()
+	old, err := c.Plan(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, _ := c.root(req.Profile.Name)
+	observation := filepath.Join(root, "observation", "installed.json")
+	if _, err := os.Stat(observation); err != nil {
+		t.Fatal("legacy observation missing", err)
+	}
+	c.options.ObserveBuild = nil
+	c.options.ObserveInstallation = func(context.Context, NativeRuntimeRequest) (NativeInstallationProof, error) {
+		return NativeInstallationProof{Build: req.Build, Root: "/Applications/Claude.app", ExecutableStamp: "exe", ManifestDigest: "plist"}, nil
+	}
+	fresh, err := c.Plan(ctx, req)
+	if err != nil || fresh.PlanDigest == old.PlanDigest {
+		t.Fatal("legacy build-only observation retained consent", err)
+	}
+	if _, err := c.Enable(ctx, req, NativeRuntimeConsent{Trust: true, Application: true, PlanFingerprint: old.Fingerprint, PlanDigest: old.PlanDigest}); err == nil {
+		t.Fatal("legacy plan accepted")
+	}
+	if _, err := os.Stat(observation); err != nil {
+		t.Fatal("observation recovery evidence lost", err)
 	}
 }
 func TestNativeControllerInstallationChangesDuringAccountCheck(t *testing.T) {
