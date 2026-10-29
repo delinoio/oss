@@ -34,7 +34,7 @@ func commandCodeState(in inference.AdapterInput) (inference.Principal, string, e
 	return p, hex.EncodeToString(digest[:]), nil
 }
 
-func commandCodeAdapter(a *inferenceAdapter, destinations inference.DestinationPolicy) *commandcode.Adapter {
+func commandCodeAdapter(a *inferenceAdapter) *commandcode.Adapter {
 	return commandcode.NewWithOptions(commandcode.Options{
 		Policy:       a.commandCodePolicy,
 		LearnEfforts: a.learnCommandCodeEfforts,
@@ -55,7 +55,11 @@ func commandCodeAdapter(a *inferenceAdapter, destinations inference.DestinationP
 			if err != nil {
 				return nil, err
 			}
-			return destinations.Do(ctx, clean, func(c context.Context, start func(context.Context) error) error {
+			policy, _, err := a.TurnDestinationPolicy(in.Principal)
+			if err != nil {
+				return nil, err
+			}
+			return policy.Do(ctx, clean, func(c context.Context, start func(context.Context) error) error {
 				return inferenceError(a.s.WithAccountDispatch(c, lease, in.Credential.AccountID, in.Credential.CredentialVersion, start))
 			}, nil)
 		},

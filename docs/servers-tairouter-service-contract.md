@@ -175,6 +175,7 @@ Sources: [stall resolution](https://github.com/lidge-jun/opencodex/blob/88aaa754
 - Permit public HTTPS provider destinations by default.
 - Permit private-network/local HTTP destinations only when approved by the operator.
 - Match operator destination rules by canonical scheme, hostname, and port. An empty CIDR list keeps the exact-origin approval behavior. A nonempty CIDR list restricts that origin to the listed networks, including when the origin uses public HTTPS; it must not fall back to the public-HTTPS default after an address fails the rule. Reject duplicate canonical origins and invalid prefixes. Validate every resolved address, normalize IPv4-mapped IPv6 consistently, and pin connections to the validated addresses. Redirects must not bypass the rule.
+- Capture current operator destination settings as an immutable policy for each newly admitted Responses WebSocket turn. A completed turn does not authorize a later turn under its old policy; an already-started turn keeps its own snapshot. A required settings-read failure refuses the new turn before an upstream send.
 - Test URL parsing, DNS resolution, and redirects against destination-policy bypass.
 - On client disconnect/cancellation, immediately attempt upstream cancellation and stop additional retries.
 - Record confirmed usage only; distinguish unknown usage from zero.

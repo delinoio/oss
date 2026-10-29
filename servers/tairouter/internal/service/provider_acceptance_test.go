@@ -77,7 +77,7 @@ func newProviderAcceptance(t *testing.T, provider, model string, upstream http.H
 	schema := "pa_" + strings.ReplaceAll(core.ID(), "-", "")
 	keys, e := core.NewEnvelope("fixture", map[string][]byte{"fixture": make([]byte, 32)})
 	acceptanceOK(t, e)
-	s, e := store.Open(ctx, dsn, store.Options{Schema: schema, Keys: keys})
+	s, e := store.Open(ctx, dsn, store.Options{Schema: schema, Keys: keys, Operators: []core.Identity{{Issuer: "https://identity.test", Subject: "provider-owner"}}})
 	acceptanceOK(t, e)
 	t.Cleanup(func() {
 		s.Close()

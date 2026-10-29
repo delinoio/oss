@@ -143,6 +143,18 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if release != nil {
 		defer release()
 	}
+	if source, ok := h.c.Authorizer.(TurnDestinationPolicies); ok {
+		policy, active, err := source.TurnDestinationPolicy(p)
+		if err != nil {
+			writeError(w, err)
+			return
+		}
+		if active {
+			copy := *h
+			copy.c.Destinations = policy
+			h = &copy
+		}
+	}
 	if p.OrganizationID == "" || p.UserID == "" || p.KeyID == "" {
 		writeError(w, ErrUnauthorized)
 		return

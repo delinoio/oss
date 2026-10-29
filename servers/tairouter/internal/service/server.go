@@ -130,18 +130,13 @@ func (s *server) serveInference(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	adapter := &inferenceAdapter{s: s.store, telemetry: s.telemetry, prices: prices}
+	adapter := &inferenceAdapter{s: s.store, telemetry: s.telemetry, prices: prices, destinationOverrides: s.inferenceDestinations, turnPolicyEnabled: true}
 	if s.releases != nil {
 		adapter.releaseCompleted = s.releases.Submit
 	}
-	destinations := inference.DestinationPolicy{ApprovedOrigins: settings.Destinations, Rules: settings.DestinationRules}
-	if s.inferenceDestinations != nil {
-		destinations = *s.inferenceDestinations
-		destinations.Rules = settings.DestinationRules
-		destinations.ApprovedOrigins = append(append([]string(nil), destinations.ApprovedOrigins...), settings.Destinations...)
-	}
+	destinations := destinationPolicy(settings, s.inferenceDestinations)
 	adapters := providerAdapters()
-	adapters[commandcode.Wire] = commandCodeAdapter(adapter, destinations)
+	adapters[commandcode.Wire] = commandCodeAdapter(adapter)
 	originals := make(map[inference.Wire]inference.Adapter, len(adapters))
 	for wire, value := range adapters {
 		originals[wire] = value

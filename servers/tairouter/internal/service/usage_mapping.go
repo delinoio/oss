@@ -228,7 +228,11 @@ func currentPricingSnapshot(ctx context.Context, s *store.Store, base *pricing.S
 	if err != nil {
 		return nil, err
 	}
-	overrides, err := managedPriceOverrides(settings.Prices)
+	return pricingSnapshot(settings.Prices)
+}
+
+func pricingSnapshot(raw json.RawMessage) (*pricing.Snapshot, error) {
+	overrides, err := managedPriceOverrides(raw)
 	if err != nil {
 		return nil, err
 	}

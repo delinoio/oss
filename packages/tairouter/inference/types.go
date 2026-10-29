@@ -51,6 +51,12 @@ type Authorizer interface {
 	Admit(context.Context, string) (Principal, func(), error)
 	BeforeSend(context.Context, Principal) error
 }
+
+// TurnDestinationPolicies supplies the policy captured by the current admission.
+// Implementations that do not need a per-turn refresh can omit this interface.
+type TurnDestinationPolicies interface {
+	TurnDestinationPolicy(Principal) (DestinationPolicy, bool, error)
+}
 type Model struct {
 	ID      string `json:"id"`
 	Object  string `json:"object"`

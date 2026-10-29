@@ -29,6 +29,9 @@ type inferenceAdapter struct {
 	lease                          store.Lease
 	connections                    map[string]providerData
 	prices                         *pricing.Snapshot
+	destinations                   inference.DestinationPolicy
+	destinationOverrides           *inference.DestinationPolicy
+	turnPolicyEnabled              bool
 	selections                     map[string]routeSelection
 	versions                       map[string]string
 	activeAccount, activeVersion   string
@@ -66,13 +69,19 @@ func (a *inferenceAdapter) Admit(ctx context.Context, raw string) (inference.Pri
 	if e != nil {
 		return inference.Principal{}, nil, inferenceError(e)
 	}
-	prices, e := currentPricingSnapshot(ctx, a.s, a.prices)
+	settings, e := a.s.Settings(ctx)
+	if e != nil {
+		a.releaseLease(l, nil)
+		return inference.Principal{}, nil, inferenceError(e)
+	}
+	prices, e := pricingSnapshot(settings.Prices)
 	if e != nil {
 		a.releaseLease(l, nil)
 		return inference.Principal{}, nil, inferenceError(e)
 	}
 	a.mu.Lock()
 	a.prices = prices
+	a.destinations = destinationPolicy(settings, a.destinationOverrides)
 	a.lease = l
 	// A socket reuses its adapter, but every admitted turn owns new waiters.
 	states := make(map[string]mistralWait)
@@ -86,6 +95,25 @@ func (a *inferenceAdapter) Admit(ctx context.Context, raw string) (inference.Pri
 	}
 
 	return inference.Principal{OrganizationID: l.Principal.Scope.OrganizationID, UserID: l.Principal.Scope.UserID, KeyID: l.Principal.KeyID, MembershipGeneration: l.Principal.Scope.Generation}, release, nil
+}
+
+func (a *inferenceAdapter) TurnDestinationPolicy(p inference.Principal) (inference.DestinationPolicy, bool, error) {
+	if !a.turnPolicyEnabled {
+		return inference.DestinationPolicy{}, false, nil
+	}
+	if _, err := a.current(p); err != nil {
+		return inference.DestinationPolicy{}, false, err
+	}
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	policy := a.destinations
+	policy.ApprovedOrigins = append([]string(nil), policy.ApprovedOrigins...)
+	policy.Rules = append([]inference.DestinationRule(nil), policy.Rules...)
+	for i := range policy.Rules {
+		policy.Rules[i].AllowedCIDRs = append([]string(nil), policy.Rules[i].AllowedCIDRs...)
+	}
+	policy.NoProxy = append([]string(nil), policy.NoProxy...)
+	return policy, true, nil
 }
 func (a *inferenceAdapter) releaseLease(l store.Lease, states map[string]mistralWait) {
 	// Snapshot this admission's tickets before release can run asynchronously.
