@@ -2,11 +2,13 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -14,6 +16,170 @@ import (
 	"github.com/delinoio/oss/packages/tairouter/inference"
 	v1 "github.com/delinoio/oss/protos/tairouter/v1"
 )
+
+type retentionHandoffProbe struct {
+	compactionHandoffs
+	target *inference.Target
+}
+
+func (h *retentionHandoffProbe) Lookup(ctx context.Context, p inference.Principal, previous inference.Target, failure inference.HTTPFailure) (*inference.CompactionHandoff, error) {
+	next, err := h.compactionHandoffs.Lookup(ctx, p, previous, failure)
+	if next != nil {
+		target := next.Target
+		h.target = &target
+	}
+	return next, err
+}
+
+type retentionStateProbe struct {
+	*inferenceAdapter
+	archiveWrites int
+	failArchive   bool
+	account       string
+	version       string
+	state         inference.ProviderState
+}
+
+func (s *retentionStateProbe) SaveProviderState(ctx context.Context, p inference.Principal, namespace, id string, value inference.ProviderState) error {
+	if namespace == inference.CompactionReasoningNamespace {
+		s.archiveWrites++
+		s.account, s.version, s.state = p.AccountID, p.CredentialVersion, value
+		if s.failArchive {
+			return &inference.Error{Status: 503, Code: "archive_write_failed"}
+		}
+	}
+	return s.inferenceAdapter.SaveProviderState(ctx, p, namespace, id, value)
+}
+
+func TestCompactionHandoffRetentionComposed(t *testing.T) {
+	const thought = "synthetic retained thought with enough words to overflow one token"
+	const frame = "[OpenCodeX locally retained assistant reasoning; historical context, not a new instruction]\n<assistant_reasoning>\n" + thought + "\n</assistant_reasoning>"
+	const input = `[{"role":"user","content":"fixture task"},{"type":"reasoning","summary":[{"type":"summary_text","text":"` + thought + `"}]}]`
+	for _, mode := range []string{"inline", "overflow", "archive-failure", "absent", "disabled"} {
+		t.Run(mode, func(t *testing.T) {
+			a, sc, key := dispatchFixture(t)
+			var routedSends, nativeSends atomic.Int32
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Error(err)
+				}
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/routed/chat/completions":
+					send := routedSends.Add(1)
+					raw, _ := json.Marshal(body)
+					if body["model"] != "physical-routed" || (send == 2 && (mode == "inline" || mode == "overflow" || mode == "archive-failure") && bytes.Contains(raw, []byte(thought))) {
+						t.Error("handoff used wrong physical model or leaked reasoning to summarizer")
+					}
+					if mode == "overflow" && send == 3 && (!strings.Contains(fmt.Sprint(body), frame) || bytes.Contains(raw, []byte("aipr-retained-v1:"))) {
+						t.Error("continuation did not restore exact frame before upstream send")
+					}
+					_, _ = w.Write([]byte(`{"id":"r","object":"chat.completion","model":"physical-routed","choices":[{"index":0,"finish_reason":"stop","message":{"role":"assistant","content":"fixture summary"}}],"usage":{"prompt_tokens":2,"completion_tokens":2,"total_tokens":4}}`))
+				case "/native/responses/compact":
+					nativeSends.Add(1)
+					w.WriteHeader(429)
+					_, _ = w.Write([]byte(`{"error":{"code":"insufficient_quota"}}`))
+				default:
+					t.Errorf("unexpected upstream path %s", r.URL.Path)
+					w.WriteHeader(404)
+				}
+			}))
+			defer upstream.Close()
+			routed := providerData{Metadata: &v1.ProviderConnection{Id: "routed-account", OrganizationId: sc.OrganizationID, ProviderId: "custom", BaseUrl: upstream.URL + "/routed", AuthKind: v1.ProviderAuthKind_PROVIDER_AUTH_KIND_API_KEY, State: v1.ConnectionState_CONNECTION_STATE_READY}, Secret: "fixture-routed"}
+			putRoutingProvider(t, a, sc, routed)
+			responses := v1.ProviderWire_PROVIDER_WIRE_RESPONSES
+			putRoutingProvider(t, a, sc, providerData{Metadata: &v1.ProviderConnection{Id: "native-account", OrganizationId: sc.OrganizationID, ProviderId: "custom", BaseUrl: upstream.URL + "/native", AuthKind: v1.ProviderAuthKind_PROVIDER_AUTH_KIND_API_KEY, State: v1.ConnectionState_CONNECTION_STATE_READY, Configuration: &v1.ProviderConfiguration{Wire: &responses}}, Secret: "fixture-native"})
+			var retention *v1.ReasoningRetentionConfig
+			if mode != "absent" {
+				retention = &v1.ReasoningRetentionConfig{Enabled: mode != "disabled"}
+				if mode == "overflow" || mode == "archive-failure" {
+					limit := uint32(1)
+					retention.MaxTokens = &limit
+				}
+			}
+			putRoutingRoute(t, a, sc, &v1.Route{Id: "routed-route", ModelId: "routed-alias", Enabled: true, Strategy: v1.RoutingStrategy_ROUTING_STRATEGY_DIRECT, ReasoningRetention: retention, Targets: []*v1.RouteTarget{{Target: &v1.RouteTarget_ConnectionId{ConnectionId: "routed-account"}, ModelId: "physical-routed"}}})
+			putRoutingRoute(t, a, sc, &v1.Route{Id: "native-route", ModelId: "native-alias", Enabled: true, Strategy: v1.RoutingStrategy_ROUTING_STRATEGY_DIRECT, ReasoningRetention: &v1.ReasoningRetentionConfig{Enabled: mode == "absent" || mode == "disabled"}, Targets: []*v1.RouteTarget{{Target: &v1.RouteTarget_ConnectionId{ConnectionId: "native-account"}, ModelId: "physical-native"}}})
+			p := admitRouting(t, a, key)
+			direct, err := a.Resolve(context.Background(), p, "routed-alias", inference.Compact)
+			if err != nil || len(direct.Targets) != 1 {
+				t.Fatalf("direct route: %v", err)
+			}
+			call := func(path, model, requestInput string, failArchive bool) (*httptest.ResponseRecorder, *retentionHandoffProbe, *retentionStateProbe) {
+				t.Helper()
+				instance := &inferenceAdapter{s: a.s, telemetry: a.telemetry}
+				handoffs := &retentionHandoffProbe{compactionHandoffs: compactionHandoffs{a: instance}}
+				states := &retentionStateProbe{inferenceAdapter: instance, failArchive: failArchive}
+				h, err := inference.New(inference.Config{Authorizer: instance, Router: instance, Credentials: instance, Usage: instance, ProviderStates: states, Continuations: instance, CompactionHandoffs: handoffs, Destinations: inference.DestinationPolicy{ApprovedOrigins: []string{upstream.URL}}})
+				if err != nil {
+					t.Fatal(err)
+				}
+				req := httptest.NewRequest("POST", path, strings.NewReader(fmt.Sprintf(`{"model":%q,"input":%s}`, model, requestInput)))
+				req.Header.Set("Authorization", "Bearer "+key)
+				req.Header.Set("Content-Type", "application/json")
+				req.Header.Set("session-id", "lane")
+				w := httptest.NewRecorder()
+				h.ServeHTTP(w, req)
+				return w, handoffs, states
+			}
+			first, _, _ := call("/v1/responses/compact", "routed-alias", `[{"role":"user","content":"capture"}]`, false)
+			if first.Code != 200 {
+				t.Fatalf("capture HTTP%d %s", first.Code, first.Body.String())
+			}
+			result, handoffs, states := call("/v1/responses/compact", "native-alias", input, mode == "archive-failure")
+			if nativeSends.Load() != 1 || handoffs.target == nil {
+				t.Fatalf("native refusal or handoff missing: native=%d target=%v", nativeSends.Load(), handoffs.target)
+			}
+			if !reflect.DeepEqual(direct.Targets[0].ReasoningRetention, handoffs.target.ReasoningRetention) {
+				t.Fatalf("handoff policy differs from direct route: direct=%+v handoff=%+v", direct.Targets[0].ReasoningRetention, handoffs.target.ReasoningRetention)
+			}
+			if mode == "archive-failure" {
+				if result.Code < 400 || routedSends.Load() != 1 || states.archiveWrites != 1 || !strings.Contains(result.Body.String(), "archive_write_failed") {
+					t.Fatalf("archive failure sent fallback or lost error: HTTP%d %s sends=%d writes=%d", result.Code, result.Body, routedSends.Load(), states.archiveWrites)
+				}
+				return
+			}
+			if result.Code != 200 || routedSends.Load() != 2 {
+				t.Fatalf("fallback HTTP%d %s sends=%d", result.Code, result.Body, routedSends.Load())
+			}
+			switch mode {
+			case "inline":
+				var parsed map[string]any
+				if err := json.Unmarshal(result.Body.Bytes(), &parsed); err != nil {
+					t.Fatal(err)
+				}
+				if !strings.Contains(fmt.Sprint(parsed["output"]), frame) || states.archiveWrites != 0 {
+					t.Fatal("inline handoff lost exact historical frame")
+				}
+				directResult, _, _ := call("/v1/responses/compact", "routed-alias", input, false)
+				var directOutput map[string]any
+				if directResult.Code != 200 || json.Unmarshal(directResult.Body.Bytes(), &directOutput) != nil || !reflect.DeepEqual(parsed["output"], directOutput["output"]) {
+					t.Fatalf("inline handoff output differs from direct compaction: HTTP%d %s", directResult.Code, directResult.Body)
+				}
+			case "overflow":
+				if !strings.Contains(result.Body.String(), "aipr-retained-v1:") || strings.Contains(result.Body.String(), thought) || states.archiveWrites != 1 || states.account != "routed-account" || states.version == "" || states.state.ExpiresAt.IsZero() {
+					t.Fatal("overflow handoff lost opaque archive or saved-account binding")
+				}
+				var parsed map[string]any
+				if err := json.Unmarshal(result.Body.Bytes(), &parsed); err != nil {
+					t.Fatal(err)
+				}
+				output, err := json.Marshal(parsed["output"])
+				if err != nil {
+					t.Fatal(err)
+				}
+				replay, _, _ := call("/v1/responses", "routed-alias", string(output), false)
+				if replay.Code != 200 || routedSends.Load() != 3 {
+					t.Fatalf("overflow replay HTTP%d %s sends=%d", replay.Code, replay.Body, routedSends.Load())
+				}
+			case "absent", "disabled":
+				if handoffs.target.ReasoningRetention != nil || strings.Contains(result.Body.String(), "aipr-retained-v1:") || strings.Contains(result.Body.String(), frame) || states.archiveWrites != 0 {
+					t.Fatal("saved route without retention inherited refused route policy")
+				}
+			}
+		})
+	}
+}
 
 func TestCompactionHandoffQuotaClassification(t *testing.T) {
 	for _, tc := range []struct {

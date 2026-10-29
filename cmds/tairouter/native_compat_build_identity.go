@@ -26,8 +26,7 @@ func (r NativeBuildResolver) ObserveInstallation(ctx context.Context, req Native
 		p, e := nativeCodexCommand(ctx, r.Platform, run, "observe", "")
 		return p.installation(), e
 	}
-	build, e := r.Observe(ctx, req)
-	return NativeInstallationProof{Build: build}, e
+	return r.observeClaude(ctx, req)
 }
 func (p nativeCodexLaunchProof) installation() NativeInstallationProof {
 	return NativeInstallationProof{Build: p.Version, PackageFullName: p.PackageFullName, Root: p.Root, ExecutableStamp: p.ExecutableStamp, ManifestStamp: p.ManifestStamp, ManifestDigest: p.ManifestDigest}

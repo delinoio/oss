@@ -199,6 +199,7 @@ Management uses Connect RPC and generated Protobuf contracts; inference transpor
 - Store necessary protocol/continuation state temporarily in encrypted PostgreSQL storage, isolated by organization and user.
 - Support continuation across server instances and process restarts.
 - Put temporary state in a separate PostgreSQL storage area that can be excluded from ordinary backups. Loss of continuation state during disaster recovery is accepted.
+- Publish live call aliases with the exact credential generation selected for the upstream offer. Validate the current key, account usability, and served generation in the same transaction that inserts the encrypted alias; replacement or deletion before publication refuses the alias. A later replacement invalidates reuse. At lookup, the selected bound credential must match the saved served generation, and the physical-send fence remains required. Version the temporary binding envelope and reject older records without served-generation proof. Never infer proof from current credentials or fall back to the native call ID. Roll out the reader and writer together across replicas so a legacy writer cannot publish a proofless alias.
 - Encrypt stored provider credentials.
 - Operators inject versioned encryption master keys separately from the database.
 - Rotate during maintenance: decrypt with the previous key, re-encrypt with the new key, verify completion, then remove the previous active key.
@@ -209,6 +210,7 @@ Management uses Connect RPC and generated Protobuf contracts; inference transpor
 Apply these inspected reference limits **per user within each organization**:
 
 - Responses continuation: 24-hour TTL, at most 1,000 entries, 1 GiB total retained storage; also cap an optional resident memory cache at 64 MiB.
+- Live-call aliases use a separate encrypted temporary-state kind with at most 1,000 entries and 1 GiB retained ciphertext per user within each organization. Their SQL expiry is the supplied absolute binding deadline. Expired aliases are unavailable immediately and removed before live-alias overflow accounting or by periodic cleanup. Responses writes and live-alias writes cannot evict or charge bytes to each other.
 - Tool-call reasoning replay: one-hour TTL, at most 64 entries and 256 KiB.
 - Bridged web-search result replay: one-hour TTL, at most 64 entries and 512 KiB.
 - Retained compaction reasoning: 24-hour TTL, at most 256 entries and 512 MiB total, with a 32 MiB limit per entry. Store overflow in the `compaction-reasoning` namespace in encrypted temporary PostgreSQL storage. Bind reads, writes, and merges to the selected account and credential version as well as the organization, user, key, and membership. Credential replacement or deletion invalidates reuse.

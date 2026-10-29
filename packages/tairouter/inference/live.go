@@ -16,11 +16,12 @@ import (
 )
 
 // LiveBindingStore persists encrypted, expiry-bounded bindings scoped to org/user/key and
-// membership generation. Resolve must materialize the exact original account with current
-// credential generation; missing/expired aliases must never fall back to a native call ID.
+// membership generation. Resolve must materialize the original account with the
+// served credential generation; missing/expired aliases never fall back to a native call ID.
 type LiveBinding struct {
 	Target                    Target
 	AccountID, UpstreamCallID string
+	ServedCredentialVersion   string
 	Frameless                 bool
 	ExpiresAt                 time.Time
 }
@@ -188,7 +189,7 @@ func (h *Handler) liveCall(ctx context.Context, w http.ResponseWriter, r *http.R
 		return &Error{502, "invalid_live_answer", 0}
 	}
 	alias := newID()
-	binding := LiveBinding{Target: t, AccountID: c.AccountID, UpstreamCallID: call, Frameless: op == LiveCall, ExpiresAt: time.Now().Add(5 * time.Minute)}
+	binding := LiveBinding{Target: t, AccountID: c.AccountID, UpstreamCallID: call, ServedCredentialVersion: c.CredentialVersion, Frameless: op == LiveCall, ExpiresAt: time.Now().Add(5 * time.Minute)}
 	if e = h.guard(ctx, p); e != nil {
 		return e
 	}

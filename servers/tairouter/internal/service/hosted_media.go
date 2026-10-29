@@ -227,10 +227,10 @@ func (o *hostedOperation) image(ctx context.Context, args map[string]any) (hoste
 	for _, entry := range response.Data {
 		var item artifacts.Image
 		if entry.Base64 != "" {
-			if base64.StdEncoding.DecodedLen(len(entry.Base64)) > 50<<20 {
-				return hosted.OperationResult{}, artifacts.ErrLimit
+			item.Data, e = decodeHostedImage(entry.Base64)
+			if e != nil {
+				return hosted.OperationResult{}, e
 			}
-			item.Data, e = base64.StdEncoding.DecodeString(entry.Base64)
 			item.ContentType = http.DetectContentType(item.Data)
 		} else {
 			item, e = o.download(ctx, entry.URL, 50<<20)
@@ -245,6 +245,22 @@ func (o *hostedOperation) image(ctx context.Context, args map[string]any) (hoste
 		items = append(items, item)
 	}
 	return o.publish(ctx, items, false)
+}
+
+func decodeHostedImage(encoded string) ([]byte, error) {
+	// DecodedLen includes bytes represented by padding. Bound the input by the
+	// last legal encoding block, then enforce the limit on the decoded bytes.
+	if len(encoded) > base64.StdEncoding.EncodedLen(artifacts.MaxImageBytes) {
+		return nil, artifacts.ErrLimit
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) > artifacts.MaxImageBytes {
+		return nil, artifacts.ErrLimit
+	}
+	return data, nil
 }
 func (o *hostedOperation) video(ctx context.Context, args map[string]any) (hosted.OperationResult, error) {
 	timeout := 300 * time.Second

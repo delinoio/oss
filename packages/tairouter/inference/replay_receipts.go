@@ -65,7 +65,9 @@ func signedReplayTokens(v any) ([]string, error) {
 				binding = string(data)
 			}
 			for k, value := range x {
-				if k == "arguments" || k == "parameters" || k == "input_schema" || k == "tools" || k == "input" && x["type"] == "tool_use" {
+				// Root metadata belongs to the Responses request or response, not
+				// provider reasoning. Nested metadata may carry protocol fields.
+				if k == "metadata" && depth == 0 || k == "arguments" || k == "parameters" || k == "input_schema" || k == "tools" || k == "input" && x["type"] == "tool_use" {
 					continue
 				}
 				if s, ok := value.(string); ok {

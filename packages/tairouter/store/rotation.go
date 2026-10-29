@@ -67,7 +67,10 @@ func (s *Store) RotateEncryption(ctx context.Context) error {
 		if _, e := tx.ExecContext(ctx, "UPDATE "+s.temp+".states SET size=octet_length(value)"); e != nil {
 			return e
 		}
-		for _, kind := range []core.StateKind{core.Responses, core.Reasoning, core.Search} {
+		if _, e := tx.ExecContext(ctx, "DELETE FROM "+s.temp+".states WHERE expires_at<=clock_timestamp()"); e != nil {
+			return e
+		}
+		for _, kind := range []core.StateKind{core.Responses, core.LiveAlias, core.Reasoning, core.Search} {
 			_, count, max, e := kind.Limits()
 			if e != nil {
 				return e

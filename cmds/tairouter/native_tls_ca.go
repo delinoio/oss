@@ -186,6 +186,10 @@ func EnsureNativeCAWithOptions(root string, options NativeCAOptions) (*NativeCA,
 }
 
 func nativeDecodeCA(data []byte, options NativeCAOptions, hosts []string) (*NativeCA, error) {
+	return nativeDecodeCAWithExpiry(data, options, hosts, false)
+}
+
+func nativeDecodeCAWithExpiry(data []byte, options NativeCAOptions, hosts []string, allowExpired bool) (*NativeCA, error) {
 	var envelope nativeCAEnvelope
 	if json.Unmarshal(data, &envelope) != nil || envelope.Version != 1 || envelope.Platform != options.Platform || len(envelope.Sealed) == 0 {
 		return nil, errNativeCA
@@ -198,7 +202,7 @@ func nativeDecodeCA(data []byte, options NativeCAOptions, hosts []string) (*Nati
 		return nil, errNativeCA
 	}
 	now := time.Now()
-	if now.Before(cert.NotBefore) || !now.Before(cert.NotAfter) {
+	if now.Before(cert.NotBefore) || (!allowExpired && !now.Before(cert.NotAfter)) {
 		return nil, errors.New("native authority expired or not yet valid; remove owned trust before renewal")
 	}
 	secret, err := options.Protection.Unprotect(envelope.Sealed)
@@ -224,6 +228,9 @@ func nativeDecodeCA(data []byte, options NativeCAOptions, hosts []string) (*Nati
 		return nil, errNativeCA
 	}
 	ca := &NativeCA{Certificate: cert, Signer: signer, Fingerprint: digest(cert.Raw)}
+	if allowExpired && !now.Before(cert.NotAfter) {
+		return ca, nil
+	}
 	ca.TLSCertificate, err = nativeIssueLeaf(ca, hosts)
 	return ca, err
 }

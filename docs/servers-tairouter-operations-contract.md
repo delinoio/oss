@@ -28,6 +28,7 @@ Self-hosting operators, release maintainers, and validation authors.
 - Provide backup/restore commands, public operating guidance, and reproducible restore test scenarios.
 - Backup execution, schedule, and retention are operator responsibilities; do not add a scheduled-backup product.
 - Back up encryption keys separately. Exclude temporary continuation/device-handoff state from ordinary DB backups and accept its loss during disaster recovery.
+- During a coordinated maintenance stop with old service replicas offline, migrate authenticated legacy `responses` rows reserved for live aliases into the separate live-alias kind. Re-encrypt with the new authenticated ownership context; retain each valid row's ID, creation order, creator key and absolute embedded deadline. Remove expired or invalid aliases without changing ordinary Responses rows. Deploy the new reader, writer, cleanup and rotation behavior together; do not roll out mixed versions.
 - Maintenance downtime is permitted.
 - Back up before upgrades; recover failures by restoring both the previous image and matching DB backup.
 - **Before starting after a backup restore, invalidate all API keys, web sessions, invitations, and device authorizations.** Users must log in again, issue keys again, and reconnect CLIs.
@@ -55,6 +56,8 @@ Include only these default alert examples:
 - Service health-check failure lasting one minute.
 - DB connectivity-check failure lasting one minute.
 - Cleanup failing three consecutive times, or no successful cleanup for 15 minutes.
+
+Each metrics scrape refreshes the database connectivity gauge with a request-bounded PostgreSQL ping before collection. A failed ping leaves the metrics response available so the database alert can evaluate the observed failure. Readiness uses the same three-second ping bound and retains its own response behavior.
 
 Cleanup runs every minute. Operators configure error-rate and capacity alerts themselves; no fixed 5% error-rate or 85% disk alert is required.
 

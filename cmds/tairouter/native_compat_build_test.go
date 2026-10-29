@@ -57,6 +57,35 @@ func TestNativeBuildClaudeBundleInspection(t *testing.T) {
 	if version, err := resolver.Observe(context.Background(), req); err != nil || version != req.Build || calls != 2 {
 		t.Fatalf("valid fixture rejected: %s %v", version, err)
 	}
+	first, err := resolver.ObserveInstallation(context.Background(), req)
+	if err != nil || first.Root != bundle || first.ExecutableStamp == "" || first.ManifestDigest == "" {
+		t.Fatalf("incomplete macOS proof: %+v %v", first, err)
+	}
+	if err := os.WriteFile(filepath.Join(contents, "MacOS", "Claude.new"), []byte("fixture executable"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(contents, "MacOS", "Claude.new"), filepath.Join(contents, "MacOS", "Claude")); err != nil {
+		t.Fatal(err)
+	}
+	replaced, err := resolver.ObserveInstallation(context.Background(), req)
+	if err != nil || replaced.ExecutableStamp == first.ExecutableStamp {
+		t.Fatalf("same-version replacement retained proof: %+v %v", replaced, err)
+	}
+	moved := filepath.Join(root, "Other", "Claude.app")
+	if err := os.MkdirAll(filepath.Dir(moved), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(bundle, moved); err != nil {
+		t.Fatal(err)
+	}
+	resolver.Bundles = []string{bundle, moved}
+	relocated, err := resolver.ObserveInstallation(context.Background(), req)
+	if err != nil || relocated.Root != moved || relocated == replaced {
+		t.Fatalf("relocation retained proof: %+v %v", relocated, err)
+	}
+	resolver.Bundles = []string{moved}
+	bundle = moved
+	plist = filepath.Join(moved, "Contents", "Info.plist")
 	signed = false
 	if _, err := resolver.Observe(context.Background(), req); err == nil {
 		t.Fatal("unsigned bundle accepted")
@@ -78,7 +107,9 @@ func TestNativeBuildClaudeBundleInspection(t *testing.T) {
 }
 func TestNativeBuildWindowsMetadata(t *testing.T) {
 	req := NativeRuntimeRequest{Mode: NativeCompatibilityClaudePicker, Build: NativeCompatibilityClaudeBuild}
-	result := map[string]string{"Version": req.Build, "Name": "Claude", "Publisher": "Anthropic, PBC"}
+	stampA := "1:20:30:" + strings.Repeat("a", 64)
+	stampB := "1:20:30:" + strings.Repeat("b", 64)
+	result := map[string]string{"Version": req.Build, "Name": "Claude", "Publisher": "Anthropic, PBC", "Path": `C:\Users\fixture\Claude\claude.exe`, "ExecutableStamp": stampA}
 	resolver := NativeBuildResolver{Platform: "windows", SystemRoot: `C:\Windows`, Run: func(ctx context.Context, name string, args []string, input []byte) ([]byte, error) {
 		if !strings.Contains(name, "System32") || len(args) != 4 || !strings.Contains(args[3], "Assert-NativePath") || !strings.Contains(args[3], "Get-AuthenticodeSignature") {
 			t.Fatal("unsafe metadata command")
@@ -88,6 +119,34 @@ func TestNativeBuildWindowsMetadata(t *testing.T) {
 	if version, err := resolver.Observe(context.Background(), req); err != nil || version != req.Build {
 		t.Fatalf("valid fixture rejected: %s %v", version, err)
 	}
+	first, err := resolver.ObserveInstallation(context.Background(), req)
+	if err != nil || first.Root != result["Path"] || first.ExecutableStamp != stampA {
+		t.Fatalf("incomplete Windows proof: %+v %v", first, err)
+	}
+	result["ExecutableStamp"] = stampB
+	replaced, err := resolver.ObserveInstallation(context.Background(), req)
+	if err != nil || replaced == first {
+		t.Fatalf("Windows replacement retained proof: %+v %v", replaced, err)
+	}
+	result["Path"] = `C:\Users\fixture\Other\claude.exe`
+	relocated, err := resolver.ObserveInstallation(context.Background(), req)
+	if err != nil || relocated == replaced {
+		t.Fatalf("Windows relocation retained proof: %+v %v", relocated, err)
+	}
+	result["ExecutableStamp"] = ""
+	if _, err := resolver.ObserveInstallation(context.Background(), req); err == nil {
+		t.Fatal("missing stamp accepted")
+	}
+	result["ExecutableStamp"] = "bad-stamp"
+	if _, err := resolver.ObserveInstallation(context.Background(), req); err == nil {
+		t.Fatal("malformed stamp accepted")
+	}
+	result["ExecutableStamp"] = stampB
+	result["Path"] = "relative"
+	if _, err := resolver.ObserveInstallation(context.Background(), req); err == nil {
+		t.Fatal("noncanonical path accepted")
+	}
+	result["Path"] = `C:\Users\fixture\Other\claude.exe`
 	result["Version"] = "unknown"
 	if _, err := resolver.Observe(context.Background(), req); err == nil {
 		t.Fatal("unknown version accepted")

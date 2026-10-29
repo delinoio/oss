@@ -58,6 +58,44 @@
           ],
       },
       {
+        "interval": "15s",
+        "input_series":
+          [
+            {
+              "series": 'tairouter_database_up{job="tairouter"}',
+              "values": "1 1 0+0x4 1 1",
+            },
+          ],
+        "alert_rule_test":
+          [
+            {
+              "eval_time": "1m15s",
+              "alertname": "TaiRouterDatabaseCheckFailed",
+              "exp_alerts": [],
+            },
+            {
+              "eval_time": "1m30s",
+              "alertname": "TaiRouterDatabaseCheckFailed",
+              "exp_alerts":
+                [
+                  {
+                    "exp_labels":
+                      { "job": "tairouter", "severity": "critical" },
+                    "exp_annotations":
+                      {
+                        "summary": "Database connectivity check failed for one minute",
+                      },
+                  },
+                ],
+            },
+            {
+              "eval_time": "1m45s",
+              "alertname": "TaiRouterDatabaseCheckFailed",
+              "exp_alerts": [],
+            },
+          ],
+      },
+      {
         "interval": "1m",
         "input_series":
           [

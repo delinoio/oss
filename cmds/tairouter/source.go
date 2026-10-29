@@ -10,6 +10,7 @@ import (
 	json5 "github.com/titanous/json5"
 	"gopkg.in/yaml.v3"
 	"strings"
+	"unicode/utf8"
 )
 
 type Format string
@@ -341,6 +342,31 @@ func lineOffsets(b []byte) []int {
 	}
 	return r
 }
+
+// yaml.v3 reports columns in Unicode characters, while source splices use bytes.
+func yamlSourceOffset(b []byte, line, column int) (int, error) {
+	offsets := lineOffsets(b)
+	if line < 1 || line > len(offsets) || column < 1 {
+		return 0, errors.New("invalid YAML source position")
+	}
+	start := offsets[line-1]
+	end := len(b)
+	if line < len(offsets) {
+		end = offsets[line] - 1
+	}
+	for current := 1; start < end; current++ {
+		if current == column {
+			return start, nil
+		}
+		r, size := utf8.DecodeRune(b[start:end])
+		if r == utf8.RuneError && size == 1 {
+			return 0, errors.New("invalid YAML source encoding")
+		}
+		start += size
+	}
+	return 0, errors.New("invalid YAML source position")
+}
+
 func yamlPatch(b []byte, path []string, value any, replace bool) ([]byte, error) {
 	var root yaml.Node
 	if yaml.Unmarshal(b, &root) != nil || len(root.Content) != 1 {
@@ -370,7 +396,10 @@ func yamlPatch(b []byte, path []string, value any, replace bool) ([]byte, error)
 			if e != nil {
 				return nil, e
 			}
-			start := offsets[n.Line-1] + n.Column - 1
+			start, e := yamlSourceOffset(b, n.Line, n.Column)
+			if e != nil {
+				return nil, e
+			}
 			token := []byte("*" + n.Value)
 			if start+len(token) > len(b) || !bytes.Equal(b[start:start+len(token)], token) {
 				return nil, errors.New("managed YAML alias source changed")
@@ -641,7 +670,14 @@ func yamlFlowInsert(b []byte, n *yaml.Node, value any, comma bool) ([]byte, erro
 	if comma {
 		encoded = append(encoded, ',')
 	}
-	start := lineOffsets(b)[n.Line-1] + n.Column
+	start, e := yamlSourceOffset(b, n.Line, n.Column)
+	if e != nil {
+		return nil, e
+	}
+	if start >= len(b) || (b[start] != '{' && b[start] != '[') {
+		return nil, errors.New("managed YAML flow source changed")
+	}
+	start++
 	out := append([]byte{}, b[:start]...)
 	out = append(out, encoded...)
 	out = append(out, b[start:]...)

@@ -262,6 +262,9 @@ func (h compactionHandoffs) Lookup(ctx context.Context, p inference.Principal, p
 	if err != nil {
 		return nil, nil
 	}
+	if err := applyReasoningRetention(rememberedRoute.ReasoningRetention, &target); err != nil {
+		return nil, err
+	}
 	if saved.Fast {
 		if err = applyFastTarget(ctx, d, saved.PolicyModel, &target); err != nil {
 			return nil, nil
