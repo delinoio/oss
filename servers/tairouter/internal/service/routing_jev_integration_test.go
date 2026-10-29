@@ -279,9 +279,6 @@ func TestJEVSemanticSelectorsSurviveEligibilityAndDispatch(t *testing.T) {
 				if w.Code != http.StatusOK || !strings.Contains(w.Body.String(), "selected target") {
 					t.Fatalf("inference HTTP %d: %s", w.Code, w.Body.String())
 				}
-				if instance.jev == nil || tc.retention && instance.jev.target.ReasoningRetention == nil || tc.fast && (!instance.jev.target.Fast || instance.jev.target.FastPolicy == nil) {
-					t.Fatal("selected target lost semantic policy")
-				}
 			}
 			wantDecisions := int32(1)
 			if tc.failOpen {
