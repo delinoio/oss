@@ -42,6 +42,7 @@ func (e hostedValidationRefusal) Unwrap() error { return e.error }
 func completeHostedValidation(body io.ReadCloser) bool {
 	defer body.Close()
 	// Closing the body interrupts both a missing first byte and an idle read.
+	deadline := time.Now().Add(2 * time.Second)
 	timer := time.AfterFunc(2*time.Second, func() { body.Close() })
 	defer timer.Stop()
 	var raw []byte
@@ -55,6 +56,9 @@ func completeHostedValidation(body io.ReadCloser) bool {
 			}
 		}
 		if err == io.EOF {
+			if !time.Now().Before(deadline) {
+				return false
+			}
 			var envelope struct {
 				Error struct {
 					Details []struct {
