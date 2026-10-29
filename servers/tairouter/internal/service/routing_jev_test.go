@@ -22,6 +22,28 @@ func jevTestCandidates() []jevCandidate {
 	return []jevCandidate{{Key: "first", Provider: "p", Model: "m1", Efforts: []jevEffort{jevLow}}, {Key: "second", Provider: "p", Model: "m2", Efforts: []jevEffort{jevHigh}}}
 }
 
+func TestJEVClientTextGroupMarker(t *testing.T) {
+	for _, field := range []string{"messages", "input"} {
+		for _, role := range []string{"user", "assistant"} {
+			for _, marker := range []string{`{}`, `[]`, `null`, `true`, `0`, `"group"`} {
+				t.Run(field+"/"+role+"/"+marker, func(t *testing.T) {
+					body := json.RawMessage(`{"` + field + `":[{"role":"` + role + `","content":"Explain this result","__jev_text_group":` + marker + `}]}`)
+					original := append([]byte(nil), body...)
+					control := json.RawMessage(`{"` + field + `":[{"role":"` + role + `","content":"Explain this result"}]}`)
+					got := buildJEVState(body, jevTestCandidates())
+					want := buildJEVState(control, jevTestCandidates())
+					if !reflect.DeepEqual(got, want) {
+						t.Fatalf("client marker changed evidence: got %v, want %v", got, want)
+					}
+					if !reflect.DeepEqual([]byte(body), original) {
+						t.Fatal("input body changed")
+					}
+				})
+			}
+		}
+	}
+}
+
 func TestJEVNativeMessagesEvidence(t *testing.T) {
 	candidates := jevTestCandidates()
 	choices, err := jevChoices(candidates)

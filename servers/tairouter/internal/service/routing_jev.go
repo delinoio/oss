@@ -654,7 +654,8 @@ func jevMessagesEvidence(rows []any) []any {
 func jevTextRun(rows []any, index int) string {
 	message, _ := rows[index].(map[string]any)
 	role, _ := message["role"].(string)
-	group, grouped := message["__jev_text_group"]
+	// JSON-supplied values cannot have the internal integer marker type.
+	group, grouped := message["__jev_text_group"].(int)
 	if !grouped {
 		if text, ok := message["content"].(string); ok {
 			return text
@@ -666,7 +667,7 @@ func jevTextRun(rows []any, index int) string {
 		message, _ := rows[i].(map[string]any)
 		currentRole, _ := message["role"].(string)
 		text, ok := message["content"].(string)
-		currentGroup, currentGrouped := message["__jev_text_group"]
+		currentGroup, currentGrouped := message["__jev_text_group"].(int)
 		if currentRole != role || currentGrouped != grouped || currentGroup != group {
 			break
 		}
