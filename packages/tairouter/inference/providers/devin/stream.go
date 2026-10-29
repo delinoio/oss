@@ -20,14 +20,28 @@ import (
 
 type streamBody struct {
 	*io.PipeReader
-	source io.ReadCloser
-	once   sync.Once
-	stop   func() bool
+	source     io.ReadCloser
+	once       sync.Once
+	sourceOnce sync.Once
+	sourceErr  error
+	closeErr   error
+	done       chan struct{}
+	stop       func() bool
+}
+
+func (b *streamBody) closeSource() error {
+	b.sourceOnce.Do(func() { b.sourceErr = b.source.Close() })
+	return b.sourceErr
 }
 
 func (b *streamBody) Close() error {
-	b.once.Do(func() { b.stop(); _ = b.PipeReader.Close(); _ = b.source.Close() })
-	return nil
+	b.once.Do(func() {
+		b.stop()
+		_ = b.PipeReader.Close()
+		b.closeErr = b.closeSource()
+		<-b.done
+	})
+	return b.closeErr
 }
 
 func newStream(ctx context.Context, source io.ReadCloser) io.ReadCloser {
@@ -53,10 +67,10 @@ func newStreamIdle(ctx context.Context, source io.ReadCloser, idle time.Duration
 	raw := &rawIdleBody{ReadCloser: source, idle: idle}
 	source = raw
 	r, w := io.Pipe()
-	b := &streamBody{PipeReader: r, source: source}
-	b.stop = context.AfterFunc(ctx, func() { _ = w.CloseWithError(ctx.Err()); _ = source.Close() })
+	b := &streamBody{PipeReader: r, source: source, done: make(chan struct{})}
+	b.stop = context.AfterFunc(ctx, func() { _ = w.CloseWithError(ctx.Err()); _ = b.closeSource() })
 	go func() {
-		defer source.Close()
+		defer close(b.done)
 		defer b.stop()
 		err := transcode(ctx, source, w)
 		if raw.timedOut.Load() {
@@ -65,6 +79,10 @@ func newStreamIdle(ctx context.Context, source io.ReadCloser, idle time.Duration
 		if ctx.Err() != nil {
 			err = ctx.Err()
 		}
+		// A Connect trailer can precede HTTP EOF. Finalize the owned source
+		// receipt before exposing decoded EOF, and retain the same close error
+		// for callers that finish by closing the decoded body themselves.
+		err = errors.Join(err, b.closeSource())
 		_ = w.CloseWithError(err)
 	}()
 	return b
