@@ -44,8 +44,10 @@ func TestLiveAliasAndResponsesIndependentQuotas(t *testing.T) {
 	if got, n := stateRows(t, s, sc, core.Responses); got != count || n != bytes {
 		t.Fatalf("alias charged Responses: %d/%d", got, n)
 	}
-	if _, err := s.GetState(ctx, sc, core.Responses, "response-0000"); err != nil {
-		t.Fatal(err)
+	for i := range 1000 {
+		if _, err := s.GetState(ctx, sc, core.Responses, fmt.Sprintf("response-%04d", i)); err != nil {
+			t.Fatalf("response %d lost after alias publication: %v", i, err)
+		}
 	}
 	for i := 1; i < 1000; i++ {
 		if err := s.PutState(ctx, sc, core.LiveAlias, fmt.Sprintf("live/key/%04d", i), []byte("alias")); err != nil {
