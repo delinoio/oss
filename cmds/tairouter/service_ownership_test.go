@@ -223,6 +223,29 @@ func TestServiceTeardownRejectsSpacedSystemdOverrides(t *testing.T) {
 	}
 }
 
+func TestSystemdTeardownRequiresLiteralArguments(t *testing.T) {
+	for _, test := range []struct {
+		root, argument string
+		owned          bool
+	}{
+		{"/tmp/%u", "/tmp/%u", false},
+		{"/tmp/%u", "/tmp/%%u", true},
+		{"/tmp/%", "/tmp/%", false},
+		{"/tmp/%", "/tmp/%%", true},
+		{"/tmp/%u", `/tmp/\x25u`, false},
+		{"/tmp/$USER", "/tmp/$USER", false},
+		{"/tmp/$USER", "/tmp/$$USER", true},
+		{"/tmp/%u$USER", "/tmp/%%u$$USER", true},
+		{"/tmp/%%u", "/tmp/%%%%u", true},
+	} {
+		unit := `[Service]
+ExecStart="/apps/tairouter" "relay" "--profile" "work" "--state-dir" "` + test.argument + `"`
+		if got := linuxDefinitionOwned(unit, "work", test.root); got != test.owned {
+			t.Fatalf("root %q argument %q: owned = %v, want %v", test.root, test.argument, got, test.owned)
+		}
+	}
+}
+
 func TestServiceTeardownReadsNativeTaskXML(t *testing.T) {
 	encode := func(text string, order binary.ByteOrder, bom []byte) string {
 		data := append([]byte(nil), bom...)

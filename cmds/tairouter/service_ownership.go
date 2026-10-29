@@ -288,7 +288,11 @@ func splitSystemdArgs(command string) ([]string, bool) {
 		if err != nil {
 			return nil, false
 		}
-		args = append(args, strings.NewReplacer("%%", "%", "$$", "$").Replace(value))
+		value, literal := systemdLiteralArgument(value)
+		if !literal {
+			return nil, false
+		}
+		args = append(args, value)
 		command = command[end+1:]
 		if command != "" {
 			if command[0] != ' ' {
@@ -298,6 +302,22 @@ func splitSystemdArgs(command string) ([]string, bool) {
 		}
 	}
 	return args, true
+}
+
+func systemdLiteralArgument(value string) (string, bool) {
+	var literal strings.Builder
+	for i := 0; i < len(value); i++ {
+		if value[i] == '%' || value[i] == '$' {
+			// Generated commands double expansion markers. An unpaired marker
+			// describes a dynamic argument, not proof of the selected state root.
+			if i+1 == len(value) || value[i+1] != value[i] {
+				return "", false
+			}
+			i++
+		}
+		literal.WriteByte(value[i])
+	}
+	return literal.String(), true
 }
 
 func equalArgs(a, b []string) bool {
