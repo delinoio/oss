@@ -136,6 +136,43 @@ func TestJEVNativeMessagesToolEvidence(t *testing.T) {
 		t.Fatal("old native image escaped the six-item signal window")
 	}
 }
+
+func TestJEVNativeMessagesEnvelopeAcrossTextBlocks(t *testing.T) {
+	body := json.RawMessage(`{"messages":[{"role":"user","content":[{"type":"text","text":"Actual task <system-reminder>"},{"type":"text","text":"PRIVATE_CONTEXT</system-reminder>Continue task"},{"type":"image","source":{"type":"url","url":"https://private.test/image"}}]},{"role":"assistant","content":[{"type":"text","text":"Visible assistant <system-reminder>"},{"type":"text","text":"PRIVATE_ASSISTANT</system-reminder>"}]}]}`)
+	state := buildJEVState(body, jevTestCandidates())
+	if state["task"] != "Actual task \nContinue task" {
+		t.Fatalf("cross-block task visibility changed: %v", state["task"])
+	}
+	if state["previous_assistant"] != "Visible assistant" {
+		t.Fatalf("cross-block assistant visibility changed: %v", state["previous_assistant"])
+	}
+	if state["signals"].(map[string]any)["has_image"] != true {
+		t.Fatalf("native image signal was lost: %v", state)
+	}
+	legacy, _ := json.Marshal(map[string]any{"messages": []any{
+		map[string]any{"role": "user", "content": "Earlier task"},
+		map[string]any{"role": "user", "content": "Latest task"},
+	}})
+	if buildJEVState(legacy, nil)["task"] != "Latest task" {
+		t.Fatalf("legacy message ordering changed: %v", buildJEVState(legacy, nil)["task"])
+	}
+	choices, err := jevChoices(jevTestCandidates())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, endpoint := range []string{jevCanonicalURL, "https://custom.test/systemone", "https://ai-gateway.vercel.sh/v1/decisions"} {
+		request, err := jevRequest("jev-latest", endpoint, endpoint != jevCanonicalURL, state, choices)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, secret := range []string{"PRIVATE_CONTEXT", "PRIVATE_ASSISTANT", "private.test"} {
+			if strings.Contains(string(request), secret) {
+				t.Fatalf("decision leaked protected cross-block content: %s", request)
+			}
+		}
+	}
+}
+
 func TestJEVBoundedStateAndProviderQuestions(t *testing.T) {
 	body := json.RawMessage(`{"input":[{"role":"user","content":"<system-reminder>private envelope</system-reminder>Fix the failing test"},{"role":"assistant","content":[{"type":"output_text","text":"I will run the test first."}]},{"type":"function_call","call_id":"c","name":"exec_command","arguments":"secret arguments"},{"type":"function_call_output","call_id":"c","output":"1 fail: expected 2 got 3"}],"instructions":"system secret","api_key":"credential"}`)
 	candidates := jevTestCandidates()

@@ -616,7 +616,7 @@ func jevMessagesEvidence(rows []any) []any {
 		return rows
 	}
 	items := make([]any, 0, len(rows))
-	for _, row := range rows {
+	for rowIndex, row := range rows {
 		message, _ := row.(map[string]any)
 		role, _ := message["role"].(string)
 		blocks, ok := message["content"].([]any)
@@ -629,7 +629,7 @@ func jevMessagesEvidence(rows []any) []any {
 			switch part["type"] {
 			case "text", "input_text", "output_text":
 				if text, ok := part["text"].(string); ok {
-					items = append(items, map[string]any{"role": role, "content": text})
+					items = append(items, map[string]any{"role": role, "content": text, "__jev_text_group": rowIndex})
 				}
 			case "image":
 				if role == "user" {
@@ -649,6 +649,33 @@ func jevMessagesEvidence(rows []any) []any {
 		}
 	}
 	return items
+}
+
+func jevTextRun(rows []any, index int) string {
+	message, _ := rows[index].(map[string]any)
+	role, _ := message["role"].(string)
+	if _, ok := message["content"].(string); !ok {
+		return routingText(message["content"])
+	}
+	group, grouped := message["__jev_text_group"]
+	if !grouped {
+		return message["content"].(string)
+	}
+	parts := []string{}
+	for i := index; i >= 0; i-- {
+		message, _ := rows[i].(map[string]any)
+		currentRole, _ := message["role"].(string)
+		text, ok := message["content"].(string)
+		currentGroup, currentGrouped := message["__jev_text_group"]
+		if !ok || currentRole != role || currentGrouped != grouped || (grouped && currentGroup != group) {
+			break
+		}
+		parts = append(parts, text)
+	}
+	for i, j := 0, len(parts)-1; i < j; i, j = i+1, j-1 {
+		parts[i], parts[j] = parts[j], parts[i]
+	}
+	return strings.Join(parts, "\n")
 }
 
 func buildJEVState(raw json.RawMessage, candidates []jevCandidate) map[string]any {
@@ -684,10 +711,10 @@ func buildJEVState(raw json.RawMessage, candidates []jevCandidate) map[string]an
 			}
 		}
 		if task == "" && m["role"] == "user" {
-			task = jevTask(routingText(m["content"]))
+			task = jevTask(jevTextRun(rows, i))
 		}
 		if assistant == "" && m["role"] == "assistant" {
-			assistant = jevTail(jevVisible(routingText(m["content"]), false), 240)
+			assistant = jevTail(jevVisible(jevTextRun(rows, i), false), 240)
 		}
 	}
 	if len(rows) > 0 {
