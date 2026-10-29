@@ -154,6 +154,9 @@ func (s UserServices) Status(ctx context.Context, p Profile) (string, error) {
 	return "", errors.New("unsupported service OS")
 }
 func (s UserServices) Stop(ctx context.Context, p Profile) error {
+	if e := s.verifyOwnership(ctx, p); e != nil {
+		return e
+	}
 	var e error
 	switch s.OS {
 	case "linux":
@@ -168,6 +171,9 @@ func (s UserServices) Stop(ctx context.Context, p Profile) error {
 	return e
 }
 func (s UserServices) Remove(ctx context.Context, p Profile) error {
+	if e := s.verifyOwnership(ctx, p); e != nil {
+		return e
+	}
 	switch s.OS {
 	case "linux":
 		if _, e := s.Runner.Run(ctx, "systemctl", "--user", "disable", "--now", s.name(p)+".service"); e != nil {
@@ -179,14 +185,18 @@ func (s UserServices) Remove(ctx context.Context, p Profile) error {
 		_, e := s.Runner.Run(ctx, "systemctl", "--user", "daemon-reload")
 		return e
 	case "darwin":
-		_ = s.Stop(ctx, p)
+		if e := s.Stop(ctx, p); e != nil {
+			return e
+		}
 		e := os.Remove(s.path(p))
 		if os.IsNotExist(e) {
 			return nil
 		}
 		return e
 	case "windows":
-		_ = s.Stop(ctx, p)
+		if e := s.Stop(ctx, p); e != nil {
+			return e
+		}
 		_, e := s.Runner.Run(ctx, "schtasks.exe", "/Delete", "/TN", s.name(p), "/F")
 		return e
 	}

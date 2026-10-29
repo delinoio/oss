@@ -1,0 +1,260 @@
+// SPDX-License-Identifier: Apache-2.0
+package main
+
+import (
+	"context"
+	"encoding/xml"
+	"errors"
+	"fmt"
+	"path/filepath"
+	"strconv"
+	"strings"
+)
+
+// A service name is shared by every state root under one OS user. Teardown
+// must prove which root the registered job launches before changing that job.
+func (s UserServices) verifyOwnership(ctx context.Context, p Profile) error {
+	if err := p.Validate(); err != nil {
+		return err
+	}
+	if !filepath.IsAbs(s.Disk.Root) {
+		return errors.New("relay ownership cannot be verified: state directory is not absolute")
+	}
+	conflict := errors.New("relay ownership cannot be verified; preserve the service and manage it from its original state directory or the OS service manager")
+	switch s.OS {
+	case "linux":
+		out, err := s.Runner.Run(ctx, "systemctl", "--user", "show", s.name(p)+".service", "--property=FragmentPath,DropInPaths,NeedDaemonReload,LoadState")
+		if err != nil {
+			return fmt.Errorf("%w: service query failed", conflict)
+		}
+		fields := make(map[string]string)
+		for _, line := range strings.Split(out, "\n") {
+			key, value, ok := strings.Cut(line, "=")
+			if ok {
+				if _, duplicate := fields[key]; duplicate {
+					return conflict
+				}
+				fields[key] = value
+			}
+		}
+		if fields["LoadState"] != "loaded" || fields["NeedDaemonReload"] != "no" || fields["DropInPaths"] != "" || !sameServicePath(fields["FragmentPath"], s.path(p), false) {
+			return conflict
+		}
+		content, exists, err := readConfig(s.path(p))
+		if err != nil || !exists || !linuxDefinitionOwned(string(content), p.Name, s.Disk.Root) {
+			return conflict
+		}
+		return nil
+	case "darwin":
+		out, err := s.Runner.Run(ctx, "launchctl", "print", "gui/"+s.UID+"/"+s.name(p))
+		if err != nil {
+			return fmt.Errorf("%w: service query failed", conflict)
+		}
+		path, args, ok := launchctlIdentity(out)
+		if !ok || !sameServicePath(path, s.path(p), false) {
+			return conflict
+		}
+		content, exists, err := readConfig(s.path(p))
+		if err != nil || !exists {
+			return conflict
+		}
+		var definition struct {
+			Args []string `xml:"dict>array>string"`
+		}
+		if xml.Unmarshal(content, &definition) != nil || !relayArgsOwned(definition.Args, p.Name, s.Disk.Root, false) || !equalArgs(args, definition.Args) {
+			return conflict
+		}
+		return nil
+	case "windows":
+		out, err := s.Runner.Run(ctx, "schtasks.exe", "/Query", "/TN", s.name(p), "/XML")
+		if err != nil {
+			return fmt.Errorf("%w: task query failed", conflict)
+		}
+		var task struct {
+			Exec []struct {
+				Command   string `xml:"Command"`
+				Arguments string `xml:"Arguments"`
+			} `xml:"Actions>Exec"`
+		}
+		if xml.Unmarshal([]byte(out), &task) != nil || len(task.Exec) != 1 || strings.TrimSpace(task.Exec[0].Command) == "" {
+			return conflict
+		}
+		args, ok := splitWindowsArgs(task.Exec[0].Arguments)
+		if !ok || !relayArgsOwned(append([]string{task.Exec[0].Command}, args...), p.Name, s.Disk.Root, true) {
+			return conflict
+		}
+		return nil
+	default:
+		return errors.New("unsupported service OS")
+	}
+}
+
+func sameServicePath(a, b string, windows bool) bool {
+	if a == "" || b == "" {
+		return false
+	}
+	if windows {
+		clean := func(path string) string {
+			return strings.ToLower(filepath.Clean(strings.ReplaceAll(path, `\`, "/")))
+		}
+		return clean(a) == clean(b)
+	}
+	return filepath.Clean(a) == filepath.Clean(b)
+}
+
+func relayArgsOwned(args []string, profile, root string, windows bool) bool {
+	return len(args) == 6 && args[0] != "" && args[1] == "relay" && args[2] == "--profile" && args[3] == profile && args[4] == "--state-dir" && sameServicePath(args[5], root, windows)
+}
+
+// Accept the exact generated systemd command shape. Other syntax is preserved
+// for manual recovery because guessing how systemd interpreted it is unsafe.
+func linuxDefinitionOwned(content, profile, root string) bool {
+	var command string
+	count := 0
+	for _, line := range strings.Split(content, "\n") {
+		if strings.HasPrefix(line, "ExecStart=") {
+			count++
+			if count != 1 {
+				return false
+			}
+			command = strings.TrimPrefix(line, "ExecStart=")
+		}
+		if strings.HasPrefix(line, "ExecStartPre=") || strings.HasPrefix(line, "ExecStartPost=") {
+			return false
+		}
+	}
+	args, ok := splitSystemdArgs(command)
+	return count == 1 && ok && relayArgsOwned(args, profile, root, false)
+}
+
+func splitSystemdArgs(command string) ([]string, bool) {
+	var args []string
+	for command != "" {
+		if command[0] != '"' {
+			return nil, false
+		}
+		end, escaped := -1, false
+		for i := 1; i < len(command); i++ {
+			if command[i] == '"' && !escaped {
+				end = i
+				break
+			}
+			if command[i] == '\\' {
+				escaped = !escaped
+			} else {
+				escaped = false
+			}
+		}
+		if end < 0 {
+			return nil, false
+		}
+		value, err := strconv.Unquote(command[:end+1])
+		if err != nil {
+			return nil, false
+		}
+		args = append(args, strings.NewReplacer("%%", "%", "$$", "$").Replace(value))
+		command = command[end+1:]
+		if command != "" {
+			if command[0] != ' ' {
+				return nil, false
+			}
+			command = command[1:]
+		}
+	}
+	return args, true
+}
+
+func equalArgs(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// launchctl print reports the registered path and argument vector. Missing or
+// ambiguous fields are not proof that the on-disk plist owns the loaded job.
+func launchctlIdentity(output string) (string, []string, bool) {
+	var path string
+	var args []string
+	inArgs, closed := false, false
+	for _, raw := range strings.Split(output, "\n") {
+		line := strings.TrimSpace(raw)
+		if strings.HasPrefix(line, "path = ") {
+			if path != "" {
+				return "", nil, false
+			}
+			path = strings.TrimPrefix(line, "path = ")
+		} else if line == "arguments = {" {
+			if inArgs || closed {
+				return "", nil, false
+			}
+			inArgs = true
+		} else if inArgs && line == "}" {
+			inArgs, closed = false, true
+		} else if inArgs {
+			if _, value, ok := strings.Cut(line, " = "); ok {
+				line = value
+			}
+			args = append(args, line)
+		}
+	}
+	return path, args, path != "" && closed
+}
+
+// Parse the Windows command line emitted by task XML, including quoted state
+// paths with spaces and escaped quotes. Refuse malformed quoting.
+func splitWindowsArgs(command string) ([]string, bool) {
+	var args []string
+	for i := 0; i < len(command); {
+		for i < len(command) && (command[i] == ' ' || command[i] == '\t') {
+			i++
+		}
+		if i == len(command) {
+			break
+		}
+		var b strings.Builder
+		quoted := false
+		for i < len(command) {
+			if !quoted && (command[i] == ' ' || command[i] == '\t') {
+				break
+			}
+			if command[i] == '"' {
+				quoted = !quoted
+				i++
+				continue
+			}
+			if command[i] == '\\' {
+				start := i
+				for i < len(command) && command[i] == '\\' {
+					i++
+				}
+				count := i - start
+				if i < len(command) && command[i] == '"' {
+					b.WriteString(strings.Repeat(`\`, count/2))
+					if count%2 == 1 {
+						b.WriteByte('"')
+						i++
+					} else {
+						quoted = !quoted
+						i++
+					}
+				} else {
+					b.WriteString(strings.Repeat(`\`, count))
+				}
+				continue
+			}
+			b.WriteByte(command[i])
+			i++
+		}
+		if quoted {
+			return nil, false
+		}
+		args = append(args, b.String())
+	}
+	return args, true
+}
