@@ -73,6 +73,8 @@ func InvokeRoutingModel(ctx context.Context, alias string, raw json.RawMessage) 
 	e = r.h.execute(ctx, buffer, r.p, Responses, Generate, body, r.record)
 	decisionRecord := *r.record
 	decisionRecord.RequestID = newID()
+	decisionRecord.AccountingRole = UsageAccountingNestedOperation
+	decisionRecord.OperationID = decisionRecord.RequestID
 	decisionRecord.Sends -= saved.Sends
 	decisionRecord.UnmeasuredAttempts -= saved.UnmeasuredAttempts
 	decisionRecord.IntermediateUsage = append([]Usage(nil), r.record.IntermediateUsage[len(saved.IntermediateUsage):]...)

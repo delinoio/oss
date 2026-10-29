@@ -215,6 +215,9 @@ func (a *inferenceAdapter) Record(ctx context.Context, p inference.Principal, r 
 	if e != nil {
 		return e
 	}
+	if r.AccountingRole != inference.UsageAccountingParent && r.AccountingRole != inference.UsageAccountingNestedOperation {
+		return store.ErrConflict
+	}
 	provider := r.Provider
 	a.mu.Lock()
 	account := r.AccountID
@@ -292,6 +295,11 @@ func (a *inferenceAdapter) Record(ctx context.Context, p inference.Principal, r 
 	nativeErr := a.finishNative(ctx, p, r)
 	if nativeErr != nil {
 		a.telemetry.Event(ctx, "native_affinity_update_failed")
+	}
+	if r.AccountingRole == inference.UsageAccountingNestedOperation {
+		// Native hooks settle the model that actually ran. Only the parent
+		// completion owns the JEV pin and admission completion receipt.
+		return errors.Join(a.s.RecordOperationUsage(ctx, l, r.OperationID, u), nativeErr, healthErr)
 	}
 	pinErr := a.finishJEV(ctx, r)
 	if pinErr != nil {

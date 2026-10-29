@@ -279,6 +279,7 @@ The pinned hosted video helper also uses this temporary R2 boundary. It does not
 - Adopt the fixed reference's price sources/update mechanism: bundled price snapshots updated and regenerated for distribution, rather than adding an unrelated periodic live pricing API.
 - Instance operators alone can set common model price overrides; individual users cannot change prices.
 - Fix the applied price, provenance, and estimated cost when processing each request.
+- A model-backed JEV decision that sends to a provider records usage through a stable nested-operation receipt under the original admission. The selected target records the parent completion separately. Each contribution retains its own model, provider, outcome, nullable counters, and fixed price; recording the decision does not finalize the parent or grant another send. Each decision still settles its own native health and affinity completion hooks; the parent alone finalizes the JEV pin.
 - Subsequent price changes affect new requests only; do not reprice historical requests or daily aggregates.
 - This intentionally replaces the reference's display-time repricing behavior.
 - Preserve applicable provider/model, service-tier, and cache-token pricing semantics from the reference.

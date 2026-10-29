@@ -103,14 +103,20 @@ func TestJEVPinCompletionFailureFenceAndCancellation(t *testing.T) {
 
 func TestJEVComposedServiceAndModelRouting(t *testing.T) {
 	requests := []struct {
-		name, path, body, evidence string
+		name, path, body, evidence, finalModel string
 	}{
-		{"chat-pin", "/v1/chat/completions", `{"model":"combo","messages":[{"role":"user","content":"Choose the best target"}]}`, "Choose the best target"},
-		{"messages-image", "/v1/messages", `{"model":"combo","max_tokens":32,"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg=="}}]}]}`, "has_image"},
-		{"messages-tool", "/v1/messages", `{"model":"combo","max_tokens":32,"messages":[{"role":"user","content":"Fix the test"},{"role":"assistant","content":[{"type":"tool_use","id":"c","name":"exec_command","input":{"secret":"HIDDEN_ARGUMENT"}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"c","content":"1 fail: expected 2 got 3"}]}]}`, "1 fail: expected 2 got 3"},
+		{"chat-pin", "/v1/chat/completions", `{"model":"combo","messages":[{"role":"user","content":"Choose the best target"}]}`, "Choose the best target", "second"},
+		{"chat-fail-open", "/v1/chat/completions", `{"model":"combo","messages":[{"role":"user","content":"Choose the best target"}]}`, "Choose the best target", "first"},
+		{"chat-decision-error", "/v1/chat/completions", `{"model":"combo","messages":[{"role":"user","content":"Choose the best target"}]}`, "Choose the best target", "first"},
+		{"messages-image", "/v1/messages", `{"model":"combo","max_tokens":32,"messages":[{"role":"user","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL/nwAAAABJRU5ErkJggg=="}}]}]}`, "has_image", "second"},
+		{"messages-tool", "/v1/messages", `{"model":"combo","max_tokens":32,"messages":[{"role":"user","content":"Fix the test"},{"role":"assistant","content":[{"type":"tool_use","id":"c","name":"exec_command","input":{"secret":"HIDDEN_ARGUMENT"}}]},{"role":"user","content":[{"type":"tool_result","tool_use_id":"c","content":"1 fail: expected 2 got 3"}]}]}`, "1 fail: expected 2 got 3", "second"},
 	}
 	for _, request := range requests {
-		for _, modelBackend := range []bool{false, true} {
+		backends := []bool{false, true}
+		if request.name == "chat-decision-error" {
+			backends = []bool{true}
+		}
+		for _, modelBackend := range backends {
 			t.Run(fmt.Sprint(request.name, "/model=", modelBackend), func(t *testing.T) {
 				a, sc, key := dispatchFixture(t)
 				ctx := context.Background()
@@ -135,20 +141,29 @@ func TestJEVComposedServiceAndModelRouting(t *testing.T) {
 						w.WriteHeader(404)
 						return
 					}
-					text := "selected second"
+					text := "selected " + request.finalModel
 					if b["model"] == "decision-model" {
 						decisionSends.Add(1)
 						raw, _ := json.Marshal(b)
 						decisionEvidence = string(raw)
+						if request.name == "chat-decision-error" {
+							w.WriteHeader(http.StatusServiceUnavailable)
+							_, _ = w.Write([]byte(`{"error":{"message":"fixture unavailable"}}`))
+							return
+						}
 						raw, _ = json.Marshal(map[string]string{"choice": choice})
 						text = string(raw)
 					} else {
 						inferenceSends.Add(1)
-						if b["model"] != "second" {
+						if b["model"] != request.finalModel {
 							t.Error("wrong inference model")
 						}
 					}
-					raw, _ := json.Marshal(map[string]any{"id": "response", "object": "chat.completion", "model": b["model"], "choices": []any{map[string]any{"index": 0, "finish_reason": "stop", "message": map[string]any{"role": "assistant", "content": text}}}, "usage": map[string]int{"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3}})
+					usage := map[string]int{"prompt_tokens": 20, "completion_tokens": 10, "total_tokens": 30}
+					if b["model"] == "decision-model" {
+						usage = map[string]int{"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3}
+					}
+					raw, _ := json.Marshal(map[string]any{"id": "response", "object": "chat.completion", "model": b["model"], "choices": []any{map[string]any{"index": 0, "finish_reason": "stop", "message": map[string]any{"role": "assistant", "content": text}}}, "usage": usage})
 					_, _ = w.Write(raw)
 				}))
 				defer upstream.Close()
@@ -162,6 +177,9 @@ func TestJEVComposedServiceAndModelRouting(t *testing.T) {
 						}
 						choice = selectionKey(target) + ":none"
 					}
+				}
+				if request.name == "chat-fail-open" {
+					choice = "invalid-choice"
 				}
 				wire := v1.ProviderWire_PROVIDER_WIRE_JEV_DECISION
 				putRoutingProvider(t, a, sc, providerData{Metadata: &v1.ProviderConnection{Id: "decision", OrganizationId: sc.OrganizationID, ProviderId: "custom", BaseUrl: upstream.URL + "/systemone", AuthKind: v1.ProviderAuthKind_PROVIDER_AUTH_KIND_API_KEY, State: v1.ConnectionState_CONNECTION_STATE_READY, Configuration: &v1.ProviderConfiguration{Wire: &wire}}, Secret: "fixture-decision-key"})
@@ -192,12 +210,52 @@ func TestJEVComposedServiceAndModelRouting(t *testing.T) {
 					}
 					w := httptest.NewRecorder()
 					h.ServeHTTP(w, req)
-					if w.Code != 200 || !strings.Contains(w.Body.String(), "selected second") {
+					if w.Code != 200 || !strings.Contains(w.Body.String(), "selected "+request.finalModel) {
 						t.Fatalf("composition HTTP %d: %s", w.Code, w.Body.String())
 					}
 				}
 				if decisionSends.Load() != 1 || inferenceSends.Load() != int32(attempts) || !strings.Contains(decisionEvidence, request.evidence) || strings.Contains(decisionEvidence, "HIDDEN_ARGUMENT") || strings.Contains(decisionEvidence, "iVBORw0KGgo") {
 					t.Fatalf("decision=%d inference=%d; successful pin was not reused", decisionSends.Load(), inferenceSends.Load())
+				}
+				rows, _, err := a.s.QueryUsage(ctx, sc, store.UsageFilter{UserID: sc.UserID})
+				wantRows := attempts
+				if modelBackend {
+					wantRows++
+				}
+				if err != nil || len(rows) != wantRows {
+					t.Fatalf("usage rows=%d, want=%d: %v", len(rows), wantRows, err)
+				}
+				decisionRows, finalRows := 0, 0
+				for _, row := range rows {
+					switch row.Model {
+					case "decision-model":
+						decisionRows++
+						if request.name == "chat-decision-error" {
+							if row.InputTokens != nil || row.OutputTokens != nil || row.Outcome == store.OutcomeSucceeded {
+								t.Fatalf("unknown decision usage: %+v", row)
+							}
+						} else if row.InputTokens == nil || *row.InputTokens != 2 || row.OutputTokens == nil || *row.OutputTokens != 1 {
+							t.Fatalf("decision usage: %+v", row)
+						}
+					case request.finalModel:
+						finalRows++
+						if row.InputTokens == nil || *row.InputTokens != 20 || row.OutputTokens == nil || *row.OutputTokens != 10 {
+							t.Fatalf("final usage: %+v", row)
+						}
+					default:
+						t.Fatalf("unexpected usage model: %s", row.Model)
+					}
+				}
+				if finalRows != attempts || decisionRows != wantRows-attempts {
+					t.Fatalf("decision rows=%d final rows=%d", decisionRows, finalRows)
+				}
+				aggregate, err := a.s.QueryAggregate(ctx, sc, store.UsageFilter{UserID: sc.UserID})
+				knownDecisionRows := decisionRows
+				if request.name == "chat-decision-error" {
+					knownDecisionRows = 0
+				}
+				if err != nil || aggregate.Requests != int64(wantRows) || aggregate.InputTokens != int64(20*attempts+2*knownDecisionRows) || aggregate.OutputTokens != int64(10*attempts+knownDecisionRows) || aggregate.MissingUsage != int64(decisionRows-knownDecisionRows) {
+					t.Fatalf("aggregate: %+v, %v", aggregate, err)
 				}
 			})
 		}
