@@ -305,7 +305,7 @@ func (a *inferenceAdapter) selectJEVRouteInput(ctx context.Context, p inference.
 		}
 		for _, candidate := range group.request.Candidates {
 			d, version, err := a.providerVersion(ctx, scopeOf(p), candidate.ID)
-			if errors.Is(err, inference.ErrNoCredential) || errors.Is(err, store.ErrNotFound) {
+			if errors.Is(err, inference.ErrNoCredential) || errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrBusy) || errors.Is(err, store.ErrReauthentication) {
 				continue
 			}
 			if err != nil {
@@ -394,7 +394,7 @@ func (a *inferenceAdapter) selectJEVRouteInput(ctx context.Context, p inference.
 	filtered := group.request.Candidates[:0:0]
 	for _, candidate := range group.request.Candidates {
 		d, version, err := a.providerVersion(ctx, scopeOf(p), candidate.ID)
-		if errors.Is(err, inference.ErrNoCredential) || errors.Is(err, store.ErrNotFound) {
+		if errors.Is(err, inference.ErrNoCredential) || errors.Is(err, store.ErrNotFound) || errors.Is(err, store.ErrBusy) || errors.Is(err, store.ErrReauthentication) {
 			continue
 		}
 		if err != nil {
