@@ -215,6 +215,9 @@ func (a *inferenceAdapter) Record(ctx context.Context, p inference.Principal, r 
 	if e != nil {
 		return e
 	}
+	if r.AccountingRole != inference.UsageAccountingParent && r.AccountingRole != inference.UsageAccountingNestedOperation {
+		return store.ErrConflict
+	}
 	provider := r.Provider
 	a.mu.Lock()
 	account := r.AccountID
@@ -285,6 +288,9 @@ func (a *inferenceAdapter) Record(ctx context.Context, p inference.Principal, r 
 		}
 	}
 	a.telemetry.Logger().InfoContext(ctx, "usage processing", "request_id", observability.RequestID(ctx), "inference_request_id", r.RequestID, "usage_id", l.ID)
+	if r.AccountingRole == inference.UsageAccountingNestedOperation {
+		return a.s.RecordOperationUsage(ctx, l, r.OperationID, u)
+	}
 	healthErr := a.finishNativeHealth(ctx, p, r)
 	if healthErr != nil {
 		a.telemetry.Event(ctx, "native_health_update_failed")

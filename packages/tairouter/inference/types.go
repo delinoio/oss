@@ -144,6 +144,8 @@ type UsageRecord struct {
 	budget            *physicalBudgetState
 	continuationInput any
 	Outcome           RequestOutcome
+	AccountingRole    UsageAccountingRole
+	OperationID       string
 	// ServiceTier is confirmed by the provider response, never copied from request.
 	ServiceTier string
 	// IntermediateUsage contains confirmed prior model legs on this exact target.
@@ -155,6 +157,13 @@ type UsageRecord struct {
 	Usage                                 Usage
 	Canceled                              bool
 }
+
+type UsageAccountingRole uint8
+
+const (
+	UsageAccountingParent UsageAccountingRole = iota
+	UsageAccountingNestedOperation
+)
 
 // Record fixes price/provenance at processing time and must not recreate deleted state.
 type UsageRecorder interface {

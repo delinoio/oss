@@ -22,6 +22,8 @@ Support HTTP operations wait for active dispatch callbacks to finish and prevent
 
 Migration replay must preserve expanded provider/outcome usage dimensions and recreate backup-excluded temporary tables without reinstating superseded constraints.
 
+Nested JEV decision usage carries an explicit accounting role and stable operation identity through the inference usage handoff. The store reserves an operation receipt for that decision under the original admission and keeps the admission completion receipt for the final target. Replays of either receipt must not add usage rows or daily totals.
+
 Storage adapters must preserve the owning service or CLI storage boundary; no separate shared secret store or cross-tenant cache.
 
 ## Security

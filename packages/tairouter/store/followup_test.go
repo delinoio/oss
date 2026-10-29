@@ -492,6 +492,37 @@ func TestOperationUsageIndependentIdempotentAndDeleted(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+
+func TestOperationUsageReceiptRetriesAfterTransactionRollback(t *testing.T) {
+	s := testStore(t)
+	ctx := context.Background()
+	_, sc := tenant(t, s)
+	l := leaseFor(t, s, sc)
+	if _, err := s.db.ExecContext(ctx, "ALTER TABLE "+s.schema+".usage ADD CONSTRAINT reject_operation_fixture CHECK (model <> 'reject-operation')"); err != nil {
+		t.Fatal(err)
+	}
+	u := Usage{Model: "reject-operation", Provider: "custom", Outcome: OutcomeUnknown}
+	if err := s.RecordOperationUsage(ctx, l, "decision-retry", u); err == nil {
+		t.Fatal("expected transaction failure")
+	}
+	u.Model = "decision-model"
+	for range 2 {
+		if err := s.RecordOperationUsage(ctx, l, "decision-retry", u); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.RecordUsage(ctx, l, Usage{Model: "target-model", Provider: "custom", Outcome: OutcomeSucceeded}); err != nil {
+		t.Fatal(err)
+	}
+	rows, _, err := s.QueryUsage(ctx, sc, UsageFilter{UserID: sc.UserID})
+	if err != nil || len(rows) != 2 {
+		t.Fatalf("usage rows: %v, %v", rows, err)
+	}
+	aggregate, err := s.QueryAggregate(ctx, sc, UsageFilter{UserID: sc.UserID})
+	if err != nil || aggregate.Requests != 2 || aggregate.MissingUsage != 2 {
+		t.Fatalf("aggregate: %+v, %v", aggregate, err)
+	}
+}
 func TestSoftDenialsFallbackAndPinned(t *testing.T) {
 	s := testStore(t)
 	ctx := context.Background()
