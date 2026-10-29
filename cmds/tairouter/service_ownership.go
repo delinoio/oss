@@ -2,7 +2,9 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/xml"
 	"errors"
 	"fmt"
@@ -10,6 +12,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 var errRelayOwnership = errors.New("relay ownership cannot be verified; preserve the service and manage it from its original state directory or the OS service manager")
@@ -82,7 +86,7 @@ func (s UserServices) verifyOwnership(ctx context.Context, p Profile) error {
 				} `xml:"Exec"`
 			} `xml:"Actions"`
 		}
-		if xml.Unmarshal([]byte(out), &task) != nil || len(task.Actions.Exec) != 1 || !singleWindowsExec(task.Actions.Inner) || strings.TrimSpace(task.Actions.Exec[0].Command) == "" {
+		if decodeNativeTaskXML(out, &task) != nil || len(task.Actions.Exec) != 1 || !singleWindowsExec(task.Actions.Inner) || strings.TrimSpace(task.Actions.Exec[0].Command) == "" {
 			return conflict
 		}
 		args, ok := splitWindowsArgs(task.Actions.Exec[0].Arguments)
@@ -92,6 +96,77 @@ func (s UserServices) verifyOwnership(ctx context.Context, p Profile) error {
 		return nil
 	default:
 		return errors.New("unsupported service OS")
+	}
+}
+
+func decodeNativeTaskXML(output string, value any) error {
+	data := []byte(output)
+	var order binary.ByteOrder
+	switch {
+	case bytes.HasPrefix(data, []byte{0xff, 0xfe}):
+		order, data = binary.LittleEndian, data[2:]
+	case bytes.HasPrefix(data, []byte{0xfe, 0xff}):
+		order, data = binary.BigEndian, data[2:]
+	case bytes.HasPrefix(data, []byte{'<', 0, '?', 0}):
+		order = binary.LittleEndian
+	case bytes.HasPrefix(data, []byte{0, '<', 0, '?'}):
+		order = binary.BigEndian
+	default:
+		data = bytes.TrimPrefix(data, []byte{0xef, 0xbb, 0xbf})
+	}
+	if order != nil {
+		if len(data)%2 != 0 {
+			return errors.New("truncated UTF-16 task XML")
+		}
+		var text strings.Builder
+		for i := 0; i < len(data); i += 2 {
+			r := rune(order.Uint16(data[i:]))
+			if utf16.IsSurrogate(r) {
+				if i+4 > len(data) {
+					return errors.New("truncated UTF-16 task XML surrogate")
+				}
+				r = utf16.DecodeRune(r, rune(order.Uint16(data[i+2:])))
+				if r == utf8.RuneError {
+					return errors.New("invalid UTF-16 task XML surrogate")
+				}
+				i += 2
+			}
+			text.WriteRune(r)
+		}
+		data = []byte(text.String())
+	}
+	if !utf8.Valid(data) {
+		return errors.New("invalid task XML encoding")
+	}
+	decoder := xml.NewDecoder(bytes.NewReader(data))
+	// schtasks can retain its UTF-16 declaration after converting stdout to UTF-8.
+	// The bytes above are already decoded and validated; do not decode them twice.
+	decoder.CharsetReader = func(label string, input io.Reader) (io.Reader, error) {
+		if strings.EqualFold(label, "UTF-16") || strings.EqualFold(label, "UTF-16LE") || strings.EqualFold(label, "UTF-16BE") {
+			return input, nil
+		}
+		return nil, errors.New("unsupported task XML encoding")
+	}
+	if err := decoder.Decode(value); err != nil {
+		return err
+	}
+	for {
+		token, err := decoder.Token()
+		if errors.Is(err, io.EOF) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		switch token := token.(type) {
+		case xml.CharData:
+			if strings.TrimSpace(string(token)) != "" {
+				return errors.New("trailing task XML content")
+			}
+		case xml.Comment:
+		default:
+			return errors.New("trailing task XML element")
+		}
 	}
 }
 

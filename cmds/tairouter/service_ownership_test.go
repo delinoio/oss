@@ -3,12 +3,14 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode/utf16"
 )
 
 type ownershipRunner struct {
@@ -142,6 +144,65 @@ func TestServiceTeardownRejectsSpacedSystemdOverrides(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestServiceTeardownReadsNativeTaskXML(t *testing.T) {
+	encode := func(text string, order binary.ByteOrder, bom []byte) string {
+		data := append([]byte(nil), bom...)
+		for _, word := range utf16.Encode([]rune(text)) {
+			var pair [2]byte
+			order.PutUint16(pair[:], word)
+			data = append(data, pair[:]...)
+		}
+		return string(data)
+	}
+	for _, encoding := range []string{"utf8", "utf16-declaration", "utf16le", "utf16be", "utf16le-no-bom", "utf16be-no-bom"} {
+		t.Run(encoding, func(t *testing.T) {
+			owner, other, runner, p := setupOwnedService(t, "windows")
+			root := owner.Disk.Root
+			owner.Disk.Root += " 資料🔒"
+			runner.taskXML = strings.ReplaceAll(runner.taskXML, root, owner.Disk.Root)
+			if encoding != "utf8" {
+				runner.taskXML = strings.Replace(runner.taskXML, "UTF-8", "UTF-16", 1)
+			}
+			switch encoding {
+			case "utf16le":
+				runner.taskXML = encode(runner.taskXML, binary.LittleEndian, []byte{0xff, 0xfe})
+			case "utf16be":
+				runner.taskXML = encode(runner.taskXML, binary.BigEndian, []byte{0xfe, 0xff})
+			case "utf16le-no-bom":
+				runner.taskXML = encode(runner.taskXML, binary.LittleEndian, nil)
+			case "utf16be-no-bom":
+				runner.taskXML = encode(runner.taskXML, binary.BigEndian, nil)
+			}
+			before := runner.destructiveCalls()
+			if err := other.Remove(context.Background(), p); !errors.Is(err, errRelayOwnership) || runner.destructiveCalls() != before {
+				t.Fatalf("foreign task was not preserved: %v", err)
+			}
+			if err := owner.Stop(context.Background(), p); err != nil {
+				t.Fatal(err)
+			}
+			if err := owner.Remove(context.Background(), p); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+	for _, malformed := range []string{string([]byte{0xff, 0xfe, '<'}), string([]byte{0xff, 0xfe, 0, 0xd8}), string([]byte{0xff, 0xfe, 0, 0xdc, '<', 0}), string([]byte{0xff, '<'})} {
+		owner, _, runner, p := setupOwnedService(t, "windows")
+		runner.taskXML = malformed
+		before := runner.destructiveCalls()
+		if err := owner.Stop(context.Background(), p); !errors.Is(err, errRelayOwnership) || runner.destructiveCalls() != before {
+			t.Fatalf("malformed task authorized teardown: %v", err)
+		}
+	}
+	for _, suffix := range []string{"<Task/>", "garbage"} {
+		owner, _, runner, p := setupOwnedService(t, "windows")
+		runner.taskXML += suffix
+		before := runner.destructiveCalls()
+		if err := owner.Stop(context.Background(), p); !errors.Is(err, errRelayOwnership) || runner.destructiveCalls() != before {
+			t.Fatalf("trailing XML authorized teardown: %v", err)
+		}
 	}
 }
 
