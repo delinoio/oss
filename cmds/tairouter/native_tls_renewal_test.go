@@ -3,10 +3,14 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/json"
 	"encoding/pem"
+	"math/big"
 	"os"
 	"path/filepath"
 	"strings"
@@ -170,6 +174,125 @@ func TestNativePartialCARecoveryAfterAuthorityWrite(t *testing.T) {
 		if _, err = os.Stat(filepath.Join(root, name)); err != nil {
 			t.Fatalf("recovery did not republish %s: %v", name, err)
 		}
+	}
+}
+
+func expireRenewalReplacement(t *testing.T, journal *nativeCARenewal, opts NativeCAOptions, hosts []string) {
+	t.Helper()
+	var envelope nativeCAEnvelope
+	if err := json.Unmarshal(journal.New["authority.json"], &envelope); err != nil {
+		t.Fatal(err)
+	}
+	ca, err := nativeDecodeCAWithExpiry(journal.New["authority.json"], opts, hosts, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	template := *ca.Certificate
+	template.NotBefore = now.Add(-2 * time.Minute)
+	template.NotAfter = now.Add(-time.Second)
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, ca.Signer.Public(), ca.Signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secretBytes, err := opts.Protection.Unprotect(envelope.Sealed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var secret nativeCASecret
+	if err = json.Unmarshal(secretBytes, &secret); err != nil {
+		t.Fatal(err)
+	}
+	secret.Fingerprint = digest(der)
+	secretBytes, err = json.Marshal(secret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope.Sealed, err = opts.Protection.Protect(secretBytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	envelope.Certificate = der
+	journal.New["authority.json"], err = json.Marshal(envelope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal.New["ca.pem"] = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+	leafKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serial, err := rand.Int(rand.Reader, new(big.Int).Lsh(big.NewInt(1), 128))
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafTemplate := &x509.Certificate{SerialNumber: serial, Subject: pkix.Name{CommonName: hosts[0]}, DNSNames: hosts, NotBefore: now.Add(-90 * time.Second), NotAfter: now.Add(-time.Second), KeyUsage: x509.KeyUsageDigitalSignature, ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth}, BasicConstraintsValid: true}
+	leafDER, err := x509.CreateCertificate(rand.Reader, leafTemplate, templateToCertificate(t, der), &leafKey.PublicKey, ca.Signer)
+	if err != nil {
+		t.Fatal(err)
+	}
+	journal.New["leaf.pem"] = pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER})
+	journal.New["trust.json"], err = json.Marshal(nativeTrustRecord{Version: 1, Fingerprint: digest(der), Phase: nativeTrustRemoved})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func templateToCertificate(t *testing.T, der []byte) *x509.Certificate {
+	t.Helper()
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cert
+}
+
+func TestNativeExpiredReplacementJournalIsSuperseded(t *testing.T) {
+	c, req, trust, root, old := expiredControllerFixture(t)
+	ctx := context.Background()
+	if err := c.Disable(ctx, req.Profile.Name); err != nil {
+		t.Fatal(err)
+	}
+	public, err := ReadNativeCAPublic(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hosts := []string{"api.anthropic.com", "claude.ai"}
+	journalBytes, err := c.prepareCARenewal(ctx, req, root, hosts, public)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var journal nativeCARenewal
+	if err = json.Unmarshal(journalBytes, &journal); err != nil {
+		t.Fatal(err)
+	}
+	opts, err := c.renewalOptions(hosts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	expireRenewalReplacement(t, &journal, opts, hosts)
+	journalBytes, err = json.Marshal(journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(root, "authority.json"), journal.New["authority.json"], 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(root, "renewal.json"), journalBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := c.Plan(ctx, req)
+	if err != nil || plan.Fingerprint == old {
+		t.Fatalf("expired replacement journal recovery: %+v %v", plan, err)
+	}
+	if trust.installs != 1 {
+		t.Fatal("journal replay installed trust")
+	}
+	if _, err = os.Stat(filepath.Join(root, "renewal.json")); !os.IsNotExist(err) {
+		t.Fatal("superseded journal was not removed")
+	}
+	if recovered, err := ReadNativeCAPublic(root); err != nil || recovered.Fingerprint != plan.Fingerprint || !time.Now().Before(recovered.Certificate.NotAfter) {
+		t.Fatalf("fresh replacement was not activated: %v", err)
 	}
 }
 

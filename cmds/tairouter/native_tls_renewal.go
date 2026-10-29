@@ -148,7 +148,12 @@ func (c *nativeRuntimeController) prepareCARenewal(ctx context.Context, req Nati
 		return nil, err
 	}
 	d := Disk{Root: root, Protection: c.disk.Protection}
-	if err = nativeDurableWrite(d, filepath.Join(root, "renewal.json"), data, compareFile(filepath.Join(root, "renewal.json"), nil, false)); err != nil {
+	journalPath := filepath.Join(root, "renewal.json")
+	previousJournal, previouslyPresent, err := readConfig(journalPath)
+	if err != nil {
+		return nil, err
+	}
+	if err = nativeDurableWrite(d, journalPath, data, compareFile(journalPath, previousJournal, previouslyPresent)); err != nil {
 		return nil, err
 	}
 	return data, nil
@@ -186,7 +191,11 @@ func (c *nativeRuntimeController) applyCARenewal(ctx context.Context, req Native
 	if err != nil || time.Now().Before(old.Certificate.NotAfter) {
 		return errors.New("invalid old native authority in renewal journal")
 	}
-	newCA, err := nativeDecodeCA(journal.New["authority.json"], opts, opts.DNSNames)
+	// The replacement was created by prepareCARenewal with normal validity.
+	// Replay authenticates its durable material separately from activation, so
+	// an interrupted replacement remains recoverable after its certificate
+	// expires. Serving and new planning still use nativeDecodeCA's expiry check.
+	newCA, err := nativeDecodeCAWithExpiry(journal.New["authority.json"], opts, opts.DNSNames, true)
 	if err != nil || newCA.Fingerprint == old.Fingerprint {
 		return errors.New("invalid replacement native authority in renewal journal")
 	}
@@ -204,6 +213,19 @@ func (c *nativeRuntimeController) applyCARenewal(ctx context.Context, req Native
 		if json.Unmarshal(pair.data["trust.json"], &record) != nil || record.Version != 1 || record.Fingerprint != pair.ca.Fingerprint || record.Phase != nativeTrustRemoved {
 			return errors.New("invalid trust ownership in native renewal journal")
 		}
+	}
+	if !time.Now().Before(newCA.Certificate.NotAfter) {
+		// Do not publish an authenticated but expired replacement. Supersede the
+		// durable journal with a fresh replacement while the old authority and
+		// its removed-trust evidence are still intact, then replay that journal.
+		if err = c.restoreCARenewalOldFiles(root, journal); err != nil {
+			return err
+		}
+		fresh, err := c.prepareCARenewal(ctx, req, root, hosts, old)
+		if err != nil {
+			return err
+		}
+		return c.applyCARenewal(ctx, req, root, hosts, fresh)
 	}
 	if err = c.absentOldTrust(ctx, old); err != nil {
 		return err
@@ -232,6 +254,32 @@ func (c *nativeRuntimeController) applyCARenewal(ctx context.Context, req Native
 	}
 	if err = os.Remove(filepath.Join(root, "renewal.json")); err != nil {
 		return err
+	}
+	return nativeSyncDirectory(root)
+}
+
+func (c *nativeRuntimeController) restoreCARenewalOldFiles(root string, journal nativeCARenewal) error {
+	d := Disk{Root: root, Protection: c.disk.Protection}
+	current := make(map[string][]byte, len(nativeCARenewalFiles))
+	for _, name := range nativeCARenewalFiles {
+		path := filepath.Join(root, name)
+		data, present, err := readConfig(path)
+		if err != nil || !present {
+			return errors.New("native renewal file is missing or unreadable; preserve journal")
+		}
+		if !bytes.Equal(data, journal.Old[name]) && !bytes.Equal(data, journal.New[name]) {
+			return errors.New("native renewal file changed; preserve journal and ownership evidence")
+		}
+		current[name] = data
+	}
+	for _, name := range nativeCARenewalFiles {
+		if bytes.Equal(current[name], journal.Old[name]) {
+			continue
+		}
+		path := filepath.Join(root, name)
+		if err := nativeDurableWrite(d, path, journal.Old[name], compareFile(path, current[name], true)); err != nil {
+			return err
+		}
 	}
 	return nativeSyncDirectory(root)
 }
