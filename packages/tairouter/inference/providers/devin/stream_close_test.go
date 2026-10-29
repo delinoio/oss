@@ -41,7 +41,8 @@ func TestTerminalDecoderPropagatesSourceCloseError(t *testing.T) {
 			if fail {
 				source.err = receiptErr
 			}
-			body := newStream(context.Background(), source)
+			ctx := New().PrepareContext(context.Background())
+			body := newStream(ctx, source)
 			output, err := io.ReadAll(body)
 			closeErr := body.Close()
 			if fail {
@@ -50,6 +51,13 @@ func TestTerminalDecoderPropagatesSourceCloseError(t *testing.T) {
 				}
 			} else if err != nil || closeErr != nil || !strings.Contains(string(output), "[DONE]") {
 				t.Fatalf("successful terminal rejected: %s, %v, %v", output, err, closeErr)
+			}
+			state := attempt(ctx)
+			state.mu.Lock()
+			complete := state.complete
+			state.mu.Unlock()
+			if complete == fail {
+				t.Fatalf("completion proof ignored source finalization: complete=%t failure=%t", complete, fail)
 			}
 			if source.closes.Load() != 1 {
 				t.Fatalf("source closes=%d", source.closes.Load())

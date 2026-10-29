@@ -83,6 +83,9 @@ func newStreamIdle(ctx context.Context, source io.ReadCloser, idle time.Duration
 		// receipt before exposing decoded EOF, and retain the same close error
 		// for callers that finish by closing the decoded body themselves.
 		err = errors.Join(err, b.closeSource())
+		if err == nil {
+			markComplete(ctx)
+		}
 		_ = w.CloseWithError(err)
 	}()
 	return b
@@ -211,9 +214,6 @@ func transcode(ctx context.Context, r io.Reader, w io.Writer) error {
 			}
 			s.held = nil
 			_, err = io.WriteString(w, "data: [DONE]\n\n")
-			if err == nil {
-				markComplete(ctx)
-			}
 			return err
 		}
 		if err := s.decodeFrame(b); err != nil {
