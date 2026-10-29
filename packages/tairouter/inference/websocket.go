@@ -94,7 +94,9 @@ func (h *Handler) ServeSocket(ctx context.Context, token string, s Socket) error
 				_ = sendError("unsupported_event")
 				continue
 			}
-			if done != nil {
+			// A finished worker can race with the queued create in the outer select.
+			// Observe its final signal here too, after ServeHTTP and release finish.
+			if responseWorkerActive(&done, &turnCancel) {
 				_ = sendError("response_in_progress")
 				continue
 			}
@@ -142,6 +144,20 @@ func (h *Handler) ServeSocket(ctx context.Context, token string, s Socket) error
 				}
 			}()
 		}
+	}
+}
+
+func responseWorkerActive(done *<-chan struct{}, turnCancel *context.CancelFunc) bool {
+	if *done == nil {
+		return false
+	}
+	select {
+	case <-*done:
+		*done = nil
+		*turnCancel = nil
+		return false
+	default:
+		return true
 	}
 }
 
