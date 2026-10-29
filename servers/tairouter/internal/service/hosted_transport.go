@@ -86,6 +86,15 @@ type hostedBody struct {
 
 func (b *hostedBody) finish(outcome store.RequestOutcome, readErr error) error {
 	b.once.Do(func() {
+		terminalBytes := 0
+		if outcome == store.OutcomeUnknown && readErr == nil && b.ctx.Err() == nil {
+			b.mu.Lock()
+			terminalBytes = hostedCompletedSSELength(b.data, b.contentType)
+			b.mu.Unlock()
+			if terminalBytes > 0 {
+				outcome = store.OutcomeSucceeded
+			}
+		}
 		end := io.ErrClosedPipe
 		if outcome == store.OutcomeSucceeded && readErr == nil {
 			end = io.EOF
@@ -106,7 +115,11 @@ func (b *hostedBody) finish(outcome store.RequestOutcome, readErr error) error {
 		b.u.Outcome = outcome
 		var usage inference.Usage
 		if readErr == nil && outcome == store.OutcomeSucceeded {
-			usage = hostedReportedUsage(b.data, b.contentType)
+			data := b.data
+			if terminalBytes > 0 {
+				data = data[:terminalBytes]
+			}
+			usage = hostedReportedUsage(data, b.contentType)
 			b.u.InputTokens, b.u.OutputTokens = usage.InputTokens, usage.OutputTokens
 		}
 		b.mu.Unlock()
@@ -149,6 +162,52 @@ func (b *hostedBody) Read(p []byte) (int, error) {
 }
 
 func (b *hostedBody) Close() error { return b.finish(store.OutcomeUnknown, nil) }
+
+// A terminal-aware decoder may close before HTTP EOF. Only complete SSE events
+// can prove completion; a partial marker or usage-only body remains unknown.
+// Return the terminal prefix so read-ahead after it cannot alter reported usage.
+func hostedCompletedSSELength(data []byte, contentType string) int {
+	if !strings.Contains(contentType, "text/event-stream") {
+		return 0
+	}
+	var payload []byte
+	for offset := 0; offset < len(data); {
+		end := bytes.IndexByte(data[offset:], '\n')
+		if end < 0 {
+			return 0
+		}
+		end += offset + 1
+		line := bytes.TrimSuffix(data[offset:end-1], []byte("\r"))
+		offset = end
+		if len(line) == 0 {
+			raw := bytes.TrimSpace(payload)
+			payload = nil
+			if len(raw) == 0 {
+				continue
+			}
+			if bytes.Equal(raw, []byte("[DONE]")) {
+				return end
+			}
+			var event map[string]json.RawMessage
+			if raw[0] != '{' || json.Unmarshal(raw, &event) != nil {
+				return 0
+			}
+			var typ string
+			_ = json.Unmarshal(event["type"], &typ)
+			errorValue := event["error"]
+			if typ == "error" || typ == "response.failed" || (len(errorValue) > 0 && !bytes.Equal(errorValue, []byte("null"))) {
+				return 0
+			}
+			if typ == "response.completed" || typ == "message_stop" {
+				return end
+			}
+		} else if bytes.HasPrefix(line, []byte("data:")) {
+			payload = append(payload, bytes.TrimPrefix(line[5:], []byte(" "))...)
+			payload = append(payload, '\n')
+		}
+	}
+	return 0
+}
 
 // exchange records every physical exchange independently, including ambiguous
 // writes and canceled body reads. Accounting cleanup cannot dispatch more work.

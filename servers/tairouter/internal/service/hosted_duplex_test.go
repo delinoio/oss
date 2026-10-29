@@ -385,7 +385,14 @@ func TestHostedWorkBuddyTerminalReceiptFailure(t *testing.T) {
 			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 			defer cancel()
 			var records int
-			tr := &hostedTransport{base: srv.URL, policy: inference.DestinationPolicy{ApprovedOrigins: []string{srv.URL}}, gate: func(c context.Context, start func(context.Context) error) error { return start(c) }, record: func(context.Context, string, store.Usage) error {
+			var receipt store.Usage
+			tr := &hostedTransport{base: srv.URL, policy: inference.DestinationPolicy{ApprovedOrigins: []string{srv.URL}}, gate: func(c context.Context, start func(context.Context) error) error { return start(c) }, price: func(u *store.Usage, usage inference.Usage) {
+				if usage.InputTokens != nil && usage.OutputTokens != nil {
+					cost := "0.000005"
+					u.Cost, u.PriceKnown = &cost, true
+				}
+			}, record: func(_ context.Context, _ string, u store.Usage) error {
+				receipt = u
 				records++
 				if failReceipt {
 					return errors.New("fixture receipt failure")
@@ -408,6 +415,9 @@ func TestHostedWorkBuddyTerminalReceiptFailure(t *testing.T) {
 			} else if err != nil || !strings.Contains(string(body), "description") {
 				t.Fatalf("successful terminal rejected: %s, %v", body, err)
 			}
+			if receipt.Outcome != store.OutcomeSucceeded || receipt.InputTokens == nil || *receipt.InputTokens != 2 || receipt.OutputTokens == nil || *receipt.OutputTokens != 3 || receipt.Cost == nil || *receipt.Cost != "0.000005" || !receipt.PriceKnown {
+				t.Fatalf("terminal usage or pricing lost: %+v", receipt)
+			}
 			if records != 1 {
 				t.Fatalf("receipts=%d", records)
 			}
@@ -415,6 +425,61 @@ func TestHostedWorkBuddyTerminalReceiptFailure(t *testing.T) {
 			case <-closed:
 			case <-ctx.Done():
 				t.Fatal("upstream remained open")
+			}
+		})
+	}
+}
+
+func TestHostedCloseRecognizesOnlyCompleteSSETerminals(t *testing.T) {
+	usage := "data: {\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":3}}\n\n"
+	for _, tc := range []struct {
+		name, data, contentType string
+		cancel, complete        bool
+	}{
+		{name: "done", data: usage + "data: [DONE]\n\n", complete: true},
+		{name: "crlf", data: strings.ReplaceAll(usage+"data: [DONE]\n\n", "\n", "\r\n"), complete: true},
+		{name: "responses", data: "data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":2,\"output_tokens\":3}}}\n\n", complete: true},
+		{name: "messages", data: usage + "data: {\"type\":\"message_stop\"}\n\n", complete: true},
+		{name: "usage-only", data: usage},
+		{name: "partial-marker", data: usage + "data: [DONE]\n"},
+		{name: "malformed", data: "data: {invalid}\n\n" + usage + "data: [DONE]\n\n"},
+		{name: "error", data: usage + "data: {\"error\":{\"message\":\"fixture\"}}\n\ndata: [DONE]\n\n"},
+		{name: "cancelled", data: usage + "data: [DONE]\n\n", cancel: true},
+		{name: "finite-json", data: "{\"usage\":{\"input_tokens\":2,\"output_tokens\":3}}", contentType: "application/json"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var receipt store.Usage
+			var records int
+			tr := &hostedTransport{record: func(_ context.Context, _ string, u store.Usage) error { records++; receipt = u; return nil }}
+			ct := tc.contentType
+			if ct == "" {
+				ct = "text/event-stream"
+			}
+			source := io.NopCloser(strings.NewReader(tc.data))
+			b := &hostedBody{reader: source, body: source, ctx: ctx, t: tr, limit: 32 << 20, contentType: ct}
+			if _, err := io.ReadFull(b, make([]byte, len(tc.data))); err != nil {
+				t.Fatal(err)
+			}
+			if tc.cancel {
+				cancel()
+			}
+			if err := b.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if err := b.Close(); err != nil {
+				t.Fatal(err)
+			}
+			if records != 1 {
+				t.Fatalf("receipts=%d", records)
+			}
+			if tc.complete {
+				if receipt.Outcome != store.OutcomeSucceeded || receipt.InputTokens == nil || *receipt.InputTokens != 2 || receipt.OutputTokens == nil || *receipt.OutputTokens != 3 {
+					t.Fatalf("terminal usage lost: %+v", receipt)
+				}
+			} else if receipt.InputTokens != nil || receipt.OutputTokens != nil || receipt.Outcome == store.OutcomeSucceeded {
+				t.Fatalf("partial or cancelled body became confirmed: %+v", receipt)
 			}
 		})
 	}
