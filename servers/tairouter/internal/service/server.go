@@ -28,31 +28,23 @@ type server struct {
 	releases              *admissionReleaseQueue
 	config                serverconfig.Config
 	store                 *store.Store
-	auth                  *sessionauth.Auth
-	telemetry             *observability.Telemetry
-	sockets               sync.WaitGroup
-	artifacts             *artifacts.Service
-	priceMu               sync.Mutex
-	priceJSON             string
-	priceCache            *pricing.Snapshot
-	console               http.Handler
+	// databasePing permits deterministic health checks without a PostgreSQL fixture.
+	databasePing func(context.Context) error
+	auth         *sessionauth.Auth
+	telemetry    *observability.Telemetry
+	sockets      sync.WaitGroup
+	artifacts    *artifacts.Service
+	priceMu      sync.Mutex
+	priceJSON    string
+	priceCache   *pricing.Snapshot
+	console      http.Handler
 }
 
 func (s *server) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(200); w.Write([]byte("ok\n")) })
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
-		defer cancel()
-		if e := s.store.Ping(ctx); e != nil {
-			s.telemetry.SetDatabase(0)
-			http.Error(w, "database unavailable", 503)
-			return
-		}
-		s.telemetry.SetDatabase(1)
-		w.Write([]byte("ready\n"))
-	})
-	mux.Handle("GET /metrics", s.telemetry.Metrics())
+	mux.HandleFunc("GET /readyz", s.readyHandler)
+	mux.Handle("GET /metrics", s.metricsHandler())
 	mux.HandleFunc("GET /auth/login", s.auth.Login)
 	mux.HandleFunc("GET /auth/callback", s.auth.Callback)
 	mux.HandleFunc("POST /auth/logout", s.auth.Logout)
@@ -83,6 +75,39 @@ func (s *server) handler() http.Handler {
 		mux.Handle("/", s.console)
 	}
 	return s.telemetry.Middleware(mux)
+}
+
+func (s *server) checkDatabase(ctx context.Context) bool {
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	var err error
+	if s.databasePing != nil {
+		err = s.databasePing(ctx)
+	} else {
+		err = s.store.Ping(ctx)
+	}
+	if err != nil {
+		s.telemetry.SetDatabase(0)
+		return false
+	}
+	s.telemetry.SetDatabase(1)
+	return true
+}
+
+func (s *server) readyHandler(w http.ResponseWriter, r *http.Request) {
+	if !s.checkDatabase(r.Context()) {
+		http.Error(w, "database unavailable", 503)
+		return
+	}
+	w.Write([]byte("ready\n"))
+}
+
+func (s *server) metricsHandler() http.Handler {
+	metrics := s.telemetry.Metrics()
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		s.checkDatabase(r.Context())
+		metrics.ServeHTTP(w, r)
+	})
 }
 func (s *server) serveInference(w http.ResponseWriter, r *http.Request) {
 	// Normalize before HTTP and WebSocket dispatch so the deployed mux exposes
