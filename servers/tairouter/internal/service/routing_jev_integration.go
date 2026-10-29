@@ -318,7 +318,7 @@ func (a *inferenceAdapter) selectJEVRouteInput(ctx context.Context, p inference.
 			if !ok {
 				continue
 			}
-			target, err := targetForContext(ctx, d, group.target.Model)
+			target, err := selectedTargetForContext(ctx, d, group.target)
 			if err != nil || !sameCredentialLane(group.target, target) {
 				continue
 			}
