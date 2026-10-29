@@ -65,6 +65,7 @@ func (r testRouter) Models(context.Context, Principal) ([]Model, error) {
 type testCredentials struct {
 	refreshes  atomic.Int32
 	selections atomic.Int32
+	version    string
 }
 
 func (c *testCredentials) Select(_ context.Context, _ Principal, _ Target, previous string) (Credential, error) {
@@ -72,7 +73,7 @@ func (c *testCredentials) Select(_ context.Context, _ Principal, _ Target, previ
 	if previous != "" {
 		return Credential{AccountID: "b", Secret: "second"}, nil
 	}
-	return Credential{AccountID: "a", Secret: "provider-secret"}, nil
+	return Credential{AccountID: "a", Secret: "provider-secret", CredentialVersion: c.version}, nil
 }
 func (c *testCredentials) Refresh(context.Context, Principal, Target, Credential) (Credential, error) {
 	c.refreshes.Add(1)

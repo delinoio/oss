@@ -81,6 +81,18 @@ func (s *Store) DeletePrivate(ctx context.Context, sc core.Scope, kind, id strin
 	})
 }
 func (s *Store) PutState(ctx context.Context, sc core.Scope, kind core.StateKind, id string, value []byte) error {
+	return s.putState(ctx, sc, kind, id, value, nil)
+}
+
+// PutAccountBoundState verifies the serving credential and inserts the encrypted
+// state under the same organization lock used by credential replacement/deletion.
+func (s *Store) PutAccountBoundState(ctx context.Context, l Lease, kind core.StateKind, id, account, version string, value []byte) error {
+	return s.putState(ctx, l.Principal.Scope, kind, id, value, func(tx *sql.Tx) error {
+		return s.checkNativeAccount(ctx, tx, l, account, version)
+	})
+}
+
+func (s *Store) putState(ctx context.Context, sc core.Scope, kind core.StateKind, id string, value []byte, check func(*sql.Tx) error) error {
 	ttl, count, max, e := kind.Limits()
 	if e != nil {
 		return e
@@ -89,7 +101,11 @@ func (s *Store) PutState(ctx context.Context, sc core.Scope, kind core.StateKind
 		return ErrConflict
 	}
 	return s.tx(ctx, func(tx *sql.Tx) error {
-		if _, e := s.guard(ctx, tx, sc); e != nil {
+		if check != nil {
+			if e := check(tx); e != nil {
+				return e
+			}
+		} else if _, e := s.guard(ctx, tx, sc); e != nil {
 			return e
 		}
 		v, e := s.keys.Encrypt(value, ownership(sc, "state:"+string(kind), id))
