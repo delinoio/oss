@@ -173,7 +173,7 @@ func (s *liveStoreFixture) ResolveBinding(_ context.Context, p Principal, id str
 	return s.binding, Credential{AccountID: s.binding.AccountID, Secret: "bound"}, nil
 }
 func TestLiveCallBindingRewritesLocation(t *testing.T) {
-	h, _, _, _, _ := harness(t, func(w http.ResponseWriter, r *http.Request) {
+	h, _, _, creds, _ := harness(t, func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/realtime/calls" || r.URL.Query().Get("architecture") != "avas" {
 			t.Error(r.URL.String())
 		}
@@ -190,13 +190,14 @@ func TestLiveCallBindingRewritesLocation(t *testing.T) {
 		io.WriteString(w, "answer")
 	}, Responses)
 	store := &liveStoreFixture{}
+	creds.version = "served-v1"
 	h.c.LiveBindings = store
 	req := httptest.NewRequest("POST", "/v1/realtime/calls", strings.NewReader(`{"sdp":"offer","session":{"model":"voice","instructions":"kept"}}`))
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer client-secret")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, req)
-	if w.Code != 201 || w.Header().Get("Location") != "/v1/realtime/calls/"+store.id || store.binding.Target.Model != "upstream-model" || store.binding.UpstreamCallID != "call_original" || store.binding.ExpiresAt.After(time.Now().Add(5*time.Minute)) {
+	if w.Code != 201 || w.Header().Get("Location") != "/v1/realtime/calls/"+store.id || store.binding.Target.Model != "upstream-model" || store.binding.UpstreamCallID != "call_original" || store.binding.ServedCredentialVersion != "served-v1" || store.binding.ExpiresAt.After(time.Now().Add(5*time.Minute)) {
 		t.Fatalf("%d %v %+v", w.Code, w.Header(), store.binding)
 	}
 }

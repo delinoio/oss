@@ -199,6 +199,7 @@ Management uses Connect RPC and generated Protobuf contracts; inference transpor
 - Store necessary protocol/continuation state temporarily in encrypted PostgreSQL storage, isolated by organization and user.
 - Support continuation across server instances and process restarts.
 - Put temporary state in a separate PostgreSQL storage area that can be excluded from ordinary backups. Loss of continuation state during disaster recovery is accepted.
+- Publish live call aliases with the exact credential generation selected for the upstream offer. Validate the current key, account usability, and served generation in the same transaction that inserts the encrypted alias; replacement or deletion before publication refuses the alias. A later replacement invalidates reuse. At lookup, the selected bound credential must match the saved served generation, and the physical-send fence remains required. Version the temporary binding envelope and reject older records without served-generation proof. Never infer proof from current credentials or fall back to the native call ID. Roll out the reader and writer together across replicas so a legacy writer cannot publish a proofless alias.
 - Encrypt stored provider credentials.
 - Operators inject versioned encryption master keys separately from the database.
 - Rotate during maintenance: decrypt with the previous key, re-encrypt with the new key, verify completion, then remove the previous active key.
