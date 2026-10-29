@@ -654,12 +654,12 @@ func jevMessagesEvidence(rows []any) []any {
 func jevTextRun(rows []any, index int) string {
 	message, _ := rows[index].(map[string]any)
 	role, _ := message["role"].(string)
-	if _, ok := message["content"].(string); !ok {
-		return routingText(message["content"])
-	}
 	group, grouped := message["__jev_text_group"]
 	if !grouped {
-		return message["content"].(string)
+		if text, ok := message["content"].(string); ok {
+			return text
+		}
+		return routingText(message["content"])
 	}
 	parts := []string{}
 	for i := index; i >= 0; i-- {
@@ -680,6 +680,11 @@ func jevTextRun(rows []any, index int) string {
 	return strings.Join(parts, "\n")
 }
 
+type jevTextEvidence struct {
+	task      string
+	assistant string
+}
+
 func buildJEVState(raw json.RawMessage, candidates []jevCandidate) map[string]any {
 	var b map[string]any
 	_ = json.Unmarshal(raw, &b)
@@ -689,6 +694,7 @@ func buildJEVState(raw json.RawMessage, candidates []jevCandidate) map[string]an
 	}
 	task, assistant := "", ""
 	image, tool := false, false
+	textEvidence := map[int]jevTextEvidence{}
 	step := map[string]any{"type": "other"}
 	if s, ok := input.(string); ok {
 		task = jevTask(s)
@@ -712,11 +718,29 @@ func buildJEVState(raw json.RawMessage, candidates []jevCandidate) map[string]an
 				}
 			}
 		}
-		if task == "" && m["role"] == "user" {
-			task = jevTask(jevTextRun(rows, i))
-		}
-		if assistant == "" && m["role"] == "assistant" {
-			assistant = jevTail(jevVisible(jevTextRun(rows, i), false), 240)
+		if group, grouped := m["__jev_text_group"].(int); grouped {
+			evidence, ok := textEvidence[group]
+			if !ok {
+				text := jevTextRun(rows, i)
+				evidence = jevTextEvidence{
+					task:      jevTask(text),
+					assistant: jevTail(jevVisible(text, false), 240),
+				}
+				textEvidence[group] = evidence
+			}
+			if task == "" && m["role"] == "user" {
+				task = evidence.task
+			}
+			if assistant == "" && m["role"] == "assistant" {
+				assistant = evidence.assistant
+			}
+		} else {
+			if task == "" && m["role"] == "user" {
+				task = jevTask(jevTextRun(rows, i))
+			}
+			if assistant == "" && m["role"] == "assistant" {
+				assistant = jevTail(jevVisible(jevTextRun(rows, i), false), 240)
+			}
 		}
 	}
 	if len(rows) > 0 {

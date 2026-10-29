@@ -154,6 +154,16 @@ func TestJEVNativeMessagesEnvelopeAcrossTextBlocks(t *testing.T) {
 	if state["task"] != "Actual task \nContinue task" {
 		t.Fatalf("envelope state was lost across an image block: %v", state["task"])
 	}
+	protectedBlocks := make([]any, 0, 4001)
+	for range 4000 {
+		protectedBlocks = append(protectedBlocks, map[string]any{"type": "text", "text": "<system-reminder>PRIVATE_CONTEXT</system-reminder>"})
+	}
+	protectedBlocks = append(protectedBlocks, map[string]any{"type": "image", "source": map[string]any{"type": "url", "url": "https://private.test/image"}})
+	longInput, _ := json.Marshal(map[string]any{"messages": []any{map[string]any{"role": "user", "content": protectedBlocks}}})
+	state = buildJEVState(longInput, nil)
+	if state["task"] != "" {
+		t.Fatalf("all-protected text produced an actionable task: %v", state["task"])
+	}
 	legacy, _ := json.Marshal(map[string]any{"messages": []any{
 		map[string]any{"role": "user", "content": "Earlier task"},
 		map[string]any{"role": "user", "content": "Latest task"},
