@@ -143,6 +143,36 @@ func TestNativeUnexpiredCAReusedAfterDisable(t *testing.T) {
 	}
 }
 
+func TestNativePartialCARecoveryAfterAuthorityWrite(t *testing.T) {
+	c, req, trust := controllerFixture(t)
+	ctx := context.Background()
+	plan, err := c.Plan(ctx, req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := c.root(req.Profile.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"ca.pem", "leaf.pem"} {
+		if err = os.Remove(filepath.Join(root, name)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	recovered, err := c.Plan(ctx, req)
+	if err != nil || recovered.Fingerprint != plan.Fingerprint {
+		t.Fatalf("partial authority recovery: %+v %v", recovered, err)
+	}
+	if trust.installs != 0 {
+		t.Fatal("partial authority recovery changed trust")
+	}
+	for _, name := range []string{"ca.pem", "leaf.pem"} {
+		if _, err = os.Stat(filepath.Join(root, name)); err != nil {
+			t.Fatalf("recovery did not republish %s: %v", name, err)
+		}
+	}
+}
+
 func TestNativeExpiredCARecoveryRefusalsAndReplay(t *testing.T) {
 	t.Run("status failure", func(t *testing.T) {
 		c, req, trust, root, old := expiredControllerFixture(t)

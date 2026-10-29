@@ -30,6 +30,15 @@ func (c *nativeRuntimeController) recoverExpiredCA(ctx context.Context, req Nati
 		return err
 	}
 	if !pending {
+		incomplete, err := c.recoverIncompleteCA(root, hosts)
+		if err != nil {
+			return err
+		}
+		if incomplete {
+			// EnsureNativeCAWithOptions owns completion of an authenticated,
+			// unexpired authority whose public certificate was not published.
+			return nil
+		}
 		old, err := ReadNativeCAPublic(root)
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -46,6 +55,25 @@ func (c *nativeRuntimeController) recoverExpiredCA(ctx context.Context, req Nati
 		}
 	}
 	return c.applyCARenewal(ctx, req, root, hosts, journalBytes)
+}
+
+func (c *nativeRuntimeController) recoverIncompleteCA(root string, hosts []string) (bool, error) {
+	authority, present, err := readConfig(filepath.Join(root, "authority.json"))
+	if err != nil || !present {
+		return false, err
+	}
+	_, publicPresent, err := readConfig(filepath.Join(root, "ca.pem"))
+	if err != nil || publicPresent {
+		return false, err
+	}
+	opts, err := c.renewalOptions(hosts)
+	if err != nil {
+		return false, err
+	}
+	if _, err = nativeDecodeCAWithExpiry(authority, opts, opts.DNSNames, false); err != nil {
+		return false, nil
+	}
+	return true, nil
 }
 
 func (c *nativeRuntimeController) renewalOptions(hosts []string) (NativeCAOptions, error) {
