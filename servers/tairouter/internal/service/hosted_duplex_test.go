@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -18,6 +19,7 @@ import (
 	"github.com/delinoio/oss/packages/tairouter/inference"
 	"github.com/delinoio/oss/packages/tairouter/inference/hosted"
 	"github.com/delinoio/oss/packages/tairouter/inference/providers/cursor"
+	"github.com/delinoio/oss/packages/tairouter/inference/providers/workbuddy"
 	"github.com/delinoio/oss/packages/tairouter/providers"
 	"github.com/delinoio/oss/packages/tairouter/store"
 	v1 "github.com/delinoio/oss/protos/tairouter/v1"
@@ -361,6 +363,58 @@ func TestHostedCursorDuplexFailureStopsBothDirections(t *testing.T) {
 			}
 			if kind == "append-failure" && !errors.Is(err, inference.ErrUnavailable) {
 				t.Fatalf("run receipt failure hidden: %v", err)
+			}
+		})
+	}
+}
+
+// The adapter ends at [DONE] while HTTP remains open, so receipt persistence
+// happens during Collect's owned-body close rather than an upstream EOF read.
+func TestHostedWorkBuddyTerminalReceiptFailure(t *testing.T) {
+	for _, failReceipt := range []bool{false, true} {
+		t.Run(fmt.Sprintf("receipt-failure=%t", failReceipt), func(t *testing.T) {
+			closed := make(chan struct{})
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "text/event-stream")
+				_, _ = io.WriteString(w, "data: {\"id\":\"fixture\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"description\"},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":2,\"completion_tokens\":3}}\n\ndata: [DONE]\n\n")
+				w.(http.Flusher).Flush()
+				<-r.Context().Done()
+				close(closed)
+			}))
+			defer srv.Close()
+			ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+			defer cancel()
+			var records int
+			tr := &hostedTransport{base: srv.URL, policy: inference.DestinationPolicy{ApprovedOrigins: []string{srv.URL}}, gate: func(c context.Context, start func(context.Context) error) error { return start(c) }, record: func(context.Context, string, store.Usage) error {
+				records++
+				if failReceipt {
+					return errors.New("fixture receipt failure")
+				}
+				return nil
+			}}
+			response, err := tr.Do(ctx, inference.AdapterRequest{Method: http.MethodPost, URL: srv.URL})
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err = workbuddy.New().Decode(ctx, response)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := inference.AggregateResponse(ctx, response, inference.Chat)
+			if failReceipt {
+				if !errors.Is(err, inference.ErrUnavailable) || strings.Contains(string(body), "choices") {
+					t.Fatalf("receipt failure accepted as content: %s, %v", body, err)
+				}
+			} else if err != nil || !strings.Contains(string(body), "description") {
+				t.Fatalf("successful terminal rejected: %s, %v", body, err)
+			}
+			if records != 1 {
+				t.Fatalf("receipts=%d", records)
+			}
+			select {
+			case <-closed:
+			case <-ctx.Done():
+				t.Fatal("upstream remained open")
 			}
 		})
 	}
