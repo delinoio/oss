@@ -210,6 +210,7 @@ Management uses Connect RPC and generated Protobuf contracts; inference transpor
 Apply these inspected reference limits **per user within each organization**:
 
 - Responses continuation: 24-hour TTL, at most 1,000 entries, 1 GiB total retained storage; also cap an optional resident memory cache at 64 MiB.
+- Live-call aliases use a separate encrypted temporary-state kind with at most 1,000 entries and 1 GiB retained ciphertext per user within each organization. Their SQL expiry is the supplied absolute binding deadline. Expired aliases are unavailable immediately and removed before live-alias overflow accounting or by periodic cleanup. Responses writes and live-alias writes cannot evict or charge bytes to each other.
 - Tool-call reasoning replay: one-hour TTL, at most 64 entries and 256 KiB.
 - Bridged web-search result replay: one-hour TTL, at most 64 entries and 512 KiB.
 - Retained compaction reasoning: 24-hour TTL, at most 256 entries and 512 MiB total, with a 32 MiB limit per entry. Store overflow in the `compaction-reasoning` namespace in encrypted temporary PostgreSQL storage. Bind reads, writes, and merges to the selected account and credential version as well as the organization, user, key, and membership. Credential replacement or deletion invalidates reuse.

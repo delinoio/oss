@@ -35,6 +35,7 @@ type StateKind string
 
 const (
 	Responses StateKind = "responses"
+	LiveAlias StateKind = "live-alias"
 	Reasoning StateKind = "reasoning"
 	Search    StateKind = "search"
 )
@@ -42,6 +43,8 @@ const (
 func (k StateKind) Limits() (time.Duration, int, int64, error) {
 	switch k {
 	case Responses:
+		return 24 * time.Hour, 1000, 1 << 30, nil
+	case LiveAlias:
 		return 24 * time.Hour, 1000, 1 << 30, nil
 	case Reasoning:
 		return time.Hour, 64, 256 << 10, nil

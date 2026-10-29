@@ -33,7 +33,7 @@ func (a *inferenceAdapter) SaveBinding(ctx context.Context, p inference.Principa
 	if e != nil {
 		return e
 	}
-	e = a.s.PutAccountBoundState(ctx, l, core.Responses, "live/"+p.KeyID+"/"+id, binding.AccountID, binding.ServedCredentialVersion, b)
+	e = a.s.PutLiveAlias(ctx, l, "live/"+p.KeyID+"/"+id, binding.AccountID, binding.ServedCredentialVersion, b, binding.ExpiresAt)
 	if errors.Is(e, store.ErrForbidden) || errors.Is(e, store.ErrNotFound) || errors.Is(e, store.ErrExpired) {
 		return inference.ErrContinuation
 	}
@@ -41,7 +41,7 @@ func (a *inferenceAdapter) SaveBinding(ctx context.Context, p inference.Principa
 }
 func (a *inferenceAdapter) ResolveBinding(ctx context.Context, p inference.Principal, id string) (inference.LiveBinding, inference.Credential, error) {
 	var stored storedLiveBinding
-	b, e := a.s.GetState(ctx, scopeOf(p), core.Responses, "live/"+p.KeyID+"/"+id)
+	b, e := a.s.GetState(ctx, scopeOf(p), core.LiveAlias, "live/"+p.KeyID+"/"+id)
 	if e != nil {
 		return stored.Binding, inference.Credential{}, inference.ErrContinuation
 	}
