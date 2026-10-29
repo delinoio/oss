@@ -352,8 +352,16 @@ func runDuplex(ctx context.Context, cancel context.CancelCauseFunc, first *time.
 	callbackDone := make(chan struct{})
 	stop := context.AfterFunc(ctx, func() { r.Body.Close(); close(callbackDone) })
 	defer func() {
-		cancel(context.Canceled)
-		closeErr := r.Body.Close()
+		var closeErr error
+		if resultErr == nil {
+			// A terminal frame can finish before HTTP EOF. Finalize the body
+			// before our cleanup cancellation can classify that success as failure.
+			closeErr = r.Body.Close()
+			cancel(context.Canceled)
+		} else {
+			cancel(context.Canceled)
+			closeErr = r.Body.Close()
+		}
 		workers.Wait()
 		if !stop() {
 			<-callbackDone

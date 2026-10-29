@@ -848,3 +848,65 @@ func TestCoreExecutingAdapterRegistrationAndSharedBudget(t *testing.T) {
 		})
 	}
 }
+
+// A protocol terminator may precede HTTP EOF. This body makes cleanup ordering
+// observable without relying on which context callback the scheduler runs first.
+type terminalCleanupBody struct {
+	ctx      context.Context
+	reader   io.Reader
+	closed   chan struct{}
+	once     sync.Once
+	closeErr error
+	result   error
+}
+
+func (b *terminalCleanupBody) Read(p []byte) (int, error) {
+	n, err := b.reader.Read(p)
+	if err != io.EOF {
+		return n, err
+	}
+	select {
+	case <-b.closed:
+		return 0, io.ErrClosedPipe
+	case <-b.ctx.Done():
+		return 0, b.ctx.Err()
+	}
+}
+func (b *terminalCleanupBody) Close() error {
+	b.once.Do(func() { b.result = errors.Join(b.closeErr, b.ctx.Err()); close(b.closed) })
+	return b.result
+}
+
+func TestExecuteClosesTerminalBodyBeforeCleanupCancellation(t *testing.T) {
+	receiptErr := errors.New("fixture receipt failure")
+	for _, test := range []struct {
+		name     string
+		closeErr error
+	}{{"success", nil}, {"receipt failure", receiptErr}} {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			frames := serialized(t, Frame{Payload: pb(1, pb(1, ps(1, "observed output")))}, Frame{Payload: pb(1, pb(14, nil))}, Frame{Flags: 2, Payload: []byte(`{}`)})
+			x := executorFunc(func(network context.Context, r inference.AdapterRequest) (*http.Response, error) {
+				if strings.HasSuffix(r.URL, RunSSEPath) {
+					return protoResponse(&terminalCleanupBody{ctx: network, reader: bytes.NewReader(frames), closed: make(chan struct{}), closeErr: test.closeErr}), nil
+				}
+				return &http.Response{StatusCode: 200, Body: io.NopCloser(strings.NewReader(""))}, nil
+			})
+			in := input(`{"store":false,"messages":[{"role":"user","content":"hi"}]}`)
+			r, _, err := New().Execute(ctx, in, x, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			body, err := io.ReadAll(r.Body)
+			_ = r.Body.Close()
+			if test.closeErr == nil {
+				if err != nil || !bytes.Contains(body, []byte("[DONE]")) {
+					t.Fatalf("terminal cleanup: err=%v body=%s", err, body)
+				}
+			} else if !errors.Is(err, test.closeErr) || bytes.Contains(body, []byte("[DONE]")) {
+				t.Fatalf("receipt failure hidden: err=%v body=%s", err, body)
+			}
+		})
+	}
+}
