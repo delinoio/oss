@@ -307,6 +307,9 @@ func (c *nativeRuntimeController) Enable(ctx context.Context, req NativeRuntimeR
 	if err = manager.Install(ctx, ca); err != nil {
 		return c.statusRecord(ctx, r, ca), err
 	}
+	if !c.installationMatches(ctx, r) {
+		return c.statusRecord(ctx, r, ca), errors.New("native installation changed during activation; preserve runtime record for recovery")
+	}
 	return c.statusRecord(ctx, r, ca), nil
 }
 
