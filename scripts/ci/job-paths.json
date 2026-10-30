@@ -46,9 +46,7 @@
       "scripts/ci/go-quality*",
       "scripts/ci/go-test.mjs",
       "scripts/ci/go-test.test.mjs",
-      "scripts/ci/check-go-format.mjs",
-      "packages/tairouter/**",
-      "scripts/tairouter/**"
+      "scripts/ci/check-go-format.mjs"
     ]
   },
   "go-test": {
@@ -72,9 +70,7 @@
       "packages/async-commit-hook-api-client/**",
       "scripts/ci/go-affected*",
       "scripts/ci/go-quality*",
-      "scripts/ci/check-go-format.mjs",
-      "packages/tairouter/**",
-      "scripts/tairouter/**"
+      "scripts/ci/check-go-format.mjs"
     ]
   },
   "rust-fmt": {
@@ -323,35 +319,7 @@
       "packaging/homebrew/templates/runmoor.rb.tmpl",
       "scripts/release/update-homebrew.sh",
       "turbo.json",
-      "scripts/release/generate-checksums*",
-      "scripts/release/tairouter*",
-      "packaging/tairouter/npm/package.json"
-    ]
-  },
-  "tairouter": {
-    "paths": [
-      "AGENTS.md",
-      ".nvmrc",
-      "go.mod",
-      "go.sum",
-      "package.json",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      "buf*.yaml",
-      "buf*.yml",
-      "rstack.config.ts",
-      "tsconfig*.json",
-      "apps/tairouter*/**",
-      "packages/tairouter*/**",
-      "servers/tairouter/**",
-      "cmds/tairouter/**",
-      "protos/tairouter/**",
-      "scripts/tairouter/**",
-      "scripts/localization/**",
-      "packaging/tairouter/**",
-      "docs/**",
-      ".github/workflows/release-tairouter.yml",
-      "scripts/release/tairouter*"
+      "scripts/release/generate-checksums*"
     ]
   }
 }

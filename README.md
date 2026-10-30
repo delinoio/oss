@@ -43,5 +43,3 @@ Delcore, DeliDev, and DeliTools are maintained in [delino-apps](https://github.c
 Bundlewhy is maintained in [delinoio/bundlewhy](https://github.com/delinoio/bundlewhy).
 
 Typeopt is maintained in [delinoio/typeopt](https://github.com/delinoio/typeopt).
-
-TaiRouter (Team AI Router) is an open-source Delino Labs product with a [product page](https://labs.delino.io/tairouter/). It provides a self-hosted organization AI provider router, personal provider pools, a configuration CLI and a web console. Read the [project contracts](docs/project-tairouter.md), [public guides](https://docs.labs.delino.io/tairouter/) and [deployment guide](packaging/tairouter/README.md). With Docker running, use `pnpm dev:tairouter` to build and start a local evaluation at `http://127.0.0.1:8080`, including PostgreSQL, password-free synthetic login and automatic migrations. No external accounts or manual environment setup are needed to open the console. Use `pnpm dev:tairouter:stop` to stop it while keeping local data. Generated media requires real R2 configuration. Source development with configured external services uses `pnpm dev:tairouter:source`.

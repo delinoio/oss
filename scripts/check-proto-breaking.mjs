@@ -4,7 +4,6 @@ import { mkdtempSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { projectTaiRouterRename } from "./ci/protocol-rename.mjs";
 
 const buf = fileURLToPath(
   new URL("../node_modules/@bufbuild/buf/bin/buf", import.meta.url),
@@ -31,11 +30,6 @@ try {
     original,
   );
   const baseline = JSON.parse(readFileSync(original, "utf8"));
-  if (baseline.file.some((file) => file.package === "aiprouter.v1")) {
-    const current = join(temporary, "tairouter-current.json");
-    run("build", "--as-file-descriptor-set", "--output", current);
-    projectTaiRouterRename(baseline, JSON.parse(readFileSync(current, "utf8")));
-  }
   // Go bindings moved beside the ach schema. Accept only that exact forward
   // migration, leaving FILE checks active for fields, other files and future
   // Go package changes. Remove this projection once supported baselines no
@@ -58,14 +52,19 @@ try {
     if (currentAch?.options?.goPackage === colocatedGoPackage)
       previousAch.options.goPackage = colocatedGoPackage;
   }
-  // DevHud and DeliDev retired their APIs; Delcore and bundlewhy moved repositories. Keep FILE
+  // TaiRouter, DevHud and DeliDev retired their APIs; Delcore and bundlewhy moved repositories. Keep FILE
   // checks for owned packages. Remove this projection once all baselines
   // omit the retired and transferred schemas.
   baseline.file = baseline.file.filter(
     (file) =>
-      !["delidev.v1", "delcore.v1", "devhud.v1", "bundlewhy.v1"].includes(
-        file.package,
-      ),
+      ![
+        "delidev.v1",
+        "delcore.v1",
+        "devhud.v1",
+        "bundlewhy.v1",
+        "tairouter.v1",
+        "aiprouter.v1",
+      ].includes(file.package),
   );
   // Retired services can be the only consumers of a protobuf well-known type.
   // Drop those orphan imports too, while retaining every owned schema and all
