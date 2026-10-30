@@ -328,47 +328,6 @@
       "packaging/tairouter/npm/package.json"
     ]
   },
-  "node-labs-site-test": {
-    "paths": [
-      ".npmrc",
-      ".nvmrc",
-      "apps/labs-site/**",
-      "docs/project-labs-site.md",
-      "docs/apps-labs-site-foundation.md",
-      "package.json",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      "turbo.json",
-      "scripts/run-rsbuild-dev.mjs",
-      "scripts/spawn-dev-server.mjs",
-      "scripts/dev-environment/process.mjs",
-      "scripts/localization/**",
-      "docs/apps-labs-localization-contract.md"
-    ],
-    "workspace": "labs-site",
-    "workspacePaths": ["apps/labs-site/**"]
-  },
-  "node-labs-docs-test": {
-    "paths": [
-      "apps/labs-docs/**",
-      "docs/project-labs-docs.md",
-      "docs/apps-labs-docs-foundation.md",
-      "scripts/run-rspress-port.mjs",
-      "scripts/spawn-dev-server.mjs",
-      "scripts/dev-environment/process.mjs",
-      ".npmrc",
-      ".nvmrc",
-      "package.json",
-      "pnpm-lock.yaml",
-      "pnpm-workspace.yaml",
-      "turbo.json",
-      "scripts/localization/**",
-      "docs/apps-labs-localization-contract.md",
-      "docs/apps-tairouter-docs-contract.md"
-    ],
-    "workspace": "labs-docs",
-    "workspacePaths": ["apps/labs-docs/**"]
-  },
   "tairouter": {
     "paths": [
       "AGENTS.md",
@@ -383,7 +342,6 @@
       "rstack.config.ts",
       "tsconfig*.json",
       "apps/tairouter*/**",
-      "apps/labs-docs/**",
       "packages/tairouter*/**",
       "servers/tairouter/**",
       "cmds/tairouter/**",

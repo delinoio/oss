@@ -1311,46 +1311,6 @@ test("TaiRouter shared Go libraries and fixtures select Go validation", () => {
   }
 });
 
-test("Labs docs own their app and force external build inputs on all CI events", () => {
-  const id = "node-labs-docs-test";
-  for (const event of Object.values(Event)) {
-    const local = planJobs(event, ["apps/labs-docs/docs/en/index.md"]);
-    assert.equal(local.jobs[id], true);
-    assert.equal(local.forced[id], false);
-    for (const path of [
-      "docs/apps-labs-docs-foundation.md",
-      "docs/apps-tairouter-docs-contract.md",
-      "scripts/run-rspress-port.mjs",
-      "pnpm-lock.yaml",
-    ]) {
-      const plan = planJobs(event, [path]);
-      assert.equal(plan.jobs[id], true);
-      assert.equal(plan.forced[id], true);
-    }
-    assert.equal(
-      planJobs(event, ["apps/public-docs/docs/index.md"]).jobs[id],
-      false,
-    );
-    assert.equal(planJobs(event, ["docs/project-rustia.md"]).jobs[id], false);
-  }
-});
-
-test("shared Labs localization inputs force both app checks on every eligible event", () => {
-  for (const event of Object.values(Event)) {
-    for (const path of [
-      "scripts/localization/chatgpt.mjs",
-      "scripts/localization/catalog.mjs",
-      "docs/apps-labs-localization-contract.md",
-    ]) {
-      const plan = planJobs(event, [path]);
-      for (const app of ["labs-docs", "labs-site"]) {
-        assert.equal(plan.jobs[`node-${app}-test`], true);
-        assert.equal(plan.forced[`node-${app}-test`], true);
-      }
-    }
-  }
-});
-
 test("TaiRouter validation follows affected selection and fails the aggregate on missing results", () => {
   for (const event of Object.values(Event)) {
     for (const path of [
@@ -1360,7 +1320,6 @@ test("TaiRouter validation follows affected selection and fails the aggregate on
       "packages/tairouter-client/src/gen/api.ts",
       "protos/tairouter/v1/management.proto",
       "apps/tairouter/src/main.tsx",
-      "apps/labs-docs/docs/en/tairouter/index.md",
       "scripts/tairouter/compose-smoke.py",
       "scripts/localization/cli.mjs",
       "packaging/tairouter/compose.yml",

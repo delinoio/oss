@@ -2,7 +2,7 @@
 
 ## Scope
 
-Owns `apps/labs-docs/docs/en/tairouter`, English public guides published by the independent Delino Labs documentation application. TaiRouter means **Team AI Router** and is an open-source Delino Labs product. Repository source-of-truth contracts remain in `docs/`.
+Owns `delinoio/apps:apps/labs-docs/docs/en/tairouter`, English public guides published by the independent Delino Labs documentation application. TaiRouter means **Team AI Router** and is an open-source Delino Labs product. Repository source-of-truth contracts remain in `docs/`.
 
 ## Runtime and Language
 
@@ -26,7 +26,7 @@ Include English public guidance for all of:
 
 Keep internal design, source-of-truth contracts and operational internals in repository `docs/`. Exclude internal runbooks from public pages.
 
-Keep public docs focused on user/operator workflows and supported interfaces; keep internal implementation details in repository contracts. `apps/labs-docs` builds and publishes the guides at `https://docs.labs.delino.io/tairouter/`. Keep all eleven routes in the Labs route catalog and navigation. Preserve all migrated guide content and verification limits. Publish these guides in English first, with exact `sourceOnly.pages` entries in the Labs localization registry. Every localized Labs sidebar labels the TaiRouter group as English and links to the same unprefixed routes. Do not add translated copies or missing-language route aliases.
+Keep public docs focused on user/operator workflows and supported interfaces; keep internal implementation details in repository contracts. `delinoio/apps:apps/labs-docs` builds and publishes the guides at `https://docs.labs.delino.io/tairouter/`. Keep all eleven routes in the Labs route catalog and navigation. Preserve all migrated guide content and verification limits. Publish these guides in English first, with exact `sourceOnly.pages` entries in the Labs localization registry. Every localized Labs sidebar labels the TaiRouter group as English and links to the same unprefixed routes. Do not add translated copies or missing-language route aliases.
 
 The marketing page at `https://labs.delino.io/tairouter/` links to these guides and introduces the product in all eight Labs languages. Remove TaiRouter content, route registration and site-selector entries from `apps/public-docs`; it no longer publishes TaiRouter. The new canonical location is a route migration with no old-host redirect or alias. Existing external links require updating by their owners.
 
@@ -50,7 +50,7 @@ Documentation build/dev diagnostics must not reveal secrets. Documentation serve
 
 ## Build and Test
 
-Run `pnpm test` from `apps/labs-docs` after frontend changes. Use root `pnpm dev:labs-docs` on fixed loopback port 46303 for documentation development. The existing Labs Docs publisher owns deployment; no additional app or port is introduced. Build and validate navigation, links, examples, and the seven required guidance areas against owning contracts. Do not label fixtures as live operational acceptance.
+Run public-guide validation in `delinoio/apps` under its Labs Docs foundation. Build and validate navigation, links, examples, and the seven required guidance areas against owning contracts. Do not label fixtures as live operational acceptance.
 
 ## Dependencies and Integrations
 

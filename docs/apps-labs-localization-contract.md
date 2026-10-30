@@ -1,4 +1,8 @@
-# Labs localization contract
+# Localization ownership contract
+
+## Repository boundary
+
+Labs Site and Labs Docs source, catalogs, routes, generation and CI are owned by `delinoio/apps`. The Labs rules below describe that external integration; use the [destination contract](https://github.com/delinoio/apps/blob/main/docs/apps-labs-localization-contract.md) for current app procedures. This repository retains `scripts/localization` for the TaiRouter console and owns its fixture validation and local authentication. The two repositories maintain separate tooling copies; this migration does not move console catalogs or credentials.
 
 ## Ownership and routes
 
@@ -95,8 +99,8 @@ tokens into static apps or CI artifacts.
 
 ## Acceptance boundaries
 
-Both app tests run offline localization fixtures and build validation. Shared
-tooling changes select both affected CI jobs and invalidate their cached leaves.
+Destination app tests run offline localization fixtures and build validation. Shared
+tooling changes in this repository select TaiRouter validation only.
 Fixture sign-in and inference tests do not establish real account consent, model
 discovery, token renewal, revocation or plan-backed generation. Record those
 unperformed checks separately from static build success and Cloudflare acceptance.

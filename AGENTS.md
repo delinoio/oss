@@ -35,7 +35,6 @@
 - Committing may require workspace binaries (for example, git hooks). If required binaries are missing, run `pnpm install` at the repository root and retry the commit.
 - Workspace crate publication on main pushes uses the verified prebuilt cargo-mono and shares serialization with manual releases. Keep remote release-tag publication with its existing owner; follow `docs/repository-workflow-contract.md`.
 - CI changes must preserve default affected manual validation and exclude macOS runners from PRs, main pushes and affected manual runs. Do not add a full manual CI mode; retain owning release platform gates and follow `docs/repository-workflow-contract.md`.
-- Independent Labs documentation uses `pnpm dev:labs-docs`; follow `docs/apps-labs-docs-foundation.md` for fixed loopback development and preview ports.
 - Documentation development uses `pnpm dev:public-docs` on the fixed port in `docs/apps-public-docs-foundation.md`; port conflicts fail.
 - Keep `.infisical.json`, `.dev-environment/`, real `.env` files, user credentials, and production/release/signing credentials uncommitted. Service-local `.env.example` files contain names, validation guidance, placeholders, and safe loopback defaults only; do not add a root environment example or expose internal secret paths in public product docs.
 - After addressing pull request review comments and pushing updates, mark the corresponding review threads as resolved.
@@ -83,8 +82,8 @@
 - `docs/apps-pnport-docs-foundation.md`: pnport public guide routes and availability contract.
 - `docs/project-nodeup.md`: Node.js version manager project index.
 - `docs/project-with-watch.md`: Command rerun watcher CLI project index.
-- `docs/project-labs-site.md`: Delino Labs static marketing site project index.
-- `docs/apps-labs-site-foundation.md`: labs-site static build, development, and Cloudflare Pages contract.
+- `docs/project-labs-site.md`: Delino Labs marketing site external ownership record.
+- `docs/apps-labs-site-foundation.md`: labs-site external repository boundary.
 - `docs/project-public-docs.md`: Public docs app project index.
 - `docs/packages-docs-site-switcher-contract.md`: Shared accessible documentation site selector package contract.
 - `docs/project-serde-feather.md`: Serde Feather multi-crate project index.
@@ -199,3 +198,5 @@
 - [Repository workflow](docs/repository-workflow-contract.md) owns CI, release, allocation-validation records and validation procedures.
 - [Environment ownership](docs/repository-environment-contract.md) owns development selectors, service configuration, child environments and shutdown.
 - Read scoped instructions in every affected domain, including cross-domain consumers.
+
+- Labs Site and Labs Docs are maintained in `delinoio/apps`; this repository retains their boundary contracts only.
