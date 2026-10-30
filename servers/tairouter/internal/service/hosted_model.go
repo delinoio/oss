@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/delinoio/oss/packages/tairouter/inference"
 	"github.com/delinoio/oss/packages/tairouter/inference/hosted"
 	"github.com/delinoio/oss/packages/tairouter/inference/policy"
+	"github.com/delinoio/oss/packages/tairouter/inference/providers/google"
 )
 
 // Standard wires use the same lossless translators as core. Specialized provider
@@ -199,6 +201,9 @@ func (o *hostedOperation) model(ctx context.Context, args map[string]any) (hoste
 		return hosted.OperationResult{}, e
 	}
 	adapter := o.resolver.adapters[o.target.Wire]
+	if o.backend == "gemini" && o.request.Kind == hosted.Search {
+		adapter = o.resolver.adapters[google.WireAntigravity]
+	}
 	if adapter == nil {
 		adapter = hostedStandardAdapter{}
 	}
@@ -251,6 +256,10 @@ func (o *hostedOperation) model(ctx context.Context, args map[string]any) (hoste
 		}
 	}
 	if e != nil {
+		var validation hostedValidationRefusal
+		if errors.As(e, &validation) && o.request.Kind == hosted.Search && o.backend == "gemini" {
+			return o.recoverValidation(ctx, args, e)
+		}
 		return hosted.OperationResult{}, e
 	}
 	if response == nil || response.Body == nil {

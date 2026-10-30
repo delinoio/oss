@@ -30,6 +30,56 @@ type hostedTransport struct {
 	record                func(context.Context, string, store.Usage) error
 	price                 func(*store.Usage, inference.Usage)
 	provider, model, base string
+	validationRefusal     bool
+	headersSeen           atomic.Bool
+}
+
+// hostedValidationRefusal carries only the classification, never the provider body.
+type hostedValidationRefusal struct{ error }
+
+func (e hostedValidationRefusal) Unwrap() error { return e.error }
+
+func completeHostedValidation(body io.ReadCloser) bool {
+	defer body.Close()
+	// Closing the body interrupts both a missing first byte and an idle read.
+	deadline := time.Now().Add(2 * time.Second)
+	timer := time.AfterFunc(2*time.Second, func() { body.Close() })
+	defer timer.Stop()
+	var raw []byte
+	buf := make([]byte, 512)
+	for {
+		n, err := body.Read(buf)
+		if n > 0 {
+			raw = append(raw, buf[:n]...)
+			if len(raw) > 4096 {
+				return false
+			}
+		}
+		if err == io.EOF {
+			if !time.Now().Before(deadline) {
+				return false
+			}
+			var envelope struct {
+				Error struct {
+					Details []struct {
+						Reason string `json:"reason"`
+					} `json:"details"`
+				} `json:"error"`
+			}
+			if json.Unmarshal(raw, &envelope) != nil {
+				return false
+			}
+			for _, detail := range envelope.Error.Details {
+				if detail.Reason == "VALIDATION_REQUIRED" {
+					return true
+				}
+			}
+			return false
+		}
+		if err != nil {
+			return false
+		}
+	}
 }
 
 func hostedRead(body io.ReadCloser, limit int64) ([]byte, error) {
@@ -281,7 +331,12 @@ func (t *hostedTransport) Do(ctx context.Context, r inference.AdapterRequest) (*
 	if r.AttemptTimeout > 0 {
 		ctx, cancel = context.WithTimeout(ctx, r.AttemptTimeout)
 	}
-	req, e := http.NewRequestWithContext(ctx, r.Method, r.URL, bytes.NewReader(r.Body))
+	// Adapter requests use the core executor's POST default.
+	method := r.Method
+	if method == "" {
+		method = http.MethodPost
+	}
+	req, e := http.NewRequestWithContext(ctx, method, r.URL, bytes.NewReader(r.Body))
 	if e != nil {
 		if cancel != nil {
 			cancel()
@@ -311,13 +366,22 @@ func (t *hostedTransport) Do(ctx context.Context, r inference.AdapterRequest) (*
 		}
 		return nil, e
 	}
+	t.headersSeen.Store(true)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		resp.Body.Close()
+		validation := resp.StatusCode == http.StatusForbidden && t.validationRefusal && completeHostedValidation(resp.Body)
+		if !validation {
+			resp.Body.Close()
+		}
 		u.Outcome = store.OutcomeUpstreamError
 		if resp.StatusCode == http.StatusTooManyRequests {
 			u.Outcome = store.OutcomeRateLimited
 		}
-		e = errors.Join(&inference.Error{Status: resp.StatusCode, Code: "hosted_upstream_error"}, t.finishExchange(ctx, id, u, inference.Usage{}))
+		original := &inference.Error{Status: resp.StatusCode, Code: "hosted_upstream_error"}
+		receiptErr := t.finishExchange(ctx, id, u, inference.Usage{})
+		e = errors.Join(original, receiptErr)
+		if validation && receiptErr == nil && ctx.Err() == nil {
+			e = hostedValidationRefusal{e}
+		}
 		if cancel != nil {
 			cancel()
 		}
