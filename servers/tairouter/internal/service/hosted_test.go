@@ -48,7 +48,11 @@ func TestHostedPhysicalBudgetAndIndependentReceipts(t *testing.T) {
 		return start(c)
 	})
 	for i := 0; i < 3; i++ {
-		_, e := tr.Do(ctx, inference.AdapterRequest{Method: "POST", URL: srv.URL})
+		resp, e := tr.Do(ctx, inference.AdapterRequest{Method: "POST", URL: srv.URL})
+		if e == nil {
+			_, e = io.Copy(io.Discard, resp.Body)
+			e = errors.Join(e, resp.Body.Close())
+		}
 		if (e != nil) != (i == 2) {
 			t.Fatalf("send %d: %v", i, e)
 		}
@@ -92,7 +96,11 @@ func TestHostedAmbiguousCancellationAndReceiptFailure(t *testing.T) {
 				}
 				return nil
 			}}
-			_, e := tr.Do(ctx, inference.AdapterRequest{Method: "POST", URL: srv.URL})
+			resp, e := tr.Do(ctx, inference.AdapterRequest{Method: "POST", URL: srv.URL})
+			if e == nil {
+				_, e = io.Copy(io.Discard, resp.Body)
+				e = errors.Join(e, resp.Body.Close())
+			}
 			if e == nil || len(got) != 1 {
 				t.Fatalf("err=%v receipts=%d", e, len(got))
 			}

@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -1084,11 +1085,24 @@ func (s *streamReceipts) values() ([]any, error) {
 func AggregateResponse(ctx context.Context, resp *http.Response, wire Wire) (json.RawMessage, error) {
 	return aggregateResponse(ctx, resp, wire, 32<<20)
 }
-func aggregateResponse(ctx context.Context, resp *http.Response, wire Wire, maxBytes int64) (json.RawMessage, error) {
+func aggregateResponse(ctx context.Context, resp *http.Response, wire Wire, maxBytes int64) (body json.RawMessage, resultErr error) {
 	if resp == nil || resp.Body == nil {
 		return nil, &Error{502, "missing_upstream_body", 0}
 	}
-	defer resp.Body.Close()
+	usage := Usage{}
+	defer func() {
+		// Terminal-aware adapters may stop before HTTP EOF. Closing the owned
+		// body finalizes its receipt and must succeed before content is accepted.
+		if closeErr := resp.Body.Close(); closeErr != nil {
+			if resultErr == nil && len(body) != 0 {
+				if completed, err := decode(body); err == nil {
+					mergeUsage(&usage, readUsage(completed, Chat))
+				}
+			}
+			resultErr = errors.Join(resultErr, closeErr)
+			body, _ = json.Marshal(object{"usage": usageObject(usage, Chat)})
+		}
+	}()
 	stop := context.AfterFunc(ctx, func() { resp.Body.Close() })
 	defer stop()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -1108,7 +1122,6 @@ func aggregateResponse(ctx context.Context, resp *http.Response, wire Wire, maxB
 		return TranslateResponseJSON(b, wire, Chat)
 	}
 	acc := newTranslationStream(wire)
-	usage := Usage{}
 	var final object
 	terminal := false
 	size := 0
