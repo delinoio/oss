@@ -37,7 +37,6 @@ const achFiles = [
   "packaging/async-commit-hook/release-metadata.json",
 ];
 const files = [
-  "packaging/tairouter/npm/package.json",
   "Cargo.lock",
   "packages/clibox/package.json",
   "packages/pnport/package.json",
@@ -773,16 +772,3 @@ for (const project of [Project.Binpm, Project.Pnport, Project.AsyncCommitHook])
     );
     assert.equal(git(state.remote, ["tag", "--list"]), plan.tag);
   });
-
-test("TaiRouter version preparation rejects a renamed package and ambiguous version fields", () => {
-  const file = "packaging/tairouter/npm/package.json";
-  for (const source of [
-    read(file).replace("@delino/tairouter", "@other/tairouter"),
-    read(file).replace('  "version":', '  "version": "0.0.0",\n  "version":'),
-  ])
-    assert.throws(() =>
-      versionChanges(Project.TaiRouter, Bump.Patch, (candidate) =>
-        candidate === file ? source : read(candidate),
-      ),
-    );
-});

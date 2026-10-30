@@ -2,7 +2,7 @@
 
 ## Repository boundary
 
-Labs Site and Labs Docs source, catalogs, routes, generation and CI are owned by `delinoio/apps`. The Labs rules below describe that external integration; use the [destination contract](https://github.com/delinoio/apps/blob/main/docs/apps-labs-localization-contract.md) for current app procedures. This repository retains `scripts/localization` for the TaiRouter console and owns its fixture validation and local authentication. The two repositories maintain separate tooling copies; this migration does not move console catalogs or credentials.
+Labs Site and Labs Docs source, catalogs, routes, generation and CI are owned by `delinoio/apps`. The Labs rules below describe that external integration; use the [destination contract](https://github.com/delinoio/apps/blob/main/docs/apps-labs-localization-contract.md) for current app procedures. This repository no longer owns localization tooling or console catalogs. The requirements below describe the external apps and their destination-owned tooling.
 
 ## Ownership and routes
 
@@ -13,17 +13,13 @@ English (`en`) is the source language. Both apps register Korean (`ko`), Japanes
 (`de`) and Brazilian Portuguese (`pt-BR`). English URLs remain unprefixed;
 other languages use `/<lang>/`. Language selection is explicit, with no browser
 language redirect. Rspress owns documentation navigation, search, language
-selection and HTML language metadata. The marketing root and its language variants publish an indexable Delino Labs product landing page with localized catalog text and explicit language selection. The TaiRouter
-product page uses `/tairouter/` and `/<lang>/tairouter/`, localized catalog text
-and an explicit language menu; its product routes permit indexing.
+selection and HTML language metadata. The marketing root and its language variants publish an indexable Delino Labs product landing page with localized catalog text and explicit language selection.
 
 Documentation source pages live in `apps/labs-docs/docs/en`. Target pages live in
 sibling language directories. Only these curated public pages and app catalogs
 are translation input. Internal `docs/` contracts are never translation input.
 Theme catalog entries retain their MIT attribution and license in
 `apps/labs-docs/i18n`; copies in `docs/public` ship with the static build.
-
-The TaiRouter console also consumes this shared tooling. Its catalog, browser behavior and language selection are owned by the [TaiRouter console contract](apps-tairouter-console-contract.md#localization); the Labs route rules above do not apply to console routes.
 
 ## Maintainer commands
 
@@ -51,7 +47,7 @@ marketing text requires its own product/design work and catalog integration.
 
 ## Generation and validation
 
-`scripts/localization/` owns local authentication, incremental generation and
+The destination repository's `scripts/localization/` owns local authentication, incremental generation and
 offline structural validation. It derives from the Apache-2.0 Delino Apps
 tooling. Catalog values are batched in groups of at most 40; Markdown pages are
 individual units. Completed batches are saved with SHA-256 source fingerprints.
@@ -65,13 +61,7 @@ Checks reject missing/stale output, extra keys/pages, changed placeholders, code
 spans, code fences, link destinations, heading structure or structural frontmatter.
 The tool localizes absolute internal Markdown links after validating output.
 MDX and symbolic links are rejected. The inherited exact `sourceOnly` policy is
-available only for an explicit owning product requirement; Labs Docs declares the eleven migrated `tairouter/*.md` and
-`tairouter/guide/*.md` pages by exact path as English-only under the TaiRouter
-public documentation contract. This initial publication preserves the complete
-English guidance without labelling it as translated content. Every localized
-Labs sidebar labels the group as English and links to those unprefixed routes.
-All other Labs documentation pages and all marketing catalog messages require
-registered translations. Structural checks do not establish linguistic accuracy.
+available only for an explicit owning product requirement. Other documentation pages and marketing catalog messages require registered translations. Structural checks do not establish linguistic accuracy.
 
 ## Authentication and inference
 
@@ -99,8 +89,7 @@ tokens into static apps or CI artifacts.
 
 ## Acceptance boundaries
 
-Destination app tests run offline localization fixtures and build validation. Shared
-tooling changes in this repository select TaiRouter validation only.
+Destination app tests run offline localization fixtures and build validation.
 Fixture sign-in and inference tests do not establish real account consent, model
 discovery, token renewal, revocation or plan-backed generation. Record those
 unperformed checks separately from static build success and Cloudflare acceptance.

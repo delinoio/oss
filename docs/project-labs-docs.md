@@ -20,7 +20,7 @@ The `labs-docs` application is maintained in `delinoio/apps`. This repository re
 
 ## Cross-Domain Invariants
 
-The canonical public origin remains `https://docs.labs.delino.io`. TaiRouter runtime, console, protocols and distributions remain in `delinoio/oss`. Builds, development commands, localization catalogs and application validation are owned by the destination. Production cutover requires separate Cloudflare account, domain and HTTP acceptance; source relocation does not establish deployment.
+The canonical public origin remains `https://docs.labs.delino.io`. Builds, development commands, localization catalogs and application validation are owned by the destination. Production cutover requires separate Cloudflare account, domain and HTTP acceptance; source relocation does not establish deployment.
 
 ## Change Policy
 

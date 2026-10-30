@@ -69,7 +69,3 @@ The full Rust run exposed an existing concurrent-publication fixture assumption:
 ## Retired DeliDev dependencies
 
 The desktop shell removes the Worker encryption adapter. Dependency removal does not establish a clean vulnerability audit for the remaining workspace; retain scanner results and unresolved advisories in PR/CI records.
-
-## TaiRouter dependency integration
-
-The TaiRouter console test graph uses `source-map-js` 1.2.2 through a root override because its imported jsdom/css-tree resolution accepts an older vulnerable version. Remove the override when the upstream dependency requires a safe minimum and a fresh audit confirms the graph. Preserve unresolved advisories from other workspace packages in PR/CI audit records.

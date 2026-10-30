@@ -10,6 +10,5 @@
 
 ## Owning contracts
 
-- [TaiRouter release operations](../docs/servers-tairouter-operations-contract.md)
 - [pnport](../docs/project-pnport.md)
 - [Repository Workflow Contract](../docs/repository-workflow-contract.md)

@@ -1,3 +1,0 @@
--- SPDX-License-Identifier: Apache-2.0
-CREATE TABLE IF NOT EXISTS {{temp}}.compaction_handoffs(org_id text NOT NULL,user_id text NOT NULL,key_id text NOT NULL REFERENCES {{schema}}.api_keys ON DELETE CASCADE,namespace text NOT NULL DEFAULT 'compaction-handoff',id text NOT NULL,generation bigint NOT NULL,value bytea NOT NULL,size bigint NOT NULL,last_used_at timestamptz NOT NULL DEFAULT clock_timestamp(),expires_at timestamptz NOT NULL,PRIMARY KEY(org_id,user_id,key_id,id),FOREIGN KEY(org_id,user_id) REFERENCES {{schema}}.memberships ON DELETE CASCADE);
-INSERT INTO {{schema}}.schema_versions VALUES(11) ON CONFLICT DO NOTHING;

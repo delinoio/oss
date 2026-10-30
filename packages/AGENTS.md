@@ -15,6 +15,3 @@
 - [packages-docs-site-switcher-contract](../docs/packages-docs-site-switcher-contract.md)
 - [pnport npm and native distribution](../docs/packages-pnport-distribution-contract.md)
 - [pnport](../docs/project-pnport.md)
-
-- [TaiRouter](../docs/project-tairouter.md)
-- [TaiRouter domain contract](../docs/packages-tairouter-libraries-contract.md)

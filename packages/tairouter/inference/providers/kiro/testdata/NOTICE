@@ -1,7 +1,0 @@
-blue-purple-pink.lossless.webp and blue-purple-pink.lossy.webp are unmodified
-test fixtures from golang.org/x/image v0.47.0, testdata/ with identical names.
-Source: https://go.googlesource.com/image/+/refs/tags/v0.47.0/testdata/
-Copyright 2009 The Go Authors. See LICENSE.x-image for the original BSD terms.
-These imported fixtures are not relicensed under the repository's Apache-2.0
-default. BMP and TIFF fixtures in codec_test.go are generated synthetic images
-by repository-owned test code; they do not contain imported image content.

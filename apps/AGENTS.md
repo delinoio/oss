@@ -41,8 +41,4 @@
 - [Prebuilt dependency distribution](../docs/repository-prebuilt-dependencies-contract.md)
 - [Repository Workflow Contract](../docs/repository-workflow-contract.md)
 
-- [TaiRouter](../docs/project-tairouter.md)
-- [TaiRouter domain contract](../docs/apps-tairouter-console-contract.md)
-- [TaiRouter public documentation](../docs/apps-tairouter-docs-contract.md): Labs Docs owns the English public guides; Labs Site owns the localized product page. The consolidated public-docs app does not publish this product.
-
 - Labs Site and Labs Docs are maintained in `delinoio/apps`; this repository retains their boundary contracts only.

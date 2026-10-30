@@ -45,7 +45,7 @@ const legacyJobs = [
   "pnport-native",
 ];
 const releaseJobs = ["release-contracts"];
-const achJobs = ["async-commit-hook", "tairouter"];
+const achJobs = ["async-commit-hook"];
 
 function step(job, id) {
   return job.steps.find((candidate) => candidate.id === id);

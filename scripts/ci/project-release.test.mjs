@@ -355,7 +355,6 @@ test("Source and tap tokens are separately scoped and project release triggers r
       [
         Project.CargoMono,
         Project.Runmoor,
-        Project.TaiRouter,
         Project.Clibox,
         Project.Pnport,
       ].includes(project)

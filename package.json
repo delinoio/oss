@@ -22,17 +22,7 @@
     "proto:fresh": "turbo run ci:proto:fresh --filter=@delinoio/ci",
     "proto:check": "turbo run ci:proto:check --filter=@delinoio/ci",
     "dev:async-commit-hook": "pnpm --filter async-commit-hook dev",
-    "format:check": "turbo run ci:format --filter=@delinoio/ci",
-    "dev:tairouter": "node scripts/tairouter/local.mjs",
-    "i18n:check": "pnpm -r --workspace-concurrency=2 --if-present run i18n:check",
-    "i18n:translate": "pnpm -r --workspace-concurrency=2 --if-present run i18n:translate",
-    "i18n:login": "node scripts/localization/cli.mjs login",
-    "i18n:logout": "node scripts/localization/cli.mjs logout",
-    "i18n:models": "node scripts/localization/cli.mjs models",
-    "i18n:profiles": "node scripts/localization/cli.mjs profiles",
-    "dev:tairouter:stop": "node scripts/tairouter/local.mjs stop",
-    "dev:tairouter:logs": "node scripts/tairouter/local.mjs logs",
-    "dev:tairouter:source": "turbo run dev --filter=@tairouter/server --filter=@tairouter/console"
+    "format:check": "turbo run ci:format --filter=@delinoio/ci"
   },
   "pnpm": {
     "overrides": {
@@ -73,7 +63,6 @@
     "js-yaml": "4.3.2",
     "lefthook": "2.2.2",
     "rstack": "0.8.3",
-    "turbo": "2.9.18",
-    "jose": "6.2.12"
+    "turbo": "2.9.18"
   }
 }

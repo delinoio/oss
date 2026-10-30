@@ -14,6 +14,3 @@
 ## Owning contracts
 
 - [async-commit-hook v1 protocol contract](../docs/protos-async-commit-hook-v1-contract.md)
-
-- [TaiRouter](../docs/project-tairouter.md)
-- [TaiRouter domain contract](../docs/protos-tairouter-management-contract.md)

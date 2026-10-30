@@ -13,6 +13,3 @@
 ## Owning contracts
 
 - [Repository Environment Contract](../docs/repository-environment-contract.md)
-
-- [TaiRouter](../docs/project-tairouter.md)
-- [TaiRouter domain contract](../docs/servers-tairouter-service-contract.md), including internal package ownership and dependency boundaries for `servers/tairouter/internal`.

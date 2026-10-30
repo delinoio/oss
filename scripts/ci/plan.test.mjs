@@ -59,7 +59,7 @@ test("rustfmt configuration selects only formatting on PRs and main pushes", () 
     }
     assert.deepEqual(
       selected(event, [".rustfmt.toml", "docs/project-with-watch.md"]),
-      ["rust-fmt", "source-format", "tairouter"],
+      ["rust-fmt", "source-format"],
     );
     const source = "crates/binpm/src/main.rs";
     assert.deepEqual(
@@ -68,7 +68,6 @@ test("rustfmt configuration selects only formatting on PRs and main pushes", () 
     );
     assert.deepEqual(selected(event, ["docs/project-with-watch.md"]), [
       "source-format",
-      "tairouter",
     ]);
   }
 });
@@ -212,7 +211,6 @@ test("Go report runner changes select native Go tests without widening other job
     }
     assert.deepEqual(selected(event, ["docs/project-with-watch.md"]), [
       "source-format",
-      "tairouter",
     ]);
     assert.equal(
       planJobs(event, ["scripts/ci/go-test.mjs"]).jobs["go-test"],
@@ -414,11 +412,10 @@ test("main selects affected non-Mac native jobs; manual skips native jobs", () =
   assert.deepEqual(selected(Event.Manual, []), []);
   assert.deepEqual(selected(Event.Push, ["docs/project-with-watch.md"]), [
     "source-format",
-    "tairouter",
   ]);
   assert.deepEqual(
     selected(Event.PullRequest, ["docs/project-with-watch.md"]),
-    ["source-format", "tairouter"],
+    ["source-format"],
   );
   assert.deepEqual(selected(Event.Push, []), []);
 });
@@ -642,7 +639,7 @@ test("integrated project docs select the public-docs workspace and shared inputs
       assert.equal(plan.forced[id], true, path);
     }
     for (const path of ["docs/project-runmoor.md"]) {
-      assert.deepEqual(selected(event, [path]), ["source-format", "tairouter"]);
+      assert.deepEqual(selected(event, [path]), ["source-format"]);
     }
     const needs = results(event, paths);
     assert.equal(validateResults(needs), true);
@@ -1294,51 +1291,6 @@ test("CI Result requires every selected formatting job to succeed", () => {
       const needs = results(event, ["docs/guide.md"]);
       needs["source-format"].result = result;
       assert.throws(() => validateResults(needs), /source-format/);
-    }
-  }
-});
-
-test("TaiRouter shared Go libraries and fixtures select Go validation", () => {
-  for (const event of Object.values(Event)) {
-    for (const path of [
-      "packages/tairouter/core/ids.go",
-      "scripts/tairouter/fixture/main.go",
-    ]) {
-      const plan = planJobs(event, [path]);
-      assert.equal(plan.jobs["go-test"], true, `${event}: ${path}`);
-      assert.equal(plan.jobs["go-quality"], true, `${event}: ${path}`);
-    }
-  }
-});
-
-test("TaiRouter validation follows affected selection and fails the aggregate on missing results", () => {
-  for (const event of Object.values(Event)) {
-    for (const path of [
-      "servers/tairouter/main.go",
-      "cmds/tairouter/main.go",
-      "packages/tairouter/core/ids.go",
-      "packages/tairouter-client/src/gen/api.ts",
-      "protos/tairouter/v1/management.proto",
-      "apps/tairouter/src/main.tsx",
-      "scripts/tairouter/compose-smoke.py",
-      "scripts/localization/cli.mjs",
-      "packaging/tairouter/compose.yml",
-      "docs/project-tairouter.md",
-      "go.mod",
-      "buf.gen.yaml",
-      ".github/workflows/CI.yml",
-    ]) {
-      const needs = results(event, [path]);
-      assert.equal(planJobs(event, [path]).jobs.tairouter, true, path);
-      assert.equal(validateResults(needs), true);
-      for (const result of ["failure", "cancelled", "skipped"]) {
-        needs.tairouter.result = result;
-        assert.throws(() => validateResults(needs), /tairouter/u);
-      }
-    }
-    for (const path of ["crates/binpm/src/main.rs", "cmds/runmoor/main.go"]) {
-      assert.equal(planJobs(event, [path]).jobs.tairouter, false, path);
-      assert.equal(validateResults(results(event, [path])), true);
     }
   }
 });
