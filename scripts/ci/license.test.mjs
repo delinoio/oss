@@ -73,8 +73,4 @@ test("owned archive licenses and upstream notices remain distinct", () => {
     read("crates/fspy_detours_sys/detours/LICENSE"),
     /Copyright \(c\) Microsoft Corporation/u,
   );
-  assert.match(
-    read("apps/devhud/src-tauri/assets/fonts/noto-sans-kr/LICENSE"),
-    /SIL OPEN FONT LICENSE/u,
-  );
 });

@@ -10,10 +10,10 @@
     "build:frontend": "pnpm build",
     "typecheck": "tsc --noEmit",
     "lint": "pnpm typecheck",
-    "test": "pnpm --filter @delinoio/async-commit-hook-api-client build && pnpm typecheck && vitest run && pnpm build && node --test scripts/*.test.mjs",
-    "test:unit": "vitest run",
-    "test:components": "vitest run",
-    "test:accessibility": "vitest run",
+    "test": "pnpm --filter @delinoio/async-commit-hook-api-client build && pnpm typecheck && rstest && pnpm build && node --test scripts/*.test.mjs",
+    "test:unit": "rstest",
+    "test:components": "rstest",
+    "test:accessibility": "rstest",
     "build:embedded": "node scripts/embed.mjs --clean && pnpm --filter @delinoio/async-commit-hook-api-client build && pnpm build && node scripts/embed.mjs",
     "ci:embedded": "pnpm build:embedded",
     "ci:contracts": "node --test scripts/*.test.mjs"
@@ -37,6 +37,6 @@
     "@types/react-dom": "19.2.3",
     "jsdom": "20.0.3",
     "typescript": "5.9.3",
-    "vitest": "4.1.11"
+    "@rstest/core": "0.12.5"
   }
 }

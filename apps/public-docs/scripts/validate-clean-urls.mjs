@@ -141,74 +141,6 @@ const pnportHeadings = {
   ],
 };
 
-const bundlewhyHeadings = {
-  "/bundlewhy/": [
-    "bundlewhy",
-    "What each diagnostic shows",
-    "Where it runs",
-    "Guides",
-  ],
-  "/bundlewhy/installation": [
-    "Install bundlewhy",
-    "Requirements",
-    "Planned platforms",
-    "Planned npm entry point",
-    "Update or roll back",
-  ],
-  "/bundlewhy/getting-started": [
-    "Getting started with bundlewhy",
-    "Analyze a project",
-    "Select the project, configuration and bundler",
-    "Cancel or stop",
-    "Open a saved run",
-    "Export an HTML report",
-    "Exit codes",
-  ],
-  "/bundlewhy/supported-engines": [
-    "Supported engines",
-    "Compatibility matrix",
-    "Other engine versions",
-    "Non-default minifiers",
-    "The diagnostic build",
-    "Supported builds",
-  ],
-  "/bundlewhy/interpreting-diagnostics": [
-    "Interpreting diagnostics",
-    "Evidence statuses",
-    "Coverage",
-    "Rules",
-    "Conditions",
-    "Locations",
-    "Dependency paths",
-    "Corrective direction",
-    "Chunk sizes",
-  ],
-  "/bundlewhy/privacy-and-export": [
-    "Privacy and export",
-    "Where results are stored",
-    "Exported reports",
-    "Local server",
-    "Logs",
-    "Trust model",
-  ],
-  "/bundlewhy/limitations": [
-    "Limitations",
-    "Analysis scope",
-    "Runs and results",
-    "Interface",
-  ],
-  "/bundlewhy/troubleshooting": [
-    "Troubleshooting bundlewhy",
-    "Project and configuration selection",
-    "Engine and Node.js",
-    "Build and collection",
-    "Result and report problems",
-    "Local server and browser",
-    "Logs",
-    "Support",
-  ],
-};
-
 const stableRouteIds = [
   ...Object.entries(projectRoutes).flatMap(([slug, routes]) =>
     routes.map((route) => `/${slug}${route}`),
@@ -218,19 +150,11 @@ const stableRouteIds = [
   "/projects-overview",
   "/documentation-lifecycle",
   "/linux-packages",
-  "/devhud",
-  "/devhud/install",
-  "/devhud/guide",
-  "/devhud/privacy",
-  "/devhud/security",
-  "/devhud/support",
-  "/devhud/admin",
-  "/devhud/releases",
   "/cargo-mono",
   "/with-watch",
 ];
 const projectSlugs = Object.keys(projectRoutes).filter(
-  (slug) => slug !== "clibox" && slug !== "pnport" && slug !== "bundlewhy",
+  (slug) => slug !== "clibox" && slug !== "pnport",
 );
 
 const outputDir = path.resolve("doc_build");
@@ -312,53 +236,6 @@ function attributeValue(match) {
 const requiredHeadings = new Map([
   ...Object.entries(cliboxHeadings),
   ...Object.entries(pnportHeadings),
-  ...Object.entries(bundlewhyHeadings),
-  ["/devhud", ["DevHud"]],
-  [
-    "/devhud/install",
-    [
-      "Install and Verify DevHud",
-      "Desktop",
-      "Mobile stores",
-      "Chrome extension",
-    ],
-  ],
-  [
-    "/devhud/guide",
-    [
-      "Using DevHud",
-      "First run and identity",
-      "Settings and PAT profiles",
-      "Capture, drafts, and browser context",
-      "Decks and widgets",
-    ],
-  ],
-  [
-    "/devhud/privacy",
-    [
-      "DevHud Privacy",
-      "What is stored",
-      "Public images",
-      "Account deletion and recovery",
-      "Diagnostics",
-    ],
-  ],
-  [
-    "/devhud/security",
-    [
-      "DevHud Security",
-      "Secure operation",
-      "Updates and key rotation",
-      "Custom API origins",
-      "Reporting",
-    ],
-  ],
-  [
-    "/devhud/support",
-    ["DevHud Support", "Troubleshooting", "Uninstall", "Help and reports"],
-  ],
-  ["/devhud/admin", ["DevHud Administration"]],
-  ["/devhud/releases", ["DevHud Releases"]],
 ]);
 const requiredLinks = new Map([
   [
@@ -422,32 +299,6 @@ const requiredLinks = new Map([
   ],
   ["/pnport/diagnostics", ["/pnport/cache"]],
   [
-    "/bundlewhy/",
-    [
-      "/bundlewhy/installation",
-      "/bundlewhy/getting-started",
-      "/bundlewhy/supported-engines",
-      "/bundlewhy/interpreting-diagnostics",
-      "/bundlewhy/privacy-and-export",
-      "/bundlewhy/limitations",
-      "/bundlewhy/troubleshooting",
-      "https://github.com/delinoio/oss/issues",
-    ],
-  ],
-  [
-    "/bundlewhy/installation",
-    ["/bundlewhy/supported-engines", "/bundlewhy/getting-started"],
-  ],
-  [
-    "/bundlewhy/getting-started",
-    [
-      "/bundlewhy/supported-engines",
-      "/bundlewhy/privacy-and-export",
-      "/bundlewhy/interpreting-diagnostics",
-    ],
-  ],
-  ["/bundlewhy/troubleshooting", ["/bundlewhy/supported-engines"]],
-  [
     "/",
     [
       "https://oss.delino.io/runmoor/",
@@ -456,7 +307,6 @@ const requiredLinks = new Map([
       "https://oss.delino.io/async-commit-hook/",
       "https://oss.delino.io/clibox/",
       "https://oss.delino.io/pnport/",
-      "https://oss.delino.io/bundlewhy/",
     ],
   ],
   [
@@ -468,23 +318,8 @@ const requiredLinks = new Map([
       "https://oss.delino.io/async-commit-hook/",
       "https://oss.delino.io/clibox/",
       "https://oss.delino.io/pnport/",
-      "https://oss.delino.io/bundlewhy/",
     ],
   ],
-  [
-    "/devhud",
-    [
-      "/devhud/install",
-      "/devhud/privacy",
-      "/devhud/security",
-      "/devhud/support",
-    ],
-  ],
-  [
-    "/devhud/install",
-    ["/devhud/releases", "/devhud/security", "/devhud/support"],
-  ],
-  ["/devhud/guide", ["/devhud/privacy", "/devhud/security", "/devhud/support"]],
 ]);
 
 function articleContent(contents) {
@@ -704,7 +539,7 @@ function containsCredentialBearingResource(contents, htmlFile) {
 }
 
 const forbiddenContent = [
-  /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)|Authorization:\s*Bearer)/iu,
+  /(?:GH_TOKEN|EXAMPLE_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)|Authorization:\s*Bearer)/iu,
   /(?:"(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key)"|(?:token|access[_-]?token|refresh[_-]?token|api[_-]?key))\s*[:=]\s*[^\s<`]+/iu,
   /(?:"(?:private key|signing key|password|access key|secret)"|(?:private key|signing key|password|access key|secret))\s*[:=]\s*[^\s<`]+/iu,
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/iu,
@@ -762,39 +597,39 @@ const forbiddenLinkFixtures = [
   '<a href="https://example.com/callback?oauth_code&equals;abc123">callback</a>',
 ];
 const invalidRouteAttributeFixtures = [
-  '<a href = "/devhud/install.html">install</a>',
-  "<a href=/devhud/install.html>install</a>",
-  '<a href="/devhud/install&#46;html">install</a>',
-  '<form action="/devhud/install.html"></form>',
-  '<button formaction="/devhud/support.html">Support</button>',
+  '<a href = "/cargo-mono.html">install</a>',
+  "<a href=/cargo-mono.html>install</a>",
+  '<a href="/cargo-mono&#46;html">install</a>',
+  '<form action="/cargo-mono.html"></form>',
+  '<button formaction="/with-watch.html">Support</button>',
 ];
 const externalRouteFixtures = [
-  '<a href="https://docs.example.com/devhud/install.html">install</a>',
+  '<a href="https://docs.example.com/cargo-mono.html">install</a>',
 ];
 const forbiddenPathFixtures = [
   '<a href="file://server/share/private.conf">private file</a>',
   '<a href="file://localhost/etc/private.conf">private file</a>',
-  '<a href="../../servers/devhud/config">private repository path</a>',
-  "repository path: servers/devhud/config",
+  '<a href="../../servers/example/config">private repository path</a>',
+  "repository path: servers/example/config",
 ];
 const encodedForbiddenPathFixtures = [
-  '<img src="%2E%2E/%2E%2E/servers/devhud/private.png">',
+  '<img src="%2E%2E/%2E%2E/servers/example/private.png">',
 ];
 const forbiddenResourceFixtures = [
-  '<img src="file:///etc/devhud/private.png">',
-  '<img srcset="../../servers/devhud/private.png 1x">',
-  '<img src = "file:///etc/devhud/private.png">',
-  "<img src=file:///etc/devhud/private.png>",
-  '<img src="file&colon;///etc/devhud/private.png">',
-  '<video poster="file:///etc/devhud/private.png"></video>',
-  '<form action="../../servers/devhud/private-endpoint"></form>',
-  '<button formaction="file:///etc/devhud/private-endpoint">Submit</button>',
-  '<object data="../../servers/devhud/private.pdf"></object>',
+  '<img src="file:///etc/example/private.png">',
+  '<img srcset="../../servers/example/private.png 1x">',
+  '<img src = "file:///etc/example/private.png">',
+  "<img src=file:///etc/example/private.png>",
+  '<img src="file&colon;///etc/example/private.png">',
+  '<video poster="file:///etc/example/private.png"></video>',
+  '<form action="../../servers/example/private-endpoint"></form>',
+  '<button formaction="file:///etc/example/private-endpoint">Submit</button>',
+  '<object data="../../servers/example/private.pdf"></object>',
 ];
 const forbiddenCssResourceFixtures = [
-  '<div style="background-image:url(../../servers/devhud/private.png)"></div>',
-  '<style>.private { background: url("file:///etc/devhud/private.png") }</style>',
-  '<style>@import "../../servers/devhud/private.css";</style>',
+  '<div style="background-image:url(../../servers/example/private.png)"></div>',
+  '<style>.private { background: url("file:///etc/example/private.png") }</style>',
+  '<style>@import "../../servers/example/private.css";</style>',
 ];
 const credentialBearingResourceFixtures = [
   '<img src="https://alice:secret@example.com/image.png">',
@@ -1028,7 +863,7 @@ for (const fixture of forbiddenPathFixtures) {
 }
 
 const forbiddenCommentFixture =
-  "<!-- repository path: servers/devhud/config -->";
+  "<!-- repository path: servers/example/config -->";
 if (
   !forbiddenPathContent.some((pattern) => pattern.test(forbiddenCommentFixture))
 ) {

@@ -1,0 +1,539 @@
+// SPDX-License-Identifier: Apache-2.0
+syntax = "proto3";
+package tairouter.v1;
+
+import "google/protobuf/timestamp.proto";
+import "tairouter/v1/common.proto";
+
+option go_package = "github.com/delinoio/oss/protos/tairouter/v1;tairouterv1";
+
+// User-configurable wires, including the compatible JEV decision service.
+// Other specialized preset adapters remain server-owned.
+enum ProviderWire {
+  PROVIDER_WIRE_UNSPECIFIED = 0;
+  PROVIDER_WIRE_CHAT = 1;
+  PROVIDER_WIRE_RESPONSES = 2;
+  PROVIDER_WIRE_ANTHROPIC = 3;
+  PROVIDER_WIRE_GOOGLE = 4;
+  PROVIDER_WIRE_JEV_DECISION = 5;
+}
+
+// Exact message/reasoning item IDs to repair; empty and absent lists both select none.
+// Presence of this object replaces the preset repair policy as a whole, including
+// an empty object. Omission inherits the destination-matched preset policy.
+message ResponsesItemIdRepair {
+  repeated string message = 1;
+  repeated string reasoning = 2;
+  optional bool repair_invalid_ids = 3;
+  optional bool repair_missing_terminal_ids = 4;
+}
+
+// Each absent field inherits the destination-matched preset policy. Explicit false
+// disables a boolean policy. Do not collapse pointer presence.
+message ProviderPolicyOverrides {
+  optional bool fold_developer_role_to_system = 1;
+  optional bool drop_responses_reasoning_items = 2;
+  optional bool preserve_responses_reasoning_content = 3;
+  optional bool requires_adjacent_responses_tool_results = 4;
+  optional bool requires_paired_responses_tool_results = 5;
+  optional bool stateless_responses = 6;
+  optional bool annotate_empty_tool_outputs = 7;
+  optional bool parallel_tool_calls = 8;
+  optional bool prompt_cache_key = 9;
+  optional bool chat_service_tier = 10;
+  optional bool supports_service_tier = 11;
+  optional bool supports_verbosity = 12;
+  optional bool supports_responses_custom_tools = 13;
+  optional bool supports_open_ai_web_search_tool_fields = 14;
+  // Retired incorrect scalar repair field. Never reuse its wire number.
+  reserved 15;
+  optional bool show_thinking_summary = 16;
+  optional bool escape_builtin_tool_names = 17;
+  ResponsesItemIdRepair responses_item_id_repair = 18;
+  // Explicit fast-mode opt-in. Absent inherits the matched policy; false disables it.
+  optional bool fast_enabled = 19;
+  // Exact model IDs. Missing keys inherit; present false explicitly disables support.
+  // Preserve false entries when serializing or merging policy overrides.
+  map<string, bool> model_supports_service_tier = 20;
+}
+
+// Safe read metadata. Header secret values are deliberately not part of this message.
+message ProviderConfiguration {
+  // Absent inherits the preset; custom connections retain the legacy CHAT default.
+  // Explicit UNSPECIFIED is invalid.
+  optional ProviderWire wire = 1;
+  // Exact model IDs only; validate wire support for the selected provider.
+  map<string, ProviderWire> model_wires = 2;
+  // Origin-relative endpoint paths only: reject schemes, hosts, fragments and credentials.
+  optional string responses_path = 3;
+  optional string chat_completions_path = 4;
+  ProviderPolicyOverrides policy = 5;
+  // Optional positive Azure output-budget floor. Apply the same effective budget at
+  // admission and serialization. This is not permission to bypass request limits.
+  optional int64 min_max_output_tokens = 6;
+  // Vertex only. Explicit "auto" is API-key-only and resolves through a fixed-host
+  // probe bounded to 10 seconds and 4 KiB. Reject "auto" for OAuth credentials.
+  // Omission must never inherit the service host's ambient project or identity.
+  optional string vertex_project = 7;
+  // Vertex only. OAuth requires an explicit project and location; no ambient defaults.
+  optional string vertex_location = 8;
+}
+
+// WRITE ONLY. Encrypt values with the personal connection; never echo, log, or trace.
+// Reject invalid names/newlines, forbidden transport headers and provider-reserved
+// authentication overrides before generic credential synthesis (including DSH).
+message ProviderCustomHeaders {
+  map<string, string> values = 1;
+}
+
+// Provider IDs are catalog identifiers from the pinned compatibility inventory, not a closed vendor enum.
+message ProviderDefinition {
+  string id = 1;
+  string display_name = 2;
+  repeated ProviderAuthKind auth_kinds = 3;
+  repeated ApiShape api_shapes = 4;
+  // Authoritative eligible methods from the server provider catalog; never include UNSPECIFIED.
+  // An empty list advertises no explicit method selection. Clients may use the server
+  // default when auth_kinds includes OAUTH, but must not infer methods from provider IDs.
+  repeated ProviderOAuthMethod oauth_methods = 5;
+}
+
+// Metadata only. No read RPC exposes credential values, OAuth codes, or tokens.
+message ProviderConnection {
+  string id = 1;
+  string organization_id = 2;
+  string provider_id = 3;
+  string name = 4;
+  string base_url = 5;
+  ProviderAuthKind auth_kind = 6;
+  ConnectionState state = 7;
+  google.protobuf.Timestamp created_at = 8;
+  google.protobuf.Timestamp cooldown_until = 9;
+  optional uint32 stall_timeout_seconds = 10;
+  ProviderConfiguration configuration = 11;
+  // Names only; values remain write-only even for the owner.
+  repeated string custom_header_names = 12;
+}
+message ProviderOAuth {
+  string id = 1;
+  OAuthState state = 2;
+  string authorization_url = 3;
+  google.protobuf.Timestamp expires_at = 4;
+  string connection_id = 5;
+  optional string user_code = 6;
+  optional uint32 poll_interval_seconds = 7;
+  // Public challenge state for callback correlation; never a verifier or device secret.
+  optional string callback_state = 8;
+}
+enum NativePoolStrategy {
+  NATIVE_POOL_STRATEGY_UNSPECIFIED = 0;
+  NATIVE_POOL_STRATEGY_QUOTA = 1;
+  NATIVE_POOL_STRATEGY_ROUND_ROBIN = 2;
+  NATIVE_POOL_STRATEGY_FILL_FIRST = 3;
+  // Codex only.
+  NATIVE_POOL_STRATEGY_RESET_FIRST = 4;
+}
+
+// Codex policy for new threads when a manually pinned account is degraded.
+enum NativePinnedTransientPolicy {
+  NATIVE_PINNED_TRANSIENT_POLICY_UNSPECIFIED = 0;
+  // Keep the pinned account; maps to the upstream hold policy.
+  NATIVE_PINNED_TRANSIENT_POLICY_KEEP = 1;
+  // Place only new threads elsewhere; existing bound threads stay bound.
+  NATIVE_PINNED_TRANSIENT_POLICY_DETOUR_NEW_THREADS = 2;
+}
+
+enum NativeQuotaWindow {
+  NATIVE_QUOTA_WINDOW_UNSPECIFIED = 0;
+  NATIVE_QUOTA_WINDOW_FIVE_HOUR = 1;
+  NATIVE_QUOTA_WINDOW_WEEKLY = 2;
+  NATIVE_QUOTA_WINDOW_MAX_UTILIZATION = 3;
+}
+
+// Ordered Anthropic allowlist, evaluated only while native pooling is enabled.
+// At most 32 rules, with unique names and match patterns. First matching rule wins.
+message NativeModelRoute {
+  // Unique safe name: [A-Za-z0-9][A-Za-z0-9_-]{0,63}.
+  string name = 1;
+  // Unique model glob, at most 128 characters; * and ? are wildcards.
+  // Allowed characters: letters, digits, underscore, dot, slash, colon, *, ?, hyphen.
+  string match = 2;
+  // 1..32 unique stored personal connection IDs, in selection order. Never local accounts.
+  repeated string connection_ids = 3;
+  // If no listed connection is eligible, allow the full eligible roster; default false.
+  bool fallback = 4;
+}
+
+// Provider-native settings for explicitly managed personal pools. Keep anthropic
+// and anthropic2 settings independent; never resolve local CLI credentials.
+message NativePoolOptions {
+  // UNSPECIFIED uses QUOTA. RESET_FIRST is Codex-only.
+  NativePoolStrategy strategy = 1;
+  // Absent uses 1; explicit values must be 1..100.
+  optional uint32 sticky_limit = 2;
+  // Absent uses 80; 0 disables voluntary quota switching; otherwise 1..100.
+  optional uint32 auto_switch_threshold = 3;
+  // Codex only; absent uses true.
+  optional bool cache_affinity = 4;
+  // Anthropic only; UNSPECIFIED uses FIVE_HOUR.
+  NativeQuotaWindow quota_window = 5;
+  // Codex only; case-insensitive plan exclusions.
+  repeated string excluded_plans = 6;
+  // Source/import default is false. Management materializes true when omitted on
+  // explicit native pool creation; explicit false is honored. Generic resolvers
+  // must not infer enablement from absence.
+  optional bool enabled = 7;
+  // Anthropic only; absent uses true. False selects legacy translation.
+  optional bool native_messages = 8;
+  repeated NativeModelRoute routes = 9;
+  // Codex only; absent uses 3. Range 0..20; zero disables consecutive-failure failover.
+  optional uint32 upstream_failover_threshold = 10;
+  // Codex only; absent uses true. False uses only the consecutive-failure counter.
+  optional bool failure_window = 11;
+  // Codex only; absent or UNSPECIFIED uses KEEP. Preserve explicit selection presence.
+  optional NativePinnedTransientPolicy pinned_transient_policy = 12;
+}
+
+message NativePoolMemberOptions {
+  // Absent inherits pool threshold; explicit values must be 0..100.
+  optional uint32 auto_switch_threshold = 1;
+  // Default false; true makes the effective threshold zero.
+  bool use_remaining_quota = 2;
+  // Codex only; default false.
+  bool allow_credits = 3;
+  // Native priority, -100..100, higher first. Does not reinterpret PoolMember.priority.
+  optional sint32 priority = 4;
+}
+
+message PoolMember {
+  string connection_id = 1;
+  uint32 priority = 2;
+  uint32 weight = 3;
+  NativePoolMemberOptions native_options = 4;
+}
+message Pool {
+  string id = 1;
+  string organization_id = 2;
+  string name = 3;
+  PoolStrategy strategy = 4;
+  repeated PoolMember members = 5;
+  // Opt-in generic OAuth session affinity only; default false.
+  // Does not enable or change Codex or Anthropic provider-specific affinity.
+  bool affinity_enabled = 6;
+  // Full native settings. Omitted update settings clear the previous options.
+  NativePoolOptions native_options = 7;
+}
+
+// JEV decision settings are private to the authenticated user in the selected organization.
+// Resolve an independent current credential; never borrow another target's credential.
+// Percentage thresholds. Every provided value must be finite and within 0..100.
+// Validate provided moderate < effective limited < effective nearly_exhausted;
+// omitted limited defaults to 70 and omitted nearly_exhausted defaults to 90.
+// Omitted moderate remains unspecified; do not serialize it as zero.
+message JevQuotaTiers {
+  optional double moderate = 1;
+  optional double limited = 2;
+  optional double nearly_exhausted = 3;
+}
+
+message JevDecisionConfig {
+  // Explicitly selected personal decision connection, including for the canonical JEV service.
+  // No implicit operator/global credential fallback.
+  string decision_connection_id = 1;
+  // Ordinary owner-scoped route alias; takes precedence over decision_connection_id.
+  // Reject aliases that resolve to JEV decision chains or cycles.
+  string decision_model = 2;
+  // Zero uses 4000 ms; otherwise 1000..120000 ms.
+  uint32 decision_timeout_ms = 3;
+  // Zero disables session pinning; otherwise 60..86400 seconds.
+  uint32 session_pin_ttl_seconds = 4;
+  // Backend model for a custom SystemOne decision connection, not an ordinary route alias.
+  // At most 512 UTF-16 code units. The canonical JEV preset ignores this field and
+  // uses jev-latest. decision_model alias selection still takes precedence.
+  string decision_service_model = 5;
+  // Explicit opt-in to quota signals; disabled by default.
+  bool decision_quota_signals = 6;
+  JevQuotaTiers decision_quota_tiers = 7;
+}
+message RouteTarget {
+  oneof target {
+    string connection_id = 1;
+    string pool_id = 2;
+  }
+  string model_id = 3;
+  uint32 priority = 4;
+  uint32 weight = 5;
+  // Allowed JEV target hints: low, medium, high, xhigh, max, ultra.
+  repeated string reasoning_efforts = 6;
+  // Bounded to 512 characters; safe model description, never credentials or request content.
+  string model_profile = 7;
+}
+
+// Opt-in reasoning retention. Runtime context window comes only from trusted model
+// metadata and is deliberately not configurable here.
+message ReasoningRetentionConfig {
+  bool enabled = 1;
+  // Absent or zero uses 20 percent; otherwise finite, greater than 0 and at most 100.
+  optional double max_context_percent = 2;
+  // Absent or zero uses 100000 tokens; otherwise positive.
+  optional uint32 max_tokens = 3;
+}
+
+message Route {
+  string id = 1;
+  string organization_id = 2;
+  string model_id = 3;
+  RoutingStrategy strategy = 4;
+  repeated RouteTarget targets = 5;
+  bool enabled = 6;
+  // Present only for JEV strategy. An absent message means no JEV configuration.
+  JevDecisionConfig jev_decision = 7;
+  // Full replacement. Omission disables retention and clears previous settings.
+  ReasoningRetentionConfig reasoning_retention = 8;
+}
+service ProviderService {
+  rpc ListProviderCatalog(ListProviderCatalogRequest) returns (ListProviderCatalogResponse) {
+    option (auth_scope) = AUTH_SCOPE_WEB_SESSION;
+  }
+  rpc ListProviderConnections(ListProviderConnectionsRequest) returns (ListProviderConnectionsResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc CreateProviderConnection(CreateProviderConnectionRequest) returns (CreateProviderConnectionResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc UpdateProviderConnection(UpdateProviderConnectionRequest) returns (UpdateProviderConnectionResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc DeleteProviderConnection(DeleteProviderConnectionRequest) returns (DeleteProviderConnectionResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc BeginProviderOAuth(BeginProviderOAuthRequest) returns (BeginProviderOAuthResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc GetProviderOAuth(GetProviderOAuthRequest) returns (GetProviderOAuthResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc CompleteProviderOAuth(CompleteProviderOAuthRequest) returns (CompleteProviderOAuthResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc CancelProviderOAuth(CancelProviderOAuthRequest) returns (CancelProviderOAuthResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc ListProviderModels(ListProviderModelsRequest) returns (ListProviderModelsResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+}
+message ListProviderCatalogRequest {}
+message ListProviderCatalogResponse {
+  repeated ProviderDefinition providers = 1;
+}
+message ListProviderConnectionsRequest {
+  string organization_id = 1;
+  PageRequest page = 2;
+}
+message ListProviderConnectionsResponse {
+  repeated ProviderConnection connections = 1;
+  PageResponse page = 2;
+}
+message CreateProviderConnectionRequest {
+  string organization_id = 1;
+  string provider_id = 2;
+  string name = 3;
+  string base_url = 4;
+  ProviderAuthKind auth_kind = 5;
+  optional string api_key = 6;
+  optional uint32 stall_timeout_seconds = 7;
+  ProviderConfiguration configuration = 8;
+  ProviderCustomHeaders custom_headers = 9;
+}
+message CreateProviderConnectionResponse {
+  ProviderConnection connection = 1;
+}
+message UpdateProviderConnectionRequest {
+  string organization_id = 1;
+  string connection_id = 2;
+  optional string name = 3;
+  optional string base_url = 4;
+  optional string api_key = 5;
+  optional bool enabled = 6;
+  optional uint32 stall_timeout_seconds = 7;
+  bool reset_stall_timeout = 8;
+  // Absent preserves configuration; present replaces the complete configuration.
+  // An empty message clears overrides and restores preset/custom defaults.
+  ProviderConfiguration configuration = 9;
+  // Explicit reset alternative. Reject when configuration is also present.
+  // Does not clear headers; supply an empty custom_headers message for that.
+  bool reset_configuration = 10;
+  // Absent preserves headers; present replaces all values; empty clears all headers.
+  ProviderCustomHeaders custom_headers = 11;
+}
+message UpdateProviderConnectionResponse {
+  ProviderConnection connection = 1;
+}
+message DeleteProviderConnectionRequest {
+  string organization_id = 1;
+  string connection_id = 2;
+}
+message DeleteProviderConnectionResponse {}
+message BeginProviderOAuthRequest {
+  string organization_id = 1;
+  string provider_id = 2;
+  string name = 3;
+  optional string connection_id = 4;
+  // Absent options retain provider defaults. Reject unsupported explicit methods.
+  optional ProviderOAuthMethod method = 5;
+  // Validate callback destinations and all endpoint overrides against server policy.
+  optional string redirect_uri = 6;
+  optional string login_provider = 7;
+  optional string sso_region = 8;
+  optional string api_region = 9;
+  optional string start_url = 10;
+  optional string base_url = 11;
+  optional string auth_base_url = 12;
+  optional string portal_url = 13;
+  optional string register_url = 14;
+  optional string client_id = 15;
+}
+message BeginProviderOAuthResponse {
+  ProviderOAuth authorization = 1;
+}
+message GetProviderOAuthRequest {
+  string organization_id = 1;
+  string authorization_id = 2;
+}
+message GetProviderOAuthResponse {
+  ProviderOAuth authorization = 1;
+}
+message CompleteProviderOAuthRequest {
+  string organization_id = 1;
+  string authorization_id = 2;
+  string code = 3;
+  string state = 4;
+}
+message CompleteProviderOAuthResponse {
+  ProviderConnection connection = 1;
+}
+message CancelProviderOAuthRequest {
+  string organization_id = 1;
+  string authorization_id = 2;
+}
+message CancelProviderOAuthResponse {}
+message ListProviderModelsRequest {
+  string organization_id = 1;
+  string connection_id = 2;
+}
+message ListProviderModelsResponse {
+  repeated Model models = 1;
+}
+service PoolService {
+  rpc ListPools(ListPoolsRequest) returns (ListPoolsResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc CreatePool(CreatePoolRequest) returns (CreatePoolResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc UpdatePool(UpdatePoolRequest) returns (UpdatePoolResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc DeletePool(DeletePoolRequest) returns (DeletePoolResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+}
+message ListPoolsRequest {
+  string organization_id = 1;
+  PageRequest page = 2;
+}
+message ListPoolsResponse {
+  repeated Pool pools = 1;
+  PageResponse page = 2;
+}
+message CreatePoolRequest {
+  string organization_id = 1;
+  string name = 2;
+  PoolStrategy strategy = 3;
+  repeated PoolMember members = 4;
+  // Opt-in generic OAuth session affinity only; default false.
+  // Does not enable or change Codex or Anthropic provider-specific affinity.
+  bool affinity_enabled = 5;
+  NativePoolOptions native_options = 6;
+}
+message CreatePoolResponse {
+  Pool pool = 1;
+}
+message UpdatePoolRequest {
+  string organization_id = 1;
+  string pool_id = 2;
+  string name = 3;
+  PoolStrategy strategy = 4;
+  repeated PoolMember members = 5;
+  // Opt-in generic OAuth session affinity only; default false.
+  // Does not enable or change Codex or Anthropic provider-specific affinity.
+  bool affinity_enabled = 6;
+  // Full native settings. Omitted update settings clear the previous options.
+  NativePoolOptions native_options = 7;
+}
+message UpdatePoolResponse {
+  Pool pool = 1;
+}
+message DeletePoolRequest {
+  string organization_id = 1;
+  string pool_id = 2;
+}
+message DeletePoolResponse {}
+service RoutingService {
+  rpc ListRoutes(ListRoutesRequest) returns (ListRoutesResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc CreateRoute(CreateRouteRequest) returns (CreateRouteResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc UpdateRoute(UpdateRouteRequest) returns (UpdateRouteResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+  rpc DeleteRoute(DeleteRouteRequest) returns (DeleteRouteResponse) {
+    option (auth_scope) = AUTH_SCOPE_ORGANIZATION_MEMBER;
+  }
+}
+message ListRoutesRequest {
+  string organization_id = 1;
+  PageRequest page = 2;
+}
+message ListRoutesResponse {
+  repeated Route routes = 1;
+  PageResponse page = 2;
+}
+message CreateRouteRequest {
+  string organization_id = 1;
+  string model_id = 2;
+  RoutingStrategy strategy = 3;
+  repeated RouteTarget targets = 4;
+  bool enabled = 5;
+  // Present only for JEV strategy. An absent message means no JEV configuration.
+  JevDecisionConfig jev_decision = 6;
+  // Omission leaves reasoning retention disabled.
+  ReasoningRetentionConfig reasoning_retention = 7;
+}
+message CreateRouteResponse {
+  Route route = 1;
+}
+message UpdateRouteRequest {
+  string organization_id = 1;
+  string route_id = 2;
+  string model_id = 3;
+  RoutingStrategy strategy = 4;
+  repeated RouteTarget targets = 5;
+  bool enabled = 6;
+  // Present only for JEV strategy. An absent message means no JEV configuration.
+  // Route updates replace the complete route; omission clears previous JEV settings.
+  JevDecisionConfig jev_decision = 7;
+  // Full replacement. Omission disables retention and clears previous settings.
+  ReasoningRetentionConfig reasoning_retention = 8;
+}
+message UpdateRouteResponse {
+  Route route = 1;
+}
+message DeleteRouteRequest {
+  string organization_id = 1;
+  string route_id = 2;
+}
+message DeleteRouteResponse {}

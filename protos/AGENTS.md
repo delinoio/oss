@@ -9,9 +9,11 @@
 - Follow root `AGENTS.md` and the owning project/domain contracts.
 
 - Write schemas and comments in English.
+- Generate Go bindings beside their schemas as defined in the [protocol contract](../docs/protos-async-commit-hook-v1-contract.md). Do not enable output-directory cleaning for the shared source tree.
 
 ## Owning contracts
 
-- [bundlewhy v1 protocol contract](../docs/protos-bundlewhy-v1-contract.md)
 - [async-commit-hook v1 protocol contract](../docs/protos-async-commit-hook-v1-contract.md)
-- [protos-devhud-v1-contract](../docs/protos-devhud-v1-contract.md)
+
+- [TaiRouter](../docs/project-tairouter.md)
+- [TaiRouter domain contract](../docs/protos-tairouter-management-contract.md)

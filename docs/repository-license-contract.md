@@ -6,7 +6,7 @@ Delino-owned source in this repository is Apache-2.0 licensed. The root `LICENSE
 
 ## Imported Material
 
-The imported VoidZero fspy, materialized-artifact and vt crates keep their original MIT text, copyright notices and explicit MIT Cargo metadata. The vendored Microsoft Detours source keeps its separate MIT notices. Bundled Noto Sans KR fonts keep their OFL terms. A repository-wide default does not relicense these works. Retain their notices in any distribution that carries their bytes, including pnport's fspy companion.
+The imported VoidZero fspy, materialized-artifact and vt crates keep their original MIT text, copyright notices and explicit MIT Cargo metadata. The vendored Microsoft Detours source keeps its separate MIT notices. A repository-wide default does not relicense these works. Retain their notices in any distribution that carries their bytes, including pnport's fspy companion.
 
 ## Distribution
 

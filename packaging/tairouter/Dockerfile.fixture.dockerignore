@@ -1,0 +1,12 @@
+# The synthetic fixture needs no application dependencies or local state.
+**
+!LICENSE
+!NOTICE
+!scripts/
+!scripts/tairouter/
+!scripts/tairouter/fixture/
+!scripts/tairouter/fixture/*.go
+!packaging/
+!packaging/tairouter/
+!packaging/tairouter/Dockerfile.fixture
+!packaging/tairouter/Dockerfile.fixture.dockerignore

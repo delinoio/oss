@@ -36,10 +36,6 @@ export const commandConsumers = Object.freeze([
 // ownership is outside the Go directory tree and must remain an explicit edge.
 const embeddedSources = [
   {
-    inputs: ["apps/devhud-admin", "packages/devhud-api-client"],
-    owner: "servers/devhud-api/internal/adminassets",
-  },
-  {
     inputs: ["apps/async-commit-hook", "packages/async-commit-hook-api-client"],
     owner: "cmds/async-commit-hook/internal/webassets",
   },

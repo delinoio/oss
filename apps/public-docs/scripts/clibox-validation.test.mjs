@@ -114,34 +114,6 @@ for (const region of [
   });
 }
 
-test("bundlewhy pages must keep the unpublished availability notice", async () => {
-  await rejectsMutation(
-    projectValidator,
-    (html) =>
-      html.replaceAll(
-        "bundlewhy is not yet published to npm",
-        "bundlewhy release notes",
-      ),
-    /bundlewhy\/.*missing its unpublished availability notice/u,
-    undefined,
-    "bundlewhy/installation.html",
-  );
-});
-
-test("bundlewhy pages cannot claim published availability", async () => {
-  await rejectsMutation(
-    projectValidator,
-    (html) =>
-      html.replace(
-        "Version 0.1.0 is in development.",
-        "Version 0.1.0 is in development. bundlewhy is available.",
-      ),
-    /bundlewhy\/.*claims published availability/u,
-    undefined,
-    "bundlewhy/limitations.html",
-  );
-});
-
 test("the article must retain its required headings", async () => {
   await rejectsMutation(
     cleanValidator,
@@ -255,7 +227,7 @@ test("shared stylesheets reject raw credentials in comments and custom propertie
       ['/* {"refresh_token":"fixture-sensitive"} */', "fixture-sensitive"],
       ["/* password: fixture-sensitive */", "fixture-sensitive"],
       ["/* GH_TOKEN=fixture-sensitive */", "fixture-sensitive"],
-      ["/* DEVHUD_UPLOAD_SECRET=fixture-sensitive */", "fixture-sensitive"],
+      ["/* EXAMPLE_UPLOAD_SECRET=fixture-sensitive */", "fixture-sensitive"],
       ["/* ghp_fixture_sensitive */", "ghp_fixture_sensitive"],
       ["/* github_pat_fixture_sensitive */", "github_pat_fixture_sensitive"],
     ]) {

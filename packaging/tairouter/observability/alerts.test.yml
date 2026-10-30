@@ -1,0 +1,159 @@
+{
+  "rule_files": ["alerts.yml"],
+  "evaluation_interval": "15s",
+  "tests":
+    [
+      {
+        "interval": "15s",
+        "input_series":
+          [
+            { "series": 'up{job="tairouter"}', "values": "0+0x8" },
+            {
+              "series": 'tairouter_database_up{job="tairouter"}',
+              "values": "0+0x8",
+            },
+          ],
+        "alert_rule_test":
+          [
+            {
+              "eval_time": "45s",
+              "alertname": "TaiRouterHealthCheckFailed",
+              "exp_alerts": [],
+            },
+            {
+              "eval_time": "1m",
+              "alertname": "TaiRouterHealthCheckFailed",
+              "exp_alerts":
+                [
+                  {
+                    "exp_labels":
+                      { "job": "tairouter", "severity": "critical" },
+                    "exp_annotations":
+                      {
+                        "summary": "Service health check failed for one minute",
+                      },
+                  },
+                ],
+            },
+            {
+              "eval_time": "45s",
+              "alertname": "TaiRouterDatabaseCheckFailed",
+              "exp_alerts": [],
+            },
+            {
+              "eval_time": "1m",
+              "alertname": "TaiRouterDatabaseCheckFailed",
+              "exp_alerts":
+                [
+                  {
+                    "exp_labels":
+                      { "job": "tairouter", "severity": "critical" },
+                    "exp_annotations":
+                      {
+                        "summary": "Database connectivity check failed for one minute",
+                      },
+                  },
+                ],
+            },
+          ],
+      },
+      {
+        "interval": "15s",
+        "input_series":
+          [
+            {
+              "series": 'tairouter_database_up{job="tairouter"}',
+              "values": "1 1 0+0x4 1 1",
+            },
+          ],
+        "alert_rule_test":
+          [
+            {
+              "eval_time": "1m15s",
+              "alertname": "TaiRouterDatabaseCheckFailed",
+              "exp_alerts": [],
+            },
+            {
+              "eval_time": "1m30s",
+              "alertname": "TaiRouterDatabaseCheckFailed",
+              "exp_alerts":
+                [
+                  {
+                    "exp_labels":
+                      { "job": "tairouter", "severity": "critical" },
+                    "exp_annotations":
+                      {
+                        "summary": "Database connectivity check failed for one minute",
+                      },
+                  },
+                ],
+            },
+            {
+              "eval_time": "1m45s",
+              "alertname": "TaiRouterDatabaseCheckFailed",
+              "exp_alerts": [],
+            },
+          ],
+      },
+      {
+        "interval": "1m",
+        "input_series":
+          [
+            {
+              "series": 'tairouter_cleanup_consecutive_failures{job="tairouter"}',
+              "values": "0 1 2 3 0",
+            },
+            {
+              "series": 'tairouter_cleanup_last_success_timestamp_seconds{job="tairouter"}',
+              "values": "0+0x16",
+            },
+          ],
+        "alert_rule_test":
+          [
+            {
+              "eval_time": "2m",
+              "alertname": "TaiRouterCleanupFailed",
+              "exp_alerts": [],
+            },
+            {
+              "eval_time": "3m",
+              "alertname": "TaiRouterCleanupFailed",
+              "exp_alerts":
+                [
+                  {
+                    "exp_labels": { "job": "tairouter", "severity": "warning" },
+                    "exp_annotations":
+                      {
+                        "summary": "Cleanup failed three consecutive times or has not succeeded for fifteen minutes",
+                      },
+                  },
+                ],
+            },
+            {
+              "eval_time": "4m",
+              "alertname": "TaiRouterCleanupFailed",
+              "exp_alerts": [],
+            },
+            {
+              "eval_time": "14m",
+              "alertname": "TaiRouterCleanupFailed",
+              "exp_alerts": [],
+            },
+            {
+              "eval_time": "15m",
+              "alertname": "TaiRouterCleanupFailed",
+              "exp_alerts":
+                [
+                  {
+                    "exp_labels": { "job": "tairouter", "severity": "warning" },
+                    "exp_annotations":
+                      {
+                        "summary": "Cleanup failed three consecutive times or has not succeeded for fifteen minutes",
+                      },
+                  },
+                ],
+            },
+          ],
+      },
+    ],
+}

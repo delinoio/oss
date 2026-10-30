@@ -1,0 +1,21 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "test": {
+      "outputs": ["dist/**"],
+      "inputs": [
+        "$TURBO_EXTENDS$",
+        "$TURBO_ROOT$/scripts/localization/**",
+        "$TURBO_ROOT$/docs/apps-labs-localization-contract.md"
+      ],
+      "cache": false
+    },
+    "build": {
+      "inputs": [
+        "$TURBO_EXTENDS$",
+        "$TURBO_ROOT$/scripts/localization/**",
+        "$TURBO_ROOT$/docs/apps-labs-localization-contract.md"
+      ]
+    }
+  }
+}

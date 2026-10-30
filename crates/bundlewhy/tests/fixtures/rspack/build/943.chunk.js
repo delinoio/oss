@@ -1,2 +1,0 @@
-"use strict";(self.rspackChunkbundlewhy_fixture_rspack_app=self.rspackChunkbundlewhy_fixture_rspack_app||[]).push([[943],{994(r,u,n){var s=n(111);function e(){return(0,s.s)("b")}n.d(u,{b:()=>e})},111(r,u,n){function s(r){return`common for ${r}`}n.d(u,{s:()=>s})}}]);
-//# sourceMappingURL=943.chunk.js.map

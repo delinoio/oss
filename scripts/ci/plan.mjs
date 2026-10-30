@@ -96,14 +96,7 @@ export function matricesForEvent(event, mode = Mode.Affected) {
         (row) => !row.os.startsWith("macos"),
       ),
     },
-    environmentMatrix: hosts("ubuntu-latest"),
-    forgeMatrix: hosts("ubuntu-latest"),
     cliboxMatrix: hosts("ubuntu-22.04"),
-    desktopMatrix: {
-      include: nativeMatrices["devhud-desktop"].filter(
-        (row) => row.os !== "macos",
-      ),
-    },
     pnportMatrix: {
       include: pnportMatrix.include.filter(
         (row) => !row.runner.startsWith("macos"),
@@ -268,8 +261,6 @@ export function main(env = process.env) {
   const outputs = {
     mode,
     main_sha: mainSha ?? "",
-    environment_matrix: JSON.stringify(matrices.environmentMatrix),
-    forge_matrix: JSON.stringify(matrices.forgeMatrix),
     clibox_matrix: JSON.stringify(matrices.cliboxMatrix),
     base: range.base,
     head: range.head,
@@ -277,7 +268,6 @@ export function main(env = process.env) {
     jobs: JSON.stringify(plan.jobs),
     forced: JSON.stringify(plan.forced),
     go_test_matrix: JSON.stringify(matrices.goTestMatrix),
-    desktop_matrix: JSON.stringify(matrices.desktopMatrix),
     pnport_matrix: JSON.stringify(matrices.pnportMatrix),
   };
   appendFileSync(

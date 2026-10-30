@@ -12,9 +12,7 @@
 
 ## Owning contracts
 
-- [DevHud Desktop Updater Contract](../docs/apps-devhud-updater-contract.md)
-- [Project: devhud](../docs/project-devhud.md)
-- [protos-devhud-v1-contract](../docs/protos-devhud-v1-contract.md)
 - [Repository Environment Contract](../docs/repository-environment-contract.md)
-- [servers-devhud-api-contract](../docs/servers-devhud-api-contract.md)
-- [servers-devhud-release-controller-contract](../docs/servers-devhud-release-controller-contract.md)
+
+- [TaiRouter](../docs/project-tairouter.md)
+- [TaiRouter domain contract](../docs/servers-tairouter-service-contract.md), including internal package ownership and dependency boundaries for `servers/tairouter/internal`.

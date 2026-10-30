@@ -18,22 +18,19 @@ const selectorDestinations = [
   "/async-commit-hook/",
   "/clibox/",
   "/pnport/",
-  "/bundlewhy/",
 ];
 const projectSecuritySlugs = new Set([
   "runmoor",
   "async-commit-hook",
   "pnport",
-  "bundlewhy",
 ]);
 const forbiddenProjectContent = [
-  /(?:GH_TOKEN|DEVHUD_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)|Authorization:\s*Bearer)/iu,
+  /(?:GH_TOKEN|EXAMPLE_[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|KEY)|Authorization:\s*Bearer)/iu,
   /\b(?:ghp|github_pat)_[A-Za-z0-9_]+\b/iu,
   /BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY/iu,
   /(?:\/Users\/|\/home\/[a-z]|\.infisical)/iu,
-  /(?:apps|cmds|servers|protos)\/(?:runmoor|async-commit-hook|devhud)(?:\/|\b)/iu,
+  /(?:apps|cmds|servers|protos)\/(?:runmoor|async-commit-hook)(?:\/|\b)/iu,
   /(?:crates|packages)\/pnport(?:\/|\b)/iu,
-  /(?:apps|crates|packages|protos)\/bundlewhy(?:-web)?(?:\/|\b)/iu,
 ];
 const rootRoutes = [
   "/",
@@ -41,14 +38,6 @@ const rootRoutes = [
   "/projects-overview",
   "/documentation-lifecycle",
   "/linux-packages",
-  "/devhud",
-  "/devhud/install",
-  "/devhud/guide",
-  "/devhud/privacy",
-  "/devhud/security",
-  "/devhud/support",
-  "/devhud/admin",
-  "/devhud/releases",
   "/cargo-mono",
   "/with-watch",
 ];
@@ -131,26 +120,6 @@ for (const [slug, routes] of Object.entries(projectRoutes)) {
         `${publicRoute(slug, route)} is missing its published 0.1.2 availability notice`,
       );
     }
-    if (slug === "bundlewhy") {
-      const visible = visibleProjectText(contents);
-      if (
-        !/\bbundlewhy is not yet published to npm\b/iu.test(visible) ||
-        !/\bVersion 0\.1\.0 is in development\b/iu.test(visible)
-      ) {
-        failures.push(
-          `${publicRoute(slug, route)} is missing its unpublished availability notice`,
-        );
-      }
-      if (
-        /(?<!\b(?:when|once|until|unless|if|after|before)\s+)\bbundlewhy(?: 0\.1\.0)? is (?:now )?(?:available|published)\b/iu.test(
-          visible,
-        )
-      ) {
-        failures.push(
-          `${publicRoute(slug, route)} claims published availability`,
-        );
-      }
-    }
     if (slug === "pnport" && ["/installation", "/releases"].includes(route)) {
       const visible = visibleProjectText(contents);
       if (
@@ -173,7 +142,7 @@ for (const [slug, routes] of Object.entries(projectRoutes)) {
         );
       }
     }
-    if (slug === "clibox" || slug === "pnport" || slug === "bundlewhy") {
+    if (slug === "clibox" || slug === "pnport") {
       const sidebar =
         contents.match(
           /<aside\b[^>]*class="[^"]*rp-doc-layout__sidebar[^"]*"[^>]*>[\s\S]*?<\/aside>/iu,
@@ -367,6 +336,12 @@ const expectedAsyncHeaders = `/async-commit-hook/*
 `;
 if (headers !== expectedAsyncHeaders)
   failures.push("aggregate async security headers are missing or incorrect");
+
+for (const retired of ["docs/tairouter", "doc_build/tairouter"]) {
+  if (await exists(path.resolve(retired))) {
+    failures.push("TaiRouter must be published by Labs Docs only");
+  }
+}
 
 if (failures.length > 0) {
   console.error("Public docs project validation failed:");

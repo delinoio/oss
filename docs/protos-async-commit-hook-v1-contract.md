@@ -2,7 +2,7 @@
 
 ## Scope
 
-`protos/async_commit_hook/v1` owns package `async_commit_hook.v1`; committed Go and TypeScript bindings are tool-generated.
+`protos/async_commit_hook/v1` owns package `async_commit_hook.v1`; committed Go and TypeScript bindings are tool-generated. Go message bindings are colocated with their `.proto` source; Connect-Go bindings use the `achv1connect/` subpackage in the same version directory. The Go import path is `github.com/delinoio/oss/protos/async_commit_hook/v1`.
 
 ## Runtime and Language
 
@@ -56,7 +56,7 @@ Stable error codes and correlation IDs; never log Authorization, pairing codes, 
 
 ## Build and Test
 
-Buf format/lint/breaking/freshness, Go/TypeScript serialization and transport tests, same-origin, Host, method, version-header and retired-pairing tests. Generator filters keep DevHud and ach client outputs separate.
+Buf format/lint/breaking/freshness, Go/TypeScript serialization and transport tests, same-origin, Host, method, version-header and retired-pairing tests. Generator filters keep each project’s client outputs separate. Buf output cleaning stays disabled because Go output shares the schema source tree. When removing schemas, remove their obsolete generated bindings explicitly. Protocol freshness checks tracked and untracked changes throughout `protos/` and the generated TypeScript client directory.
 
 ## Dependencies and Integrations
 

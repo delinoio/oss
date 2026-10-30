@@ -34,7 +34,7 @@ Record new implementation status, validation results and unresolved limits in pu
 - Do not arbitrarily omit, delete, or simplify requested or source-backed content during documentation edits unless the user explicitly asks for that outcome.
 - If documentation content, scope, or intent is ambiguous, ask the user before deciding what to remove, merge, or reinterpret.
 - Update or create the relevant `AGENTS.md` in the same change only when development procedures, directory ownership or repository/domain development rules change; follow the [instruction-update policy](#instruction-update-policy).
-- `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Public documentation is owned and built by `apps/public-docs`; the project content roots are `apps/public-docs/docs/{runmoor,nodeup,binpm,async-commit-hook,clibox,pnport,bundlewhy}`. Those pages must curate from these contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow.
+- `docs/` remains the internal source of truth for contracts, architecture notes, repo-local paths, and implementation details. Consolidated OSS public documentation is owned and built by `apps/public-docs`; the project content roots are `apps/public-docs/docs/{runmoor,nodeup,binpm,async-commit-hook,clibox,pnport}`. Those pages must curate from these contracts without documenting repository-internal implementation details unless the detail is a stable public interface, user-visible behavior, or explicitly public maintainer workflow. Independent Labs documentation, including the English TaiRouter guides, is owned by `apps/labs-docs`; its public-content boundary is defined in [the Labs app contract](apps-labs-docs-foundation.md).
 
 ## Naming Rules
 
@@ -60,23 +60,19 @@ Record new implementation status, validation results and unresolved limits in pu
 
 ## Project Catalog
 
-### bundlewhy
+### tairouter
 
-- [Project index](project-bundlewhy.md)
-- [Rust core, CLI and local server](crates-bundlewhy-foundation.md)
-- [Web UI](apps-bundlewhy-web-contract.md)
-- [Connect protocol v1](protos-bundlewhy-v1-contract.md)
-- [Engine adapters and distribution](packages-bundlewhy-distribution-contract.md)
-
-### typeopt
-
-- [Project index](project-typeopt.md)
-- [Rust CLI foundation](crates-typeopt-foundation.md)
-
-### Forge
-
-- [Project index](project-forge.md)
-- [Rust DSL, PPTX, CLI and MCP foundation](crates-forge-foundation.md)
+- [apps-tairouter-console-contract.md](apps-tairouter-console-contract.md) (console behavior, eight-language catalogs and shared ChatGPT-plan translation tooling)
+- [apps-tairouter-console-design.md](apps-tairouter-console-design.md)
+- [apps-tairouter-docs-contract.md](apps-tairouter-docs-contract.md)
+- [cmds-tairouter-client-contract.md](cmds-tairouter-client-contract.md)
+- [packages-tairouter-client-contract.md](packages-tairouter-client-contract.md)
+- [packages-tairouter-libraries-contract.md](packages-tairouter-libraries-contract.md)
+- [project-tairouter.md](project-tairouter.md)
+- [protos-tairouter-management-contract.md](protos-tairouter-management-contract.md)
+- [servers-tairouter-compatibility-contract.md](servers-tairouter-compatibility-contract.md)
+- [servers-tairouter-operations-contract.md](servers-tairouter-operations-contract.md)
+- [servers-tairouter-service-contract.md](servers-tairouter-service-contract.md)
 
 ### binpm
 
@@ -114,10 +110,22 @@ Record new implementation status, validation results and unresolved limits in pu
 - [cmds-runmoor-foundation.md](cmds-runmoor-foundation.md)
 - [apps-runmoor-docs-foundation.md](apps-runmoor-docs-foundation.md) (`apps/public-docs/docs/runmoor`, canonical URL `https://oss.delino.io/runmoor`, routes published below `/runmoor`: `/`, `/install`, `/configuration`, `/commands`, `/docker`, `/tart`, `/host`, `/operations`)
 
+### labs-site
+
+- [Project index](project-labs-site.md)
+- [Marketing site foundation](apps-labs-site-foundation.md) (`apps/labs-site`, canonical URL `https://labs.delino.io`)
+
+- [Labs localization](apps-labs-localization-contract.md) (shared ChatGPT plan translation tooling, catalogs and localized routes)
+
+### labs-docs
+
+- [Project index](project-labs-docs.md)
+- [Labs documentation foundation](apps-labs-docs-foundation.md) (standalone Rspress site at `https://docs.labs.delino.io`)
+
 ### public-docs
 
 - [project-public-docs.md](project-public-docs.md)
-- [apps-public-docs-foundation.md](apps-public-docs-foundation.md) (single `oss.delino.io` publisher, seven project subpaths including bundlewhy, site selector, and stable `/devhud` section)
+- [apps-public-docs-foundation.md](apps-public-docs-foundation.md) (single `oss.delino.io` publisher, six project subpaths, site selector)
 - [packages-docs-site-switcher-contract.md](packages-docs-site-switcher-contract.md) (shared accessible documentation site selector package and fixed site registry)
 
 ### serde-feather
@@ -137,25 +145,6 @@ Record new implementation status, validation results and unresolved limits in pu
 - [crates-rustia-core-foundation.md](crates-rustia-core-foundation.md)
 - [crates-rustia-llm-foundation.md](crates-rustia-llm-foundation.md)
 - [crates-rustia-macros-foundation.md](crates-rustia-macros-foundation.md)
-
-### devhud
-
-The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS/Android system-webview hosts, production WidgetKit/AppWidgetProvider Deck widgets with backup-excluded coordinated iOS state and trusted Android configuration entry, synchronized Settings boundary, direct-client GitHub.com provider/setup and RealQA issue submission, desktop RealQA capture/editor/encrypted drafts/direct uploads, least-privilege Chrome context picker, authenticated Native Messaging broker, administrator SPA, and Admin API are implemented; other product-result surfaces and the remaining DevHUD domains are planned.
-
-- [project-devhud.md](project-devhud.md)
-- [apps-devhud-foundation.md](apps-devhud-foundation.md)
-- [apps-devhud-security-contract.md](apps-devhud-security-contract.md)
-- [apps-devhud-updater-contract.md](apps-devhud-updater-contract.md)
-- [apps-devhud-chrome-extension-contract.md](apps-devhud-chrome-extension-contract.md)
-- [apps-devhud-admin-contract.md](apps-devhud-admin-contract.md)
-- [servers-devhud-api-contract.md](servers-devhud-api-contract.md)
-- [servers-devhud-release-controller-contract.md](servers-devhud-release-controller-contract.md)
-- [protos-devhud-v1-contract.md](protos-devhud-v1-contract.md)
-- [packages-devhud-api-client-contract.md](packages-devhud-api-client-contract.md)
-- [crates-devhud-native-messaging-host-contract.md](crates-devhud-native-messaging-host-contract.md)
-- [apps-devhud-operations-contract.md](apps-devhud-operations-contract.md) (internal maintainer release, recovery, support, and high-severity runbooks)
-- [apps-devhud-support-contract.md](apps-devhud-support-contract.md) (administrator support, diagnostics, retention, and high-severity triage)
-- [repository-workflow-contract.md](repository-workflow-contract.md) (repository-level workflow and read-only CEF review contract)
 
 ### async-commit-hook
 
@@ -178,3 +167,7 @@ The deterministic bilingual frontend, target-isolated Tauri desktop CEF plus iOS
 ## Transferred projects
 
 Delcore, DeliDev, and DeliTools, including their contracts and historical DeliDev validation records, are maintained in [delino-apps](https://github.com/delinoio/delino-apps). This repository no longer owns their runtime paths or CI jobs.
+
+Bundlewhy, including its Rust CLI, web UI, adapters, protocol and public guides, is maintained in [delinoio/bundlewhy](https://github.com/delinoio/bundlewhy).
+
+Typeopt, including its Rust CLI, fixtures, Vite example, benchmark tools and contracts, is maintained in [delinoio/typeopt](https://github.com/delinoio/typeopt).

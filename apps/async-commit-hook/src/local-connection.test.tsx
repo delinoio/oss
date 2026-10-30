@@ -1,16 +1,16 @@
 import { render, screen } from "@testing-library/react";
 import { createClient, createRouterTransport } from "@connectrpc/connect";
 import { LocalService } from "@delinoio/async-commit-hook-api-client";
-import { expect, it, vi } from "vitest";
+import { expect, it, rs } from "@rstest/core";
 import { App } from "./App";
 import * as connection from "./connection";
 
 it("opens the workspace without pairing or reading legacy authorization", async () => {
   localStorage.setItem("ach-v1-browser-46309", "revoked-token");
   history.replaceState(null, "", "/#port=46309&pair=retired");
-  const readStorage = vi.spyOn(Storage.prototype, "getItem");
-  const pair = vi.fn();
-  const transport = vi
+  const readStorage = rs.spyOn(Storage.prototype, "getItem");
+  const pair = rs.fn();
+  const transport = rs
     .spyOn(connection, "transportFor")
     .mockImplementation(() =>
       createRouterTransport((router) =>
@@ -43,7 +43,7 @@ it("opens the workspace without pairing or reading legacy authorization", async 
 });
 
 it("retains version recovery guidance through the real Connect web transport", async () => {
-  const fetch = vi
+  const fetch = rs
     .fn()
     .mockResolvedValue(
       new Response(
@@ -51,7 +51,7 @@ it("retains version recovery guidance through the real Connect web transport", a
         { status: 409, headers: { "Content-Type": "application/json" } },
       ),
     );
-  vi.stubGlobal("fetch", fetch);
+  rs.stubGlobal("fetch", fetch);
   try {
     const client = createClient(LocalService, connection.transportFor());
     const error = await client
@@ -67,6 +67,6 @@ it("retains version recovery guidance through the real Connect web transport", a
       new Headers(fetch.mock.calls[0][1].headers).get("X-Ach-Api-Version"),
     ).toBe("1");
   } finally {
-    vi.unstubAllGlobals();
+    rs.unstubAllGlobals();
   }
 });

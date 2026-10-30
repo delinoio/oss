@@ -10,7 +10,7 @@ Package installation is verified on x86-64 and ARM64 for Ubuntu 22.04, 24.04 and
 
 **Runmoor `0.1.3` native packages are available in stable.** Other CLI examples apply after that CLI’s first verified native package release; check its installation guide for availability. `binpm`, `cargo-mono`, `nodeup`, `with-watch`, `runmoor` and `clibox` all use the stable channel. Preview is reserved and currently has no CLI packages. Package versions use the original CLI version followed by `-1`. Older releases published before native package support are unavailable through these repositories.
 
-These APT and DNF repositories do not support Arch Linux or Alpine Linux and do not distribute DevHud.
+These APT and DNF repositories do not support Arch Linux or Alpine Linux.
 
 ## Verify the repository key
 

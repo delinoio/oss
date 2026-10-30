@@ -10,7 +10,7 @@ import (
 	"unicode/utf8"
 
 	"connectrpc.com/connect"
-	pb "github.com/delinoio/oss/protos/gen/go/async_commit_hook/v1"
+	pb "github.com/delinoio/oss/protos/async_commit_hook/v1"
 	"google.golang.org/protobuf/proto"
 )
 

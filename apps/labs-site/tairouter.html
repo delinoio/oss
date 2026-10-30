@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="<%= language %>">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content="<%= t('description') %>" />
+    <meta property="og:title" content="<%= t('productTitle') %>" />
+    <meta property="og:description" content="<%= t('description') %>" />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="<%= canonical %>" />
+    <link rel="canonical" href="<%= canonical %>" />
+    <% for (const locale of languages) { %>
+    <link rel="alternate" hreflang="<%= locale.lang %>" href="https://labs.delino.io<%= locale.path %>" />
+    <% } %>
+    <link rel="alternate" hreflang="x-default" href="https://labs.delino.io/tairouter/" />
+  </head>
+  <body class="product-page">
+    <a class="skip-link" href="#main-content"><%= t('skip') %></a>
+    <header class="site-header wrap">
+      <a class="brand" href="<%= productPath %>">Delino Labs<span class="brand-dot" aria-hidden="true"></span></a>
+      <nav aria-label="<%= t('navigation') %>">
+        <a href="#features"><%= t('product') %></a>
+        <a href="https://docs.labs.delino.io/tairouter/"><%= t('docs') %></a>
+        <a href="https://github.com/delinoio/oss">GitHub <span aria-hidden="true">↗</span></a>
+        <details class="languages">
+          <summary><%= languageLabel %> <span aria-hidden="true">⌄</span></summary>
+          <ul>
+            <% for (const locale of languages) { %>
+            <li><a href="<%= locale.path %>" lang="<%= locale.lang %>" hreflang="<%= locale.lang %>" <%= locale.lang === language ? 'aria-current="page"' : '' %>><%= locale.label %></a></li>
+            <% } %>
+          </ul>
+        </details>
+      </nav>
+    </header>
+    <main id="main-content" class="wrap">
+      <section class="hero" aria-labelledby="hero-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span><%= t('eyebrow') %></p>
+          <h1 id="hero-title"><span><%= t('heroTeam') %></span><span><%= t('heroAI') %></span><span><%= t('heroRules') %></span></h1>
+          <p class="hero-description"><strong>TaiRouter — Team AI Router.</strong> <%= t('heroDescription') %></p>
+          <div class="actions">
+            <a class="button primary" href="https://docs.labs.delino.io/tairouter/"><%= t('readDocs') %> <span aria-hidden="true">→</span></a>
+            <a class="button secondary" href="https://github.com/delinoio/oss"><%= t('viewSource') %> <span aria-hidden="true">↗</span></a>
+          </div>
+          <p class="hero-note"><%= t('byLabs') %></p>
+        </div>
+        <figure class="routing-figure">
+          <figcaption><%= t('diagramCaption') %></figcaption>
+          <div class="routing-diagram" role="img" aria-label="<%= t('diagramAlt') %>">
+            <div class="members">
+              <div class="diagram-label"><%= t('yourTeam') %></div>
+              <div class="member blue"><span class="avatar" aria-hidden="true">A</span><div><strong>Alice</strong><span><%= t('personalCredentials') %></span><div class="credential">↳ <%= t('personalPool') %></div></div></div>
+              <div class="member green"><span class="avatar" aria-hidden="true">B</span><div><strong>Bob</strong><span><%= t('personalCredentials') %></span><div class="credential">↳ <%= t('personalPool') %></div></div></div>
+              <div class="member purple"><span class="avatar" aria-hidden="true">C</span><div><strong>Carol</strong><span><%= t('personalCredentials') %></span><div class="credential">↳ <%= t('personalPool') %></div></div></div>
+            </div>
+            <div class="connector" aria-hidden="true"><span>→</span><span>→</span><span>→</span></div>
+            <div class="router"><span class="router-symbol" aria-hidden="true">↱</span><strong>TaiRouter</strong><small>Team AI Router</small><span class="router-divider"></span><span><%= t('routes') %></span><span><%= t('workspaces') %></span><span><%= t('personalPools') %></span></div>
+            <div class="connector outgoing" aria-hidden="true"><span>→</span><span>→</span><span>→</span></div>
+            <div class="providers"><div class="diagram-label"><%= t('providers') %></div><div class="provider blue"><span aria-hidden="true">◇</span><%= t('providerA') %></div><div class="provider green"><span aria-hidden="true">◇</span><%= t('providerB') %></div><div class="provider purple"><span aria-hidden="true">◇</span><%= t('providerC') %></div></div>
+          </div>
+          <p class="diagram-footnote"><%= t('diagramNote') %></p>
+        </figure>
+      </section>
+      <section class="features section" id="features" aria-labelledby="features-title">
+        <div class="section-intro"><p class="eyebrow"><%= t('featuresEyebrow') %></p><h2 id="features-title"><%= t('featuresTitle') %></h2><p><%= t('featuresDescription') %></p></div>
+        <div class="feature-grid">
+          <article><span class="feature-icon" aria-hidden="true">◎</span><span class="feature-number" aria-hidden="true">01</span><h3><%= t('accountsTitle') %></h3><p><%= t('accountsDescription') %></p></article>
+          <article><span class="feature-icon" aria-hidden="true">⑂</span><span class="feature-number" aria-hidden="true">02</span><h3><%= t('routingTitle') %></h3><p><%= t('routingDescription') %></p></article>
+          <article><span class="feature-icon" aria-hidden="true">▤</span><span class="feature-number" aria-hidden="true">03</span><h3><%= t('hostingTitle') %></h3><p><%= t('hostingDescription') %></p></article>
+        </div>
+      </section>
+      <section class="clients section" aria-labelledby="clients-title">
+        <div><p class="eyebrow"><%= t('clientsEyebrow') %></p><h2 id="clients-title"><%= t('clientsTitle') %></h2><p><%= t('clientsDescription') %></p><a class="text-link" href="https://docs.labs.delino.io/tairouter/guide/clients"><%= t('exploreClients') %> <span aria-hidden="true">→</span></a></div>
+        <div class="endpoint-panel"><div class="panel-header"><span aria-hidden="true">● ● ●</span><span><%= t('exampleEndpoint') %></span></div><pre><code><span class="code-comment"># <%= t('yourInstance') %></span>
+https://router.example.com<span class="code-accent">/v1</span>
+
+<span class="code-comment"># <%= t('yourRoute') %></span>
+<span class="code-accent">team-model</span></code></pre><p><%= t('endpointNote') %></p></div>
+      </section>
+      <section class="closing section" aria-labelledby="closing-title"><p class="eyebrow">DELINO LABS / TAIROUTER</p><h2 id="closing-title"><%= t('closingTitle') %></h2><p><%= t('closingDescription') %></p><div class="actions"><a class="button primary" href="https://docs.labs.delino.io/tairouter/guide/installation"><%= t('startDocs') %> <span aria-hidden="true">→</span></a><a class="button secondary" href="https://github.com/delinoio/oss/blob/main/LICENSE"><%= t('licenseLink') %> <span aria-hidden="true">↗</span></a></div><p class="release-note"><%= t('releaseNote') %></p></section>
+    </main>
+    <footer class="site-footer wrap"><span class="brand">Delino Labs</span><span>TaiRouter · Team AI Router</span><a href="https://docs.labs.delino.io/tairouter/guide/compatibility"><%= t('compatibility') %> <span aria-hidden="true">↗</span></a></footer>
+  </body>
+</html>

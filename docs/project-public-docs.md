@@ -20,16 +20,16 @@ Provide the Rspress-based public documentation site for user-facing product and 
 
 ## Cross-Domain Invariants
 
+- The root site’s top-level navbar contains no route items. Product pages `cargo-mono` and `with-watch` remain available through the sidebar and documented links.
+
 - Rspress clean routes, navigation, sidebar, and docs structure must stay aligned with documented contracts.
 - pnport's eleven public guide routes include `/pnport/preview-testing` for external Turbopack and TypeScript 7 testing; its sidebar, entry-page links and required headings/links stay aligned with the shared route catalog and `docs/apps-pnport-docs-foundation.md`.
 - User-facing content changes should be versioned alongside relevant contract updates.
-- The root site's top-level navbar intentionally contains no route items; the public project pages remain available through the sidebar and documented links. The current product page IDs are `devhud`, `cargo-mono`, and `with-watch`. DevHud's stable child routes are `/devhud/install`, `/devhud/guide`, `/devhud/privacy`, `/devhud/security`, `/devhud/support`, `/devhud/admin`, and `/devhud/releases`.
 - Runmoor public guides are owned directly by `apps/public-docs/docs/runmoor` and are published at `https://oss.delino.io/runmoor`. The canonical public routes use the same-origin `/runmoor` subpath.
-- `/devhud` is built privately with the release candidate and published only after the updater and other coordinated DevHud channels are public; the final release verification checks the public page before GA. Publication injects and validates the configured official App Store, Google Play, and Chrome Web Store listing links into every generated text asset, with the exact destinations verified in `/devhud/install`, without treating those public identifiers as credentials.
 - Nodeup, binpm, Runmoor, async-commit-hook, clibox, pnport are major projects exposed through same-origin navigation to `/nodeup`, `/binpm`, `/runmoor`, `/async-commit-hook`, `/clibox`, `/pnport`. Their Markdown is owned directly by `apps/public-docs/docs/{nodeup,binpm,runmoor,async-commit-hook,clibox,pnport}`, while this project builds and publishes the complete tree. pnport's public guides describe verified stable 0.1.2 availability with known macOS and full-acceptance limits.
 - The shared site selector appears on every assembled page and marks the active project with `aria-current`; it supports keyboard navigation, Escape close, outside-click close, and focus return.
 - No legacy handoff page or duplicate guide route is canonical. Retired standalone documentation hosting is decommissioned by operators after route and installer verification; no redirects or aliases are added.
-- `public-docs` uses Rspress clean URLs, builds the seven project content roots below their canonical subpaths, and publishes the complete `doc_build` tree to the single `public-docs` Cloudflare Pages project.
+- `public-docs` uses Rspress clean URLs, builds the six project content roots below their canonical subpaths, and publishes the complete `doc_build` tree to the single `public-docs` Cloudflare Pages project.
 - Public-docs build and route-validation caches include all eight canonical installer sources through package-local external inputs. Generated installer bytes must equal the current source; inherited build dependencies, outputs, and tool inputs remain intact. These cache inputs do not invalidate unrelated workspace tasks. The app-domain contract owns the disposable cache regression boundary.
 - Package-local `pnpm dev` and root `pnpm dev:public-docs` bind to loopback on fixed port `46302`, reject host overrides, preflight that exact port, and fail on conflicts without automatic remapping.
 
@@ -56,3 +56,5 @@ The `/linux-packages` clean route owns shared key verification, APT/DNF registra
 The canonical public-docs production origin is `https://oss.delino.io`.
 
 The Cloudflare Pages `public-docs` project deploys `main` automatically with the build and custom-domain settings recorded in `apps-public-docs-foundation.md`. The project is the only production documentation publisher for the consolidated root and subpaths.
+
+TaiRouter is an open-source Delino Labs product. Its public guides are owned by `apps/labs-docs/docs/en/tairouter` and published at `https://docs.labs.delino.io/tairouter/`. This consolidated publisher and its site selector do not include TaiRouter. The former `/tairouter` routes have been removed without redirects or aliases. See [TaiRouter public documentation](apps-tairouter-docs-contract.md).

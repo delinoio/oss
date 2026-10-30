@@ -1,0 +1,39 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "ci:routes": {
+      "cache": true,
+      "dependsOn": ["build:frontend"],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/docs/apps-labs-docs-foundation.md",
+        "$TURBO_ROOT$/scripts/localization/**",
+        "$TURBO_ROOT$/docs/apps-labs-localization-contract.md",
+        "$TURBO_ROOT$/docs/apps-tairouter-docs-contract.md"
+      ],
+      "outputs": [],
+      "env": ["CI_CACHE_CONTEXT"]
+    },
+    "ci:check": {
+      "cache": false,
+      "dependsOn": ["ci:routes"]
+    },
+    "test": {
+      "cache": false
+    },
+    "build": {
+      "inputs": [
+        "$TURBO_EXTENDS$",
+        "$TURBO_ROOT$/scripts/localization/**",
+        "$TURBO_ROOT$/docs/apps-labs-localization-contract.md"
+      ]
+    },
+    "build:frontend": {
+      "inputs": [
+        "$TURBO_EXTENDS$",
+        "$TURBO_ROOT$/scripts/localization/**",
+        "$TURBO_ROOT$/docs/apps-labs-localization-contract.md"
+      ]
+    }
+  }
+}

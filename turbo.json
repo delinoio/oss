@@ -5,11 +5,9 @@
       "inputs": [
         "buf.gen.yaml",
         "buf.yaml",
-        "protos/devhud/v1/**",
         "package.json",
         "pnpm-lock.yaml",
-        "protos/async_commit_hook/v1/**",
-        "protos/bundlewhy/v1/**",
+        "protos/**/*.proto",
         "$TURBO_ROOT$/.nvmrc",
         "$TURBO_ROOT$/package.json",
         "$TURBO_ROOT$/pnpm-lock.yaml",
@@ -18,10 +16,8 @@
         "$TURBO_ROOT$/go.sum"
       ],
       "outputs": [
-        "protos/gen/**",
-        "packages/devhud-api-client/src/gen/**",
-        "packages/async-commit-hook-api-client/src/gen/**",
-        "apps/bundlewhy-web/src/gen/**"
+        "protos/**/*.go",
+        "packages/async-commit-hook-api-client/src/gen/**"
       ],
       "env": ["CI_CACHE_CONTEXT", "CI_PROTO_CACHE_CONTEXT"]
     },
@@ -30,7 +26,6 @@
       "cache": false,
       "env": [
         "CARGO_HOME",
-        "DEVHUD_LOCAL_MODE",
         "DISPLAY",
         "RUSTUP_HOME",
         "XAUTHORITY",

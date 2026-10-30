@@ -15,7 +15,7 @@ import {
   LocalService,
   RunSchema,
 } from "@delinoio/async-commit-hook-api-client";
-import { expect, it, vi } from "vitest";
+import { expect, it, rs } from "@rstest/core";
 import { Workspace } from "./App";
 
 it.each(["first-page", "later-page", "unavailable"])(
@@ -52,7 +52,7 @@ it.each(["first-page", "later-page", "unavailable"])(
       ],
     };
     let failNext = true;
-    const listRepositories = vi.fn((request: { cursor: string }) => {
+    const listRepositories = rs.fn((request: { cursor: string }) => {
       if (request.cursor) {
         if (failNext)
           throw new ConnectError("Page unavailable", Code.Unavailable);
@@ -63,7 +63,7 @@ it.each(["first-page", "later-page", "unavailable"])(
         nextCursor: placement === "later-page" ? "next" : "",
       };
     });
-    const getRun = vi.fn(async () => {
+    const getRun = rs.fn(async () => {
       await pendingRun;
       return {
         run: create(RunSchema, {
@@ -76,9 +76,9 @@ it.each(["first-page", "later-page", "unavailable"])(
         }),
       };
     });
-    const listBranches = vi.fn(() => ({ branches: [] }));
-    const listRuns = vi.fn(() => ({ runs: [] }));
-    const acknowledge = vi.fn(() => ({}));
+    const listBranches = rs.fn(() => ({ branches: [] }));
+    const listRuns = rs.fn(() => ({ runs: [] }));
+    const acknowledge = rs.fn(() => ({}));
     const transport = createRouterTransport((router) =>
       router.service(LocalService, {
         listRepositories,
@@ -187,7 +187,7 @@ it.each(["first-page", "later-page", "unavailable"])(
 it.each(["missing", "error"])(
   "does not assign another workspace when the linked execution is %s",
   async (outcome) => {
-    const listBranches = vi.fn(() => ({ branches: [] }));
+    const listBranches = rs.fn(() => ({ branches: [] }));
     const transport = createRouterTransport((router) =>
       router.service(LocalService, {
         listRepositories: () => ({

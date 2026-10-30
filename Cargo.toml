@@ -1,14 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/typeopt",
-    "crates/bundlewhy",
-    "crates/forge-tree-doc",
-    "crates/forge-pptx",
-    "crates/forge-package",
-    "crates/delino-forge",
-    "apps/devhud/src-tauri",
-    "crates/devhud-native-messaging-host",
     "crates/binpm",
     "crates/cargo-mono",
     "crates/clibox",
@@ -48,52 +40,8 @@ members = [
     "crates/rustia-macros",
 ]
 
-# Official Tauri plugins publish against crates.io Tauri. Redirect only their
-# shared public Tauri crates to the immutable CEF-enabled revision used by
-# DevHUD so one runtime type graph is compiled.
-[patch.crates-io]
-# Match the upstream CEF/winit patch so menus and runtime windows share one dpi type.
-# Cargo.lock pins the reviewed upstream winit revision; remove after upstream convergence.
-dpi = { git = "https://github.com/tauri-apps/winit-gtk4", branch = "master" }
-tauri-build = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975" }
-tauri-runtime = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975" }
-tauri = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975" }
-tauri-plugin = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975" }
-tauri-utils = { git = "https://github.com/tauri-apps/tauri", rev = "c8c75b1f7f43e7cb1e7d773ed2f6f96fad2fe975" }
-
 [workspace.metadata.cargo-mono.publish.tag]
 packages = ["binpm", "nodeup", "with-watch", "cargo-mono", "rustia-rs", "rustia-macros", "rustia-llm", "jsonllm-shared", "jsonllm-derive", "jsonllm"]
-
-# The typeopt tests run the tsrs TypeScript compiler on every fixture.
-# Unoptimized, those crates dominate the workspace test time, so build them
-# optimized in the dev and test profiles. Only these dependencies change;
-# workspace crates keep debug builds and debug assertions.
-[profile.dev.package.tsrs_core]
-opt-level = 3
-
-[profile.dev.package.tsrs_ast]
-opt-level = 3
-
-[profile.dev.package.tsrs_checker]
-opt-level = 3
-
-[profile.dev.package.tsrs_compiler]
-opt-level = 3
-
-[profile.dev.package.tsrs_tsoptions]
-opt-level = 3
-
-[profile.dev.package.tsrs_vfs]
-opt-level = 3
-
-[profile.dev.package.tsrs_api]
-opt-level = 3
-
-[profile.dev.package.tsrs_scanner]
-opt-level = 3
-
-[profile.dev.package.tsrs_diagnostics]
-opt-level = 3
 
 # Release profile optimizations
 [profile.release]

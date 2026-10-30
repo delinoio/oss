@@ -13,6 +13,7 @@ export const Project = Object.freeze({
   Clibox: "clibox",
   Pnport: "pnport",
   AsyncCommitHook: "async-commit-hook",
+  TaiRouter: "tairouter",
 });
 export const Bump = Object.freeze({
   Patch: "patch",
@@ -20,7 +21,7 @@ export const Bump = Object.freeze({
   Major: "major",
   Next: "next",
 });
-export const Kind = Object.freeze({ Rust: "rust", Go: "go" });
+export const Kind = Object.freeze({ Rust: "rust", Go: "go", Node: "node" });
 const repository = "delinoio/oss";
 const botName = "delino-release-bot[bot]";
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -28,6 +29,7 @@ export function releaseTag(project, version) {
   return `${project}@v${version}`;
 }
 const versions = Object.freeze({
+  tairouter: { kind: Kind.Node, file: "packaging/tairouter/npm/package.json" },
   clibox: { kind: Kind.Rust, file: "crates/clibox/Cargo.toml" },
   pnport: { kind: Kind.Rust, file: "crates/pnport/Cargo.toml" },
   binpm: { kind: Kind.Rust, file: "crates/binpm/Cargo.toml" },
@@ -131,6 +133,25 @@ export function bumpVersion(version, bump) {
 // complete TOML sections, never a dependency's version or an external lock entry.
 // Reject ambiguous/new layouts until their release contract is explicitly added.
 function replaceVersion(source, project, kind, next) {
+  if (kind === Kind.Node) {
+    const metadata = JSON.parse(source);
+    requireValue(
+      metadata.name === "@delino/tairouter",
+      "TaiRouter npm identity mismatch",
+    );
+    const pattern = /^  "version": "([^"\r\n]+)",$/gmu;
+    requireValue(
+      [...source.matchAll(/"version"\s*:/gu)].length === 1 &&
+        [...source.matchAll(pattern)].length === 1,
+      "Missing or ambiguous npm source version",
+    );
+    versionParts(metadata.version);
+    return {
+      current: metadata.version,
+      text: next ? source.replace(pattern, `  "version": "${next}",`) : source,
+    };
+  }
+
   const pattern =
     kind === Kind.Rust
       ? /(^\[package\]\s*\n)([\s\S]*?)(?=^\[|$(?![\s\S]))/gmu

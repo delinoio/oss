@@ -70,8 +70,8 @@ test("schema baseline comparison ignores unavailable LFS assets but still reject
     `version https://git-lfs.github.com/spec/v1\noid sha256:${oid}\nsize 1024\n`,
   );
   const schema =
-    'syntax = "proto3";\npackage devhud.v1;\nmessage Fixture { string value = 1; }\n';
-  write("protos/devhud/v1/common.proto", schema);
+    'syntax = "proto3";\npackage example.v1;\nmessage Fixture { string value = 1; }\n';
+  write("protos/example/v1/common.proto", schema);
   write(
     "protos/delidev/v1/retired.proto",
     'syntax = "proto3";\npackage delidev.v1;\nmessage Retired { string value = 1; }\n',
@@ -80,8 +80,29 @@ test("schema baseline comparison ignores unavailable LFS assets but still reject
     "protos/delcore/v1/transferred.proto",
     'syntax = "proto3";\npackage delcore.v1;\nmessage Transferred { string value = 1; }\n',
   );
+  write(
+    "protos/devhud/v1/retired.proto",
+    'syntax = "proto3";\npackage devhud.v1;\nimport "google/protobuf/timestamp.proto";\nimport "google/protobuf/duration.proto";\nmessage Retired { google.protobuf.Timestamp at = 1; google.protobuf.Duration delay = 2; }\n',
+  );
+  const oldGoPackage =
+    "github.com/delinoio/oss/protos/gen/go/async_commit_hook/v1;achv1";
+  const newGoPackage =
+    "github.com/delinoio/oss/protos/async_commit_hook/v1;achv1";
+  const achPath = "protos/async_commit_hook/v1/ach.proto";
+  const achSchema = `syntax = "proto3";
+package async_commit_hook.v1;
+option go_package = "${oldGoPackage}";
+message Fixture { string value = 1; }
+`;
+  write(achPath, achSchema);
   git("add", "--all");
   git("commit", "-m", "schema baseline with unavailable LFS asset");
+  write(
+    "protos/bundlewhy/v1/service.proto",
+    schema.replaceAll("example.v1", "bundlewhy.v1"),
+  );
+  git("add", "protos/bundlewhy/v1/service.proto");
+  git("commit", "-m", "add transferred schema baseline");
   const baseline = git("rev-parse", "HEAD");
   symlinkSync(
     join(root, "node_modules"),
@@ -90,8 +111,8 @@ test("schema baseline comparison ignores unavailable LFS assets but still reject
   );
   const run = (ref) => {
     const runEnv = { ...env };
-    delete runEnv.DEVHUD_PROTO_BASELINE;
-    if (ref !== undefined) runEnv.DEVHUD_PROTO_BASELINE = ref;
+    delete runEnv.PROTO_BASELINE;
+    if (ref !== undefined) runEnv.PROTO_BASELINE = ref;
     // Git cloning and two Buf processes compete with native contract fixtures.
     // Keep this fixture-only budget bounded; return to 30 seconds when those
     // workloads no longer contend during the parallel contract suite.
@@ -104,23 +125,57 @@ test("schema baseline comparison ignores unavailable LFS assets but still reject
     assert.ifError(result.error);
     return result;
   };
-  // Retiring DeliDev must not disable breaking checks for the remaining APIs.
+  // Retired APIs and their orphan imports must not disable checks for owned APIs.
+  rmSync(join(cwd, "protos/devhud"), { recursive: true });
   rmSync(join(cwd, "protos/delidev"), { recursive: true });
   rmSync(join(cwd, "protos/delcore"), { recursive: true });
+  rmSync(join(cwd, "protos/bundlewhy"), { recursive: true });
   let result = run(baseline);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   assert.equal(existsSync(join(cwd, ".git/lfs/objects/aa/aa", oid)), false);
+  const colocatedSchema = achSchema.replace(oldGoPackage, newGoPackage);
+  write(achPath, colocatedSchema);
+  result = run(baseline);
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  // The path migration must not hide field deletion or arbitrary Go paths.
+  write(achPath, colocatedSchema.replace("string value = 1;", ""));
+  result = run(baseline);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(
+    result.stdout + result.stderr,
+    /Previously present field.*value/u,
+  );
   write(
-    "protos/devhud/v1/common.proto",
+    achPath,
+    colocatedSchema.replace(newGoPackage, "example.invalid/other;achv1"),
+  );
+  result = run(baseline);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /go_package/u);
+  write(achPath, colocatedSchema);
+  write(
+    "protos/example/v1/common.proto",
+    schema.replace(
+      "message Fixture",
+      'option go_package = "example.invalid/other";\nmessage Fixture',
+    ),
+  );
+  result = run(baseline);
+  assert.equal(result.status, 1, result.stdout + result.stderr);
+  assert.match(result.stdout + result.stderr, /go_package/u);
+  write("protos/example/v1/common.proto", schema);
+
+  write(
+    "protos/example/v1/common.proto",
     schema.replace("string value = 1;", "string value = 1; string added = 2;"),
   );
   result = run(baseline);
   assert.equal(result.status, 0, result.stdout + result.stderr);
   write(
-    "protos/devhud/v1/common.proto",
+    "protos/example/v1/common.proto",
     schema.replace(" string value = 1; ", ""),
   );
-  git("add", "protos/devhud/v1/common.proto");
+  git("add", "protos/example/v1/common.proto");
   git("commit", "-m", "delete existing wire field");
   git("update-ref", "refs/remotes/origin/main", "HEAD");
   // A pushed current-main ref compares the deletion with itself. Only the

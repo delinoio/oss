@@ -7,7 +7,7 @@ import {
   LocalService,
 } from "@delinoio/async-commit-hook-api-client";
 import { Code, ConnectError } from "@connectrpc/connect";
-import { expect, it, vi } from "vitest";
+import { expect, it, rs } from "@rstest/core";
 import { App, Confirm, ErrorNotice, FailureList, Status } from "./App";
 import * as connection from "./connection";
 import { describeError } from "./connection";
@@ -44,7 +44,7 @@ it("discards retired connection fields and preserves the run deep link", () => {
 });
 it("focuses the main content without replacing a run deep link", () => {
   history.replaceState(null, "", "/#run=receipt");
-  const transport = vi
+  const transport = rs
     .spyOn(connection, "transportFor")
     .mockImplementation(() =>
       createRouterTransport((router) =>
@@ -67,7 +67,7 @@ it("focuses the main content without replacing a run deep link", () => {
 });
 it("focuses the incompatible-version recovery content from the skip link", async () => {
   history.replaceState(null, "", "/#run=receipt");
-  const transport = vi
+  const transport = rs
     .spyOn(connection, "transportFor")
     .mockImplementation(() =>
       createRouterTransport((router) =>
@@ -109,9 +109,9 @@ it("recovers from a wrapped browser transport failure", () => {
   expect(describeError(error)).toMatch(/Run ach ui/);
 });
 it("supports dialog cancellation and restores focus", () => {
-  HTMLDialogElement.prototype.showModal = vi.fn();
-  HTMLDialogElement.prototype.close = vi.fn();
-  const onClose = vi.fn();
+  HTMLDialogElement.prototype.showModal = rs.fn();
+  HTMLDialogElement.prototype.close = rs.fn();
+  const onClose = rs.fn();
   const prior = document.createElement("button");
   document.body.append(prior);
   prior.focus();

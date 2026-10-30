@@ -11,6 +11,9 @@ use std::{
 
 use serde_json::json;
 
+#[path = "support/windows_fault.rs"]
+mod windows_fault;
+
 const MODE: &str = "PNPORT_NATIVE_WINDOWS_FIXTURE";
 const PROJECT: &str = "PNPORT_NATIVE_WINDOWS_PROJECT";
 const WORK: &str = "PNPORT_NATIVE_WINDOWS_WORK";
@@ -175,7 +178,7 @@ fn node_output(command: &mut Command) -> std::process::Output {
         stderr.read_to_end(&mut bytes).unwrap();
         bytes
     });
-    let mut modules = std::collections::HashMap::<u32, BTreeMap<usize, String>>::new();
+    let mut modules = std::collections::HashMap::<u32, BTreeMap<usize, PathBuf>>::new();
     let mut threads = std::collections::HashMap::new();
     let mut active = 0usize;
     let deadline = Instant::now() + Duration::from_secs(60);
@@ -210,13 +213,13 @@ fn node_output(command: &mut Command) -> std::process::Output {
                     let length =
                         GetFinalPathNameByHandleW(file, name.as_mut_ptr(), name.len() as u32, 0)
                             as usize;
-                    if length < name.len() {
-                        let path = String::from_utf16_lossy(&name[..length]);
-                        let name = path.rsplit('\\').next().unwrap_or("unknown").to_owned();
+                    if length > 0 && length < name.len() {
+                        use std::{ffi::OsString, os::windows::ffi::OsStringExt};
+                        let path = PathBuf::from(OsString::from_wide(&name[..length]));
                         modules
                             .entry(event.dwProcessId)
                             .or_default()
-                            .insert(base, name);
+                            .insert(base, path);
                     }
                     CloseHandle(file);
                 }
@@ -247,26 +250,30 @@ fn node_output(command: &mut Command) -> std::process::Output {
                         }
                     }
                     for address in addresses {
-                        if let Some((base, name)) = modules
+                        if let Some((base, image)) = modules
                             .get(&event.dwProcessId)
                             .and_then(|images| images.range(..=address).next_back())
                         {
                             let offset = address - base;
+                            let name = image.file_name().unwrap_or_default().to_string_lossy();
                             eprintln!(
                                 "action=windows_exception_frame module={name} offset=0x{offset:x} \
                                  first_chance={}",
                                 exception.dwFirstChance
                             );
                             if name.eq_ignore_ascii_case("pnport_preload.dll") {
-                                let image = PathBuf::from(env!("CARGO_BIN_EXE_pnport"))
-                                    .with_file_name(name);
-                                if let Ok(symbols) = Command::new("llvm-symbolizer.exe")
-                                    .arg("--relative-address")
-                                    .arg(format!("--obj={}", image.display()))
-                                    .arg(format!("0x{offset:x}"))
-                                    .output()
-                                {
-                                    eprintln!("{}", String::from_utf8_lossy(&symbols.stdout));
+                                match windows_fault::symbolize(image, offset, |command| {
+                                    command
+                                        .output()
+                                        .map(|output| (output.status.success(), output.stdout))
+                                }) {
+                                    windows_fault::Symbols::Resolved(symbols) => {
+                                        eprintln!("{symbols}")
+                                    }
+                                    windows_fault::Symbols::Unavailable => eprintln!(
+                                        "action=windows_exception_symbols module={name} \
+                                         offset=0x{offset:x} result=unavailable"
+                                    ),
                                 }
                             }
                         }

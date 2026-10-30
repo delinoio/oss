@@ -30,16 +30,11 @@
 
 ## Owning contracts
 
-- [bundlewhy Rust foundation](../docs/crates-bundlewhy-foundation.md)
-- [typeopt Rust CLI foundation](../docs/crates-typeopt-foundation.md)
-
 - [clibox public documentation foundation](../docs/apps-clibox-docs-foundation.md)
 - [crates-binpm-foundation](../docs/crates-binpm-foundation.md)
 - [crates-cargo-mono-foundation](../docs/crates-cargo-mono-foundation.md)
 - [clibox Rust foundation](../docs/crates-clibox-foundation.md)
 - [clibox fspy workflow contract](../docs/crates-clibox-fspy-contract.md)
-- [crates-devhud-native-messaging-host-contract](../docs/crates-devhud-native-messaging-host-contract.md)
-- [Forge Rust Foundation](../docs/crates-forge-foundation.md)
 - [fspy source fork contract](../docs/crates-fspy-vendor-contract.md)
 - [crates-nodeup-foundation](../docs/crates-nodeup-foundation.md)
 - [pnport Rust foundation](../docs/crates-pnport-foundation.md)

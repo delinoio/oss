@@ -1,0 +1,5 @@
+Catalog data and provider authentication protocol constants adapted from opencodex
+https://github.com/lidge-jun/opencodex
+Revision 88aaa754566d119b6b8fc898f8fb47602387d82e.
+Copyright and MIT license: see LICENSE-MIT in this directory.
+The reference server is not included. TaiRouter Go implementation is Apache-2.0.

@@ -1,0 +1,26 @@
+{
+  "name": "labs-docs",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "node ../../scripts/run-rspress-port.mjs labs-docs dev 46303 -",
+    "build": "pnpm i18n:check && rspress build",
+    "build:frontend": "pnpm build",
+    "preview": "node ../../scripts/run-rspress-port.mjs labs-docs preview 46304 -",
+    "test": "pnpm i18n:check && node --test ../../scripts/localization/*.test.mjs && pnpm build && pnpm ci:routes",
+    "ci:routes": "node --test scripts/tairouter-content.test.mjs && node scripts/validate-routes.mjs",
+    "i18n:check": "node ../../scripts/localization/cli.mjs check",
+    "i18n:translate": "node ../../scripts/localization/cli.mjs translate",
+    "i18n:login": "node ../../scripts/localization/cli.mjs login",
+    "i18n:logout": "node ../../scripts/localization/cli.mjs logout",
+    "i18n:models": "node ../../scripts/localization/cli.mjs models",
+    "i18n:profiles": "node ../../scripts/localization/cli.mjs profiles",
+    "ci:check": "pnpm i18n:check && node --test ../../scripts/localization/*.test.mjs"
+  },
+  "devDependencies": {
+    "@rspress/core": "2.0.23",
+    "entities": "6.0.1"
+  }
+}

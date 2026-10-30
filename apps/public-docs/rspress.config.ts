@@ -9,7 +9,6 @@ const homePages = [
 ];
 
 const productPages = [
-  { text: "DevHud", link: "/devhud", activeMatch: "^/devhud" },
   { text: "Cargo Mono", link: "/cargo-mono" },
   { text: "With Watch", link: "/with-watch" },
 ];
@@ -113,20 +112,6 @@ const pnportPages = [
   { text: "Releases and Rollback", link: "/pnport/releases" },
 ];
 
-const bundlewhyPages = [
-  { text: "Overview", link: "/bundlewhy/", activeMatch: "^/bundlewhy/$" },
-  { text: "Installation", link: "/bundlewhy/installation" },
-  { text: "Getting Started", link: "/bundlewhy/getting-started" },
-  { text: "Supported Engines", link: "/bundlewhy/supported-engines" },
-  {
-    text: "Interpreting Diagnostics",
-    link: "/bundlewhy/interpreting-diagnostics",
-  },
-  { text: "Privacy and Export", link: "/bundlewhy/privacy-and-export" },
-  { text: "Limitations", link: "/bundlewhy/limitations" },
-  { text: "Troubleshooting", link: "/bundlewhy/troubleshooting" },
-];
-
 const projectPages = [
   { text: "Runmoor", link: "/runmoor/", activeMatch: "^/runmoor" },
   { text: "Nodeup", link: "/nodeup/", activeMatch: "^/nodeup" },
@@ -138,11 +123,6 @@ const projectPages = [
   },
   { text: "clibox", link: "/clibox/", activeMatch: "^/clibox(?:/|$)" },
   { text: "pnport", link: "/pnport/", activeMatch: "^/pnport(?:/|$)" },
-  {
-    text: "bundlewhy",
-    link: "/bundlewhy/",
-    activeMatch: "^/bundlewhy(?:/|$)",
-  },
 ];
 
 export default defineConfig({
@@ -166,30 +146,16 @@ export default defineConfig({
         { text: "Get Started", items: homePages.slice(0, 2) },
         { text: "Reference", items: homePages.slice(2) },
         {
-          text: "Developer Utility",
-          items: [
-            { text: "Overview", link: "/devhud" },
-            { text: "Install and Verify", link: "/devhud/install" },
-            { text: "Using DevHud", link: "/devhud/guide" },
-            { text: "Privacy", link: "/devhud/privacy" },
-            { text: "Security", link: "/devhud/security" },
-            { text: "Support", link: "/devhud/support" },
-            { text: "Administration", link: "/devhud/admin" },
-            { text: "Releases", link: "/devhud/releases" },
-          ],
-        },
-        {
           text: "Rust Monorepo Tooling",
-          items: [productPages[1]],
+          items: [productPages[0]],
         },
         {
           text: "Command Rerun Watcher",
-          items: [productPages[2]],
+          items: [productPages[1]],
         },
       ],
       "/clibox/": [{ text: "clibox", items: cliboxPages }],
       "/pnport/": [{ text: "pnport", items: pnportPages }],
-      "/bundlewhy/": [{ text: "bundlewhy", items: bundlewhyPages }],
       "/runmoor/": [{ text: "Runmoor", items: runmoorPages }],
       "/nodeup/": [{ text: "Nodeup", items: nodeupPages }],
       "/binpm/": [{ text: "binpm", items: binpmPages }],

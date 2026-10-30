@@ -1,0 +1,62 @@
+{
+  "MiniMax-M2": {
+    "input": 0.3,
+    "output": 1.2,
+    "cacheRead": 0,
+    "cacheWrite": 0
+  },
+  "MiniMax-M2.1": {
+    "input": 0.3,
+    "output": 1.2,
+    "cacheRead": 0,
+    "cacheWrite": 0
+  },
+  "MiniMax-M2.5": {
+    "input": 0.3,
+    "output": 1.2,
+    "cacheRead": 0.03,
+    "cacheWrite": 0.375
+  },
+  "MiniMax-M2.5-highspeed": {
+    "input": 0.6,
+    "output": 2.4,
+    "cacheRead": 0.06,
+    "cacheWrite": 0.375
+  },
+  "MiniMax-M2.5-lightning": {
+    "input": 0.3,
+    "output": 2.4,
+    "cacheRead": 0,
+    "cacheWrite": 0
+  },
+  "MiniMax-M2.7": {
+    "input": 0.3,
+    "output": 1.2,
+    "cacheRead": 0.06,
+    "cacheWrite": 0.375
+  },
+  "MiniMax-M2.7-highspeed": {
+    "input": 0.6,
+    "output": 2.4,
+    "cacheRead": 0.06,
+    "cacheWrite": 0.375
+  },
+  "minimax-m3": {
+    "input": 0.6,
+    "output": 2.4,
+    "cacheRead": 0.12,
+    "cacheWrite": 0
+  },
+  "MiniMax-M3": {
+    "input": 0.3,
+    "output": 1.2,
+    "cacheRead": 0.06,
+    "cacheWrite": 0
+  },
+  "MiniMax-M3.1-Flash": {
+    "input": 0.15,
+    "output": 0.6,
+    "cacheRead": 0.015,
+    "cacheWrite": 0
+  }
+}

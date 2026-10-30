@@ -77,14 +77,4 @@ export const projectRoutes = {
     "/benchmarks",
     "/releases",
   ],
-  bundlewhy: [
-    "/",
-    "/installation",
-    "/getting-started",
-    "/supported-engines",
-    "/interpreting-diagnostics",
-    "/privacy-and-export",
-    "/limitations",
-    "/troubleshooting",
-  ],
 };

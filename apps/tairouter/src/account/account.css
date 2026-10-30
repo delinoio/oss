@@ -1,0 +1,1148 @@
+/* SPDX-License-Identifier: Apache-2.0 */
+.account-surface {
+  width: min(100%, 640px);
+  margin: 0 auto;
+  color: #191f28;
+  overflow-wrap: anywhere;
+}
+.account-surface > header {
+  margin-bottom: 32px;
+}
+.account-surface h1 {
+  font-size: clamp(24px, 4vw, 32px);
+  line-height: 1.25;
+  margin: 0 0 12px;
+}
+.account-surface h2,
+.account-dialog h2 {
+  font-size: 20px;
+  margin-top: 0;
+}
+.account-surface p,
+.account-dialog p {
+  line-height: 1.6;
+}
+.account-surface header p,
+.account-hint {
+  color: #4e5968;
+}
+.account-card {
+  background: #fff;
+  border: 1px solid #d4d8df;
+  border-radius: 12px;
+  padding: 24px;
+  margin: 20px 0;
+}
+.account-surface label,
+.account-dialog label {
+  display: grid;
+  gap: 8px;
+  margin: 16px 0;
+  font-weight: 600;
+}
+.account-surface input,
+.account-surface select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid #7b8490;
+  border-radius: 8px;
+  padding: 10px 12px;
+  font: inherit;
+  min-height: 44px;
+  background: #fff;
+  color: #191f28;
+}
+.account-surface button,
+.account-dialog button,
+.account-action {
+  min-height: 44px;
+  border: 1px solid #7b8490;
+  border-radius: 8px;
+  background: #fff;
+  color: #191f28;
+  padding: 10px 16px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.account-surface button:disabled,
+.account-dialog button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.account-surface a {
+  color: #1d4ed8;
+}
+.account-surface .account-primary,
+.account-dialog .account-primary {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #fff;
+}
+.account-surface .account-danger,
+.account-dialog .account-danger {
+  background: #b42318;
+  border-color: #b42318;
+  color: #fff;
+}
+.account-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 24px 0 12px;
+}
+.account-error {
+  border: 1px solid #b42318;
+  background: #fff5f4;
+  color: #922016;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+}
+.account-notice {
+  background: #eff6ff;
+  border-radius: 8px;
+  padding: 16px;
+}
+.account-details {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(0, 2fr);
+  gap: 16px;
+}
+.account-details dt {
+  color: #4e5968;
+}
+.account-details dd {
+  margin: 0;
+}
+.account-code {
+  font-family: monospace;
+  font-size: 28px;
+  letter-spacing: 0.08em;
+  display: block;
+  text-align: center;
+  padding: 20px 8px;
+  background: #f2f4f6;
+  border-radius: 8px;
+}
+.account-dialog {
+  width: min(480px, calc(100% - 48px));
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  border: 0;
+  border-radius: 12px;
+  padding: 24px;
+  color: #191f28;
+}
+.account-dialog::backdrop {
+  background: rgb(25 31 40 / 45%);
+}
+.account-surface :focus-visible,
+.account-dialog :focus-visible {
+  outline: 3px solid #1d4ed8;
+  outline-offset: 3px;
+}
+@media (max-width: 420px) {
+  .account-card {
+    padding: 16px;
+  }
+  .account-details {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .account-details dd {
+    margin-bottom: 12px;
+  }
+  .account-actions > * {
+    width: 100%;
+  }
+}
+
+/* Standalone sign-in identity card. All rules are scoped to .sign-in so other
+   AccountSurface consumers keep their geometry. */
+.standalone:has(> .sign-in) {
+  max-width: none;
+  margin: 136px auto 0;
+  padding: 24px;
+}
+.sign-in {
+  width: min(100%, 480px);
+  margin: 0 auto;
+}
+.sign-in-wordmark {
+  margin: 0 0 16px;
+  color: #191f28;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+.account-surface.sign-in-card {
+  box-sizing: border-box;
+  width: 100%;
+  background: #fff;
+  border: 1px solid #d5dbe3;
+  border-radius: 12px;
+  padding: 32px;
+}
+.sign-in-card > header {
+  margin-bottom: 24px;
+}
+.sign-in-card h1 {
+  margin: 0 0 8px;
+}
+.sign-in-card h1:focus {
+  outline: none;
+}
+.sign-in-card p {
+  margin: 0 0 24px;
+}
+.sign-in-card > header p {
+  margin: 0;
+}
+.sign-in-card .sign-in-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin: 0 0 24px;
+}
+.sign-in-alert-icon {
+  flex: none;
+  margin-top: 2px;
+  color: #b42318;
+}
+.sign-in-card .sign-in-guidance {
+  color: #4e5968;
+}
+.account-surface .sign-in-action {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  text-align: center;
+  text-decoration: none;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.account-surface .sign-in-action:focus-visible {
+  outline: 3px solid #1d4ed8;
+  outline-offset: 3px;
+}
+@media (max-width: 767px) {
+  .standalone:has(> .sign-in) {
+    margin: 0 auto;
+    padding: 48px 16px 24px;
+  }
+  .account-surface.sign-in-card {
+    padding: 24px;
+  }
+}
+@media (max-width: 320px) {
+  .account-surface.sign-in-card {
+    padding: 16px;
+  }
+}
+
+/* Ownership acceptance review card. All rules are scoped to .ownership-surface
+   so InvitationPage and the other AccountSurface consumers keep their geometry. */
+.ownership-surface h1:focus {
+  outline: none;
+}
+.ownership-card {
+  box-sizing: border-box;
+  background: #fff;
+  border: 1px solid #d5dbe3;
+  border-radius: 12px;
+  padding: 32px;
+  margin: 0;
+}
+.ownership-card > :first-child {
+  margin-top: 0;
+}
+.ownership-card p {
+  margin: 0 0 16px;
+}
+.ownership-card .ownership-status:empty {
+  display: none;
+}
+.ownership-card .ownership-status {
+  font-weight: 600;
+}
+.ownership-card .ownership-alert {
+  border: 1px solid #b42318;
+  background: #fff5f4;
+  color: #922016;
+  border-radius: 8px;
+  padding: 16px;
+}
+.ownership-organization {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+}
+.ownership-card .ownership-label {
+  margin: 0;
+  color: #4e5968;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.ownership-surface .ownership-organization h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.35;
+}
+.ownership-card .ownership-badge {
+  margin: 8px 0 0;
+  padding: 2px 10px;
+  border: 1px solid #1d4ed8;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.ownership-section {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #d5dbe3;
+}
+.ownership-surface .ownership-section h3 {
+  margin: 0 0 16px;
+  font-size: 16px;
+  line-height: 1.5;
+}
+.ownership-facts {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 12px;
+}
+.ownership-facts > div {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(0, 2fr);
+  gap: 16px;
+}
+.ownership-facts dt {
+  color: #4e5968;
+}
+.ownership-facts dd {
+  margin: 0;
+  font-weight: 600;
+}
+.ownership-section .account-hint {
+  margin: 0;
+}
+.ownership-card .ownership-note {
+  margin: 24px 0 16px;
+  padding: 16px;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #191f28;
+}
+.ownership-surface .ownership-accept {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+}
+.ownership-card .ownership-return {
+  margin: 16px 0 0;
+}
+.ownership-surface .ownership-return a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.ownership-card .ownership-quiet {
+  margin: 4px 0 0;
+  color: #4e5968;
+  font-size: 14px;
+}
+.ownership-skeleton {
+  display: grid;
+  gap: 12px;
+}
+.ownership-skeleton-line {
+  display: block;
+  height: 16px;
+  border-radius: 4px;
+  background: #e5e8eb;
+  animation: ownership-skeleton-pulse 1.4s ease-in-out infinite;
+}
+.ownership-skeleton-short {
+  width: 30%;
+}
+.ownership-skeleton-title {
+  width: 60%;
+  height: 24px;
+}
+@keyframes ownership-skeleton-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .ownership-skeleton-line {
+    animation: none;
+  }
+}
+@media (max-width: 767px) {
+  .ownership-card {
+    padding: 24px;
+  }
+}
+@media (max-width: 480px) {
+  .ownership-card {
+    padding: 16px;
+  }
+  .ownership-facts > div {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+}
+
+/* Invitation acceptance review card. All rules are scoped to
+   .invitation-surface so the other AccountSurface consumers keep their
+   geometry. */
+.account-surface.invitation-surface {
+  width: min(100%, 560px);
+}
+.invitation-surface h1:focus {
+  outline: none;
+}
+.invitation-surface .invitation-card {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 24px;
+  border-color: #d5dbe3;
+}
+.invitation-card > :first-child {
+  margin-top: 0;
+}
+.invitation-card p {
+  margin: 0 0 16px;
+}
+.invitation-card .invitation-identity {
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: #f2f4f6;
+  color: #4e5968;
+  font-size: 14px;
+}
+.invitation-card .invitation-status {
+  font-weight: 600;
+}
+.invitation-card .invitation-status:empty {
+  display: none;
+}
+.invitation-surface .invitation-card label {
+  margin: 0 0 8px;
+}
+.invitation-card .invitation-helper {
+  margin: 8px 0 16px;
+  font-size: 14px;
+}
+.invitation-card .invitation-field-error {
+  border: 1px solid #b42318;
+  background: #fff5f4;
+  color: #922016;
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+.invitation-organization {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 8px;
+}
+.invitation-surface .invitation-organization h2 {
+  margin: 0;
+  line-height: 1.35;
+}
+.invitation-badge {
+  padding: 2px 10px;
+  border: 1px solid #1d4ed8;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.invitation-details {
+  margin: 16px 0;
+}
+.invitation-details dd {
+  font-weight: 600;
+}
+.invitation-card .invitation-note {
+  padding: 16px;
+  border-radius: 8px;
+  background: #eff6ff;
+  color: #191f28;
+}
+.invitation-card .invitation-unresolved {
+  color: #191f28;
+}
+.invitation-card .invitation-return {
+  margin: 0;
+}
+.invitation-surface .invitation-return a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.invitation-surface .invitation-accept,
+.invitation-surface .invitation-paging {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+}
+.invitation-surface .invitation-paging {
+  margin-bottom: 16px;
+}
+.invitation-skeleton {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.invitation-skeleton-line {
+  display: block;
+  height: 16px;
+  border-radius: 4px;
+  background: #e5e8eb;
+  animation: invitation-skeleton-pulse 1.4s ease-in-out infinite;
+}
+.invitation-skeleton-title {
+  width: 60%;
+  height: 24px;
+}
+@keyframes invitation-skeleton-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .invitation-skeleton-line {
+    animation: none;
+  }
+}
+@media (max-width: 480px) {
+  .invitation-surface .invitation-card {
+    padding: 16px;
+  }
+}
+
+/* Organization onboarding page. All rules are scoped to .onboarding-surface so
+   the other AccountSurface consumers keep their geometry. */
+.account-surface.onboarding-surface {
+  width: min(100%, 960px);
+}
+.onboarding-surface h1:focus {
+  outline: none;
+}
+.onboarding-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  align-items: start;
+}
+.onboarding-surface .onboarding-card {
+  box-sizing: border-box;
+  min-width: 0;
+  margin: 0;
+  padding: 24px;
+}
+.onboarding-surface .onboarding-card h2 {
+  margin: 0 0 24px;
+  line-height: 1.4;
+}
+.onboarding-status {
+  margin: 0;
+  font-weight: 600;
+}
+.onboarding-status:empty {
+  display: none;
+}
+.onboarding-card > .onboarding-status {
+  margin-bottom: 16px;
+}
+.onboarding-invitations {
+  display: grid;
+  gap: 16px;
+  margin: 0 0 24px;
+  padding: 0;
+  list-style: none;
+}
+.onboarding-invitations li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 16px;
+}
+.onboarding-invitations strong {
+  min-width: 0;
+  line-height: 1.5;
+}
+.onboarding-surface .onboarding-review,
+.onboarding-surface .onboarding-manual-link,
+.onboarding-surface .onboarding-open {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 44px;
+  line-height: 1.5;
+}
+.onboarding-surface .onboarding-open {
+  padding: 10px 16px;
+  border-radius: 8px;
+  color: #fff;
+  font-weight: 600;
+  text-decoration: none;
+}
+.onboarding-card .onboarding-empty {
+  margin: 0 0 24px;
+}
+.onboarding-surface .onboarding-more {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 24px;
+}
+.onboarding-manual {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #d4d8df;
+}
+.onboarding-manual p {
+  margin: 0 0 8px;
+  color: #4e5968;
+}
+.onboarding-skeleton {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+.onboarding-skeleton-line {
+  display: block;
+  height: 16px;
+  border-radius: 4px;
+  background: #e5e8eb;
+  animation: onboarding-skeleton-pulse 1.4s ease-in-out infinite;
+}
+@keyframes onboarding-skeleton-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .onboarding-skeleton-line {
+    animation: none;
+  }
+}
+.onboarding-surface .onboarding-field {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 24px;
+}
+.onboarding-surface .onboarding-field label {
+  margin: 0;
+}
+.onboarding-card .onboarding-helper {
+  margin: 0;
+  color: #4e5968;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.onboarding-surface .onboarding-submit {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+}
+.onboarding-card .onboarding-note {
+  margin: 16px 0 0;
+  color: #4e5968;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.onboarding-guide {
+  box-sizing: border-box;
+  margin-top: 24px;
+  padding: 24px;
+  border: 1px solid #d4d8df;
+  border-radius: 12px;
+  background: #f7f8fa;
+}
+.onboarding-surface .onboarding-guide h2 {
+  margin: 0 0 16px;
+}
+.onboarding-steps {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  color: #4e5968;
+}
+.onboarding-steps li {
+  line-height: 1.5;
+  padding-left: 4px;
+}
+.onboarding-steps li[aria-current="step"] {
+  color: #191f28;
+  font-weight: 600;
+}
+.onboarding-current {
+  display: inline-block;
+  margin-left: 12px;
+  padding: 0 10px;
+  border: 1px solid #1d4ed8;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.account-surface.onboarding-created {
+  width: min(100%, 640px);
+}
+@media (max-width: 799px) {
+  .onboarding-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .onboarding-surface .onboarding-card,
+  .onboarding-guide {
+    padding: 16px;
+  }
+  .onboarding-guide {
+    margin-top: 16px;
+  }
+}
+
+/* Device approval layout. All rules are scoped to .device-surface and
+   .device-card so the other AccountSurface consumers keep their geometry. */
+.standalone:has(> .device-surface) {
+  max-width: none;
+  margin: 48px auto 0;
+  padding: 0 24px 48px;
+}
+.account-surface.device-surface {
+  width: min(100%, 600px);
+}
+.device-surface > header {
+  margin-bottom: 24px;
+}
+.device-surface > header h1 {
+  margin-bottom: 8px;
+}
+.device-surface .device-card {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 32px;
+  border-color: #d5dbe3;
+}
+.device-card > :first-child {
+  margin-top: 0;
+}
+.device-surface .device-entry label {
+  margin: 0 0 8px;
+}
+.device-surface .device-helper {
+  margin: 8px 0 16px;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.device-surface .device-review {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+}
+.device-unverified {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 1px solid #d5dbe3;
+  border-left: 4px solid #b42318;
+  border-radius: 8px;
+  background: #fff;
+  color: #191f28;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.device-result {
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid #d5dbe3;
+  border-radius: 8px;
+  background: #f2f4f6;
+}
+/* Keep the empty live region exposed to assistive technology so the first
+   result is announced; only suppress its visual spacing and decoration. */
+.device-result:empty {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.device-result[data-state="APPROVED"] {
+  border-color: #bfdbfe;
+  background: #eff6ff;
+}
+.device-result h2 {
+  margin: 0 0 8px;
+  font-size: 20px;
+}
+.device-result p {
+  margin: 0;
+}
+.device-recovery {
+  margin: 0 0 24px;
+  padding: 0 0 0 16px;
+  border-left: 2px solid #d5dbe3;
+  color: #4e5968;
+  font-size: 14px;
+  line-height: 1.5;
+}
+.device-recovery h3 {
+  margin: 0 0 4px;
+  color: #191f28;
+  font-size: 14px;
+}
+.device-recovery p {
+  margin: 0;
+}
+.device-details {
+  margin: 0 0 24px;
+}
+.device-details dd {
+  font-weight: 600;
+}
+.device-code-panel {
+  margin: 0 0 16px;
+  padding: 16px;
+  border: 1px solid #d5dbe3;
+  border-radius: 8px;
+  background: #f2f4f6;
+}
+.device-code-panel p {
+  margin: 0;
+}
+.device-code-panel .device-code-label {
+  color: #4e5968;
+  font-size: 14px;
+}
+.device-code-panel .device-code {
+  margin: 8px 0;
+  padding: 8px 0;
+  background: transparent;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  text-align: left;
+  text-transform: none;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+.device-code-panel .device-code-note {
+  font-size: 14px;
+}
+.device-deadline {
+  margin: 0 0 24px;
+}
+.device-deadline p {
+  margin: 0 0 4px;
+}
+.device-deadline .device-deadline-label {
+  display: block;
+  color: #4e5968;
+  font-size: 14px;
+}
+.device-deadline .device-deadline-remaining {
+  font-weight: 600;
+}
+.device-form {
+  padding-top: 24px;
+  border-top: 1px solid #d5dbe3;
+}
+.device-surface .device-form label {
+  margin: 0 0 8px;
+}
+.device-form .device-no-organization {
+  margin: 0 0 16px;
+}
+.device-surface .device-load-more {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  margin-bottom: 16px;
+}
+.device-surface .device-actions {
+  flex-wrap: nowrap;
+  margin: 24px 0 0;
+}
+.device-surface .device-actions > button {
+  flex: 1 1 0;
+}
+.account-surface .device-deny {
+  color: #b42318;
+}
+.device-reset {
+  margin-top: 24px;
+  padding-top: 24px;
+  border-top: 1px solid #d5dbe3;
+}
+@media (max-width: 767px) {
+  .device-surface .device-card {
+    padding: 24px;
+  }
+}
+@media (max-width: 479px) {
+  .standalone:has(> .device-surface) {
+    padding: 0 16px 32px;
+  }
+  .device-surface .device-card {
+    padding: 16px;
+  }
+  .device-surface .device-actions {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 12px;
+  }
+  .device-surface .device-actions > button,
+  .device-surface .device-reset > button {
+    width: 100%;
+  }
+}
+
+/* Account profile and deletion page. All rules are scoped to .account-page so
+   the other AccountSurface consumers keep their geometry. */
+.main:has(.account-page) {
+  padding: 32px;
+}
+.account-surface.account-page {
+  width: min(100%, 720px);
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+.account-page > header {
+  margin-bottom: 0;
+}
+.account-page > header h1 {
+  margin-bottom: 8px;
+}
+.account-page > header p {
+  margin: 0;
+}
+.account-page .account-card {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 24px;
+}
+.account-page .account-card > h2 {
+  margin-bottom: 16px;
+}
+.account-page .account-card h3 {
+  font-size: 16px;
+  line-height: 1.5;
+  margin: 0 0 8px;
+}
+.account-page .account-details {
+  margin: 0 0 16px;
+}
+.account-page .account-signout {
+  margin-top: 8px;
+  background: #fff;
+}
+.account-page .account-ownership-status:empty {
+  display: none;
+}
+.account-page .account-ownership-status p,
+.account-page .account-ownership-panel p {
+  margin: 0;
+}
+.account-page .account-ownership-panel {
+  background: #f7f8fa;
+  border: 1px solid #d4d8df;
+  border-radius: 8px;
+  padding: 16px;
+  margin: 16px 0;
+}
+.account-page .account-owner-section {
+  margin: 16px 0;
+}
+.account-page .account-owner-section > p {
+  margin: 0 0 8px;
+}
+.account-page .account-owner-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.account-page .account-owner {
+  display: grid;
+  gap: 4px;
+  justify-items: start;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid #d4d8df;
+  border-radius: 8px;
+}
+.account-page .account-owner-name {
+  font-weight: 600;
+}
+.account-page .account-owner-role {
+  font-size: 14px;
+  color: #4e5968;
+  border: 1px solid #d4d8df;
+  border-radius: 8px;
+  padding: 0 8px;
+}
+.account-page .account-owner-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+}
+.account-page .account-owner-help {
+  font-size: 14px;
+  color: #4e5968;
+}
+.account-page .account-check-more {
+  margin: 8px 0 16px;
+}
+.account-page .account-consequences {
+  margin: 24px 0 16px;
+}
+.account-page .account-consequences ul {
+  margin: 0;
+  padding-left: 22px;
+}
+.account-page .account-delete > .account-danger {
+  display: block;
+}
+.account-page .account-delete > .account-hint {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+.account-skeleton {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+.account-skeleton-line {
+  display: block;
+  height: 16px;
+  border-radius: 4px;
+  background: #e5e8eb;
+  animation: account-skeleton-pulse 1.4s ease-in-out infinite;
+}
+.account-skeleton-title {
+  width: 60%;
+  height: 24px;
+}
+.account-skeleton-short {
+  width: 30%;
+}
+@keyframes account-skeleton-pulse {
+  50% {
+    opacity: 0.5;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-skeleton-line {
+    animation: none;
+  }
+}
+@media (max-width: 767px) {
+  .main:has(.account-page) {
+    padding: 16px;
+  }
+}
+@media (max-width: 420px) {
+  .account-page .account-card {
+    padding: 16px;
+  }
+  .account-page .account-signout,
+  .account-page .account-check-more,
+  .account-page .account-delete > .account-danger {
+    width: 100%;
+  }
+}
+
+/* Account deletion confirmation. All rules are scoped to .account-dialog-review
+   (or the account page status region) so other AccountDialog consumers keep the
+   base dialog geometry. */
+.account-page .account-deletion-status:empty {
+  display: none;
+}
+.account-page .account-deletion-status p {
+  margin: 16px 0 0;
+}
+.account-dialog.account-dialog-review {
+  box-sizing: border-box;
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+}
+.account-dialog-review .account-dialog-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.account-dialog-review .account-dialog-header h2 {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.account-dialog-review .account-dialog-close {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  padding: 0;
+  border-color: transparent;
+}
+.account-dialog-review .account-dialog-lead {
+  margin: 0 0 16px;
+}
+.account-dialog-review h3 {
+  font-size: 16px;
+  line-height: 1.5;
+  margin: 0 0 8px;
+}
+.account-dialog-review .account-dialog-list {
+  margin: 0 0 16px;
+  padding-left: 22px;
+}
+.account-dialog-review .account-dialog-notice {
+  margin: 0 0 16px;
+  padding: 16px;
+  background: #f7f8fa;
+  border: 1px solid #d4d8df;
+  border-radius: 8px;
+}
+.account-dialog-review .account-deletion-status:empty {
+  display: none;
+}
+.account-dialog-review .account-deletion-status p {
+  margin: 0 0 16px;
+}
+.account-dialog-review .account-dialog-actions {
+  margin: 24px 0 0;
+  justify-content: flex-end;
+}
+@media (max-width: 420px) {
+  .account-dialog.account-dialog-review {
+    padding: 16px;
+  }
+  .account-dialog-review .account-dialog-actions {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+}

@@ -13,7 +13,7 @@ Run trusted repository checks asynchronously against committed source, with dura
 - `cmds/async-commit-hook`: Go core, CLI, workers, local API, stdio MCP, installation and update lifecycle.
 - `apps/async-commit-hook`: React/Rsbuild UI embedded in ach.
 - `apps/public-docs/docs/async-commit-hook`: Rspress documentation content published at `https://oss.delino.io/async-commit-hook`; installer assets remain in `scripts/install`.
-- `protos/async_commit_hook/v1`: versioned Connect protocol.
+- `protos/async_commit_hook/v1`: versioned Connect protocol and generated Go bindings, with Connect bindings in `achv1connect/`.
 - `packages/async-commit-hook-api-client`: generated TypeScript/Connect Query client.
 - `packaging/async-commit-hook`: supported release metadata and compatibility evidence.
 
@@ -35,7 +35,7 @@ Configuration, local storage, CLI JSON and API contracts start at version 1. Pro
 
 Receipt acceptance remains distinct from runner startup across CLI, MCP and Connect. The browser retains accepted rerun IDs on startup failure and offers direct navigation instead of treating the request as unaccepted.
 
-Defaults: daemon mode, API loopback port 46309, frontend development port 46308, project configuration `.config/async-commit-hook.toml`, personal configuration `~/.config/async-commit-hook/config.toml`, state `~/.local/share/async-commit-hook`, indefinite retention. Port conflicts fail. Root `pnpm dev` remains DevHud-owned.
+Defaults: daemon mode, API loopback port 46309, frontend development port 46308, project configuration `.config/async-commit-hook.toml`, personal configuration `~/.config/async-commit-hook/config.toml`, state `~/.local/share/async-commit-hook`, indefinite retention. Port conflicts fail.
 
 Results, reports and credentials remain local: this deliberately overrides the repository's R2 file-storage default. Trusted host commands are not a hostile-code sandbox. No telemetry, remote result storage, login autostart, automatic update, execution timeout or global command concurrency cap.
 

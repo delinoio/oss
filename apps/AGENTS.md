@@ -6,6 +6,10 @@
 
 ## Development and validation
 
+- Use `pnpm dev:labs-site` for the marketing site on fixed loopback port `46312`; conflicts fail. Follow the labs-site foundation for build and preview procedures.
+
+- Labs documentation uses `pnpm dev:labs-docs` on fixed loopback port `46303`; follow the [Labs app contract](../docs/apps-labs-docs-foundation.md).
+
 - Use `pnpm dev:public-docs` for documentation development on fixed loopback port `46302`; conflicts fail. Follow the public-docs contract for wrapper and shutdown behavior.
 
 - Follow root `AGENTS.md` and project-specific docs before adding or changing app code.
@@ -16,12 +20,16 @@
 
 ## Owning contracts
 
-- [bundlewhy web UI](../docs/apps-bundlewhy-web-contract.md)
+- [Shared Labs localization](../docs/apps-labs-localization-contract.md)
+
+- [labs-site marketing foundation](../docs/apps-labs-site-foundation.md)
+
+- [Labs documentation foundation](../docs/apps-labs-docs-foundation.md)
+- [Labs documentation project](../docs/project-labs-docs.md)
+
 - [async-commit-hook application contract](../docs/apps-async-commit-hook-contract.md)
 - [binpm public documentation foundation](../docs/apps-binpm-docs-foundation.md)
 - [clibox public documentation foundation](../docs/apps-clibox-docs-foundation.md)
-- [apps-devhud-foundation](../docs/apps-devhud-foundation.md)
-- [DevHud Desktop Updater Contract](../docs/apps-devhud-updater-contract.md)
 - [Nodeup public documentation foundation](../docs/apps-nodeup-docs-foundation.md)
 - [pnport public documentation](../docs/apps-pnport-docs-foundation.md)
 - [apps-public-docs-foundation](../docs/apps-public-docs-foundation.md)
@@ -29,7 +37,6 @@
 - [Runmoor command foundation](../docs/cmds-runmoor-foundation.md)
 - [crates-binpm-foundation](../docs/crates-binpm-foundation.md)
 - [Project: binpm](../docs/project-binpm.md)
-- [Project: devhud](../docs/project-devhud.md)
 - [Project: nodeup](../docs/project-nodeup.md)
 - [pnport](../docs/project-pnport.md)
 - [Runmoor](../docs/project-runmoor.md)
@@ -37,3 +44,7 @@
 - [Linux Package Repository Contract](../docs/repository-linux-packages-contract.md)
 - [Prebuilt dependency distribution](../docs/repository-prebuilt-dependencies-contract.md)
 - [Repository Workflow Contract](../docs/repository-workflow-contract.md)
+
+- [TaiRouter](../docs/project-tairouter.md)
+- [TaiRouter domain contract](../docs/apps-tairouter-console-contract.md)
+- [TaiRouter public documentation](../docs/apps-tairouter-docs-contract.md): Labs Docs owns the English public guides; Labs Site owns the localized product page. The consolidated public-docs app does not publish this product.

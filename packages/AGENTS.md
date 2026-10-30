@@ -10,11 +10,11 @@
 
 ## Owning contracts
 
-- [bundlewhy adapters and distribution](../docs/packages-bundlewhy-distribution-contract.md)
 - [async-commit-hook API client contract](../docs/packages-async-commit-hook-api-client-contract.md)
 - [clibox npm and native distribution](../docs/packages-clibox-distribution-contract.md)
-- [packages-devhud-api-client-contract](../docs/packages-devhud-api-client-contract.md)
 - [packages-docs-site-switcher-contract](../docs/packages-docs-site-switcher-contract.md)
 - [pnport npm and native distribution](../docs/packages-pnport-distribution-contract.md)
-- [Project: devhud](../docs/project-devhud.md)
 - [pnport](../docs/project-pnport.md)
+
+- [TaiRouter](../docs/project-tairouter.md)
+- [TaiRouter domain contract](../docs/packages-tairouter-libraries-contract.md)

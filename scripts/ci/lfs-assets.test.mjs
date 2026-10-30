@@ -29,28 +29,10 @@ const assetExtensions = new Set([
   ".xlsx",
   ".zip",
 ]);
-const lfsAssets = [
-  "apps/devhud/src-tauri/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf",
-  "crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf",
-  "servers/devhud-api/internal/r2/removal.png",
-];
+const lfsAssets = [];
 const hydratedJobs = {
-  "CI.yml": [
-    "go-quality",
-    "go-test",
-    "rust-clippy",
-    "rust-test",
-    "forge-test",
-    "forge-render",
-    "devhud-frontend",
-    "devhud-rust-conformance",
-    "devhud-desktop",
-    "devhud-mobile-contracts",
-    "devhud-api",
-    "devhud-oci",
-  ],
+  "CI.yml": ["go-quality", "go-test", "rust-clippy", "rust-test"],
   "release-async-commit-hook.yml": ["validate"],
-  "package-devhud-private.yml": ["desktop", "oci"],
 };
 
 test("large repository assets are stored as LFS pointers", () => {

@@ -1,44 +1,25 @@
 version: v2
-clean: true
+# Go output shares directories with schema sources; never delete output roots.
+clean: false
 plugins:
   - local:
       - go
       - run
       - google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.12
-    out: protos/gen/go
+    out: protos
     opt:
       - paths=source_relative
   - local:
       - go
       - run
       - connectrpc.com/connect/cmd/protoc-gen-connect-go@v1.20.0
-    out: protos/gen/go
+    out: protos
     opt:
       - paths=source_relative
   - local:
       - pnpm
       - exec
       - protoc-gen-es
-    types:
-      - devhud.v1
-    out: packages/devhud-api-client/src/gen
-    opt:
-      - target=ts
-      - import_extension=js
-  - local:
-      - pnpm
-      - exec
-      - protoc-gen-connect-query
-    types:
-      - devhud.v1
-    out: packages/devhud-api-client/src/gen
-    opt:
-      - target=ts
-      - import_extension=js
-  - local:
-      - pnpm
-      - exec
-      - protoc-gen-es
     out: packages/async-commit-hook-api-client/src/gen
     types:
       - async_commit_hook.v1
@@ -52,32 +33,10 @@ plugins:
     out: packages/async-commit-hook-api-client/src/gen
     types:
       - async_commit_hook.v1
-    opt:
-      - target=ts
-      - import_extension=js
-  - local:
-      - pnpm
-      - exec
-      - protoc-gen-es
-    out: apps/bundlewhy-web/src/gen
-    types:
-      - bundlewhy.v1
-    opt:
-      - target=ts
-      - import_extension=js
-  - local:
-      - pnpm
-      - exec
-      - protoc-gen-connect-query
-    out: apps/bundlewhy-web/src/gen
-    types:
-      - bundlewhy.v1
     opt:
       - target=ts
       - import_extension=js
 inputs:
   - directory: protos
     paths:
-      - protos/devhud/v1
       - protos/async_commit_hook/v1
-      - protos/bundlewhy/v1

@@ -271,7 +271,7 @@ Documentation-first implementation:
 
 - Create the project index and relevant command, app, protocol, and client contracts before runtime implementation.
 - Update the docs catalog, project ownership maps, and applicable root/domain `AGENTS.md` files together.
-- Document the new development command and fixed port without changing the existing root DevHud workflow.
+- Document the application development command and fixed port.
 - Keep internal architecture and repository operations in `docs/`; publish user workflows, installation, configuration, CLI/MCP/skill guidance, privacy, compatibility, and troubleshooting under `/docs`.
 - Generate required `dist` output for validation but never track it, and remove generated repository-owned `dist` directories from the final worktree.
 

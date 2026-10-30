@@ -1,4 +1,4 @@
-import { expect, it } from "vitest";
+import { expect, it } from "@rstest/core";
 import { allowLocalProxy } from "./dev-proxy";
 
 it("rewrites only same-origin development RPC requests", () => {

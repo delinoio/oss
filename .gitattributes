@@ -1,6 +1,3 @@
-apps/devhud/src-tauri/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf filter=lfs diff=lfs merge=lfs -text
-crates/forge-tree-doc/assets/fonts/noto-sans-kr/NotoSansKR-VF.ttf filter=lfs diff=lfs merge=lfs -text
-servers/devhud-api/internal/r2/removal.png filter=lfs diff=lfs merge=lfs -text
 
 
 # Canonical Go-generated guidance bytes are compared across native platforms.
