@@ -55,7 +55,7 @@ toml = "0.8.20"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["fmt", "env-filter"] }
 xz2 = "0.1.7"
-zip = { version = "2.4.2", default-features = false, features = ["deflate"] }
+zip = { version = "9.0.0", default-features = false, features = ["deflate"] }
 zstd = "0.13.3"
 
 [dev-dependencies]
