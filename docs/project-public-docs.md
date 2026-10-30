@@ -57,4 +57,4 @@ The canonical public-docs production origin is `https://oss.delino.io`.
 
 The Cloudflare Pages `public-docs` project deploys `main` automatically with the build and custom-domain settings recorded in `apps-public-docs-foundation.md`. The project is the only production documentation publisher for the consolidated root and subpaths.
 
-TaiRouter is an open-source Delino Labs product. Its public guides are owned by `apps/labs-docs/docs/en/tairouter` and published at `https://docs.labs.delino.io/tairouter/`. This consolidated publisher and its site selector do not include TaiRouter. The former `/tairouter` routes have been removed without redirects or aliases. See [TaiRouter public documentation](apps-tairouter-docs-contract.md).
+TaiRouter is an open-source Delino Labs product. Its public guides are owned by `delinoio/apps:apps/labs-docs/docs/en/tairouter` and published at `https://docs.labs.delino.io/tairouter/`. This consolidated publisher and its site selector do not include TaiRouter. The former `/tairouter` routes have been removed without redirects or aliases. See [TaiRouter public documentation](apps-tairouter-docs-contract.md).

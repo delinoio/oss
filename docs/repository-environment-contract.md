@@ -8,7 +8,7 @@ User-owned credentials stay in the owning local mechanism. They must not enter r
 
 ## Local development
 
-Use `pnpm dev:labs-docs` for the independent Labs site at `127.0.0.1:46303`. Package preview uses `127.0.0.1:46304`. Port conflicts fail; no secret or environment input is required. Follow [the Labs app contract](apps-labs-docs-foundation.md).
+Labs documentation development is owned by `delinoio/apps`; see [the boundary](apps-labs-docs-foundation.md).
 
 Use `pnpm dev:public-docs` for the consolidated documentation site at `127.0.0.1:46302`. Port conflicts fail instead of selecting another port. Follow `apps-public-docs-foundation.md` for wrapper and shutdown behavior.
 
@@ -16,7 +16,7 @@ Use `pnpm dev:async-commit-hook` for the application frontend. Its development f
 
 The shared `scripts/dev-environment/process.mjs` helper retains argv-based command invocation and bounded platform/tool environment construction for development wrappers. Spawn children with explicit argument arrays and `shell: false`. Windows pnpm shims use explicit `cmd.exe` invocation. Forward termination signals and wait for process trees to exit.
 
-Use `pnpm dev:labs-site` for the static marketing site at `127.0.0.1:46312`. The app uses the shared strict-port development wrapper and requires no service secrets. See [the labs-site foundation](apps-labs-site-foundation.md).
+Labs marketing development is owned by `delinoio/apps`; see [the boundary](apps-labs-site-foundation.md).
 
 ## Native CLI repository publication
 
@@ -28,9 +28,9 @@ Root `pnpm dev:tairouter` starts a self-contained local evaluation through `scri
 
 The local launcher generates random database credentials and a versioned 32-byte encryption key once in owner-readable `.dev-environment/tairouter/.env`. Repeated starts retain these values and PostgreSQL state. Each checkout has a separate Compose project derived from its absolute path. Deployment `.env` files and exported application credentials are not loaded. If the local environment file is missing while project volumes remain, startup refuses to replace lost encryption keys. Keep that file with its database; it must not be committed or copied into images. Local SMTP discards content. No real provider is preconfigured; R2 uses explicitly nonfunctional placeholders, so generated image/video storage requires real R2 configuration. The fixture identity provider is for local evaluation only.
 
-Startup returns after readiness; containers continue in the background. `pnpm dev:tairouter:logs` follows logs. `pnpm dev:tairouter:stop` removes only this checkout's local containers/network and retains its database volume and environment file. Startup failures after provisioning stop local services and preserve state. The launcher never starts production deployment or observability containers. `pnpm dev:labs-docs` remains separate.
+Startup returns after readiness; containers continue in the background. `pnpm dev:tairouter:logs` follows logs. `pnpm dev:tairouter:stop` removes only this checkout's local containers/network and retains its database volume and environment file. Startup failures after provisioning stop local services and preserve state. The launcher never starts production deployment or observability containers. Labs documentation development remains separate in `delinoio/apps`.
 
-For source development with frontend reload, `pnpm dev:tairouter:source` delegates to Turborepo to start the Go API, React console, and Labs documentation server together. The Labs server uses its existing fixed loopback port `46303`. It requires the pinned Node.js/pnpm versions, the Go toolchain, installed workspace dependencies, and configured PostgreSQL, OIDC, SMTP, and R2 services. It does not start deployment or observability containers, migrate databases, or seed user state. Prepare a disposable development database with the existing server `migrate` command before starting admission.
+For source development with frontend reload, `pnpm dev:tairouter:source` delegates to Turborepo to start the Go API and React console together. Labs documentation development is owned by `delinoio/apps`. It requires the pinned Node.js/pnpm versions, the Go toolchain, installed workspace dependencies, and configured PostgreSQL, OIDC, SMTP, and R2 services. It does not start deployment or observability containers, migrate databases, or seed user state. Prepare a disposable development database with the existing server `migrate` command before starting admission.
 
 The API workspace uses Node.js `--env-file-if-exists=.env --run dev:serve` to read optional `servers/tairouter/.env` before running Go. Exported environment variables take precedence. File values are passed only to the API child; they are not loaded into frontend environments. Turbo uses strict environment filtering. The API package configuration passes through `TAIROUTER_*`, `OTEL_*`, and the declared Go/compiler and certificate variables only to the API task. Use the configuration names and validation requirements in the [operations contract](servers-tairouter-operations-contract.md); the service-local example contains placeholders, not working credentials. Keep populated files uncommitted and owner-readable only.
 

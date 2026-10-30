@@ -2,7 +2,7 @@
 
 ## Goal
 
-Provide a static documentation site for Delino Labs at `https://docs.labs.delino.io`.
+The `labs-docs` application is maintained in `delinoio/apps`. This repository retains this ownership record for cross-project consumers.
 
 ## Project ID
 
@@ -10,29 +10,18 @@ Provide a static documentation site for Delino Labs at `https://docs.labs.delino
 
 ## Domain Ownership Map
 
-- apps: `apps/labs-docs` owns the standalone documentation app and its public content.
-
-- `scripts/localization`: shared local translation generation and offline validation.
+- External application: `https://github.com/delinoio/apps/tree/main/apps/labs-docs`.
+- Project and domain contracts are maintained in the destination repository.
 
 ## Domain Contract Documents
 
-- [Labs documentation foundation](apps-labs-docs-foundation.md)
-
-- [Shared Labs localization](apps-labs-localization-contract.md)
-- [TaiRouter public documentation](apps-tairouter-docs-contract.md)
+- [Application boundary](apps-labs-docs-foundation.md)
+- [Destination project contract](https://github.com/delinoio/apps/blob/main/docs/project-labs-docs.md)
 
 ## Cross-Domain Invariants
 
-- The canonical production origin is `https://docs.labs.delino.io` with base `/`.
-- This app is independent of the consolidated `public-docs` publisher and site registry.
-- Public pages use the default Rspress theme and English source text with registered translations. TaiRouter is an open-source Delino Labs product; its eleven public guides are initially English-only at `/tairouter/` and `/tairouter/guide/*`, linked from every language sidebar. Internal contracts remain in `docs/`.
-- TypeScript configuration and Markdown content use Rspress, with Cloudflare Pages as the deployment target, following repository defaults.
+The canonical public origin remains `https://docs.labs.delino.io`. TaiRouter runtime, console, protocols and distributions remain in `delinoio/oss`. Builds, development commands, localization catalogs and application validation are owned by the destination. Production cutover requires separate Cloudflare account, domain and HTTP acceptance; source relocation does not establish deployment.
 
 ## Change Policy
 
-Update this index, the app contract and the documentation catalog together when paths or interfaces change. Update instructions only when development procedures, ownership or rules change. Record validation and deployment limits in PRs and CI records.
-
-## References
-
-- [Repository defaults](repository-defaults.md)
-- [Documentation catalog](README.md)
+Update this boundary record when external ownership or integration changes. Record migration validation and deployment limits in PR and CI records.

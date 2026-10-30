@@ -177,27 +177,6 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
 
-  apps/labs-docs:
-    devDependencies:
-      '@rspress/core':
-        specifier: 2.0.23
-        version: 2.0.23(micromark-util-types@2.0.2)(micromark@4.0.2)
-      entities:
-        specifier: 6.0.1
-        version: 6.0.1
-
-  apps/labs-site:
-    devDependencies:
-      '@rsbuild/core':
-        specifier: 2.1.10
-        version: 2.1.10
-      '@types/node':
-        specifier: 24.19.2
-        version: 24.19.2
-      typescript:
-        specifier: 5.9.3
-        version: 5.9.3
-
   apps/public-docs:
     devDependencies:
       '@delinoio/docs-site-switcher':
