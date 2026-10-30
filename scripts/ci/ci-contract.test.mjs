@@ -68,9 +68,10 @@ test("rustfmt runs the uncached real cache regression with the pinned formatter"
     fixture.command,
     /node --test scripts\/ci\/rustfmt-cache\.fixture\.mjs/u,
   );
-  const setup = job.steps.findIndex(
-    ({ uses }) => uses === "dtolnay/rust-toolchain@v1",
+  const setup = job.steps.findIndex(({ uses }) =>
+    uses?.startsWith("dtolnay/rust-toolchain@"),
   );
+  assert.notEqual(setup, -1, "Rust toolchain setup must exist");
   assert.equal(
     job.steps[setup].with.toolchain,
     readFileSync(`${root}/rust-toolchain`, "utf8").trim(),
