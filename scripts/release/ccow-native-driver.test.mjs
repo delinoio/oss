@@ -495,3 +495,68 @@ test(
     }
   },
 );
+
+test(
+  "native bounded disk-full recovery",
+  {
+    skip:
+      !process.env.CCOW_NATIVE_FAILURE_TESTS ||
+      !process.env.CCOW_NATIVE_TEST_BINARY,
+    timeout: 180_000,
+  },
+  async () => {
+    const { mkdirSync } = await import("node:fs");
+    const { diskFullScenario } = await import("./ccow-native-scenarios.mjs");
+    const root = realpathSync(
+      mkdtempSync(path.join(os.tmpdir(), "ccow-native-exhaustion-")),
+    );
+    const home = path.join(root, "home"),
+      source = path.join(root, "source");
+    mkdirSync(home, { mode: 0o700 });
+    const env = {
+      PATH: process.env.PATH,
+      HOME: home,
+      XDG_CONFIG_HOME: path.join(home, "config"),
+      RUSTUP_HOME:
+        process.env.RUSTUP_HOME || path.join(process.env.HOME, ".rustup"),
+      RUSTUP_TOOLCHAIN: "1.99.1",
+      CARGO_HOME: path.join(home, "cargo"),
+      NO_COLOR: "1",
+      LC_ALL: "C",
+    };
+    let retain = false;
+    try {
+      const fixture = createFixture(source, "cargo");
+      for (const args of [
+        ["init"],
+        ["add", "."],
+        [
+          "-c",
+          "user.name=CacheCow acceptance",
+          "-c",
+          "user.email=acceptance@example.invalid",
+          "-c",
+          "commit.gpgsign=false",
+          "commit",
+          "-m",
+          "fixture",
+        ],
+      ])
+        command("git", args, { cwd: source, env });
+      diskFullScenario({
+        binary: path.resolve(process.env.CCOW_NATIVE_TEST_BINARY),
+        source,
+        fixture,
+        root,
+        env,
+        command,
+        snapshot,
+      });
+    } catch (error) {
+      retain = Boolean(error.processOwnershipUnverified);
+      throw error;
+    } finally {
+      if (!retain) rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
