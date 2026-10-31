@@ -266,7 +266,11 @@ func (r Info) ValidateCache(ctx context.Context, path string, protected ...strin
 			if name == "" {
 				continue
 			}
-			source, e := Canonical(filepath.Join(q, name))
+			entry := filepath.Join(q, name)
+			if Overlaps(p, entry) {
+				return "", errors.New("cache overlaps tracked or unignored files; configure and ignore a dedicated cache directory")
+			}
+			source, e := sourceLocation(entry, 0)
 			if e != nil {
 				return "", e
 			}
@@ -276,4 +280,26 @@ func (r Info) ValidateCache(ctx context.Context, path string, protected ...strin
 		}
 	}
 	return p, nil
+}
+
+// Source entries may be dangling symlinks in unrelated worktrees. Resolve their
+// intended target too so an absent target inside the selected cache remains
+// protected. Cache claims themselves still use strict Canonical validation.
+func sourceLocation(path string, depth int) (string, error) {
+	resolved, err := Canonical(path)
+	if err == nil || !os.IsNotExist(err) || depth >= 40 {
+		return resolved, err
+	}
+	info, statErr := os.Lstat(path)
+	if statErr != nil || info.Mode()&os.ModeSymlink == 0 {
+		return "", err
+	}
+	target, err := os.Readlink(path)
+	if err != nil {
+		return "", err
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(path), target)
+	}
+	return sourceLocation(target, depth+1)
 }

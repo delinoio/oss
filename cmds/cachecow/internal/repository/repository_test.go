@@ -3,6 +3,7 @@ package repository
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -291,6 +292,42 @@ func TestSnapshotIndependentIgnoredChurn(t *testing.T) {
 			}
 			if change != "churn" && e == nil {
 				t.Fatal("accepted changed safety evidence")
+			}
+		})
+	}
+}
+
+func TestUnrelatedDanglingSourceLinks(t *testing.T) {
+	for _, tracked := range []bool{false, true} {
+		t.Run(fmt.Sprint(tracked), func(t *testing.T) {
+			p := fixture(t)
+			other := filepath.Join(t.TempDir(), "other")
+			runGit(t, p, "worktree", "add", "--detach", other)
+			os.WriteFile(filepath.Join(p, ".gitignore"), []byte("target/\n"), 0600)
+			link := filepath.Join(other, "dangling")
+			if err := os.Symlink("missing", link); err != nil {
+				t.Skip(err)
+			}
+			if tracked {
+				runGit(t, other, "add", "dangling")
+			}
+			r, err := Discover(context.Background(), p)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cache := filepath.Join(p, "target")
+			if _, err := r.ValidateCache(context.Background(), cache); err != nil {
+				t.Fatal(err)
+			}
+			os.Remove(link)
+			os.Symlink(filepath.Join(cache, "missing"), link)
+			if _, err := r.ValidateCache(context.Background(), cache); err == nil {
+				t.Fatal("accepted source alias into cache")
+			}
+			os.Remove(link)
+			os.Symlink("missing", cache)
+			if _, err := r.ValidateCache(context.Background(), cache); err == nil {
+				t.Fatal("accepted dangling cache alias")
 			}
 		})
 	}
