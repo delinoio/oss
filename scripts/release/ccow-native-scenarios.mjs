@@ -31,6 +31,7 @@ fn main() {
   "descendant" | "orphan" => { let child = Command::new(env::current_exe().unwrap()).args(["writer", &a[2]]).spawn().unwrap(); fs::write(&a[3], child.id().to_string()).unwrap(); while !std::path::Path::new(&a[2]).exists() { thread::sleep(Duration::from_millis(20)); } if a[1] == "descendant" { loop { thread::sleep(Duration::from_millis(20)); } } },
   "writer" => { #[cfg(unix)] unsafe { unsafe extern "C" { fn signal(sig: i32, handler: usize) -> usize; } signal(15, 1); } loop { fs::write(&a[2], "writing").unwrap(); thread::sleep(Duration::from_millis(20)); } },
   "nested" => { let status = Command::new(&a[2]).current_dir(&a[3]).args(["run", "--preset", "cargo", "--", "cargo", "build", "--offline"]).status().unwrap(); exit(status.code().unwrap_or(99)); },
+  "marker" => { fs::write(&a[2], "started").unwrap(); },
   "privacy" => { println!("child-output"); eprintln!("child-error"); },
   "fail" => { fs::write(&a[2], "retained").unwrap(); exit(37); },
   _ => exit(91)
@@ -1094,11 +1095,21 @@ export function diskFullScenario({
   const oversized = path.join(source, fixture.cache, "ccow-exhaustion-probe");
   const marker = path.join(root, "build-must-not-start");
   const argv = [
-    process.execPath,
-    "-e",
-    "require('node:fs').writeFileSync(process.argv[1],'started')",
+    "cargo",
+    "run",
+    "--quiet",
+    "--offline",
+    "--bin",
+    "ccow-probe",
+    "--",
+    "marker",
     marker,
   ];
+  const writeProbe = (cwd) => {
+    mkdirSync(path.join(cwd, "src/bin"), { recursive: true });
+    writeFileSync(path.join(cwd, "src/bin/ccow-probe.rs"), probeSource);
+  };
+  writeProbe(source);
   try {
     command(binary, ["run", "--preset", "cargo", "--", ...fixture.argv], {
       cwd: source,
@@ -1137,6 +1148,7 @@ export function diskFullScenario({
       env,
     });
     registered = true;
+    writeProbe(destination);
     command(
       binary,
       [
