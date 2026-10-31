@@ -16,6 +16,8 @@
 
 ## Owning contracts
 
+- [CacheCow public documentation](../docs/apps-cachecow-docs-foundation.md)
+
 - [Shared Labs localization](../docs/apps-labs-localization-contract.md)
 
 - [labs-site marketing foundation](../docs/apps-labs-site-foundation.md)
