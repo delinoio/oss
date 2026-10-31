@@ -207,7 +207,7 @@ func Hooks(validate Validate, recordHooks ...RecordHooks) process.SupervisorHook
 			}
 			defer s.registry.Close()
 
-			return s.session.Finish(context.Background(), func(_ context.Context, r lease.Record) error {
+			return finishSession(s.session, func(_ context.Context, r lease.Record) error {
 				if r.Ownership != scope.Directory {
 					return lease.ErrUnverified
 				}
@@ -216,6 +216,20 @@ func Hooks(validate Validate, recordHooks ...RecordHooks) process.SupervisorHook
 		},
 	}
 }
+
+// Completion is already durable, but a different session can hold the registry
+// transaction briefly. Keep ownership until deletion commits; only contention
+// is retryable. Other failures retain the durable lease for recovery.
+func finishSession(s *lease.Session, verify lease.Verify) error {
+	for {
+		err := s.Finish(context.Background(), verify)
+		if !errors.Is(err, lease.ErrBusy) {
+			return err
+		}
+		time.Sleep(25 * time.Millisecond)
+	}
+}
+
 func (s *server) apply(ctx context.Context, p Plan) (result lifecycle.Result, resultErr error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
