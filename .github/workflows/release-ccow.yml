@@ -1,0 +1,171 @@
+name: CacheCow release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact committed MAJOR.MINOR.PATCH
+        required: true
+        type: string
+      dry_run:
+        description: Build and accept without publishing
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-ccow
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    if: github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          lfs: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Validate exact version and source
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: node scripts/release/ccow-acceptance.mjs plan "$REQUESTED_VERSION" "$GITHUB_SHA" "$GITHUB_REF"
+      - name: Test distribution contracts
+        run: node --test packages/ccow/test/*.test.mjs scripts/release/ccow-acceptance.test.mjs scripts/release/ccow-publish.test.mjs
+      - name: Build candidate binaries and versioned packages
+        run: |
+          node packages/ccow/scripts/build-native.mjs --output "$RUNNER_TEMP/ccow-binaries"
+          node packages/ccow/scripts/package.mjs --binaries "$RUNNER_TEMP/ccow-binaries" --output "$RUNNER_TEMP/ccow-candidate" --revision "$GITHUB_SHA"
+          node packages/ccow/scripts/verify.mjs --directory "$RUNNER_TEMP/ccow-candidate" --revision "$GITHUB_SHA"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ccow-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/ccow-candidate/*
+          if-no-files-found: error
+
+  native:
+    needs: candidate
+    environment: ccow-native-acceptance
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: macos15-apfs
+            labels: [self-hosted, macOS, ARM64, ccow-macos15-apfs]
+          - lane: ubuntu22-btrfs
+            labels: [self-hosted, Linux, X64, ccow-ubuntu22-btrfs]
+          - lane: ubuntu22-xfs
+            labels: [self-hosted, Linux, X64, ccow-ubuntu22-xfs]
+          - lane: windows24h2-refs
+            labels: [self-hosted, Windows, X64, ccow-windows24h2-refs]
+    runs-on: ${{ matrix.labels }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          lfs: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ccow-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/ccow-candidate
+      - name: Execute native minimum-environment acceptance
+        shell: bash
+        env:
+          CCOW_LANE: ${{ matrix.lane }}
+        run: |
+          node scripts/release/ccow-acceptance.mjs native "$CCOW_LANE" "$RUNNER_TEMP/ccow-candidate" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/$CCOW_LANE.json" "$GITHUB_SHA"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: ccow-evidence-${{ matrix.lane }}-${{ github.sha }}
+          path: ${{ runner.temp }}/${{ matrix.lane }}.json
+          if-no-files-found: error
+
+  gate:
+    needs: [candidate, native]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ccow-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/ccow-candidate
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: ccow-evidence-*-${{ github.sha }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/ccow-evidence
+      - name: Require complete evidence for the exact candidate
+        run: node scripts/release/ccow-acceptance.mjs gate "$RUNNER_TEMP/ccow-evidence" "$RUNNER_TEMP/ccow-candidate" "$GITHUB_SHA"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ccow-accepted-candidate-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/ccow-candidate/*
+            ${{ runner.temp }}/ccow-evidence/*
+          if-no-files-found: error
+
+  publish:
+    needs: [candidate, native, gate]
+    if: ${{ !inputs.dry_run && github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-22.04
+    environment: ccow-release
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          lfs: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+          registry-url: https://registry.npmjs.org
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ccow-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/ccow-candidate
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: ccow-evidence-*-${{ github.sha }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/ccow-evidence
+      - name: Revalidate native acceptance before credentials
+        run: node scripts/release/ccow-acceptance.mjs gate "$RUNNER_TEMP/ccow-evidence" "$RUNNER_TEMP/ccow-candidate" "$GITHUB_SHA"
+      - name: Create repository release token
+        id: release-bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.DELINO_RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
+          owner: delinoio
+          repositories: oss
+          permission-contents: write
+      - name: Reconcile exact GitHub and npm publication
+        env:
+          GH_TOKEN: ${{ steps.release-bot.outputs.token }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: node scripts/release/ccow-publish.mjs "$RUNNER_TEMP/ccow-candidate" "$RUNNER_TEMP/ccow-evidence" "$REQUESTED_VERSION"
