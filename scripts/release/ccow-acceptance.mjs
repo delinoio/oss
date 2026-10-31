@@ -279,6 +279,7 @@ export function gate(directory, artifacts, revision) {
   const expectedDigest = digest(
     readFileSync(path.join(artifacts, "SHA256SUMS")),
   );
+  const accepted = [];
   for (const lane of Object.keys(lanes)) {
     const record = JSON.parse(
       readFileSync(path.join(directory, `${lane}.json`), "utf8"),
@@ -291,8 +292,32 @@ export function gate(directory, artifacts, revision) {
     assert.equal(record.artifactDigest, expectedDigest);
     for (const [key, value] of Object.entries(lanes[lane]))
       assert.equal(record.environment[key], value);
-    validateMeasurements(record);
+    assert.equal(record.environment.cargo, "1.99.1");
+    assert.match(record.environment.node, /^24\.\d+\.\d+$/u);
+    const osVersions = {
+      "macos15-apfs": /^15\.\d+(?:\.\d+)?$/u,
+      "ubuntu22-btrfs": /^Ubuntu 22\.04$/u,
+      "ubuntu22-xfs": /^Ubuntu 22\.04$/u,
+      "windows24h2-refs": /^Windows 11 24H2 \(26100\)$/u,
+    };
+    assert.match(record.environment.osVersion, osVersions[lane]);
+    accepted.push({
+      schema: 1,
+      lane,
+      revision,
+      version,
+      status: "passed",
+      artifactDigest: expectedDigest,
+      environment: {
+        ...lanes[lane],
+        osVersion: record.environment.osVersion,
+        cargo: "1.99.1",
+        node: record.environment.node,
+      },
+      ...validateMeasurements(record),
+    });
   }
+  return accepted;
 }
 
 if (

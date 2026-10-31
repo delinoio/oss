@@ -4,6 +4,8 @@
 
 CacheCow (`ccow`) prepares independent writable build caches for Git worktrees with filesystem copy-on-write (CoW). It supports the intended `cargo`, `rspack`, and `rsbuild` presets.
 
+Published versions will provide native archives and checksums through [GitHub Releases](https://github.com/delinoio/oss/releases), plus the `@delino/ccow` npm launcher. Check [installation and availability](/cachecow/installation) before installing.
+
 ## How it works
 
 The first preparation clones a compatible source cache into the current worktree. The primary checkout is the default source. Later runs keep the worktree's own cache. Changes do not flow back to the source or into other worktrees.
