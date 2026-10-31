@@ -1091,6 +1091,10 @@ export function diskFullScenario({
     marker,
   ];
   try {
+    command(binary, ["run", "--preset", "cargo", "--", ...fixture.argv], {
+      cwd: source,
+      env,
+    });
     if (process.platform === "darwin") {
       command(
         "hdiutil",
@@ -1103,7 +1107,7 @@ export function diskFullScenario({
           "-volname",
           "ccow-failure",
           "-type",
-          "UDRW",
+          "UDIF",
           image,
         ],
         { cwd: root, env },
