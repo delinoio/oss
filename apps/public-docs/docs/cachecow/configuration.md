@@ -26,6 +26,8 @@ Configure a persistent cache for the selected project. Only that cache is eligib
 
 Rspack exposes [persistent cache configuration](https://rspack.rs/config/cache). Rsbuild must expose its configured persistent cache through the frontend integration. CacheCow needs verified cache locations and compatibility information for the actual tool invocation, including its version and build settings.
 
+Use the installed package's executable or a symlink to its declared bin entry. CacheCow resolves versions from that executable's package, not another package installed in the current directory. Shell and batch wrappers, including `.cmd` launchers, and custom `node script.js` commands cannot currently prove this identity and are rejected. Windows frontend execution through those launchers remains unsupported.
+
 Create `.ccow/discover.cjs` in the directory where you run the build. Export an async function that receives `{ preset, argv, cwd, env }`, resolves the same configuration as your build, and returns:
 
 ```js

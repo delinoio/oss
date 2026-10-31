@@ -255,7 +255,10 @@ module.exports = async ({preset, argv, cwd}) => {
   return {
     cache: ".cache",
     output: "out",
-    argv: [process.execPath, ".ccow/build.cjs"],
+    argv: [
+      `./node_modules/.bin/${preset}${process.platform === "win32" ? ".cmd" : ""}`,
+      "build",
+    ],
   };
 }
 

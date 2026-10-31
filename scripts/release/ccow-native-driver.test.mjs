@@ -315,7 +315,8 @@ test("frontend command and discovery resolve in the requested source worktree", 
   const a = createFixture(source, "rspack"),
     b = createFixture(derived, "rspack");
   assert.deepEqual(a.argv, b.argv);
-  assert.equal(a.argv[1], ".ccow/build.cjs");
+  assert.match(a.argv[0], /node_modules\/\.bin\/rspack/u);
+  assert.equal(a.argv[1], "build");
   const program = `require(process.argv[1])(JSON.parse(process.argv[2])).then(v=>process.stdout.write(JSON.stringify(v)))`;
   const discover = (cwd) =>
     JSON.parse(
