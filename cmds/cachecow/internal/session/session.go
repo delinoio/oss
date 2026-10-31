@@ -119,7 +119,11 @@ func Hooks(validate Validate, recordHooks ...RecordHooks) process.SupervisorHook
 			if e := validate(p); e != nil {
 				return fail(e)
 			}
-			r, e := lease.Open(scope.Context, filepath.Join(p.Root, "leases"))
+			open := lease.OpenWait
+			if p.Action == Clean {
+				open = lease.Open
+			}
+			r, e := open(scope.Context, filepath.Join(p.Root, "leases"))
 			if e != nil {
 				return fail(e)
 			}
