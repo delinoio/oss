@@ -146,9 +146,20 @@ func Run(ctx context.Context, stateRoot string, command Command, streams Streams
 	result.Scope = scope
 	_ = conn.SetDeadline(time.Time{})
 	if err = hooks.Owned(scope); err != nil {
+		_ = conn.Close()
+		_ = waitForCompletion(scope)
 		return result, err
 	}
 	if err = ctx.Err(); err != nil {
+		_ = conn.Close()
+		if waitForCompletion(scope) == nil {
+			if completed, readErr := read(scope); readErr == nil {
+				result.Scope = completed
+				if drainErr := hooks.Drained(completed); drainErr != nil {
+					return result, drainErr
+				}
+			}
+		}
 		return result, err
 	}
 	if command.Env == nil {
@@ -207,7 +218,7 @@ func LoadScope(directory string) (Scope, error) {
 
 func Reconcile(scope Scope) error {
 	s, err := read(scope)
-	if err != nil || !s.Complete || !s.Started || s.OwnerPID <= 0 {
+	if err != nil || !s.Complete || s.OwnerPID <= 0 {
 		return ErrReconciliation
 	}
 	return nil
@@ -327,27 +338,6 @@ func supervise(dir, endpoint string, hooks SupervisorHooks) int {
 	if save(scope) != nil {
 		return 125
 	}
-	if hooks.Ready != nil {
-		if hooks.Ready(scope) != nil {
-			return 125
-		}
-	}
-	if json.NewEncoder(conn).Encode(frame{Scope: &scope}) != nil {
-		return 125
-	}
-	var request frame
-	if json.NewDecoder(conn).Decode(&request) != nil || request.Command == nil {
-		return 125
-	}
-	cancelled := make(chan struct{})
-	go func() { var ignored [1]byte; _, _ = conn.Read(ignored[:]); close(cancelled) }()
-	signals, stopSignals := terminationSignals()
-	defer stopSignals()
-	if hooks.BeforeStart != nil {
-		if hooks.BeforeStart(scope, request.Command) != nil {
-			return 125
-		}
-	}
 	finish := func() int {
 		if hooks.Quiesce != nil {
 			if hooks.Quiesce(scope) != nil {
@@ -366,6 +356,28 @@ func supervise(dir, endpoint string, hooks SupervisorHooks) int {
 		_ = json.NewEncoder(conn).Encode(frame{Scope: &scope})
 		return 0
 	}
+	if hooks.Ready != nil {
+		if hooks.Ready(scope) != nil {
+			return finish()
+		}
+	}
+	if json.NewEncoder(conn).Encode(frame{Scope: &scope}) != nil {
+		return finish()
+	}
+	var request frame
+	if json.NewDecoder(conn).Decode(&request) != nil || request.Command == nil {
+		return finish()
+	}
+	cancelled := make(chan struct{})
+	go func() { var ignored [1]byte; _, _ = conn.Read(ignored[:]); close(cancelled) }()
+	signals, stopSignals := terminationSignals()
+	defer stopSignals()
+	if hooks.BeforeStart != nil {
+		if hooks.BeforeStart(scope, request.Command) != nil {
+			return finish()
+		}
+	}
+
 	scope.Started = true
 	if save(scope) != nil {
 		return 125
@@ -431,3 +443,14 @@ type nativeBackend interface {
 }
 
 func infrastructureError(detail string) error { return fmt.Errorf("%w: %s", ErrUnavailable, detail) }
+
+func waitForCompletion(scope Scope) error {
+	deadline := time.Now().Add(GracePeriod + 5*time.Second)
+	for time.Now().Before(deadline) {
+		if Reconcile(scope) == nil {
+			return nil
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	return ErrReconciliation
+}

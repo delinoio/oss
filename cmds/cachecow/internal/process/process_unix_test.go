@@ -371,3 +371,38 @@ func TestSupervisorSessionHooks(t *testing.T) {
 		}
 	}
 }
+
+func TestCancellationAfterOwnershipFinalizesWithoutChild(t *testing.T) {
+	dir := stateRoot(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	drained := false
+	h := hooks()
+	h.Owned = func(Scope) error { cancel(); return nil }
+	h.Drained = func(s Scope) error {
+		drained = true
+		if s.Started || !s.Complete {
+			t.Errorf("unexpected no-child scope: %+v", s)
+		}
+		return Reconcile(s)
+	}
+	r, err := Run(ctx, dir, shell(dir, "touch should-not-start"), Streams{}, h)
+	if !errors.Is(err, context.Canceled) || !drained {
+		t.Fatalf("error=%v drained=%v", err, drained)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "should-not-start")); !os.IsNotExist(err) {
+		t.Fatal("child ran")
+	}
+	// Supervisor hooks must also finish after the control connection is gone.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		_, err := os.Stat(filepath.Join(r.Scope.Directory, "test-drained"))
+		if err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal(err)
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+}
