@@ -16,7 +16,7 @@ Developers, coding agents, and CI jobs working in Git worktrees; maintainers dia
 
 Public commands are `run`, `status`, `prepare`, `clean`, `doctor`, `config get/set/unset`, `shim install/uninstall/list/doctor`, and `shell init/setup/remove`. Preserve all options, prompts, output, exit-code, and pass-through rules in the complete requirements.
 
-Planned implementation boundaries for subsequent layers:
+Implementation boundaries:
 
 - Preset discovery consumes the current working directory, requested command/arguments, tool selection, and optional preset. It identifies verified cache paths and compatibility information without changing tool freshness decisions. Unknown locations or compatibility prohibit reuse.
 - Cache preparation consumes the preset result, source selection, and explicit copy/replacement authorization. It retains existing caches by default and reports the actual copy mode. Failed preparation preserves the old cache and prevents build launch.
@@ -24,7 +24,21 @@ Planned implementation boundaries for subsequent layers:
 - Shim dispatch resolves the real tool for each invocation, classifies managed operations versus pass-through, and enters that same lifecycle. Managed `cargo clean` locks without preparation; `ccow clean` rejects in-use caches.
 - Management output supports a versioned JSON envelope with success and result or error code, cause, and remediation. Shell initialization emits shell code separately from diagnostics.
 
-These are responsibilities, not fixed Go function signatures or an invented settings schema. Concrete private types and file formats belong to runtime implementation and must preserve these contracts.
+### Frontend discovery interface
+
+Rspack and Rsbuild projects provide `.ccow/discover.cjs` in the exact execution directory. The CommonJS module exports an async function receiving `{ preset, argv, cwd, env }`. It resolves the same configuration as the requested build and returns `{ schema: 1, preset, caches: [{ type: "persistent", path: absolutePath }], outputs: [absoluteOutputPath], settings: resolvedSettings }`. It lists every persistent cache and final output. The hook must not build, write artifacts, or print to stdout. Unknown options or unresolved dynamic configuration fail discovery. Project hooks are trusted code under the same boundary as the build.
+
+Discovery verifies installed tool versions and excludes dependency trees, package download stores, and final outputs. Compatibility incorporates resolved settings, tool/compiler versions, platform, architecture, and relevant invocation environment. Discovery does not rewrite tool fingerprints or timestamps to manufacture cache hits.
+
+### Cargo discovery
+
+Cargo metadata resolves the workspace and configured `target_directory` and `build_directory`. Missing directory fields, unresolved configuration includes, and unverifiable custom compiler wrappers prohibit reuse with actionable errors. Distinct roots are managed together; coincident roots are processed once. Discovery queries the exact resolved command, including explicit executable paths, rather than substituting PATH Cargo. Source and destination must retain compatible build settings while Cargo remains responsible for source freshness. Before metadata discovery, capture file digests for Cargo configuration candidates (including absent files), ancestor manifests, explicit configuration and manifest arguments, and toolchain selectors. Recheck those inputs after discovery and under the complete lease set before launch; a change requires fresh discovery and must not run with stale cache claims. Store only paths and digests, not file contents.
+
+### Coordination and recovery
+
+Acquire the complete source and destination resource set before preparation. Inspect mutable source contents and provenance only after acquiring that complete set, so an active source build can finish before compatibility is checked. An unusable source after acquisition retains the existing interactive recovery choices. The initial coordinator uses exclusive leases for both sources and destinations; independent resource sets can proceed concurrently. Conflicts include aliases and ancestor/descendant paths. A nested request borrows existing protection only through authenticated session ownership. A nested extension that conflicts with another session fails with remediation instead of retaining a partial acquisition and waiting in a possible cycle.
+
+Persist ownership intent before permitting child execution. Release protection only after positive whole-process-tree completion evidence; a dead PID or released operating-system lock is insufficient. An unfinished ownership record remains protected until native recovery can prove completion. Unknown record versions are read-only. Supervisor recovery must never infer completion from elapsed time. A cancelled nested command requests termination from the authenticated outer native owner. This cancels the whole session with the same five-second graceful interval and retains outer protection until every owned descendant exits. Repository snapshots exclude contents of wholly ignored directories without tracked descendants; index, ignore-rule and directory-type changes still invalidate discovery.
 
 ## Storage
 

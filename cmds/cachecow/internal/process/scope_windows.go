@@ -25,13 +25,17 @@ func newBackend(_ *Scope) (nativeBackend, error) {
 		windows.CloseHandle(job)
 		return nil, err
 	}
+	activeJob = job
 	return &windowsBackend{job: job}, nil
 }
 func (b *windowsBackend) close() { _ = windows.CloseHandle(b.job) }
 func (b *windowsBackend) start(cmd *exec.Cmd) (<-chan int, error) {
 	// User code cannot fork before assignment. No breakaway flag is permitted;
 	// the job handle belongs only to the detached supervisor and is not inherited.
-	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_SUSPENDED | windows.CREATE_NEW_PROCESS_GROUP}
+	if cmd.SysProcAttr == nil {
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+	}
+	cmd.SysProcAttr.CreationFlags |= windows.CREATE_SUSPENDED | windows.CREATE_NEW_PROCESS_GROUP
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -76,3 +80,6 @@ func (b *windowsBackend) empty(rootDone bool) (bool, error) {
 	err := windows.QueryInformationJobObject(b.job, windows.JobObjectBasicAccountingInformation, uintptr(unsafe.Pointer(&info)), uint32(unsafe.Sizeof(info)), nil)
 	return err == nil && info.ActiveProcesses == 0, err
 }
+
+// This backend has no persistent native identity for post-supervisor recovery.
+func nativeCompletion(Scope) bool { return false }

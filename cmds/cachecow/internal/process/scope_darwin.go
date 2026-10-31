@@ -3,11 +3,13 @@ package process
 import (
 	"bytes"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -85,8 +87,24 @@ func launch(s Scope, endpoint string, _ Streams) (func(), error) {
 	return func() {
 		// Never bootout an unfinished supervisor: it still owns the writers.
 		// A stale unloaded job definition is safe; interrupted recovery stays blocked.
-		if Reconcile(s) == nil {
-			_ = ctl("bootout", domain+"/"+label)
+		saved, err := read(s)
+		if err != nil || !saved.Complete {
+			return
+		}
+		// Completion precedes the release hook. Wait for supervisor exit before
+		// bootout so launchd cannot interrupt that hook. This timeout only leaves
+		// a stale job definition; it never permits terminating a live supervisor.
+		deadline := time.Now().Add(time.Second)
+		for {
+			id, err := coalition(saved.OwnerPID)
+			if nativeCompletion(saved) || errors.Is(syscall.Kill(saved.OwnerPID, 0), syscall.ESRCH) || (err == nil && id != saved.NativeID) {
+				_ = ctl("bootout", domain+"/"+label)
+				return
+			}
+			if time.Now().After(deadline) {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
 		}
 	}, nil
 }
@@ -141,4 +159,14 @@ func (b *darwinBackend) signal(force bool) error {
 		}
 	}
 	return nil
+}
+
+// A surviving coalition with zero members is positive whole-tree evidence.
+// Missing or unsupported coalition accounting is not evidence of completion.
+func nativeCompletion(s Scope) bool {
+	if s.NativeID == 0 {
+		return false
+	}
+	n, err := coalitionCount(s.NativeID)
+	return err == nil && n == 0
 }
