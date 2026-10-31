@@ -191,6 +191,19 @@ export function validateMeasurements(result) {
   };
 }
 
+export function projectProgress(observation, reasons = {}) {
+  const unperformed = checks.filter((id) => observation.checks?.[id] !== true);
+  return {
+    unperformed,
+    completedChecks: checks.filter((id) => observation.checks?.[id] === true),
+    // reasons is the reviewed driver's source constant, not runtime diagnostics.
+    blockers: unperformed.map((id) => ({
+      id,
+      reason: reasons[id] || "scenario-assertion-or-prerequisite-failed",
+    })),
+  };
+}
+
 export async function accept({ lane, artifacts, workspace, output, revision }) {
   const record = {
     schema: 1,
@@ -206,7 +219,11 @@ export async function accept({ lane, artifacts, workspace, output, revision }) {
       "cowc-native-driver.execute",
     ],
     unperformed: [...checks],
-    limitations: ["No fixed storage or memory reduction is promised."],
+    limitations: [
+      "No fixed storage or memory reduction is promised.",
+      "Linux physicalBytes counts the union of FIEMAP data extents across source and derived caches, excluding metadata.",
+      "peakMemoryBytes is native time maximum RSS, not summed concurrent process-tree RSS.",
+    ],
   };
   try {
     assert.equal(run("git", ["rev-parse", "HEAD"]), revision);
@@ -243,10 +260,12 @@ export async function accept({ lane, artifacts, workspace, output, revision }) {
       "scripts/release/cowc-native-driver.mjs",
     ]);
     record.blocker = "native-scenarios";
-    const { execute } = await import("./cowc-native-driver.mjs");
-    const result = validateMeasurements(
-      await execute({ lane, artifacts, workspace, revision }),
-    );
+    const { execute, blockers = {} } = await import("./cowc-native-driver.mjs");
+    const observation = await execute({ lane, artifacts, workspace, revision });
+    // Preserve bounded, source-owned blocker descriptions even when complete
+    // acceptance fails. Never persist driver exception text or child output.
+    Object.assign(record, projectProgress(observation, blockers));
+    const result = validateMeasurements(observation);
     Object.assign(record, result, { status: "passed" });
     delete record.blocker;
   } finally {
