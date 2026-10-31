@@ -116,6 +116,22 @@ func Open(ctx context.Context, dir string) (*Registry, error) {
 	return r, nil
 }
 
+// OpenWait waits for registry initialization contention without acquiring cache
+// resources. Use Open for nonblocking management operations such as clean.
+func OpenWait(ctx context.Context, dir string) (*Registry, error) {
+	for {
+		r, err := Open(ctx, dir)
+		if !errors.Is(err, ErrBusy) {
+			return r, err
+		}
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-time.After(20 * time.Millisecond):
+		}
+	}
+}
+
 // Close closes the database connection only. It never releases durable intents.
 func (r *Registry) Close() error { return r.db.Close() }
 

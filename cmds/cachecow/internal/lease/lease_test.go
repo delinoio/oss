@@ -3,6 +3,7 @@ package lease
 import (
 	"bufio"
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"os"
@@ -442,4 +443,34 @@ func TestParentTraversalRejected(t *testing.T) {
 	if _, err := normalize(Resources{Destinations: []string{"alias/../cache"}}); err == nil {
 		t.Fatal("ambiguous traversal accepted")
 	}
+}
+
+func TestOpenWaitRegistryContention(t *testing.T) {
+	r, root := setup(t)
+	locked := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		done <- r.transaction(ctx, func(_ *sql.Conn) error {
+			close(locked)
+			<-release
+			return nil
+		})
+	}()
+	<-locked
+	c, cancel := context.WithTimeout(ctx, 80*time.Millisecond)
+	defer cancel()
+	_, err := OpenWait(c, filepath.Join(root, "registry"))
+	close(release)
+	if e := <-done; e != nil {
+		t.Fatal(e)
+	}
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected cancellable initialization wait, got %v", err)
+	}
+	reopened, err := OpenWait(ctx, filepath.Join(root, "registry"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened.Close()
 }
