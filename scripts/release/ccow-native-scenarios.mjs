@@ -5,6 +5,9 @@ import {
   chmodSync,
   existsSync,
   mkdtempSync,
+  mkdirSync,
+  copyFileSync,
+  truncateSync,
   realpathSync,
   symlinkSync,
   lstatSync,
@@ -15,6 +18,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { performance } from "node:perf_hooks";
+import { fileURLToPath } from "node:url";
 
 // This is real build code compiled by the selected native Cargo toolchain. It
 // exercises the installed supervisor, not a replacement cargo or clone API.
@@ -61,8 +65,46 @@ export function expectFailure(binary, args, options, code = 125) {
 }
 
 function start(binary, args, options) {
-  const child = spawn(binary, args, { ...options, stdio: "ignore" });
+  const child = spawn(binary, args, {
+    ...options,
+    stdio: ["ignore", "ignore", "pipe"],
+  });
   const record = { child, done: false, code: null };
+  record.failure = "native-child-failed";
+  let diagnostic = "";
+  child.stderr.on("data", (chunk) => {
+    diagnostic = (diagnostic + chunk.toString()).slice(-65536);
+    for (const [text, id] of [
+      [
+        "source paths or ignore rules changed after discovery",
+        "source-inventory-changed",
+      ],
+      [
+        "repository metadata changed after discovery",
+        "repository-metadata-changed",
+      ],
+      ["source provenance does not match", "source-provenance-changed"],
+      ["source provenance is unavailable", "source-provenance-unavailable"],
+      ["source compatibility is unrecorded", "source-provenance-unrecorded"],
+      ["source provenance is incompatible", "source-provenance-incompatible"],
+      ["transaction paths differ", "transaction-paths-changed"],
+      [
+        "source tool versions, platform, architecture, or build settings are incompatible",
+        "source-settings-incompatible",
+      ],
+      [
+        "cache claim is not a directory",
+        "cache-root-replaced-during-discovery",
+      ],
+      ["no such file or directory", "discovery-file-disappeared"],
+      ["incompatible", "compatibility-rejected"],
+      ["permission denied", "permission-denied"],
+      ["interrupted", "operation-interrupted"],
+      ["lease", "lease-failure"],
+      ["transaction", "transaction-failure"],
+    ])
+      if (diagnostic.includes(text)) record.failure = id;
+  });
   record.exit = new Promise((resolve) => {
     child.once("error", () => {
       record.done = true;
@@ -86,7 +128,7 @@ async function until(predicate, timeout = 30_000) {
 }
 async function completed(p) {
   await until(() => p.done);
-  assert.equal(p.code, 0, "Native child failed");
+  assert.equal(p.code, 0, p.failure);
 }
 
 export async function lifecycleScenarios({
@@ -174,6 +216,77 @@ export async function lifecycleScenarios({
       for (const cwd of [source, derived]) {
         run(source, [...argv, "nested", binary, cwd]);
       }
+      release("read-source");
+      run(source, [
+        ...argv,
+        "hold",
+        marker("read-source.ready"),
+        marker("read-source.release"),
+      ]);
+      rmSync(marker("read-source.ready"));
+      rmSync(marker("read-source.release"));
+      const sourceOwner = hold(source, "read-source");
+      await until(() => existsSync(marker("read-source.ready")));
+      const reader = launch(derived, [
+        "prepare",
+        "--preset",
+        "cargo",
+        "--replace",
+        "--source",
+        source,
+        "--",
+        ...argv.slice(argv.indexOf("--") + 1),
+        "hold",
+        marker("read-source.ready"),
+        marker("read-source.release"),
+      ]);
+      const cancelled = hold(source, "cancelled");
+      await pause(250);
+      assert(!reader.done && !cancelled.done);
+      cancelled.child.kill("SIGTERM");
+      await until(() => cancelled.done);
+      assert(!sourceOwner.done && !reader.done);
+      release("read-source");
+      await completed(sourceOwner);
+      await completed(reader);
+      // Both operations claim both caches in opposite roles. Completion proves
+      // that the coordinator does not retain one lease while waiting for two.
+      for (const cwd of [source, derived])
+        run(cwd, [
+          "run",
+          "--preset",
+          "cargo",
+          "--",
+          "cargo",
+          "build",
+          "--offline",
+        ]);
+      const crossA = launch(source, [
+        "prepare",
+        "--preset",
+        "cargo",
+        "--replace",
+        "--source",
+        derived,
+        "--",
+        "cargo",
+        "build",
+        "--offline",
+      ]);
+      const crossB = launch(derived, [
+        "prepare",
+        "--preset",
+        "cargo",
+        "--replace",
+        "--source",
+        source,
+        "--",
+        "cargo",
+        "build",
+        "--offline",
+      ]);
+      await completed(crossA);
+      await completed(crossB);
       // cargo clean must wait and preserve its original --release semantics.
       run(root, ["shim", "install"]);
       const shim = path.join(
@@ -201,6 +314,8 @@ export async function lifecycleScenarios({
       "clean",
       "alias-owner",
       "alias-waiter",
+      "read-source",
+      "cancelled",
     ])
       release(name);
     await until(() => owned.every((p) => p.done), 15_000);
@@ -252,6 +367,20 @@ export async function lifecycleScenarios({
           await pause(150);
           assert.equal(lstatSync(beat).mtimeMs, stamp);
         }
+        const orphanBeat = marker("orphan.beat"),
+          orphanPid = marker("orphan.pid");
+        const orphan = launch(source, [
+          ...argv,
+          "orphan",
+          orphanBeat,
+          orphanPid,
+        ]);
+        await until(() => existsSync(orphanBeat) && existsSync(orphanPid));
+        expectFailure(binary, ["clean", "--preset", "cargo"], options(source));
+        await until(() => orphan.done);
+        assert.throws(() =>
+          process.kill(Number(readFileSync(orphanPid, "utf8")), 0),
+        );
         const retained = path.join(source, "target", "partial-build");
         expectFailure(binary, [...argv, "fail", retained], options(source), 37);
         assert.equal(readFileSync(retained, "utf8"), "retained");
@@ -266,6 +395,8 @@ export async function lifecycleScenarios({
       "clean",
       "alias-owner",
       "alias-waiter",
+      "read-source",
+      "cancelled",
     ])
       release(name);
     for (const p of owned) if (!p.done) p.child.kill("SIGTERM");
@@ -276,7 +407,7 @@ export async function lifecycleScenarios({
       error.processOwnershipUnverified = true;
       throw error;
     }
-    for (const signal of ["SIGTERM", "SIGKILL"]) {
+    for (const signal of ["SIGTERM", "SIGKILL", "orphan"]) {
       const file = marker(`${signal}.pid`);
       if (!existsSync(file)) continue;
       const pid = Number(readFileSync(file, "utf8"));
@@ -294,15 +425,31 @@ export async function lifecycleScenarios({
       }
     }
   }
-  // These scenarios cover finite/descendant lifetimes and core contention.
-  // Alias, cross-selected sources and five-second stubborn shutdown remain
-  // separate required assertions; callers must not promote the full groups.
+  // Group results reflect native assertions, never compiler or fixture success.
   return groups;
 }
 
 export function privacyScenario({ env, binary, cwd, command }) {
   const sentinel = "ccow-private-value-4b8b17";
   const privateEnv = { ...env, CCOW_ACCEPTANCE_SECRET: sentinel };
+  const child = command(
+    binary,
+    [
+      "run",
+      "--preset",
+      "cargo",
+      "--verbose",
+      "--",
+      process.execPath,
+      "-e",
+      "process.stdout.write('child-output\\n');process.stderr.write('child-error\\n')",
+      sentinel,
+    ],
+    { cwd, env: privateEnv },
+  );
+  assert.equal(child.stdout, "child-output\n");
+  assert(child.stderr.includes("child-error\n"));
+  assert(!child.stderr.includes(sentinel));
   const r = command(
     binary,
     ["doctor", "--preset", "cargo", "--verbose", "--json"],
@@ -482,67 +629,119 @@ export function replacementScenario({
 }
 
 export function shellScenarios({ binary, root, env, command, attempt }) {
+  const results = [];
   const run = (args) => command(binary, args, { cwd: root, env });
   for (const shell of process.platform === "win32"
     ? ["bash", "powershell"]
     : ["bash", "zsh", "powershell"]) {
-    attempt(`native-shell-${shell}`, () => {
-      const profile = path.join(root, `${shell}.profile`);
-      const before = "# unrelated user configuration\n";
-      writeFileSync(profile, before);
-      for (const verb of ["setup", "remove"]) {
-        expectFailure(binary, ["shell", verb, shell, "--file", profile], {
-          cwd: root,
-          env,
-        });
-        assert.equal(readFileSync(profile, "utf8"), before);
-      }
-      run(["shell", "setup", shell, "--file", profile, "--yes"]);
-      const registered = readFileSync(profile, "utf8");
-      assert(registered.includes(before));
-      run(["shell", "setup", shell, "--file", profile, "--yes"]);
-      assert.equal(readFileSync(profile, "utf8"), registered);
-      const script = path.join(
-        root,
-        shell === "powershell" ? "shell-check.ps1" : `shell-check.${shell}`,
-      );
-      // Paths are passed as arguments/environment, never interpolated as code.
-      writeFileSync(
-        script,
-        shell === "powershell"
-          ? ". $env:CCOW_TEST_PROFILE\n& cargo --version\nif($LASTEXITCODE -ne 0){exit $LASTEXITCODE}\n"
-          : '. "$CCOW_TEST_PROFILE"\ncargo --version\n',
-      );
-      const shellEnv = { ...env, CCOW_TEST_PROFILE: profile };
-      const output = command(
-        shell === "powershell" ? "pwsh" : shell,
-        shell === "powershell"
-          ? ["-NoProfile", "-NonInteractive", "-File", script]
-          : [script],
-        { cwd: root, env: shellEnv },
-      );
-      assert.match(output.stdout, /cargo 1\.99\.1/u);
-      if (process.platform !== "win32") {
-        const parent = path.dirname(profile);
-        const old = lstatSync(parent).mode & 0o777;
-        chmodSync(parent, 0o500);
-        try {
-          assert(process.getuid?.() !== 0);
-          expectFailure(
-            binary,
-            ["shell", "remove", shell, "--file", profile, "--yes"],
-            { cwd: root, env },
-          );
-          assert.equal(readFileSync(profile, "utf8"), registered);
-        } finally {
-          chmodSync(parent, old);
+    results.push(
+      attempt(`native-shell-${shell}`, () => {
+        const profile = path.join(root, `${shell}.profile`);
+        const before = "# unrelated user configuration\n";
+        writeFileSync(profile, before);
+        for (const verb of ["setup", "remove"]) {
+          expectFailure(binary, ["shell", verb, shell, "--file", profile], {
+            cwd: root,
+            env,
+          });
+          assert.equal(readFileSync(profile, "utf8"), before);
         }
-      }
-      run(["shell", "remove", shell, "--file", profile, "--yes"]);
-      run(["shell", "remove", shell, "--file", profile, "--yes"]);
-      assert.equal(readFileSync(profile, "utf8"), before);
-    });
+        assert.notEqual(
+          process.platform,
+          "win32",
+          "Native ConPTY confirmation is unavailable",
+        );
+        const terminal = fileURLToPath(
+          new URL("./ccow-native-pty.py", import.meta.url),
+        );
+        command(
+          "python3",
+          [terminal, "no", binary, "shell", "setup", shell, "--file", profile],
+          { cwd: root, env },
+        );
+        assert.equal(readFileSync(profile, "utf8"), before);
+        command(
+          "python3",
+          [terminal, "yes", binary, "shell", "setup", shell, "--file", profile],
+          { cwd: root, env },
+        );
+        run(["shell", "setup", shell, "--file", profile, "--yes"]);
+        const registered = readFileSync(profile, "utf8");
+        assert(registered.includes(before));
+        run(["shell", "setup", shell, "--file", profile, "--yes"]);
+        assert.equal(readFileSync(profile, "utf8"), registered);
+        const script = path.join(
+          root,
+          shell === "powershell" ? "shell-check.ps1" : `shell-check.${shell}`,
+        );
+        // Paths are passed as arguments/environment, never interpolated as code.
+        writeFileSync(
+          script,
+          shell === "powershell"
+            ? ". $env:CCOW_TEST_PROFILE\nif((Get-Command cargo).Source -ne $env:CCOW_TEST_SHIM){exit 1}\n& cargo --version\nif($LASTEXITCODE -ne 0){exit $LASTEXITCODE}\n"
+            : '. "$CCOW_TEST_PROFILE"\n[ "$(command -v cargo)" = "$CCOW_TEST_SHIM" ] || exit 1\ncargo --version\n',
+        );
+        const shellEnv = {
+          ...env,
+          CCOW_TEST_PROFILE: profile,
+          CCOW_TEST_SHIM: path.join(
+            stateDirectory(env),
+            "shims",
+            process.platform === "win32" ? "cargo.exe" : "cargo",
+          ),
+        };
+        const output = command(
+          shell === "powershell" ? "pwsh" : shell,
+          shell === "powershell"
+            ? ["-NoProfile", "-NonInteractive", "-File", script]
+            : [script],
+          { cwd: root, env: shellEnv },
+        );
+        assert.match(output.stdout, /cargo 1\.99\.1/u);
+        const sessionProfile = path.join(root, `${shell}.session`);
+        const activation = run(["shell", "init", shell]);
+        assert.equal(activation.stderr, "");
+        writeFileSync(sessionProfile, activation.stdout);
+        command(
+          shell === "powershell" ? "pwsh" : shell,
+          shell === "powershell"
+            ? ["-NoProfile", "-NonInteractive", "-File", script]
+            : [script],
+          {
+            cwd: root,
+            env: { ...shellEnv, CCOW_TEST_PROFILE: sessionProfile },
+          },
+        );
+        command(
+          "python3",
+          [terminal, "no", binary, "shell", "remove", shell, "--file", profile],
+          { cwd: root, env },
+        );
+        assert.equal(readFileSync(profile, "utf8"), registered);
+
+        if (process.platform !== "win32") {
+          const parent = path.dirname(profile);
+          const old = lstatSync(parent).mode & 0o777;
+          chmodSync(parent, 0o500);
+          try {
+            assert(process.getuid?.() !== 0);
+            expectFailure(
+              binary,
+              ["shell", "remove", shell, "--file", profile, "--yes"],
+              { cwd: root, env },
+            );
+            assert.equal(readFileSync(profile, "utf8"), registered);
+          } finally {
+            chmodSync(parent, old);
+          }
+        }
+        run(["shell", "remove", shell, "--file", profile, "--yes"]);
+        run(["shell", "remove", shell, "--file", profile, "--yes"]);
+        assert.equal(readFileSync(profile, "utf8"), before);
+      }),
+    );
   }
+  return results.every(Boolean);
 }
 
 export function shimScenarios({
@@ -593,6 +792,52 @@ export function shimScenarios({
     assert.equal(report.schemaVersion, 1);
     assert.equal(report.success, true);
   }
+  const probe = path.join(root, "dispatch.rs");
+  writeFileSync(
+    probe,
+    'fn main() { println!("{}", std::env::args().skip(1).collect::<Vec<_>>().join("|")); println!("{}", std::env::current_dir().unwrap().display()); eprintln!("dispatch-stderr"); std::process::exit(37); }',
+  );
+  const first = path.join(root, "path-first"),
+    second = path.join(root, "path-second");
+  mkdirSync(first, { mode: 0o700 });
+  mkdirSync(second, { mode: 0o700 });
+  const filename = process.platform === "win32" ? "cargo.exe" : "cargo";
+  command(
+    "rustc",
+    ["--edition=2021", probe, "-o", path.join(first, filename)],
+    { cwd: root, env },
+  );
+  copyFileSync(path.join(first, filename), path.join(second, filename));
+  for (const order of [
+    [first, second],
+    [second, first],
+  ]) {
+    const dispatchEnv = {
+      ...env,
+      PATH: [dir, ...order, env.PATH].join(path.delimiter),
+    };
+    const doctor = JSON.parse(
+      command(binary, ["shim", "doctor", "--json"], {
+        cwd: root,
+        env: dispatchEnv,
+      }).stdout,
+    );
+    assert.equal(doctor.result.tools.cargo.Path, path.join(order[0], filename));
+    for (const cwd of [root, source]) {
+      const args = ["ccow-custom", "space value", "한글", "--literal=$value"];
+      const out = expectFailure(cargo, args, { cwd, env: dispatchEnv }, 37);
+      assert.equal(out.stdout, args.join("|") + "\n" + cwd + "\n");
+      assert(
+        out.stderr.endsWith("dispatch-stderr\n"),
+        "Child stderr was not preserved",
+      );
+    }
+  }
+  assert.equal(
+    command(cargo, ["+1.99.1", "--version"], { cwd: source, env: activated })
+      .stdout,
+    baseline,
+  );
   const cache = snapshot(path.join(source, "target"));
   const unrelated = path.join(dir, "unrelated-file");
   writeFileSync(unrelated, "preserve", { mode: 0o600 });
@@ -687,5 +932,265 @@ export function crossVolumeScenario({
         env,
       });
     rmSync(other, { recursive: true, force: true });
+  }
+}
+
+export function unsupportedVolumeScenario({
+  binary,
+  source,
+  fixture,
+  env,
+  command,
+  snapshot,
+  workspace,
+}) {
+  assert(workspace, "Unsupported-volume acceptance workspace unavailable");
+  const root = realpathSync(
+    mkdtempSync(path.join(workspace, ".ccow-unsupported-")),
+  );
+  chmodSync(root, 0o700);
+  const seed = path.join(root, "seed"),
+    derived = path.join(root, "derived");
+  const registered = [];
+  try {
+    let filesystem;
+    if (process.platform === "linux")
+      filesystem = command(
+        "findmnt",
+        ["-n", "-o", "FSTYPE", "--target", root],
+        { cwd: root, env },
+      )
+        .stdout.trim()
+        .toLowerCase();
+    else if (process.platform === "darwin") {
+      const plist = command("diskutil", ["info", "-plist", root], {
+        cwd: root,
+        env,
+      }).stdout;
+      filesystem = JSON.parse(
+        command("plutil", ["-convert", "json", "-o", "-", "-"], {
+          cwd: root,
+          env,
+          input: plist,
+        }).stdout,
+      ).FilesystemType.toLowerCase();
+    } else
+      filesystem = command(
+        "pwsh",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "(Get-Volume -FilePath $env:CCOW_TEST_VOLUME).FileSystemType.ToString()",
+        ],
+        { cwd: root, env: { ...env, CCOW_TEST_VOLUME: root } },
+      )
+        .stdout.trim()
+        .toLowerCase();
+    assert(
+      [
+        "ext4",
+        "ext3",
+        "ext2",
+        "tmpfs",
+        "hfs",
+        "ntfs",
+        "exfat",
+        "vfat",
+      ].includes(filesystem),
+      "Not a known unsupported CoW filesystem",
+    );
+    const original = snapshot(path.join(source, fixture.cache));
+    for (const dir of [seed, derived]) {
+      command("git", ["worktree", "add", "--detach", dir], {
+        cwd: source,
+        env,
+      });
+      registered.push(dir);
+    }
+    command(
+      binary,
+      [
+        "run",
+        "--preset",
+        "cargo",
+        "--allow-copy",
+        "--source",
+        source,
+        "--",
+        ...fixture.argv,
+      ],
+      { cwd: seed, env },
+    );
+    const seeded = snapshot(path.join(seed, fixture.cache));
+    expectFailure(
+      binary,
+      ["prepare", "--preset", "cargo", "--source", seed, "--", ...fixture.argv],
+      { cwd: derived, env },
+    );
+    assert(!existsSync(path.join(derived, fixture.cache)));
+    const copied = command(
+      binary,
+      [
+        "prepare",
+        "--preset",
+        "cargo",
+        "--source",
+        seed,
+        "--allow-copy",
+        "--",
+        ...fixture.argv,
+      ],
+      { cwd: derived, env },
+    );
+    assert.match(copied.stderr, /Ordinary copying was used/u);
+    assert.deepEqual(snapshot(path.join(derived, fixture.cache)), seeded);
+    writeFileSync(
+      path.join(derived, fixture.cache, "isolation-probe"),
+      "derived",
+    );
+    assert.deepEqual(snapshot(path.join(seed, fixture.cache)), seeded);
+    assert.deepEqual(snapshot(path.join(source, fixture.cache)), original);
+  } finally {
+    for (const dir of registered.reverse())
+      command("git", ["worktree", "remove", "--force", dir], {
+        cwd: source,
+        env,
+      });
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
+export function diskFullScenario({
+  binary,
+  source,
+  fixture,
+  root,
+  env,
+  command,
+  snapshot,
+}) {
+  // Mount only a new driver-owned image. Never fill a runner's existing volume.
+  assert.notEqual(
+    process.platform,
+    "win32",
+    "Windows VHD failure injection unavailable",
+  );
+  const image = path.join(root, "failure-volume.dmg"),
+    mount = path.join(root, "failure-volume");
+  mkdirSync(mount, { mode: 0o700 });
+  let mounted = false,
+    registered = false;
+  const destination = path.join(mount, "worktree");
+  const oversized = path.join(source, fixture.cache, "ccow-exhaustion-probe");
+  const marker = path.join(root, "build-must-not-start");
+  const argv = [
+    process.execPath,
+    "-e",
+    "require('node:fs').writeFileSync(process.argv[1],'started')",
+    marker,
+  ];
+  try {
+    if (process.platform === "darwin") {
+      command(
+        "hdiutil",
+        [
+          "create",
+          "-size",
+          "64m",
+          "-fs",
+          "APFS",
+          "-volname",
+          "ccow-failure",
+          "-type",
+          "UDRW",
+          image,
+        ],
+        { cwd: root, env },
+      );
+      command("hdiutil", ["attach", "-nobrowse", "-mountpoint", mount, image], {
+        cwd: root,
+        env,
+      });
+    } else {
+      writeFileSync(image, "");
+      truncateSync(image, 64 * 1024 * 1024);
+      command("mkfs.ext4", ["-F", image], { cwd: root, env });
+      command("mount", ["-o", "loop", image, mount], { cwd: root, env });
+    }
+    mounted = true;
+    command("git", ["worktree", "add", "--detach", destination], {
+      cwd: source,
+      env,
+    });
+    registered = true;
+    command(
+      binary,
+      [
+        "prepare",
+        "--preset",
+        "cargo",
+        "--source",
+        source,
+        "--allow-copy",
+        "--",
+        ...fixture.argv,
+      ],
+      { cwd: destination, env },
+    );
+    const before = snapshot(path.join(destination, fixture.cache));
+    command(binary, ["run", "--preset", "cargo", "--", ...argv], {
+      cwd: source,
+      env,
+    });
+    rmSync(marker);
+    writeFileSync(oversized, "");
+    truncateSync(oversized, 96 * 1024 * 1024);
+    const failed = expectFailure(
+      binary,
+      [
+        "run",
+        "--preset",
+        "cargo",
+        "--source",
+        source,
+        "--replace",
+        "--allow-copy",
+        "--",
+        ...argv,
+      ],
+      { cwd: destination, env },
+    );
+    assert.match(failed.stderr, /no space left|disk full|not enough space/iu);
+    assert(!existsSync(marker), "Build launched after failed preparation");
+    assert.deepEqual(snapshot(path.join(destination, fixture.cache)), before);
+    assert(
+      !readdirSync(destination).some(
+        (name) =>
+          name.includes(".ccow-") &&
+          (name.endsWith(".stage") || name.endsWith(".backup")),
+      ),
+    );
+  } finally {
+    rmSync(oversized, { force: true });
+    if (registered)
+      command("git", ["worktree", "remove", "--force", destination], {
+        cwd: source,
+        env,
+      });
+    if (mounted) {
+      try {
+        command(
+          process.platform === "darwin" ? "hdiutil" : "umount",
+          process.platform === "darwin" ? ["detach", mount] : [mount],
+          { cwd: root, env },
+        );
+      } catch {
+        const error = new Error("Native volume cleanup unverified");
+        error.processOwnershipUnverified = true;
+        throw error;
+      }
+    }
+    rmSync(image, { force: true });
   }
 }

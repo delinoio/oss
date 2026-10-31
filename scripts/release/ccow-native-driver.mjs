@@ -31,12 +31,13 @@ import {
   privacyScenario,
   probeSource,
   stateDirectory,
-  expectFailure,
   unknownVersionScenario,
   replacementScenario,
   shellScenarios,
   shimScenarios,
   crossVolumeScenario,
+  unsupportedVolumeScenario,
+  diskFullScenario,
 } from "./ccow-native-scenarios.mjs";
 import { checks, phases, probeHost } from "./ccow-acceptance.mjs";
 
@@ -53,14 +54,14 @@ export const blockers = Object.freeze({
     "previous-release-artifacts-and-unknown-record-version-scenario-required",
   "reflink-required": "unsupported-volume-and-cross-volume-fixtures-required",
   "replacement-recovery":
-    "disk-full-permission-and-partial-copy-injection-required",
+    "native-disk-full-permission-and-partial-copy-recovery-required",
   locking: "same-cache-cross-cache-nested-and-clean-wait-scenarios-required",
   "process-tree":
     "watch-cancellation-five-second-escalation-and-orphan-writer-scenarios-required",
   shims:
     "managed-build-dynamic-path-conflict-uninstall-and-nesting-scenarios-required",
   "shell-activation":
-    "interactive-confirmation-new-shell-and-failed-write-scenarios-required",
+    "native-shell-confirmation-activation-and-failed-write-required",
   privacy: "persisted-state-acl-and-sensitive-log-audit-required",
   "native-install-no-node":
     "node-free-toolchain-path-and-native-cargo-build-required",
@@ -238,7 +239,7 @@ exports.resolve = async () => {
     `
 const path = require('node:path');
 module.exports = async ({preset, argv, cwd}) => {
- if (preset !== '${preset}' || argv.length !== 2 || path.resolve(cwd, argv[1]) !== path.join(cwd, '.ccow/build.cjs')) throw new Error('unsupported fixture invocation');
+ if (preset !== '${preset}' || argv.length !== 2 || (argv[1] !== 'build' && path.resolve(cwd, argv[1]) !== path.join(cwd, '.ccow/build.cjs'))) throw new Error('unsupported fixture invocation');
  const {configs} = await require('./resolve.cjs').resolve();
  const caches = configs.map(config => {
    const cache = config.cache;
@@ -779,6 +780,41 @@ export async function execute({ lane, artifacts, workspace, revision }) {
           }
         });
         if (preset === "cargo") {
+          result.checks["npm-install"] =
+            attempt("npm-managed-cargo-build", () => {
+              const dir = path.join(root, "npm");
+              npm(
+                [
+                  "install",
+                  "--offline",
+                  "--ignore-scripts",
+                  "--no-audit",
+                  "--no-fund",
+                  path.resolve(
+                    artifacts,
+                    `delino-ccow-${target.suffix}-${version}.tgz`,
+                  ),
+                  path.resolve(artifacts, `delino-ccow-${version}.tgz`),
+                ],
+                { cwd: dir, env },
+              );
+              const launcher = path.join(
+                dir,
+                "node_modules/@delino/ccow/bin/ccow.cjs",
+              );
+              assert.equal(
+                command(process.execPath, [launcher, "--version"], {
+                  cwd: source,
+                  env,
+                }).stdout.trim(),
+                `ccow ${version}`,
+              );
+              command(
+                process.execPath,
+                [launcher, "run", "--preset", "cargo", "--", ...fixture.argv],
+                { cwd: source, env },
+              );
+            }) && result.checks["npm-install"];
           result.checks["native-install-no-node"] = attempt(
             "native-node-free-cargo",
             () =>
@@ -789,7 +825,7 @@ export async function execute({ lane, artifacts, workspace, revision }) {
           original = snapshot(path.join(source, fixture.cache));
           write(source, "src/bin/ccow-probe.rs", probeSource);
           write(derived, "src/bin/ccow-probe.rs", probeSource);
-          attempt("native-cross-volume-copy", () =>
+          const crossVolume = attempt("native-cross-volume-copy", () =>
             crossVolumeScenario({
               binary,
               source,
@@ -800,6 +836,20 @@ export async function execute({ lane, artifacts, workspace, revision }) {
               workspace: process.env.CCOW_ACCEPTANCE_COPY_WORKSPACE,
             }),
           );
+          const unsupportedVolume = attempt(
+            "native-unsupported-volume-copy",
+            () =>
+              unsupportedVolumeScenario({
+                binary,
+                source,
+                fixture,
+                env,
+                command,
+                snapshot,
+                workspace: process.env.CCOW_ACCEPTANCE_UNSUPPORTED_WORKSPACE,
+              }),
+          );
+          result.checks["reflink-required"] = crossVolume && unsupportedVolume;
           attempt("native-unknown-settings-version", () =>
             unknownVersionScenario({
               binary,
@@ -809,7 +859,7 @@ export async function execute({ lane, artifacts, workspace, revision }) {
               snapshot,
             }),
           );
-          attempt("native-replacement-preservation", () =>
+          const preservation = attempt("native-replacement-preservation", () =>
             replacementScenario({
               binary,
               source,
@@ -820,11 +870,30 @@ export async function execute({ lane, artifacts, workspace, revision }) {
               command,
             }),
           );
+          const exhaustion = attempt("native-disk-full-recovery", () =>
+            diskFullScenario({
+              binary,
+              source,
+              fixture,
+              root,
+              env,
+              command,
+              snapshot,
+            }),
+          );
+          result.checks["replacement-recovery"] = preservation && exhaustion;
+          run(source, ["run", "--preset", "cargo", "--", ...fixture.argv]);
           attempt("native-shim-dispatch", () =>
             shimScenarios({ binary, root, source, env, command, snapshot }),
           );
-          shellScenarios({ binary, root, env, command, attempt });
-          await lifecycleScenarios({
+          result.checks["shell-activation"] = shellScenarios({
+            binary,
+            root,
+            env,
+            command,
+            attempt,
+          });
+          const lifecycle = await lifecycleScenarios({
             binary,
             source,
             derived,
@@ -834,6 +903,8 @@ export async function execute({ lane, artifacts, workspace, revision }) {
             snapshot,
             attempt: attemptAsync,
           });
+          result.checks.locking = lifecycle.locking;
+          result.checks["process-tree"] = lifecycle["process-tree"];
           result.checks.privacy = attempt("native-private-state-audit", () =>
             privacyScenario({ binary, cwd: source, env, command }),
           );
@@ -848,8 +919,38 @@ export async function execute({ lane, artifacts, workspace, revision }) {
           id: `${preset}-clean-isolation`,
           status: "passed",
         });
+        if (preset !== "cargo")
+          attempt(`${preset}-native-shim`, () => {
+            run(root, ["shim", "install"]);
+            const dir = path.join(stateDirectory(env), "shims");
+            const executable = path.join(
+              dir,
+              process.platform === "win32" ? `${preset}.exe` : preset,
+            );
+            const activated = { ...env, PATH: dir + path.delimiter + env.PATH };
+            command(executable, ["build"], { cwd: source, env: activated });
+            const before = snapshot(path.join(source, fixture.cache));
+            command(executable, ["build"], { cwd: derived, env: activated });
+            assert.deepEqual(
+              snapshot(path.join(source, fixture.cache)),
+              before,
+            );
+            assert(
+              Object.keys(snapshot(path.join(derived, fixture.output))).length >
+                0,
+            );
+          });
       });
     }
+    result.checks.shims = [
+      "native-shim-dispatch",
+      "rspack-native-shim",
+      "rsbuild-native-shim",
+    ].every((id) =>
+      result.scenarios.some(
+        (item) => item.id === id && item.status === "passed",
+      ),
+    );
     for (const check of [
       "write-isolation",
       "clean-isolation",
@@ -866,46 +967,6 @@ export async function execute({ lane, artifacts, workspace, revision }) {
         (item) => item.id === `${preset}-freshness` && item.status === "passed",
       ),
     );
-    // Exercise emitted code and owned profile round trips, but do not promote
-    // these partial observations to the full shell/shim acceptance groups.
-    attempt("shim-install-idempotent", () => {
-      run(root, ["shim", "install"]);
-      run(root, ["shim", "install"]);
-    });
-    for (const shell of ["bash", "zsh", "powershell"])
-      attempt(`shell-${shell}-roundtrip`, () => {
-        const profile = path.join(home, `${shell}.profile`);
-        const before = "# unrelated user configuration\n";
-        writeFileSync(profile, before);
-        const init = run(root, ["shell", "init", shell]).stdout;
-        const script = path.join(
-          root,
-          shell === "powershell" ? "activate.ps1" : `activate.${shell}`,
-        );
-        writeFileSync(
-          script,
-          init +
-            (shell === "powershell"
-              ? "\nif (-not (Get-Command cargo -ErrorAction Stop)) { exit 1 }\n"
-              : "\ncommand -v cargo\n"),
-        );
-        command(
-          shell === "powershell" ? "pwsh" : shell,
-          shell === "powershell"
-            ? ["-NoProfile", "-NonInteractive", "-File", script]
-            : [script],
-          { cwd: root, env },
-        );
-        run(root, ["shell", "setup", shell, "--file", profile, "--yes"]);
-        const once = readFileSync(profile, "utf8");
-        assert.notEqual(once, before);
-        assert(once.includes(before));
-        run(root, ["shell", "setup", shell, "--file", profile, "--yes"]);
-        assert.equal(readFileSync(profile, "utf8"), once);
-        run(root, ["shell", "remove", shell, "--file", profile, "--yes"]);
-        run(root, ["shell", "remove", shell, "--file", profile, "--yes"]);
-        assert.equal(readFileSync(profile, "utf8"), before);
-      });
     return finish();
   } finally {
     // Only remove the freshly allocated driver-owned directory.
