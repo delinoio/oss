@@ -185,9 +185,11 @@ func TestActivationInNativeShells(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		cmd := exec.Command(binary, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", code+code+"[Console]::Write($env:PATH)")
+		cmd := exec.Command(binary, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", "$env:PATH = $env:CCOW_TEST_INITIAL_PATH; "+code+code+"[Console]::Write($env:PATH)")
 		initial := filepath.Join(t.TempDir(), "real")
-		cmd.Env = append(os.Environ(), "PATH="+initial)
+		// PowerShell may prepend its installation directory during startup. Set
+		// the controlled input inside the shell before exercising activation.
+		cmd.Env = append(os.Environ(), "CCOW_TEST_INITIAL_PATH="+initial)
 		out, err := cmd.Output()
 		if err != nil {
 			t.Fatal(err)
