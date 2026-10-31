@@ -14,7 +14,7 @@ CacheCow must coordinate source reads with source builds so copies are consisten
 
 Finite builds, checks, tests, and long-running watch/development servers use the same lifecycle. A cache remains locked for the process tree's lifetime. A watch server used as a source can therefore block copying until it exits.
 
-Nested invocations in the same management session and against the same cache reuse the lock without repeating preparation. Different-cache nesting remains managed separately. This applies when explicit `ccow run` enters a shim or a build script invokes Cargo. Nested execution must not release outer protection early.
+Nested invocations in the same management session and against the same cache reuse the lock without repeating preparation. Different-cache nesting remains managed separately. This applies when explicit `ccow run` enters a shim or a build script invokes Cargo. Nested execution must not release outer protection early. Cancelling a nested command cancels the whole managed session, including its outer build and other descendants. Protection remains active throughout graceful shutdown and forced termination.
 
 ## Cancellation and recovery
 
