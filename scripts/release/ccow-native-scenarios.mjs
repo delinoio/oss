@@ -17,6 +17,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import path from "node:path";
+import os from "node:os";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
@@ -494,36 +495,64 @@ export function privacyScenario({ env, binary, cwd, command }) {
   }
 }
 
-export function nodeFreeScenario({ binary, cwd, fixture, env, command }) {
-  // Remove whole PATH entries that expose Node, including version-manager
-  // shims. Check the resulting process search, then run an actual Cargo build.
-  const names =
+// Mirror only PATH directories containing Node. Keep executable names and PATH
+// order, including tools installed beside Node, without modifying the host.
+export function nodeFreePath(value, cwd, root) {
+  const names = new Set(
     process.platform === "win32"
-      ? ["node.exe", "node.cmd", "node.bat", "node.com"]
-      : ["node"];
-  const cleanEnv = {
-    ...env,
-    PATH: (env.PATH || "")
-      .split(path.delimiter)
-      .filter(
-        (dir) => dir && !names.some((name) => existsSync(path.join(dir, name))),
-      )
-      .join(path.delimiter),
-  };
-  const absent = spawnSync("node", ["--version"], { cwd, env: cleanEnv });
-  assert.equal(absent.error?.code, "ENOENT", "Node remains discoverable");
-  rmSync(path.join(cwd, fixture.cache), { recursive: true, force: true });
-  command(binary, ["run", "--preset", "cargo", "--", ...fixture.argv], {
-    cwd,
-    env: cleanEnv,
-  });
-  assert.equal(
-    command(path.join(cwd, fixture.output), [], {
+      ? ["node", "node.exe", "node.cmd", "node.bat", "node.com"]
+      : ["node"],
+  );
+  return value
+    .split(path.delimiter)
+    .map((entry, index) => {
+      const dir = path.resolve(cwd, entry || ".");
+      let entries;
+      try {
+        entries = readdirSync(dir, { withFileTypes: true });
+      } catch (error) {
+        if (["ENOENT", "ENOTDIR"].includes(error.code)) return dir;
+        throw error;
+      }
+      const isNode = (name) =>
+        names.has(process.platform === "win32" ? name.toLowerCase() : name);
+      if (!entries.some((entry) => isNode(entry.name))) return dir;
+      const mirror = path.join(root, String(index));
+      mkdirSync(mirror);
+      for (const entry of entries) {
+        if (isNode(entry.name)) continue;
+        const source = path.join(dir, entry.name),
+          target = path.join(mirror, entry.name);
+        if (process.platform !== "win32") symlinkSync(source, target);
+        else if (entry.isDirectory()) symlinkSync(source, target, "junction");
+        else copyFileSync(source, target);
+      }
+      return mirror;
+    })
+    .join(path.delimiter);
+}
+
+export function nodeFreeScenario({ binary, cwd, fixture, env, command }) {
+  const root = mkdtempSync(path.join(os.tmpdir(), "ccow-node-free-"));
+  try {
+    const cleanEnv = { ...env, PATH: nodeFreePath(env.PATH || "", cwd, root) };
+    const absent = spawnSync("node", ["--version"], { cwd, env: cleanEnv });
+    assert.equal(absent.error?.code, "ENOENT", "Node remains discoverable");
+    rmSync(path.join(cwd, fixture.cache), { recursive: true, force: true });
+    command(binary, ["run", "--preset", "cargo", "--", ...fixture.argv], {
       cwd,
       env: cleanEnv,
-    }).stdout.trim(),
-    "ccow-original",
-  );
+    });
+    assert.equal(
+      command(path.join(cwd, fixture.output), [], {
+        cwd,
+        env: cleanEnv,
+      }).stdout.trim(),
+      "ccow-original",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 }
 
 export function unknownVersionScenario({

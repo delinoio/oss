@@ -560,3 +560,38 @@ test(
     }
   },
 );
+
+test("Node-free PATH retains tools colocated with Node and search order", async () => {
+  const { mkdirSync, existsSync } = await import("node:fs");
+  const { nodeFreePath } = await import("./ccow-native-scenarios.mjs");
+  const root = mkdtempSync(path.join(os.tmpdir(), "ccow-path-fixture-"));
+  try {
+    const shared = path.join(root, "shared"),
+      later = path.join(root, "later"),
+      mirrors = path.join(root, "mirrors");
+    for (const dir of [shared, later, mirrors]) mkdirSync(dir);
+    const suffix = process.platform === "win32" ? ".exe" : "";
+    for (const name of ["node", "git", "cc"])
+      writeFileSync(path.join(shared, name + suffix), name);
+    writeFileSync(path.join(later, "git" + suffix), "later");
+    const result = nodeFreePath(
+      [shared, later].join(path.delimiter),
+      root,
+      mirrors,
+    ).split(path.delimiter);
+    assert.equal(result.length, 2);
+    assert.equal(result[1], later);
+    assert(!existsSync(path.join(result[0], "node" + suffix)));
+    for (const name of ["git", "cc"])
+      assert.equal(
+        readFileSync(path.join(result[0], name + suffix), "utf8"),
+        name,
+      );
+    assert.equal(
+      readFileSync(path.join(shared, "node" + suffix), "utf8"),
+      "node",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
