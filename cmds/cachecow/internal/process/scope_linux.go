@@ -141,3 +141,6 @@ func (b *linuxBackend) empty(rootDone bool) (bool, error) {
 		}
 	}
 }
+
+// This backend has no persistent native identity for post-supervisor recovery.
+func nativeCompletion(Scope) bool { return false }

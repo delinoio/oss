@@ -95,10 +95,21 @@ func TestOwnershipFailureNeverStartsChild(t *testing.T) {
 	h := hooks()
 	h.Owned = func(Scope) error { return failure }
 	h.Drained = func(Scope) error { t.Error("unexpected completion callback"); return nil }
-	_, err := Run(context.Background(), dir, shell(dir, `touch "`+sentinel+`"`), Streams{}, h)
+	r, err := Run(context.Background(), dir, shell(dir, `touch "`+sentinel+`"`), Streams{}, h)
 	if !errors.Is(err, failure) {
 		t.Fatal(err)
 	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if _, err := os.Stat(filepath.Join(r.Scope.Directory, "test-drained")); err == nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("no-child supervisor did not finalize")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
 	if _, err = os.Stat(sentinel); !os.IsNotExist(err) {
 		t.Fatal("child crossed failed barrier")
 	}
@@ -408,5 +419,37 @@ func TestCancellationAfterOwnershipFinalizesWithoutChild(t *testing.T) {
 			t.Fatal(err)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func TestNewExecCommandPreservesInvocation(t *testing.T) {
+	dir := stateRoot(t)
+	c, err := NewExecCommand(Command{Path: "/bin/sh", Args: []string{"custom-argv0", "-c", `printf '%s|%s|%s' "$0" "$PWD" "${HOME-unset}"`}, Dir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := c.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(out) != "custom-argv0|"+dir+"|unset" {
+		t.Fatalf("output=%q", out)
+	}
+}
+
+func TestBeforeStartFailureFinalizes(t *testing.T) {
+	dir := stateRoot(t)
+	path := filepath.Join(dir, "before-start-failure")
+	h := hooks()
+	drained := false
+	h.Drained = func(s Scope) error { drained = true; return Reconcile(s) }
+	r, err := Run(context.Background(), dir, Command{Path: path, Args: []string{path}, Dir: dir}, Streams{}, h)
+	if err != nil || r.ExitCode != 125 || !drained {
+		t.Fatalf("result=%+v error=%v drained=%v", r, err, drained)
+	}
+	for _, name := range []string{"test-quiesced", "test-drained"} {
+		if _, err := os.Stat(filepath.Join(r.Scope.Directory, name)); err != nil {
+			t.Fatal(err)
+		}
 	}
 }

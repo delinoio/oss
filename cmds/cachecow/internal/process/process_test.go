@@ -60,6 +60,9 @@ func TestMain(m *testing.M) {
 			return os.WriteFile(filepath.Join(s.Directory, "test-ready"), []byte("ready"), 0600)
 		},
 		BeforeStart: func(s Scope, c *Command) error {
+			if filepath.Base(c.Path) == "before-start-failure" {
+				return errors.New("injected preparation failure")
+			}
 			c.Env = append(c.Env, "CCOW_TEST_SUPERVISOR="+s.ID)
 			return nil
 		},
@@ -80,4 +83,22 @@ func TestMain(m *testing.M) {
 		os.Exit(code)
 	}
 	os.Exit(m.Run())
+}
+
+func TestNoChildCompletionAndUnknownNativeOwnership(t *testing.T) {
+	dir := t.TempDir()
+	s := Scope{Version: 1, ID: filepath.Base(dir), Directory: dir, OwnerPID: 2147483647}
+	if err := save(s); err != nil {
+		t.Fatal(err)
+	}
+	if !errors.Is(Reconcile(s), ErrReconciliation) {
+		t.Fatal("absent native identity proved completion")
+	}
+	s.Complete = true
+	if err := save(s); err != nil {
+		t.Fatal(err)
+	}
+	if err := Reconcile(s); err != nil {
+		t.Fatalf("no-child durable completion rejected: %v", err)
+	}
 }
