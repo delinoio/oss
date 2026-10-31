@@ -16,6 +16,14 @@ const targets = values.target
   ? platforms.targets.filter((t) => t.suffix === values.target)
   : platforms.targets;
 assert(targets.length, "Unsupported target");
+// Bind Git discovery to this checkout: a linked worktree can live inside a
+// different checkout, and Go's enclosing-VCS lookup can otherwise stamp that
+// parent's revision. Keep linker flags in build metadata for package verification
+// (-trimpath omits those flags).
+const gitDirectory = execFileSync("git", ["rev-parse", "--absolute-git-dir"], {
+  cwd: root,
+  encoding: "utf8",
+}).trim();
 const output = path.resolve(values.output);
 mkdirSync(output, { recursive: false });
 for (const target of targets) {
@@ -25,7 +33,6 @@ for (const target of targets) {
     "go",
     [
       "build",
-      "-trimpath",
       "-buildvcs=true",
       "-ldflags",
       `-X main.version=${version}`,
@@ -37,6 +44,8 @@ for (const target of targets) {
       cwd: root,
       env: {
         ...process.env,
+        GIT_DIR: gitDirectory,
+        GIT_WORK_TREE: root,
         CGO_ENABLED: "0",
         GOOS: target.goos,
         GOARCH: target.goarch,

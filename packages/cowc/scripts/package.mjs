@@ -36,7 +36,7 @@ export function identity(sourceRevision, fixture = false) {
     /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/.test(version),
     "Invalid source version",
   );
-  return { version, sourceRevision, fixture, tag: `cowcache-v${version}` };
+  return { version, sourceRevision, fixture, tag: `cowc@v${version}` };
 }
 function manifest(id, target, digest) {
   return {
