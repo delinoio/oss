@@ -313,3 +313,29 @@ func (s Snapshot) inventory() (string, error) {
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
+
+// CaptureFileStamps retains paths and content digests, never configuration bytes.
+// Include absent candidates so creation can invalidate a discovered cache claim.
+func CaptureFileStamps(paths []string) ([]FileStamp, error) {
+	out := make([]FileStamp, 0, len(paths))
+	for _, path := range paths {
+		stamp, err := fileStamp(path)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, stamp)
+	}
+	return out, nil
+}
+func VerifyFileStamps(stamps []FileStamp) error {
+	for _, old := range stamps {
+		now, err := fileStamp(old.Path)
+		if err != nil {
+			return err
+		}
+		if old != now {
+			return errors.New("cache-selection configuration changed after discovery; repeat discovery")
+		}
+	}
+	return nil
+}

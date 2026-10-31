@@ -499,3 +499,49 @@ func TestPrepareWaitsForSourceProvenance(t *testing.T) {
 		t.Fatalf("incomplete source clone: %q %v", data, err)
 	}
 }
+
+func TestWaitingCommandRejectsChangedCargoConfiguration(t *testing.T) {
+	f := newFixture(t)
+	config := filepath.Join(f.main, ".cargo", "config.toml")
+	writeTest(t, config, "[build]\ntarget-dir='target'\n", 0600)
+	writeTest(t, filepath.Join(f.main, "scenario"), "touch target/ready\nwhile [ ! -f target/release ]; do sleep 0.05; done\n", 0600)
+	owner := f.cmd(f.main, "run", "--", "cargo", "build")
+	if err := owner.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { owner.Process.Kill(); owner.Wait() }()
+	waitFile(t, filepath.Join(f.main, "target", "ready"))
+	waiter := f.cmd(f.main, "run", "--", "cargo", "build")
+	var stderr bytes.Buffer
+	waiter.Stderr = &stderr
+	if err := waiter.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer waiter.Process.Kill()
+	// A second operation journal proves discovery finished and the supervisor
+	// received the plan before the configuration changes.
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		plans, _ := filepath.Glob(filepath.Join(f.home, "config", "cachecow", "processes", "*", "operation.json"))
+		macPlans, _ := filepath.Glob(filepath.Join(f.home, "Library", "Application Support", "cachecow", "processes", "*", "operation.json"))
+		plans = append(plans, macPlans...)
+		if len(plans) >= 2 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("waiter did not finish discovery")
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	writeTest(t, config, "[build]\ntarget-dir='other'\n", 0600)
+	writeTest(t, filepath.Join(f.main, "target", "release"), "release", 0600)
+	if err := owner.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if err := waiter.Wait(); err == nil || waiter.ProcessState.ExitCode() != 125 {
+		t.Fatalf("waiter did not reject changed configuration: %v", err)
+	}
+	if !strings.Contains(stderr.String(), "cache-selection configuration changed") {
+		t.Fatal(stderr.String())
+	}
+}

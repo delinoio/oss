@@ -32,7 +32,7 @@ Discovery verifies installed tool versions and excludes dependency trees, packag
 
 ### Cargo discovery
 
-Cargo metadata resolves the workspace and configured `target_directory` and `build_directory`. Missing directory fields, unresolved configuration includes, and unverifiable custom compiler wrappers prohibit reuse with actionable errors. Distinct roots are managed together; coincident roots are processed once. Discovery queries the exact resolved command, including explicit executable paths, rather than substituting PATH Cargo. Source and destination must retain compatible build settings while Cargo remains responsible for source freshness.
+Cargo metadata resolves the workspace and configured `target_directory` and `build_directory`. Missing directory fields, unresolved configuration includes, and unverifiable custom compiler wrappers prohibit reuse with actionable errors. Distinct roots are managed together; coincident roots are processed once. Discovery queries the exact resolved command, including explicit executable paths, rather than substituting PATH Cargo. Source and destination must retain compatible build settings while Cargo remains responsible for source freshness. Before metadata discovery, capture file digests for Cargo configuration candidates (including absent files), ancestor manifests, explicit configuration and manifest arguments, and toolchain selectors. Recheck those inputs after discovery and under the complete lease set before launch; a change requires fresh discovery and must not run with stale cache claims. Store only paths and digests, not file contents.
 
 ### Coordination and recovery
 

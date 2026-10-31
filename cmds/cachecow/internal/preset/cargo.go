@@ -91,6 +91,14 @@ func discoverCargo(ctx context.Context, req Request, out *Result) (any, error) {
 	for _, config := range extraConfigs {
 		args = append(args, "--config", config)
 	}
+	inputPaths, e := cargoInputPaths(req, args)
+	if e != nil {
+		return nil, e
+	}
+	out.Inputs, e = repository.CaptureFileStamps(inputPaths)
+	if e != nil {
+		return nil, e
+	}
 	b, e = req.Runner.Output(ctx, req.CWD, env, args)
 	if e != nil {
 		return nil, e
@@ -259,4 +267,45 @@ func relativeProject(root, path string) string {
 		return path
 	}
 	return p
+}
+
+// Capture candidates before metadata runs, including missing files whose later
+// creation changes Cargo's configuration precedence. Check again after discovery
+// and under the leases before allowing Cargo to reread these files.
+func cargoInputPaths(req Request, args []string) ([]string, error) {
+	var paths []string
+	for dir := req.CWD; ; dir = filepath.Dir(dir) {
+		paths = append(paths, filepath.Join(dir, "Cargo.toml"), filepath.Join(dir, "rust-toolchain"), filepath.Join(dir, "rust-toolchain.toml"), filepath.Join(dir, ".cargo", "config"), filepath.Join(dir, ".cargo", "config.toml"))
+		if filepath.Dir(dir) == dir {
+			break
+		}
+	}
+	home := envValue(req.Env, "CARGO_HOME")
+	if home == "" {
+		home = envValue(req.Env, "HOME")
+		if home == "" {
+			home = envValue(req.Env, "USERPROFILE")
+		}
+		if home == "" {
+			var err error
+			home, err = os.UserHomeDir()
+			if err != nil {
+				return nil, err
+			}
+		}
+		home = filepath.Join(home, ".cargo")
+	} else if !filepath.IsAbs(home) {
+		home = filepath.Join(req.CWD, home)
+	}
+	paths = append(paths, filepath.Join(home, "config"), filepath.Join(home, "config.toml"))
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == "--manifest-path" || (args[i] == "--config" && !strings.Contains(args[i+1], "=")) {
+			path := args[i+1]
+			if !filepath.IsAbs(path) {
+				path = filepath.Join(req.CWD, path)
+			}
+			paths = append(paths, path)
+		}
+	}
+	return paths, nil
 }

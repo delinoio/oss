@@ -75,6 +75,7 @@ func (c Compatibility) Compatible(other Compatibility) bool {
 }
 
 type Result struct {
+	Inputs        []repository.FileStamp
 	Preset        ID
 	Repository    repository.Info
 	Roots         []Root
@@ -193,6 +194,9 @@ func Discover(ctx context.Context, req Request) (Result, error) {
 		settings, e = discoverFrontend(ctx, req, &out)
 	}
 	if e != nil {
+		return Result{}, e
+	}
+	if e := repository.VerifyFileStamps(out.Inputs); e != nil {
 		return Result{}, e
 	}
 	if len(out.Roots) == 0 {

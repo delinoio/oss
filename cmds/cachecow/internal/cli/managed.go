@@ -61,6 +61,17 @@ func Validate(p session.Plan) error {
 	if e := d.Decode(&c); e != nil {
 		return e
 	}
+	for _, selected := range []*preset.Result{&c.Current, c.Source} {
+		if selected == nil {
+			continue
+		}
+		if selected.Preset == preset.Cargo && len(selected.Inputs) == 0 {
+			return errors.New("Cargo cache-selection inputs are missing; repeat discovery")
+		}
+		if e := repository.VerifyFileStamps(selected.Inputs); e != nil {
+			return e
+		}
+	}
 	if !c.Current.Compatibility.Verified() {
 		return errors.New("unverified preset compatibility")
 	}

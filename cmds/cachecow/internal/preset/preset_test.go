@@ -4,6 +4,7 @@ package preset
 import (
 	"context"
 	"encoding/json"
+	"github.com/delinoio/oss/cmds/cachecow/internal/repository"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -400,5 +401,48 @@ func TestRealCargoConfiguredDirectories(t *testing.T) {
 				t.Fatal(e)
 			}
 		}
+	}
+}
+
+func TestCargoCacheSelectionInputs(t *testing.T) {
+	for _, kind := range []string{"local-change", "local-create", "ancestor", "home", "explicit", "manifest", "source-only"} {
+		t.Run(kind, func(t *testing.T) {
+			req, _ := cargoFixture(t)
+			path := filepath.Join(req.CWD, ".cargo", "config.toml")
+			switch kind {
+			case "ancestor":
+				path = filepath.Join(filepath.Dir(req.CWD), ".cargo", "config.toml")
+			case "home":
+				home := t.TempDir()
+				req.Env = append(req.Env, "CARGO_HOME="+home)
+				path = filepath.Join(home, "config.toml")
+			case "explicit":
+				path = filepath.Join(t.TempDir(), "extra.toml")
+				req.Argv = append(req.Argv, "--config", path)
+			case "manifest":
+				path = filepath.Join(req.CWD, "Cargo.toml")
+			}
+			os.MkdirAll(filepath.Dir(path), 0700)
+			if kind != "local-create" {
+				os.WriteFile(path, []byte("[build]\ntarget-dir='target'\n"), 0600)
+			}
+			result, err := Discover(context.Background(), req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if kind == "source-only" {
+				path = filepath.Join(req.CWD, "main.rs")
+			}
+			os.WriteFile(path, []byte("[build]\ntarget-dir='other'\n"), 0600)
+			t.Setenv("PATH", t.TempDir())
+			err = repository.VerifyFileStamps(result.Inputs)
+			if kind == "source-only" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else if err == nil {
+				t.Fatal("accepted changed cache selection")
+			}
+		})
 	}
 }
