@@ -168,6 +168,13 @@ func Canonical(path string) (string, error) {
 	if path == "" {
 		return "", errors.New("empty path is not a cache location")
 	}
+	// Abs/Clean would erase a symlink followed by ".." before the filesystem
+	// resolves it, potentially validating a different cache from the build.
+	for _, component := range strings.FieldsFunc(path, func(r rune) bool { return r < 128 && os.IsPathSeparator(uint8(r)) }) {
+		if component == ".." {
+			return "", errors.New("parent traversal is ambiguous in cache paths; use a resolved path without ..")
+		}
+	}
 	p, e := filepath.Abs(path)
 	if e != nil {
 		return "", e

@@ -332,3 +332,24 @@ func TestUnrelatedDanglingSourceLinks(t *testing.T) {
 		})
 	}
 }
+
+func TestCanonicalRejectsParentTraversalBeforeCleaning(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	child := filepath.Join(outside, "child")
+	if err := os.Mkdir(child, 0700); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(root, "link")
+	if err := os.Symlink(child, link); err != nil {
+		t.Skip(err)
+	}
+	for _, input := range []string{link + string(filepath.Separator) + "../cache", "link/../cache"} {
+		if got, err := Canonical(input); err == nil {
+			t.Fatalf("accepted ambiguous %q as %q", input, got)
+		}
+	}
+	if _, err := Canonical(link + string(filepath.Separator) + "cache"); err != nil {
+		t.Fatal(err)
+	}
+}
