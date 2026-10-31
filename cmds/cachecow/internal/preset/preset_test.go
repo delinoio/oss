@@ -4,6 +4,7 @@ package preset
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/delinoio/oss/cmds/cachecow/internal/repository"
 	"os"
 	"os/exec"
@@ -252,8 +253,11 @@ func TestNativeNodeProtocolWithFixturePackages(t *testing.T) {
 	for _, name := range []string{"@rspack/core", "@rsbuild/core"} {
 		p := filepath.Join(r.CWD, "node_modules", name)
 		os.MkdirAll(p, 0700)
-		os.WriteFile(filepath.Join(p, "package.json"), []byte(`{"version":"2.3.0"}`), 0600)
+		os.WriteFile(filepath.Join(p, "package.json"), []byte(fmt.Sprintf(`{"name":%q,"version":"2.3.0","bin":{"rsbuild":"bin.js"}}`, name)), 0600)
 	}
+	bin := filepath.Join(r.CWD, "node_modules", "@rsbuild/core", "bin.js")
+	os.WriteFile(bin, []byte("#!/usr/bin/env node\n"), 0700)
+	r.Argv[0] = bin
 	script := `const path=require('node:path'); module.exports=async ({cwd,preset,argv}) => ({schema:1,preset,inputs:[path.join(cwd,'rsbuild.config.js')],caches:[{type:'persistent',path:path.join(cwd,'.cache','test')}],outputs:[path.join(cwd,'dist')],settings:{mode:argv[3]}});`
 	os.WriteFile(filepath.Join(r.CWD, ".ccow", "discover.cjs"), []byte(script), 0600)
 	result, e := Discover(context.Background(), r)
@@ -263,6 +267,17 @@ func TestNativeNodeProtocolWithFixturePackages(t *testing.T) {
 	if result.Preset != Rsbuild || !result.Compatibility.Verified() {
 		t.Fatalf("bad result %+v", result)
 	}
+	// A supported cwd installation must not certify a selected older install.
+	external := filepath.Join(t.TempDir(), "tool")
+	os.MkdirAll(filepath.Join(external, "node_modules", "@rspack/core"), 0700)
+	os.WriteFile(filepath.Join(external, "package.json"), []byte(`{"name":"@rsbuild/core","version":"2.2.0","bin":{"rsbuild":"bin.js"}}`), 0600)
+	os.WriteFile(filepath.Join(external, "bin.js"), []byte("#!/usr/bin/env node\n"), 0700)
+	os.WriteFile(filepath.Join(external, "node_modules", "@rspack/core", "package.json"), []byte(`{"version":"2.3.0"}`), 0600)
+	r.Argv[0] = filepath.Join(external, "bin.js")
+	if _, err := Discover(context.Background(), r); err == nil {
+		t.Fatal("cwd version certified an unsupported selected executable")
+	}
+	r.Argv[0] = bin
 	// Probe failures must not expose arbitrary project stdout/stderr or argv.
 	os.WriteFile(filepath.Join(r.CWD, ".ccow", "discover.cjs"), []byte(`throw new Error('secret-value')`), 0600)
 	_, e = Discover(context.Background(), r)

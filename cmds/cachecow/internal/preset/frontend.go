@@ -29,17 +29,44 @@ import (
 const frontendProbe = `
 const {createRequire} = require('node:module');
 const path = require('node:path');
+const fs = require('node:fs');
 (async () => {
  const input = JSON.parse(process.argv[1]);
  const local = createRequire(path.join(process.cwd(), 'package.json'));
+ // Resolve the package owning the selected bin, rather than a different
+ // installation visible from cwd. Unknown wrappers cannot prove this identity.
+ const executable = input.argv[0];
+ let selected = executable;
+ if (!path.isAbsolute(selected) && !selected.includes('/') && !selected.includes('\\')) {
+  selected = (process.env.PATH || '').split(path.delimiter).map(dir => path.resolve(dir,executable)).find(p => {
+   try { fs.accessSync(p,fs.constants.X_OK); return fs.statSync(p).isFile(); } catch { return false; }
+  });
+ }
+ if (!selected) throw new Error('selected executable unavailable');
+ const bin = fs.realpathSync(path.resolve(selected));
+ const ownerName = input.preset === 'rspack' ? '@rspack/cli' : '@rsbuild/core';
+ let ownerPath;
+ for (let dir=path.dirname(bin); ; dir=path.dirname(dir)) {
+  const candidate=path.join(dir,'package.json');
+  if (fs.existsSync(candidate)) {
+   const meta=JSON.parse(fs.readFileSync(candidate,'utf8'));
+   const entry=typeof meta.bin === 'string' ? meta.bin : meta.bin?.[input.preset];
+   if (meta.name === ownerName && entry && fs.realpathSync(path.resolve(dir,entry)) === bin) { ownerPath=candidate; break; }
+  }
+  if (path.dirname(dir) === dir) break;
+ }
+ if (!ownerPath) throw new Error('selected executable is not a verified package bin');
+ const selectedRequire=createRequire(ownerPath);
  const pkg = input.preset === 'rspack' ? '@rspack/core' : '@rsbuild/core';
- const toolVersion = local(pkg + '/package.json').version;
- const toolRequire = createRequire(local.resolve(pkg + '/package.json'));
- const rspackVersion = toolRequire('@rspack/core/package.json').version;
+ const toolPath = input.preset === 'rsbuild' ? ownerPath : selectedRequire.resolve(pkg + '/package.json');
+ const toolVersion = JSON.parse(fs.readFileSync(toolPath,'utf8')).version;
+ const toolRequire = createRequire(toolPath);
+ const rspackPath=toolRequire.resolve('@rspack/core/package.json');
+ const rspackVersion = JSON.parse(fs.readFileSync(rspackPath,'utf8')).version;
  const discover = local(path.join(process.cwd(), '.ccow/discover.cjs'));
  if (typeof discover !== 'function') throw new Error('invalid integration');
  const result = await discover({...input, cwd:process.cwd(), env:process.env});
- process.stdout.write(JSON.stringify({nodeVersion:process.versions.node,toolVersion,rspackVersion,result}));
+ process.stdout.write(JSON.stringify({nodeVersion:process.versions.node,toolVersion,rspackVersion,toolInputs:[bin,ownerPath,toolPath,rspackPath],result}));
 })().catch(() => { process.exitCode=1; });
 `
 
@@ -57,13 +84,14 @@ func discoverFrontend(ctx context.Context, req Request, out *Result) (any, error
 	}{out.Preset, req.Argv})
 	b, e := req.Runner.Output(ctx, req.CWD, req.Env, []string{"node", "-e", frontendProbe, string(payload)})
 	if e != nil {
-		return nil, e
+		return nil, errors.New("frontend discovery failed; use a direct installed package bin or symlink and verify its configuration")
 	}
 	var probe struct {
-		Node   string `json:"nodeVersion"`
-		Tool   string `json:"toolVersion"`
-		Rspack string `json:"rspackVersion"`
-		Result struct {
+		ToolInputs []string `json:"toolInputs"`
+		Node       string   `json:"nodeVersion"`
+		Tool       string   `json:"toolVersion"`
+		Rspack     string   `json:"rspackVersion"`
+		Result     struct {
 			Schema int `json:"schema"`
 			Preset ID  `json:"preset"`
 			Caches []struct {
@@ -88,7 +116,7 @@ func discoverFrontend(ctx context.Context, req Request, out *Result) (any, error
 	if len(r.Inputs) == 0 {
 		return nil, errors.New("frontend integration must declare every cache-selection input, including absent configuration candidates")
 	}
-	inputPaths := []string{integration}
+	inputPaths := append([]string{integration}, probe.ToolInputs...)
 	for _, path := range r.Inputs {
 		if !filepath.IsAbs(path) {
 			return nil, errors.New("frontend configuration input paths must be absolute")
