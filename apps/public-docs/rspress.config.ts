@@ -112,7 +112,22 @@ const pnportPages = [
   { text: "Releases and Rollback", link: "/pnport/releases" },
 ];
 
+const cowcachePages = [
+  { text: "Overview", link: "/cowcache/" },
+  { text: "Installation and Availability", link: "/cowcache/installation" },
+  { text: "Configuration and Sources", link: "/cowcache/configuration" },
+  { text: "Cache Lifecycle", link: "/cowcache/cache" },
+  { text: "Concurrency and Processes", link: "/cowcache/concurrency" },
+  { text: "Shims and Shells", link: "/cowcache/shims" },
+  { text: "Output and Exit Codes", link: "/cowcache/output" },
+  {
+    text: "Troubleshooting and Performance",
+    link: "/cowcache/troubleshooting",
+  },
+];
+
 const projectPages = [
+  { text: "CowCache", link: "/cowcache/", activeMatch: "^/cowcache(?:/|$)" },
   { text: "Runmoor", link: "/runmoor/", activeMatch: "^/runmoor" },
   { text: "Nodeup", link: "/nodeup/", activeMatch: "^/nodeup" },
   { text: "binpm", link: "/binpm/", activeMatch: "^/binpm" },
@@ -145,6 +160,7 @@ export default defineConfig({
       "/": [
         { text: "Get Started", items: homePages.slice(0, 2) },
         { text: "Reference", items: homePages.slice(2) },
+        { text: "CowCache", items: cowcachePages },
         {
           text: "Rust Monorepo Tooling",
           items: [productPages[0]],
@@ -154,6 +170,7 @@ export default defineConfig({
           items: [productPages[1]],
         },
       ],
+      "/cowcache/": [{ text: "CowCache", items: cowcachePages }],
       "/clibox/": [{ text: "clibox", items: cliboxPages }],
       "/pnport/": [{ text: "pnport", items: pnportPages }],
       "/runmoor/": [{ text: "Runmoor", items: runmoorPages }],
