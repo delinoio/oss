@@ -229,6 +229,10 @@ func TestManagerDeathStillDrains(t *testing.T) {
 	deadline = time.Now().Add(12 * time.Second)
 	for time.Now().Before(deadline) {
 		if Reconcile(s) == nil {
+			if _, err := os.Stat(filepath.Join(s.Directory, "test-drained")); err != nil {
+				time.Sleep(20 * time.Millisecond)
+				continue
+			}
 			return
 		}
 		time.Sleep(20 * time.Millisecond)

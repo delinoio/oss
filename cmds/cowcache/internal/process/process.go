@@ -28,6 +28,8 @@ var ErrUnavailable = errors.New("native process ownership is unavailable; comman
 // Command uses an already resolved executable path. Args includes argv[0].
 // Env is explicit: an empty slice means an empty environment.
 type Command struct {
+	// Noop runs supervisor hooks without launching user code (prepare and clean).
+	Noop bool
 	Path string
 	Args []string
 	Dir  string
@@ -41,14 +43,15 @@ type Streams struct{ Stdin, Stdout, Stderr *os.File }
 // Scope contains no command arguments, environment, or captured child output.
 // Directory is a unique private journal directory beneath the supplied state root.
 type Scope struct {
-	Version   int    `json:"version"`
-	ID        string `json:"id"`
-	Directory string `json:"directory"`
-	OwnerPID  int    `json:"owner_pid"`
-	NativeID  uint64 `json:"native_id,omitempty"`
-	Started   bool   `json:"started"`
-	Complete  bool   `json:"complete"`
-	ExitCode  int    `json:"exit_code"`
+	Context   context.Context `json:"-"`
+	Version   int             `json:"version"`
+	ID        string          `json:"id"`
+	Directory string          `json:"directory"`
+	OwnerPID  int             `json:"owner_pid"`
+	NativeID  uint64          `json:"native_id,omitempty"`
+	Started   bool            `json:"started"`
+	Complete  bool            `json:"complete"`
+	ExitCode  int             `json:"exit_code"`
 }
 
 // Hooks integrate durable cache ownership. Owned MUST durably associate the
@@ -81,7 +84,7 @@ func Run(ctx context.Context, stateRoot string, command Command, streams Streams
 	if !filepath.IsAbs(stateRoot) {
 		return result, errors.New("absolute private process state root is required")
 	}
-	if command.Path == "" || !filepath.IsAbs(command.Path) || len(command.Args) == 0 || !filepath.IsAbs(command.Dir) {
+	if !command.Noop && (command.Path == "" || !filepath.IsAbs(command.Path) || len(command.Args) == 0 || !filepath.IsAbs(command.Dir)) {
 		return result, errors.New("resolved absolute executable, cwd, and argv are required")
 	}
 	if err := ctx.Err(); err != nil {
@@ -340,15 +343,21 @@ func supervise(dir, endpoint string, hooks SupervisorHooks) int {
 		return 125
 	}
 	cancelled := make(chan struct{})
-	go func() { var ignored [1]byte; _, _ = conn.Read(ignored[:]); close(cancelled) }()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scope.Context = ctx
+	go func() { var ignored [1]byte; _, _ = conn.Read(ignored[:]); cancel(); close(cancelled) }()
 	signals, stopSignals := terminationSignals()
 	defer stopSignals()
-	if hooks.BeforeStart != nil {
-		if hooks.BeforeStart(scope, request.Command) != nil {
-			return 125
+	go func() {
+		select {
+		case <-signals:
+			cancel()
+		case <-ctx.Done():
 		}
-	}
+	}()
 	finish := func() int {
+		cancel()
 		if hooks.Quiesce != nil {
 			if hooks.Quiesce(scope) != nil {
 				return 125
@@ -369,6 +378,20 @@ func supervise(dir, endpoint string, hooks SupervisorHooks) int {
 	scope.Started = true
 	if save(scope) != nil {
 		return 125
+	}
+	if hooks.BeforeStart != nil {
+		if hooks.BeforeStart(scope, request.Command) != nil {
+			scope.ExitCode = 125
+			return finish()
+		}
+	}
+	if ctx.Err() != nil {
+		scope.ExitCode = 125
+		return finish()
+	}
+	if request.Command.Noop {
+		scope.ExitCode = 0
+		return finish()
 	}
 	cmd := exec.Command(request.Command.Path)
 	cmd.Args = request.Command.Args
@@ -398,7 +421,7 @@ func supervise(dir, endpoint string, hooks SupervisorHooks) int {
 	case scope.ExitCode = <-waited:
 		rootDone = true
 	case <-cancelled:
-	case <-signals:
+	case <-ctx.Done():
 	}
 	slog.Debug("process scope draining", "scope_id", scope.ID, "grace_seconds", 5)
 	deadline := time.Now().Add(GracePeriod)

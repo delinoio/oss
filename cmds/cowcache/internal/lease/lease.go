@@ -470,3 +470,75 @@ func contains(parent, child string) bool {
 	return false
 }
 func overlap(a, b string) bool { return contains(a, b) || contains(b, a) }
+
+// EnsurePrivateDirectory shares the registry's ownership and ACL checks with
+// settings and process journals. It never repairs an unsafe existing directory.
+func EnsurePrivateDirectory(path string) error { return privateDir(path) }
+
+// ValidatePrivateFile checks an existing record without creating or rewriting it.
+func ValidatePrivateFile(path string) error {
+	if _, err := os.Lstat(path); err != nil {
+		return err
+	}
+	return privateDatabase(path)
+}
+
+// ReleasePreparedSources releases newly acquired read resources after copying,
+// before any command starts. The caller must pass only source paths from this
+// acquisition's Grant.NewPaths, never a destination or a borrowed parent path.
+// Existing process-writable claims still require whole-tree Finish verification.
+func (s *Session) ReleasePreparedSources(paths []string, grant Grant) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.finished {
+		return ErrUnverified
+	}
+	allowed := map[string]bool{}
+	for _, p := range grant.NewPaths {
+		allowed[p] = true
+	}
+	remove := map[string]bool{}
+	for _, p := range paths {
+		if !allowed[p] {
+			return ErrUnverified
+		}
+		remove[p] = true
+	}
+	if len(remove) == 0 {
+		return nil
+	}
+	next := s.record
+	next.Paths = nil
+	for _, p := range s.record.Paths {
+		if !remove[p] {
+			next.Paths = append(next.Paths, p)
+		}
+	}
+	if len(next.Paths) == 0 {
+		return ErrUnverified
+	}
+	e := s.registry.transaction(context.Background(), func(c *sql.Conn) error {
+		all, e := records(context.Background(), c)
+		if e != nil {
+			return e
+		}
+		for _, r := range all {
+			if r.ID == s.record.ID {
+				if !equal(r, s.record) {
+					return ErrUnverified
+				}
+				b, e := json.Marshal(next)
+				if e != nil {
+					return e
+				}
+				_, e = c.ExecContext(context.Background(), "UPDATE leases SET record=? WHERE id=?", string(b), r.ID)
+				return e
+			}
+		}
+		return ErrUnverified
+	})
+	if e == nil {
+		s.record = next
+	}
+	return e
+}

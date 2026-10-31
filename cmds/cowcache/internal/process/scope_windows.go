@@ -25,6 +25,7 @@ func newBackend(_ *Scope) (nativeBackend, error) {
 		windows.CloseHandle(job)
 		return nil, err
 	}
+	activeJob = job
 	return &windowsBackend{job: job}, nil
 }
 func (b *windowsBackend) close() { _ = windows.CloseHandle(b.job) }

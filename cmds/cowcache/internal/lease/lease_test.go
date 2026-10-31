@@ -443,3 +443,30 @@ func TestParentTraversalRejected(t *testing.T) {
 		t.Fatal("ambiguous traversal accepted")
 	}
 }
+
+func TestPreparedSourceReleaseRetainsDestination(t *testing.T) {
+	r, root := setup(t)
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := session(t, r)
+	source, dest := filepath.Join(root, "source"), filepath.Join(root, "dest")
+	g, e := s.Acquire(ctx, Resources{Sources: []string{source}, Destinations: []string{dest}}, false)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = s.ReleasePreparedSources([]string{source}, g); e != nil {
+		t.Fatal(e)
+	}
+	other := session(t, r)
+	acquire(t, other, source)
+	if _, e = session(t, r).Acquire(ctx, Resources{Destinations: []string{dest}}, false); !errors.Is(e, ErrBusy) {
+		t.Fatal("released writer protection", e)
+	}
+	if e = s.ReleasePreparedSources([]string{dest}, Grant{}); !errors.Is(e, ErrUnverified) {
+		t.Fatal("accepted borrowed release", e)
+	}
+	finish(t, other)
+	finish(t, s)
+}
