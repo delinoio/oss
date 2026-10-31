@@ -161,6 +161,8 @@ importers:
 
   packages/clibox: {}
 
+  packages/ccow: {}
+
   packages/docs-site-switcher:
     devDependencies:
       '@rsbuild/plugin-react':

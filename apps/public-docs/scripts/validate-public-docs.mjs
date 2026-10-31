@@ -20,6 +20,7 @@ const selectorDestinations = [
   "/pnport/",
 ];
 const projectSecuritySlugs = new Set([
+  "cachecow",
   "runmoor",
   "async-commit-hook",
   "pnport",
@@ -31,6 +32,7 @@ const forbiddenProjectContent = [
   /(?:\/Users\/|\/home\/[a-z]|\.infisical)/iu,
   /(?:apps|cmds|servers|protos)\/(?:runmoor|async-commit-hook)(?:\/|\b)/iu,
   /(?:crates|packages)\/pnport(?:\/|\b)/iu,
+  /(?:cmds\/cachecow|packages\/ccow|docs\/(?:project-cachecow|cmds-cachecow|apps-cachecow|packages-ccow))/iu,
 ];
 const rootRoutes = [
   "/",
@@ -130,6 +132,26 @@ for (const [slug, routes] of Object.entries(projectRoutes)) {
         failures.push(
           `${publicRoute(slug, route)} is missing published 0.1.2 known limits`,
         );
+      }
+    }
+    if (slug === "cachecow") {
+      if (
+        !/CacheCow 0\.1\.0 is unreleased/iu.test(visibleProjectText(contents))
+      ) {
+        failures.push(
+          `${publicRoute(slug, route)} is missing its unreleased availability notice`,
+        );
+      }
+      const sidebar =
+        contents.match(
+          /<aside\b[^>]*class="[^"]*rp-doc-layout__sidebar[^"]*"[^>]*>[\s\S]*?<\/aside>/iu,
+        )?.[0] ?? "";
+      for (const child of routes) {
+        if (!sidebar.includes(`href="${publicRoute(slug, child)}"`)) {
+          failures.push(
+            `${publicRoute(slug, route)} is missing a CacheCow sidebar link`,
+          );
+        }
       }
     }
     for (const destination of selectorDestinations) {

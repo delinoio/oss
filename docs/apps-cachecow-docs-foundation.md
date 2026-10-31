@@ -2,7 +2,7 @@
 
 ## Scope
 
-Own planned user guides at `apps/public-docs/docs/cachecow`. This onboarding reserves a content skeleton; it does not add rendered pages or assert published availability.
+Own user guides at `apps/public-docs/docs/cachecow`, rendered by the existing public-docs app. Guides distinguish intended unreleased 0.1.0 workflows from published artifacts and verified native support.
 
 ## Runtime and Language
 
@@ -14,7 +14,9 @@ Developers, coding agents, CI operators, and users installing or troubleshooting
 
 ## Interfaces and Contracts
 
-The planned public section is `/cachecow` under `https://oss.delino.io`. Add concrete guide routes and navigation with the content implementation, keeping the shared route catalog and validators aligned.
+The public section is `/cachecow` under `https://oss.delino.io`. Its eight routes are `/cachecow/`, `/cachecow/installation`, `/cachecow/configuration`, `/cachecow/cache`, `/cachecow/concurrency`, `/cachecow/shims`, `/cachecow/output`, and `/cachecow/troubleshooting`. Register them in the shared route catalog and existing sidebar. The root sidebar provides an entry point without adding navbar items. Every guide includes an unreleased 0.1.0 availability notice.
+
+Do not invent frontend integration formats, archive names, JSON field names, shell identifiers, or color opt-out syntax before runtime interfaces are finalized. Describe established behavior and explicitly identify details still awaiting integration.
 
 Guides must cover installation and supported environments; preset configuration and persistent-cache integration; source selection and configuration precedence; prepare/run/status/clean/doctor; concurrency and process lifecycle; failure recovery; copy-mode fallback; rollback; performance limitations; and GitHub issue support.
 
