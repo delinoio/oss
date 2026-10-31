@@ -2,7 +2,7 @@
 
 ## Scope
 
-Own `packages/ccow`: planned distribution tooling and npm package `@delino/ccow`, exposing `ccow`. Native runtime remains owned by `cmds/cachecow`.
+Own `packages/ccow`: distribution tooling and npm package `@delino/ccow`, exposing `ccow`. Native runtime remains owned by `cmds/cachecow`.
 
 ## Runtime and Language
 
@@ -20,7 +20,7 @@ Native targets are macOS 15+ arm64/APFS, Linux x64 with an Ubuntu 22.04-equivale
 
 Installation exposes the CLI. Shim installation and activation remain explicit user choices. No feature flag or rollout cohorts. Rollback reinstalls an earlier version; incompatible settings/records receive recovery guidance without rewriting. No automatic updater, standalone installer script, or Homebrew in the first release.
 
-Archive naming and package internals are owned by the distribution tooling. The candidate workflow below does not extend the repository's selectable release projects or authorize publication.
+Archive naming and package internals are owned by the distribution tooling. The dedicated workflow below owns CacheCow publication; it does not extend the repository's selectable release projects.
 
 ## Storage
 
@@ -55,14 +55,15 @@ Update the project index, complete requirements, affected consumer contracts, an
 
 ## Release candidate and native acceptance workflow
 
-`.github/workflows/release-ccow.yml` is a manual, main-only candidate workflow.
+`.github/workflows/release-ccow.yml` is a manual, main-only workflow restricted to `delinoio/oss`. Its `dry_run` input defaults to true; dry runs build and accept candidates without publication.
 It checks the requested version against `packages/ccow/package.json`, builds
 native binaries with `main.version`, packages the exact source revision, and
 verifies the versioned archives, npm tarballs and checksums. Candidate artifacts
-are identified by source SHA. This workflow has read-only contents permission;
-it does not create tags, GitHub Releases or npm publications. The shared release
-project selector is unchanged. Publication remains blocked until native
-acceptance and the owning publication/recovery implementation are complete.
+are identified by source SHA. Every job checks out the immutable dispatch SHA.
+Validation jobs have read-only contents permission. The shared release project
+selector is unchanged. Publication requires successful candidate, native and
+gate jobs, plus `dry_run: false`. No build or fixture result substitutes for a
+native gate.
 
 The `native` job owns the release platform exception. It uses the protected
 `ccow-native-acceptance` environment and four dedicated self-hosted labels:
@@ -80,9 +81,9 @@ storage. The workflow never formats a runner volume.
 workspace, evidence output and exact source revision. It verifies non-fixture
 artifacts and probes the host before invoking the repository-owned
 `ccow-native-driver.mjs` interface. The driver must be committed and must export
-`execute({lane, artifacts, workspace, revision})`. Until that driver is implemented,
-the entrypoint fails closed and writes a blocked record. Provisioning a host,
-compiling binaries or creating packages cannot satisfy this missing gate.
+`execute({lane, artifacts, workspace, revision})`. Missing drivers or incomplete
+scenarios fail closed and retain a blocked record. Provisioning a host, compiling
+binaries or creating packages cannot satisfy native acceptance.
 
 The driver must run the complete native scenarios from the command requirements,
 including packaged native use without Node.js, npm installation and rollback,
@@ -109,3 +110,51 @@ Normal affected CI runs distribution and acceptance-schema fixtures through the
 existing `release-contracts` job and `ci:release-fixtures` task. These checks run
 on Linux and do not establish native acceptance. PR, main-push and affected
 manual CI retain their existing macOS exclusions and have no full manual mode.
+
+## Publication and recovery
+
+The `publish` job uses the protected `ccow-release` environment, restricted to
+main with required maintainer approval. Configure the existing
+`DELINO_RELEASE_BOT_CLIENT_ID` variable and `DELINO_RELEASE_BOT_PRIVATE_KEY`
+secret for the `delino-release-bot` installation on `delinoio/oss`. Its short-lived
+repository-scoped token owns tag and GitHub Release writes. `NPM_TOKEN` is an
+npm automation credential scoped to the four `@delino/ccow` packages. Only this
+job receives production credentials, after revalidation of all four native
+records. Native runners receive no publication credentials. Checkout never
+persists authentication. npm configuration references the token through its
+standard environment placeholder; no credential enters an artifact or argument.
+
+`scripts/release/ccow-publish.mjs` verifies the clean checkout SHA, requested
+version, non-fixture manifests and checksums, and complete exact-candidate
+native acceptance before contacting publication services. It creates only
+`ccow@v<version>` at that SHA, resolves bounded annotated tags, and never moves
+an existing tag. GitHub release discovery and asset discovery are paginated;
+duplicate identities, orphan releases, unexpected assets and uncertain reads
+fail before writes. Existing release ownership must match the exact source and
+candidate checksum digest. Asset operations use the pinned release ID.
+
+A new release starts as a draft. Upload native archives, all four npm tarballs,
+`release.json`, `SHA256SUMS`, and a projected `native-acceptance.json` report.
+Compare existing assets byte-for-byte; upload only absent draft assets, without
+clobber or deletion. A public release with missing or conflicting assets fails
+closed. Complete asset readback precedes npm publication. Publish the three
+native npm packages before the launcher, using version-specific
+`ccow-v<version>` dist tags. Existing npm versions must match name, version,
+source revision, SHA-512 integrity and downloaded tarball bytes. Never overwrite
+or unpublish a version. After every npm package reads back correctly, publish
+the draft, then promote npm `latest` for native packages before the launcher.
+An older retry never moves `latest` back from a newer stable version. The
+monorepo-wide GitHub latest release is unchanged.
+
+GitHub and npm do not provide a shared transaction. A failed run can leave an
+exact tag, partial draft, or some version-specific npm packages. Rerun **failed
+jobs in the original Actions run** while its candidate and evidence artifacts
+remain retained. This preserves the dispatch SHA, candidate bytes and native
+measurements, even if main has advanced. Readback reconciles writes whose
+responses were lost, skips identical immutable content and completes only
+missing operations. Do not rerun successful native jobs to replace accepted
+measurements during publication recovery. If artifacts have expired, retain the
+existing remote state and investigate recovery from the exact accepted bytes;
+do not rebuild under the same version and assume byte identity. Conflicts need
+maintainer investigation or a new committed version, never force-pushes or
+asset replacement. No release is published as part of local validation.
