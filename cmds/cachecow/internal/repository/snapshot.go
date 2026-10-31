@@ -20,13 +20,14 @@ import (
 // accept a snapshot from an untrusted user or treat it as tool compatibility.
 // Its conservative inventory can invalidate on unrelated source-tree changes.
 type Snapshot struct {
-	Schema          int
-	Repository      Info
-	Worktrees       []Info
-	Caches          []string
-	Protected       []string
-	Files           []FileStamp
-	InventoryDigest string
+	Schema             int
+	Repository         Info
+	Worktrees          []Info
+	IgnoredDirectories []string
+	Caches             []string
+	Protected          []string
+	Files              []FileStamp
+	InventoryDigest    string
 }
 type FileStamp struct {
 	Path     string
@@ -73,6 +74,34 @@ func CaptureSnapshot(ctx context.Context, r Info, caches []string, protected ...
 			continue
 		}
 		s.Worktrees = append(s.Worktrees, w)
+		// Git identifies wholly ignored directories. Do not traverse their build
+		// churn, but retain the directory entry so symlink replacement is visible.
+		// A forced tracked file makes its containing directory relevant again.
+		ignored, e := git(ctx, w.Root, "ls-files", "--others", "--ignored", "--exclude-standard", "--directory", "-z")
+		if e != nil {
+			return Snapshot{}, e
+		}
+		tracked, e := git(ctx, w.Root, "ls-files", "-z")
+		if e != nil {
+			return Snapshot{}, e
+		}
+		for _, name := range strings.Split(string(ignored), "\x00") {
+			if !strings.HasSuffix(name, "/") {
+				continue
+			}
+			path := filepath.Join(w.Root, filepath.FromSlash(name))
+			containsTracked := false
+			for _, file := range strings.Split(string(tracked), "\x00") {
+				if file != "" && Contains(path, filepath.Join(w.Root, filepath.FromSlash(file))) {
+					containsTracked = true
+					break
+				}
+			}
+			if !containsTracked {
+				s.IgnoredDirectories = append(s.IgnoredDirectories, path)
+			}
+		}
+
 		for _, p := range []string{filepath.Join(w.Root, ".git"), filepath.Join(w.GitDir, "index"), filepath.Join(w.GitDir, "HEAD"), filepath.Join(w.GitDir, "commondir"), filepath.Join(w.GitDir, "gitdir"), filepath.Join(w.GitDir, "config.worktree")} {
 			if st, e := os.Stat(p); e == nil && st.IsDir() {
 				continue
@@ -244,6 +273,13 @@ func (s Snapshot) inventory() (string, error) {
 			// Source bytes are not hashed: build tools retain freshness responsibility.
 			if err = encoder.Encode([]any{p, uint32(d.Type())}); err != nil {
 				return err
+			}
+			if d.IsDir() {
+				for _, ignored := range s.IgnoredDirectories {
+					if p == ignored {
+						return filepath.SkipDir
+					}
+				}
 			}
 			if d.Name() == ".gitignore" {
 				stamp, e := fileStamp(p)

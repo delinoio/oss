@@ -324,3 +324,81 @@ func TestSessionAndShellEnvironmentDoesNotInvalidateCompatibility(t *testing.T) 
 		t.Fatal("volatile shell/session state invalidated compatibility")
 	}
 }
+
+// This test uses an installed stable toolchain, not synthetic version/metadata
+// output. CCOW_TEST_CARGO_TOOLCHAIN selects an installed Rustup toolchain.
+func TestRealCargoConfiguredDirectories(t *testing.T) {
+	if _, e := exec.LookPath("cargo"); e != nil {
+		t.Skip("Cargo unavailable")
+	}
+	toolchain := os.Getenv("CCOW_TEST_CARGO_TOOLCHAIN")
+	if toolchain == "" {
+		toolchain = "stable"
+	}
+	version, e := exec.Command("cargo", "+"+toolchain, "--version").Output()
+	fields := strings.Fields(string(version))
+	if e != nil || len(fields) < 2 || !supported(fields[1], "1.99.1", "2.0.0") {
+		t.Skipf("installed %s Cargo does not meet the stable floor: %s (%v)", toolchain, version, e)
+	}
+	p := project(t)
+	// Isolate user compiler wrappers and Cargo config, retaining the installed
+	// Rustup toolchains. This is a real compiler test, not host configuration QA.
+	rustupHome, e := exec.Command("rustup", "show", "home").Output()
+	if e != nil {
+		t.Fatal(e)
+	}
+	env := []string{}
+	for _, entry := range os.Environ() {
+		key, _, _ := strings.Cut(entry, "=")
+		if strings.HasPrefix(key, "CARGO_") || strings.HasPrefix(key, "RUST") || key == "HOME" {
+			continue
+		}
+		env = append(env, entry)
+	}
+	env = append(env, "CARGO_HOME="+t.TempDir(), "HOME="+t.TempDir(), "RUSTUP_HOME="+strings.TrimSpace(string(rustupHome)))
+	for path, content := range map[string]string{
+		"Cargo.toml":         "[package]\nname='real_ccow_probe'\nversion='0.1.0'\nedition='2024'\n",
+		"src/main.rs":        "fn main() {}\n",
+		".gitignore":         "configured-target/\nconfigured-build/\ncli-target/\n",
+		".cargo/config.toml": "[build]\ntarget-dir='configured-target'\nbuild-dir='configured-build'\n",
+	} {
+		path = filepath.Join(p, path)
+		if e := os.MkdirAll(filepath.Dir(path), 0700); e != nil {
+			t.Fatal(e)
+		}
+		if e := os.WriteFile(path, []byte(content), 0600); e != nil {
+			t.Fatal(e)
+		}
+	}
+	for _, override := range []bool{false, true} {
+		args := []string{"cargo", "+" + toolchain, "check", "--offline"}
+		target := "configured-target"
+		if override {
+			args = append(args, "--target-dir", "cli-target")
+			target = "cli-target"
+		}
+		req := Request{CWD: p, Argv: args, Env: env}
+		got, e := Discover(context.Background(), req)
+		if e != nil {
+			t.Fatal(e)
+		}
+		root, e := filepath.EvalSymlinks(p)
+		if e != nil {
+			t.Fatal(e)
+		}
+		if len(got.Roots) != 2 || got.Roots[0].Path != filepath.Join(root, target) || got.Roots[1].Path != filepath.Join(root, "configured-build") {
+			t.Fatalf("wrong configured roots: %+v", got.Roots)
+		}
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = p
+		cmd.Env = env
+		if b, e := cmd.CombinedOutput(); e != nil {
+			t.Fatalf("real Cargo check: %s %v", b, e)
+		}
+		for _, r := range got.Roots {
+			if _, e := os.Stat(r.Path); e != nil {
+				t.Fatal(e)
+			}
+		}
+	}
+}

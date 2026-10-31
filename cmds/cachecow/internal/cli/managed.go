@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"time"
 
 	"github.com/delinoio/oss/cmds/cachecow/internal/lease"
 	"github.com/delinoio/oss/cmds/cachecow/internal/lifecycle"
@@ -209,16 +209,20 @@ func (a *app) discover(cwd string, argv []string) (preset.Result, error) {
 		}
 	}
 	discovery := append([]string(nil), argv...)
-	// Explicit wrappers remain the command to run. Discovery queries the selected
-	// tool, while retaining the user's arguments for conservative compatibility.
-	r, e := a.resolve(shim.Tool(id))
-	if e != nil {
-		return preset.Result{}, e
-	}
 	if len(discovery) == 0 {
+		r, e := a.resolve(shim.Tool(id))
+		if e != nil {
+			return preset.Result{}, e
+		}
 		discovery = []string{r.Path}
 	} else {
-		discovery[0] = r.Path
+		// Discovery and execution must resolve the same executable. In particular,
+		// an explicit path must never certify the unrelated tool found on PATH.
+		command, e := a.command(discovery, cwd)
+		if e != nil {
+			return preset.Result{}, e
+		}
+		discovery[0] = command.Path
 	}
 	return preset.Discover(a.ctx, preset.Request{CWD: cwd, Argv: discovery, Env: os.Environ(), Preset: preset.ID(id), Protected: []string{a.store.Root}})
 }
@@ -461,18 +465,34 @@ func (a *app) execute(p session.Plan, c process.Command, current preset.Result) 
 		a.reportCopy(result.Result)
 		code := 0
 		if !c.Noop {
-			cmd := exec.Command(c.Path)
-			cmd.Args = c.Args
-			cmd.Dir = c.Dir
-			cmd.Env = c.Env
+			cmd, err := process.NewExecCommand(c)
+			if err != nil {
+				return executionCode(err), err
+			}
 			cmd.Stdin = os.Stdin
 			cmd.Stdout = os.Stdout
 			cmd.Stderr = os.Stderr
-			if e = cmd.Run(); e != nil {
+			if err = a.ctx.Err(); err == nil {
+				err = cmd.Start()
+			}
+			if err == nil {
+				// The outer native scope owns all descendants, including children
+				// that detach. Ask that owner to cancel; killing only cmd leaks writers.
+				stop := context.AfterFunc(a.ctx, func() {
+					ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+					defer cancel()
+					if err := session.Cancel(ctx, capability, result.Ticket); err != nil {
+						a.notice("Cannot request session termination; outer cache protection remains active: %s", err)
+					}
+				})
+				err = cmd.Wait()
+				stop()
+			}
+			if err != nil {
 				if cmd.ProcessState != nil {
 					code = childCode(cmd.ProcessState)
 				} else {
-					code = executionCode(e)
+					code = executionCode(err)
 				}
 			}
 		}

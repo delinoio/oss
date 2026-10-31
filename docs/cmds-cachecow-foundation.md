@@ -32,13 +32,13 @@ Discovery verifies installed tool versions and excludes dependency trees, packag
 
 ### Cargo discovery
 
-Cargo metadata resolves the workspace and configured `target_directory` and `build_directory`. Missing directory fields, unresolved configuration includes, and unverifiable custom compiler wrappers prohibit reuse with actionable errors. Distinct roots are managed together; coincident roots are processed once. Source and destination must retain compatible build settings while Cargo remains responsible for source freshness.
+Cargo metadata resolves the workspace and configured `target_directory` and `build_directory`. Missing directory fields, unresolved configuration includes, and unverifiable custom compiler wrappers prohibit reuse with actionable errors. Distinct roots are managed together; coincident roots are processed once. Discovery queries the exact resolved command, including explicit executable paths, rather than substituting PATH Cargo. Source and destination must retain compatible build settings while Cargo remains responsible for source freshness.
 
 ### Coordination and recovery
 
 Acquire the complete source and destination resource set before preparation. The initial coordinator uses exclusive leases for both sources and destinations; independent resource sets can proceed concurrently. Conflicts include aliases and ancestor/descendant paths. A nested request borrows existing protection only through authenticated session ownership. A nested extension that conflicts with another session fails with remediation instead of retaining a partial acquisition and waiting in a possible cycle.
 
-Persist ownership intent before permitting child execution. Release protection only after positive whole-process-tree completion evidence; a dead PID or released operating-system lock is insufficient. An unfinished ownership record remains protected until native recovery can prove completion. Unknown record versions are read-only. Supervisor recovery must never infer completion from elapsed time.
+Persist ownership intent before permitting child execution. Release protection only after positive whole-process-tree completion evidence; a dead PID or released operating-system lock is insufficient. An unfinished ownership record remains protected until native recovery can prove completion. Unknown record versions are read-only. Supervisor recovery must never infer completion from elapsed time. A cancelled nested command requests termination from the authenticated outer native owner. This cancels the whole session with the same five-second graceful interval and retains outer protection until every owned descendant exits. Repository snapshots exclude contents of wholly ignored directories without tracked descendants; index, ignore-rule and directory-type changes still invalidate discovery.
 
 ## Storage
 

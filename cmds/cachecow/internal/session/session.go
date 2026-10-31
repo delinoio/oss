@@ -55,6 +55,7 @@ type Response struct {
 	Error  string           `json:"error,omitempty"`
 }
 type request struct {
+	Cancel   bool
 	Ticket   string
 	ExitCode int
 	Token    string
@@ -326,6 +327,10 @@ func (s *server) serve() {
 				ticket, ok := s.tickets[r.Ticket]
 				if !ok || ticket.pid != pid || ticket.done {
 					out.Error = errAuth.Error()
+				} else if r.Cancel {
+					if e := cancelOwner(s.scope.OwnerPID); e != nil {
+						out.Error = e.Error()
+					}
 				} else {
 					ticket.done = true
 					ticket.code = r.ExitCode
@@ -355,6 +360,16 @@ func (s *server) serve() {
 }
 func Nested(ctx context.Context, capability string, p Plan) (Response, error) {
 	return exchange(ctx, capability, request{Plan: p})
+}
+
+// Cancel asks the authenticated native owner to drain the entire session.
+// Shared outer protection remains held until native whole-tree completion.
+func Cancel(ctx context.Context, capability, ticket string) error {
+	if ticket == "" {
+		return errAuth
+	}
+	_, e := exchange(ctx, capability, request{Ticket: ticket, Cancel: true})
+	return e
 }
 func Complete(ctx context.Context, capability, ticket string, code int) error {
 	_, e := exchange(ctx, capability, request{Ticket: ticket, ExitCode: code})

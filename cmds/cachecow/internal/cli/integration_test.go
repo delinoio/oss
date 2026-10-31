@@ -405,3 +405,61 @@ func TestCargoCleanWaitsWithoutPreparing(t *testing.T) {
 		t.Fatal("clean prepared or retained cache")
 	}
 }
+
+func TestExplicitCargoPathDiscovery(t *testing.T) {
+	f := newFixture(t)
+	// PATH Cargo is supported, but the requested executable is not. Querying
+	// PATH would certify its target directory and launch this unrelated wrapper.
+	writeTest(t, filepath.Join(f.main, "custom-cargo"), "#!/bin/sh\nif [ \"$1\" = --version ]; then echo 'cargo 1.98.0'; else touch WRONG-TOOL-RAN; fi\n", 0700)
+	_, diagnostic := f.run(f.main, 125, "run", "--preset", "cargo", "--", "./custom-cargo", "build")
+	if !strings.Contains(diagnostic, "1.99.1") {
+		t.Fatal(diagnostic)
+	}
+	if _, e := os.Stat(filepath.Join(f.main, "WRONG-TOOL-RAN")); !os.IsNotExist(e) {
+		t.Fatal("launched unverified tool")
+	}
+}
+
+func TestNestedCancellationDrainsOuterScope(t *testing.T) {
+	f := newFixture(t)
+	writeTest(t, filepath.Join(f.main, "scenario"), fmt.Sprintf(`if [ "$2" = inner ]; then
+  trap 'touch target/graceful; trap "" TERM' TERM
+  (trap '' TERM; while :; do sleep 1; done) &
+  touch target/inner-ready
+  while :; do sleep 1; done
+fi
+trap '' TERM
+'%s' run -- cargo build inner &
+echo $! > target/nested-pid
+wait
+`, testBinary), 0600)
+	c := f.cmd(f.main, "run", "--", "cargo", "build")
+	var diagnostics bytes.Buffer
+	c.Stderr = &diagnostics
+	if e := c.Start(); e != nil {
+		t.Fatal(e)
+	}
+	defer c.Process.Kill()
+	waitFile(t, filepath.Join(f.main, "target", "inner-ready"))
+	b, e := os.ReadFile(filepath.Join(f.main, "target", "nested-pid"))
+	if e != nil {
+		t.Fatal(e)
+	}
+	var pid int
+	if _, e := fmt.Sscan(string(b), &pid); e != nil {
+		t.Fatal(e)
+	}
+	start := time.Now()
+	if e := syscall.Kill(pid, syscall.SIGTERM); e != nil {
+		t.Fatal(e)
+	}
+	waitFile(t, filepath.Join(f.main, "target", "graceful"))
+	// The child deliberately ignores subsequent TERM signals. Protection must
+	// remain active during the graceful interval, before the forced drain.
+	f.run(f.main, 125, "clean")
+	_ = c.Wait()
+	if elapsed := time.Since(start); elapsed < 4*time.Second || elapsed > 9*time.Second {
+		t.Fatalf("nested cancellation took %s: %s", elapsed, diagnostics.String())
+	}
+	f.run(f.main, 0, "clean")
+}

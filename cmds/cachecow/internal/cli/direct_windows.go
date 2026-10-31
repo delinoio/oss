@@ -3,18 +3,17 @@ package cli
 import (
 	"github.com/delinoio/oss/cmds/cachecow/internal/process"
 	"os"
-	"os/exec"
 )
 
 func direct(c process.Command) (int, error) {
-	cmd := exec.Command(c.Path)
-	cmd.Args = c.Args
-	cmd.Env = c.Env
-	cmd.Dir = c.Dir
+	cmd, e := process.NewExecCommand(c)
+	if e != nil {
+		return executionCode(e), e
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
-	e := cmd.Run()
+	e = cmd.Run()
 	if cmd.ProcessState != nil {
 		return cmd.ProcessState.ExitCode(), nil
 	}

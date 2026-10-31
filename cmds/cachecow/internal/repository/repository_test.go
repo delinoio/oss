@@ -247,3 +247,51 @@ func TestSnapshotVerificationWithoutGit(t *testing.T) {
 		})
 	}
 }
+
+func TestSnapshotIndependentIgnoredChurn(t *testing.T) {
+	for _, change := range []string{"churn", "ignore", "index", "symlink", "tracked"} {
+		t.Run(change, func(t *testing.T) {
+			ctx := context.Background()
+			p := fixture(t)
+			w := filepath.Join(t.TempDir(), "independent")
+			runGit(t, p, "worktree", "add", "-b", "independent", w)
+			os.WriteFile(filepath.Join(w, ".gitignore"), []byte("target/\n"), 0600)
+			cache := filepath.Join(w, "target")
+			os.Mkdir(cache, 0700)
+			os.WriteFile(filepath.Join(cache, "artifact"), []byte("old"), 0600)
+			if change == "tracked" {
+				runGit(t, w, "add", "-f", "target/artifact")
+			}
+			r, e := Discover(ctx, p)
+			if e != nil {
+				t.Fatal(e)
+			}
+			s, e := CaptureSnapshot(ctx, r, []string{filepath.Join(r.Root, "target")})
+			if e != nil {
+				t.Fatal(e)
+			}
+			t.Setenv("PATH", t.TempDir())
+			switch change {
+			case "churn", "tracked":
+				os.Remove(filepath.Join(cache, "artifact"))
+				os.WriteFile(filepath.Join(cache, "new-artifact"), []byte("new"), 0600)
+			case "ignore":
+				os.WriteFile(filepath.Join(w, ".gitignore"), []byte("other/\n"), 0600)
+			case "index":
+				os.WriteFile(filepath.Join(s.Worktrees[1].GitDir, "index"), []byte("changed"), 0600)
+			case "symlink":
+				os.RemoveAll(cache)
+				if e := os.Symlink(t.TempDir(), cache); e != nil {
+					t.Skip(e)
+				}
+			}
+			e = s.Verify()
+			if change == "churn" && e != nil {
+				t.Fatal(e)
+			}
+			if change != "churn" && e == nil {
+				t.Fatal("accepted changed safety evidence")
+			}
+		})
+	}
+}
