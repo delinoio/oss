@@ -473,7 +473,7 @@ func TestPrepareWaitsForSourceProvenance(t *testing.T) {
 	}
 	defer func() { source.Process.Kill(); source.Wait() }()
 	waitFile(t, filepath.Join(f.main, "target", "ready"))
-	waiter := f.cmd(f.work, "prepare", "--preset", "cargo", "--", "cargo", "build")
+	waiter := f.cmd(f.work, "prepare", "--allow-copy", "--preset", "cargo", "--", "cargo", "build")
 	var stderr bytes.Buffer
 	waiter.Stderr = &stderr
 	if err := waiter.Start(); err != nil {
