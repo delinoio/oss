@@ -154,7 +154,7 @@ func frontendFixture(t *testing.T) (Request, *fakeRunner, map[string]any) {
 	r.Argv = []string{"rspack", "build"}
 	os.Mkdir(filepath.Join(r.CWD, ".ccow"), 0700)
 	os.WriteFile(filepath.Join(r.CWD, ".ccow", "discover.cjs"), []byte("fixture"), 0600)
-	data := map[string]any{"nodeVersion": "24.0.0", "toolVersion": "2.3.0", "rspackVersion": "2.3.0", "result": map[string]any{"schema": 1, "preset": "rspack", "caches": []map[string]any{{"type": "persistent", "path": filepath.Join(r.CWD, ".cache", "rspack")}}, "outputs": []string{filepath.Join(r.CWD, "dist")}, "settings": map[string]any{"mode": "production"}}}
+	data := map[string]any{"nodeVersion": "24.0.0", "toolVersion": "2.3.0", "rspackVersion": "2.3.0", "result": map[string]any{"schema": 1, "preset": "rspack", "inputs": []string{filepath.Join(r.CWD, "rspack.config.js")}, "caches": []map[string]any{{"type": "persistent", "path": filepath.Join(r.CWD, ".cache", "rspack")}}, "outputs": []string{filepath.Join(r.CWD, "dist")}, "settings": map[string]any{"mode": "production"}}}
 	return r, f, data
 }
 func TestFrontendIntegration(t *testing.T) {
@@ -254,7 +254,7 @@ func TestNativeNodeProtocolWithFixturePackages(t *testing.T) {
 		os.MkdirAll(p, 0700)
 		os.WriteFile(filepath.Join(p, "package.json"), []byte(`{"version":"2.3.0"}`), 0600)
 	}
-	script := `const path=require('node:path'); module.exports=async ({cwd,preset,argv}) => ({schema:1,preset,caches:[{type:'persistent',path:path.join(cwd,'.cache','test')}],outputs:[path.join(cwd,'dist')],settings:{mode:argv[3]}});`
+	script := `const path=require('node:path'); module.exports=async ({cwd,preset,argv}) => ({schema:1,preset,inputs:[path.join(cwd,'rsbuild.config.js')],caches:[{type:'persistent',path:path.join(cwd,'.cache','test')}],outputs:[path.join(cwd,'dist')],settings:{mode:argv[3]}});`
 	os.WriteFile(filepath.Join(r.CWD, ".ccow", "discover.cjs"), []byte(script), 0600)
 	result, e := Discover(context.Background(), r)
 	if e != nil {
@@ -442,6 +442,40 @@ func TestCargoCacheSelectionInputs(t *testing.T) {
 				}
 			} else if err == nil {
 				t.Fatal("accepted changed cache selection")
+			}
+		})
+	}
+}
+
+func TestFrontendConfigurationStamps(t *testing.T) {
+	for _, kind := range []string{"changed", "created", "missing-inputs"} {
+		t.Run(kind, func(t *testing.T) {
+			req, runner, data := frontendFixture(t)
+			config := filepath.Join(req.CWD, "rspack.config.js")
+			if kind == "changed" {
+				os.WriteFile(config, []byte("cache-a"), 0600)
+			}
+			if kind == "missing-inputs" {
+				delete(data["result"].(map[string]any), "inputs")
+			}
+			b, _ := json.Marshal(data)
+			runner.frontend = string(b)
+			result, err := Discover(context.Background(), req)
+			if kind == "missing-inputs" {
+				if err == nil {
+					t.Fatal("accepted undeclared configuration")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := repository.VerifyFileStamps(result.Inputs); err != nil {
+				t.Fatal(err)
+			}
+			os.WriteFile(config, []byte("cache-b"), 0600)
+			if err := repository.VerifyFileStamps(result.Inputs); err == nil {
+				t.Fatal("accepted stale cache selection")
 			}
 		})
 	}

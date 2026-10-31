@@ -2,6 +2,7 @@
 package preset
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -15,7 +16,9 @@ import (
 // cwd supplies .ccow/discover.cjs, exporting an async function ({preset, argv,
 // cwd, env}). It must use the SAME configuration resolver as the requested build
 // and return {schema:1, preset, caches:[{type:"persistent", path:"/absolute"}],
-// outputs:["/absolute/final-output"], settings:{...resolved build settings...}}.
+// outputs:["/absolute/final-output"], inputs:["/absolute/config"],
+// settings:{...resolved build settings...}}. Inputs include all configuration
+// dependencies and absent candidates whose creation could change resolution.
 // Include every compiler's persistent storage and output directory. Return null
 // or throw if an option or dynamic configuration cannot be resolved faithfully.
 // The hook must not build, write artifacts, disable tool validation, or emit to
@@ -67,6 +70,7 @@ func discoverFrontend(ctx context.Context, req Request, out *Result) (any, error
 				Type RootKind `json:"type"`
 				Path string   `json:"path"`
 			} `json:"caches"`
+			Inputs   []string       `json:"inputs"`
 			Outputs  []string       `json:"outputs"`
 			Settings map[string]any `json:"settings"`
 		} `json:"result"`
@@ -81,6 +85,33 @@ func discoverFrontend(ctx context.Context, req Request, out *Result) (any, error
 		return nil, errors.New("frontend discovery requires Node.js 24 or later")
 	}
 	r := probe.Result
+	if len(r.Inputs) == 0 {
+		return nil, errors.New("frontend integration must declare every cache-selection input, including absent configuration candidates")
+	}
+	inputPaths := []string{integration}
+	for _, path := range r.Inputs {
+		if !filepath.IsAbs(path) {
+			return nil, errors.New("frontend configuration input paths must be absolute")
+		}
+		inputPaths = append(inputPaths, path)
+	}
+	out.Inputs, e = repository.CaptureFileStamps(inputPaths)
+	if e != nil {
+		return nil, e
+	}
+	// The first pass obtains the trusted resolver's dependency inventory. Run
+	// it again between stamps so changes during discovery also fail closed.
+	checked, e := req.Runner.Output(ctx, req.CWD, req.Env, []string{"node", "-e", frontendProbe, string(payload)})
+	if e != nil {
+		return nil, e
+	}
+	var before, after bytes.Buffer
+	if json.Compact(&before, b) != nil || json.Compact(&after, checked) != nil || !bytes.Equal(before.Bytes(), after.Bytes()) {
+		return nil, errors.New("frontend configuration changed during discovery; repeat discovery")
+	}
+	if e = repository.VerifyFileStamps(out.Inputs); e != nil {
+		return nil, e
+	}
 	if r.Schema != 1 || r.Preset != out.Preset || len(r.Caches) == 0 || len(r.Outputs) == 0 || len(r.Settings) == 0 {
 		return nil, errors.New("frontend integration must verify all persistent caches, final outputs, and resolved build settings")
 	}
