@@ -171,6 +171,15 @@ test("frontend discovery shares configuration without writing or logging", async
     ]).stdout,
   );
   assert.equal(result.schema, 1);
+  assert.deepEqual(
+    result.inputs,
+    [
+      "rspack.config.cjs",
+      ".ccow/resolve.cjs",
+      "package.json",
+      "package-lock.json",
+    ].map((p) => path.join(root, p)),
+  );
   assert.deepEqual(result.caches, [
     { type: "persistent", path: path.join(root, ".cache") },
   ]);

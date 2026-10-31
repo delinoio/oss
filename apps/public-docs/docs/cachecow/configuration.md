@@ -34,11 +34,12 @@ Create `.ccow/discover.cjs` in the directory where you run the build. Export an 
   preset, // "rspack" or "rsbuild"
   caches: [{ type: "persistent", path: absolutePersistentCachePath }],
   outputs: [absoluteFinalOutputPath],
+  inputs: [absoluteConfigPath, absoluteImportedConfigPath],
   settings: resolvedBuildSettings,
 }
 ```
 
-Include every compiler's persistent cache and final output. Use absolute paths and a nonempty settings object that identifies the resolved build settings. This shape is an integration contract, not a complete configuration resolver: connect it to your project's actual Rspack or Rsbuild configuration. Reject options or dynamic configuration you cannot resolve faithfully. Do not build, write artifacts, or print to stdout from the hook. The hook runs as trusted project code.
+Include every compiler's persistent cache and final output. Declare every configuration file, imported dependency, and absent configuration candidate that could change cache selection in the nonempty `inputs` list. CacheCow checks these files during discovery and again after waiting for caches. If they change, repeat the command to discover the new cache locations. Use absolute paths and a nonempty settings object that identifies the resolved build settings. This shape is an integration contract, not a complete configuration resolver: connect it to your project's actual Rspack or Rsbuild configuration. Reject options or dynamic configuration you cannot resolve faithfully. Do not build, write artifacts, or print to stdout from the hook. The hook runs as trusted project code.
 
 Add managed cache contents to Git ignore rules. CacheCow refuses caches containing tracked or non-ignored files. Unknown locations and unverified compatibility stop reuse.
 

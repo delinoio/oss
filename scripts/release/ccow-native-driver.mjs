@@ -248,7 +248,7 @@ module.exports = async ({preset, argv, cwd}) => {
  });
  const outputs = configs.map(config => {if (!path.isAbsolute(config.output.path)) throw new Error('unverified output'); return config.output.path;});
  const serialized = (${serializeSettings.toString()})(configs, cwd);
- return {schema:1, preset, caches, outputs, settings:{resolved: serialized}};
+ return {schema:1, preset, caches, outputs, inputs:[path.join(cwd,'${preset}.config.cjs'),path.join(cwd,'.ccow/resolve.cjs'),path.join(cwd,'package.json'),path.join(cwd,'package-lock.json')], settings:{resolved: serialized}};
 };
 `,
   );
