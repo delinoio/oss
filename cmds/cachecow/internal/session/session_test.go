@@ -73,7 +73,7 @@ func TestFinishSessionRetriesRegistryContention(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	if _, err = conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+	if _, err = conn.ExecContext(ctx, "PRAGMA busy_timeout=5000; BEGIN IMMEDIATE"); err != nil {
 		t.Fatal(err)
 	}
 	defer conn.ExecContext(ctx, "ROLLBACK")
