@@ -31,6 +31,7 @@ fn main() {
   "descendant" | "orphan" => { let child = Command::new(env::current_exe().unwrap()).args(["writer", &a[2]]).spawn().unwrap(); fs::write(&a[3], child.id().to_string()).unwrap(); while !std::path::Path::new(&a[2]).exists() { thread::sleep(Duration::from_millis(20)); } if a[1] == "descendant" { loop { thread::sleep(Duration::from_millis(20)); } } },
   "writer" => { #[cfg(unix)] unsafe { unsafe extern "C" { fn signal(sig: i32, handler: usize) -> usize; } signal(15, 1); } loop { fs::write(&a[2], "writing").unwrap(); thread::sleep(Duration::from_millis(20)); } },
   "nested" => { let status = Command::new(&a[2]).current_dir(&a[3]).args(["run", "--preset", "cargo", "--", "cargo", "build", "--offline"]).status().unwrap(); exit(status.code().unwrap_or(99)); },
+  "privacy" => { println!("child-output"); eprintln!("child-error"); },
   "fail" => { fs::write(&a[2], "retained").unwrap(); exit(37); },
   _ => exit(91)
  }
@@ -101,6 +102,7 @@ function start(binary, args, options) {
       ["permission denied", "permission-denied"],
       ["interrupted", "operation-interrupted"],
       ["lease", "lease-failure"],
+      ["cache is in use", "registry-or-cache-busy"],
       ["transaction", "transaction-failure"],
     ])
       if (diagnostic.includes(text)) record.failure = id;
@@ -186,7 +188,7 @@ export async function lifecycleScenarios({
       const other = hold(derived, "other");
       await until(() => existsSync(marker("other.ready")));
       await pause(250);
-      assert(!existsSync(marker("two.ready")) && !two.done);
+      assert(!existsSync(marker("two.ready")) && !two.done, two.failure);
       release("other");
       await completed(other);
       release("one");
@@ -432,6 +434,8 @@ export async function lifecycleScenarios({
 export function privacyScenario({ env, binary, cwd, command }) {
   const sentinel = "ccow-private-value-4b8b17";
   const privateEnv = { ...env, CCOW_ACCEPTANCE_SECRET: sentinel };
+  mkdirSync(path.join(cwd, "src/bin"), { recursive: true });
+  writeFileSync(path.join(cwd, "src/bin/ccow-probe.rs"), probeSource);
   const child = command(
     binary,
     [
@@ -440,9 +444,14 @@ export function privacyScenario({ env, binary, cwd, command }) {
       "cargo",
       "--verbose",
       "--",
-      process.execPath,
-      "-e",
-      "process.stdout.write('child-output\\n');process.stderr.write('child-error\\n')",
+      "cargo",
+      "run",
+      "--quiet",
+      "--offline",
+      "--bin",
+      "ccow-probe",
+      "--",
+      "privacy",
       sentinel,
     ],
     { cwd, env: privateEnv },
