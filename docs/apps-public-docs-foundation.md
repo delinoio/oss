@@ -19,6 +19,8 @@
 
 ## Interfaces and Contracts
 
+- CowCache reserves `apps/public-docs/docs/cowcache` for a planned `/cowcache` section under the [CowCache documentation contract](apps-cowcache-docs-foundation.md). The skeleton adds no published routes or navigation entries; content and route validation must be integrated together.
+
 - Rspress route, navigation, and sidebar contracts in `apps/public-docs/rspress.config.ts` must remain aligned with this contract. The root site's top-level navbar is intentionally empty; route access remains available through the sidebar and documented links.
 - Documentation sources live in `apps/public-docs/docs`; the production output directory is `apps/public-docs/doc_build` and is not source-controlled.
 - The publication root owns Cloudflare Pages control files. Its `_headers` contains the path-scoped security headers for `/async-commit-hook/*`.

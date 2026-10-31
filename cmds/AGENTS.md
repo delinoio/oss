@@ -30,6 +30,8 @@
 
 ## Owning contracts
 
+- [CowCache command foundation](../docs/cmds-cowcache-foundation.md) and [complete requirements](../docs/cmds-cowcache-requirements.md)
+
 - [async-commit-hook command contract](../docs/cmds-async-commit-hook-contract.md)
 - [Runmoor command foundation](../docs/cmds-runmoor-foundation.md)
 - [Linux Package Repository Contract](../docs/repository-linux-packages-contract.md)

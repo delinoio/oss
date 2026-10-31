@@ -20,6 +20,8 @@ Provide the Rspress-based public documentation site for user-facing product and 
 
 ## Cross-Domain Invariants
 
+- CowCache reserves `apps/public-docs/docs/cowcache` for a planned `/cowcache` section under the [CowCache documentation contract](apps-cowcache-docs-foundation.md). The skeleton adds no published routes or navigation entries; content and route validation must be integrated together.
+
 - The root site’s top-level navbar contains no route items. Product pages `cargo-mono` and `with-watch` remain available through the sidebar and documented links.
 
 - Rspress clean routes, navigation, sidebar, and docs structure must stay aligned with documented contracts.

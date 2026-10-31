@@ -42,6 +42,7 @@ Treat project IDs as stable enum-style values:
 enum ProjectId {
   Binpm = "binpm",
   CargoMono = "cargo-mono",
+  CowCache = "cowcache",
   Clibox = "clibox",
   Pnport = "pnport",
   Nodeup = "nodeup",
