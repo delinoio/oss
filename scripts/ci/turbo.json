@@ -100,7 +100,10 @@
         "$TURBO_ROOT$/go.sum",
         "$TURBO_ROOT$/scripts/**",
         "$TURBO_ROOT$/.github/**",
-        "$TURBO_ROOT$/docs/repository-*-contract.md"
+        "$TURBO_ROOT$/docs/repository-*-contract.md",
+        "$TURBO_ROOT$/packages/cowc/**",
+        "$TURBO_ROOT$/cmds/cowcache/**",
+        "$TURBO_ROOT$/docs/packages-cowc-distribution-contract.md"
       ],
       "outputs": [],
       "passThroughEnv": [

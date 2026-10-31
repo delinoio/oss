@@ -8,7 +8,7 @@
     "ci:workflows": "node from-root.mjs node scripts/ci/workflows.mjs",
     "ci:contracts": "node from-root.mjs node --test scripts/ci/*.test.mjs scripts/prebuilt-dependencies.test.mjs scripts/archive.test.mjs",
     "ci:tools": "node from-root.mjs node --test scripts/tools/*.test.cjs",
-    "ci:release-fixtures": "node from-root.mjs node --test scripts/release/*.test.mjs",
+    "ci:release-fixtures": "node from-root.mjs node --test scripts/release/*.test.mjs packages/cowc/test/*.test.mjs",
     "ci:go:format": "node from-root.mjs node scripts/ci/check-go-format.mjs .",
     "ci:go:vet": "node from-root.mjs go vet ./...",
     "ci:go:test": "node from-root.mjs node scripts/ci/go-test.mjs",

@@ -1,0 +1,119 @@
+name: CowCache release acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Exact source version; builds candidates without publication
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-cowc
+  cancel-in-progress: false
+
+jobs:
+  candidate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          lfs: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
+        with:
+          go-version-file: go.mod
+      - name: Validate exact version and source
+        env:
+          REQUESTED_VERSION: ${{ inputs.version }}
+        run: node scripts/release/cowc-acceptance.mjs plan "$REQUESTED_VERSION" "$GITHUB_SHA" "$GITHUB_REF"
+      - name: Test distribution contracts
+        run: node --test packages/cowc/test/*.test.mjs scripts/release/cowc-acceptance.test.mjs
+      - name: Build candidate binaries and versioned packages
+        run: |
+          node packages/cowc/scripts/build-native.mjs --output "$RUNNER_TEMP/cowc-binaries"
+          node packages/cowc/scripts/package.mjs --binaries "$RUNNER_TEMP/cowc-binaries" --output "$RUNNER_TEMP/cowc-candidate" --revision "$GITHUB_SHA"
+          node packages/cowc/scripts/verify.mjs --directory "$RUNNER_TEMP/cowc-candidate" --revision "$GITHUB_SHA"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: cowc-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/cowc-candidate/*
+          if-no-files-found: error
+
+  native:
+    needs: candidate
+    environment: cowc-native-acceptance
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - lane: macos15-apfs
+            labels: [self-hosted, macOS, ARM64, cowc-macos15-apfs]
+          - lane: ubuntu22-btrfs
+            labels: [self-hosted, Linux, X64, cowc-ubuntu22-btrfs]
+          - lane: ubuntu22-xfs
+            labels: [self-hosted, Linux, X64, cowc-ubuntu22-xfs]
+          - lane: windows24h2-refs
+            labels: [self-hosted, Windows, X64, cowc-windows24h2-refs]
+    runs-on: ${{ matrix.labels }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          lfs: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: cowc-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/cowc-candidate
+      - name: Execute native minimum-environment acceptance
+        shell: bash
+        env:
+          COWC_LANE: ${{ matrix.lane }}
+        run: |
+          node scripts/release/cowc-acceptance.mjs native "$COWC_LANE" "$RUNNER_TEMP/cowc-candidate" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/$COWC_LANE.json" "$GITHUB_SHA"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        if: always()
+        with:
+          name: cowc-evidence-${{ matrix.lane }}-${{ github.sha }}
+          path: ${{ runner.temp }}/${{ matrix.lane }}.json
+          if-no-files-found: error
+
+  gate:
+    needs: [candidate, native]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: cowc-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/cowc-candidate
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          pattern: cowc-evidence-*-${{ github.sha }}
+          merge-multiple: true
+          path: ${{ runner.temp }}/cowc-evidence
+      - name: Require complete evidence for the exact candidate
+        run: node scripts/release/cowc-acceptance.mjs gate "$RUNNER_TEMP/cowc-evidence" "$RUNNER_TEMP/cowc-candidate" "$GITHUB_SHA"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: cowc-accepted-candidate-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/cowc-candidate/*
+            ${{ runner.temp }}/cowc-evidence/*
+          if-no-files-found: error

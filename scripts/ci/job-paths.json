@@ -319,7 +319,12 @@
       "packaging/homebrew/templates/runmoor.rb.tmpl",
       "scripts/release/update-homebrew.sh",
       "turbo.json",
-      "scripts/release/generate-checksums*"
+      "scripts/release/generate-checksums*",
+      "packages/cowc/**",
+      "cmds/cowcache/**",
+      "scripts/release/cowc-*",
+      "docs/packages-cowc-distribution-contract.md",
+      ".github/workflows/release-cowc.yml"
     ]
   }
 }
