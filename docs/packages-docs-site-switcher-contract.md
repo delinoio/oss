@@ -8,8 +8,8 @@
 
 ## Interfaces and Contracts
 
-- `DocumentationSiteId` is the stable enum for `PublicDocs`, `Runmoor`, `Nodeup`, `Binpm`, `AsyncCommitHook`, `Clibox`, and `Pnport`.
-- `DOCUMENTATION_SITES` is the fixed registry of user-facing labels and same-origin destinations: `/`, `/runmoor/`, `/nodeup/`, `/binpm/`, `/async-commit-hook/`, `/clibox/`, and `/pnport/`.
+- `DocumentationSiteId` is the stable enum for `PublicDocs`, `Runmoor`, `Nodeup`, `Binpm`, `AsyncCommitHook`, `Clibox`, `Pnport`, and `Cowcache`.
+- `DOCUMENTATION_SITES` is the fixed registry of user-facing labels and same-origin destinations: `/`, `/runmoor/`, `/nodeup/`, `/binpm/`, `/async-commit-hook/`, `/clibox/`, `/pnport/`, and `/cowcache/`.
 - Production destinations remain clean same-origin subpaths. The consolidated `public-docs` development server uses fixed loopback port `46302`; selector activation remains on that server and uses the same production-relative destinations, so development behavior does not create hydration differences.
 - `DocsSiteSwitcher` renders a button and a `menu` of `menuitem` links. The selected destination carries `aria-current="page"`; the trigger exposes `aria-expanded` and controls the menu.
 - The selector supports arrow-key and Home/End navigation, Enter activation, Escape close, outside-click close, and focus return to the trigger.
@@ -29,7 +29,7 @@
 
 ## Package integration
 
-- `packages/docs-site-switcher`: shared accessible documentation site selector used by the consolidated Public Docs root and all six project content sections. Follow `packages-docs-site-switcher-contract.md`; keep its fixed site registry, enum IDs, keyboard behavior, focus management, and active-route semantics synchronized across consumers.
+- `packages/docs-site-switcher`: shared accessible documentation site selector used by the consolidated Public Docs root and all seven project content sections. Follow `packages-docs-site-switcher-contract.md`; keep its fixed site registry, enum IDs, keyboard behavior, focus management, and active-route semantics synchronized across consumers.
 
 ## Change Triggers
 

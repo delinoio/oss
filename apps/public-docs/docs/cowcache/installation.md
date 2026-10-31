@@ -16,7 +16,7 @@ Native Cargo use does not require Node.js. When a release is available:
 4. Put the extracted `cowc` executable in a directory on your PATH. On Windows, use `cowc.exe`.
 5. Run `cowc doctor` in your project to inspect the environment before preparing a cache.
 
-Exact archive names, checksum filenames, and download commands will be supplied with the release. No standalone installer, Homebrew installation, or automatic updater is planned for the first release.
+Native archives use `cowc-<version>-<target>.tar.gz`, with targets `darwin-arm64`, `linux-x64`, and `windows-x64`. Verify the archive against the release’s `SHA256SUMS`. These names do not imply that an artifact has been published. No standalone installer, Homebrew installation, or automatic updater is planned for the first release.
 
 ## npm installation
 

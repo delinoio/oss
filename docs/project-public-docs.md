@@ -20,7 +20,7 @@ Provide the Rspress-based public documentation site for user-facing product and 
 
 ## Cross-Domain Invariants
 
-- CowCache reserves `apps/public-docs/docs/cowcache` for a planned `/cowcache` section under the [CowCache documentation contract](apps-cowcache-docs-foundation.md). The skeleton adds no published routes or navigation entries; content and route validation must be integrated together.
+- CowCache owns `apps/public-docs/docs/cowcache` for the `/cowcache` section under the [CowCache documentation contract](apps-cowcache-docs-foundation.md). Its guides, site-selector entry, sidebar and route validation remain synchronized. Availability notices retain the unreleased boundary.
 
 - The root site’s top-level navbar contains no route items. Product pages `cargo-mono` and `with-watch` remain available through the sidebar and documented links.
 
@@ -31,7 +31,7 @@ Provide the Rspress-based public documentation site for user-facing product and 
 - Nodeup, binpm, Runmoor, async-commit-hook, clibox, pnport are major projects exposed through same-origin navigation to `/nodeup`, `/binpm`, `/runmoor`, `/async-commit-hook`, `/clibox`, `/pnport`. Their Markdown is owned directly by `apps/public-docs/docs/{nodeup,binpm,runmoor,async-commit-hook,clibox,pnport}`, while this project builds and publishes the complete tree. pnport's public guides describe verified stable 0.1.2 availability with known macOS and full-acceptance limits.
 - The shared site selector appears on every assembled page and marks the active project with `aria-current`; it supports keyboard navigation, Escape close, outside-click close, and focus return.
 - No legacy handoff page or duplicate guide route is canonical. Retired standalone documentation hosting is decommissioned by operators after route and installer verification; no redirects or aliases are added.
-- `public-docs` uses Rspress clean URLs, builds the six project content roots below their canonical subpaths, and publishes the complete `doc_build` tree to the single `public-docs` Cloudflare Pages project.
+- `public-docs` uses Rspress clean URLs, builds the seven project content roots below their canonical subpaths, and publishes the complete `doc_build` tree to the single `public-docs` Cloudflare Pages project.
 - Public-docs build and route-validation caches include all eight canonical installer sources through package-local external inputs. Generated installer bytes must equal the current source; inherited build dependencies, outputs, and tool inputs remain intact. These cache inputs do not invalidate unrelated workspace tasks. The app-domain contract owns the disposable cache regression boundary.
 - Package-local `pnpm dev` and root `pnpm dev:public-docs` bind to loopback on fixed port `46302`, reject host overrides, preflight that exact port, and fail on conflicts without automatic remapping.
 

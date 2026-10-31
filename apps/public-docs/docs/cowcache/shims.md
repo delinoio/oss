@@ -30,7 +30,11 @@ Zsh:
 eval "$(cowc shell init zsh)"
 ```
 
-For PowerShell 7, invoke `cowc shell init <shell>` with the PowerShell identifier specified by the released CLI. Review its output, then evaluate the activation code in PowerShell 7. The exact identifier remains pending runtime integration; this guide does not invent one. Fish and cmd.exe-specific activation are outside the first release.
+For PowerShell 7, review `cowc shell init powershell`, then evaluate its output to activate the shims. Fish and cmd.exe-specific activation are outside the first release.
+
+```powershell
+cowc shell init powershell | Out-String | Invoke-Expression
+```
 
 After activation, run `cowc shim doctor` to inspect PATH priority and the selected real executables. Shell aliases or functions can still take priority over PATH shims. Session activation alone does not configure future shells.
 
@@ -43,7 +47,7 @@ cowc shell setup bash
 cowc shell setup zsh
 ```
 
-For PowerShell 7, use the released CLI's PowerShell shell identifier with `cowc shell setup`. The identifier remains subject to runtime integration confirmation.
+For PowerShell 7, use `cowc shell setup powershell --file "$PROFILE"`. Use `--yes` for a noninteractive update after reviewing the target and proposed change.
 
 Setup must show the target file and proposed change and request confirmation. It adds only a CowCache-owned block and preserves unrelated content. Repeated setup is idempotent. If automatic file selection is ambiguous, choose the intended shell configuration file with `--file`.
 
@@ -94,7 +98,7 @@ cowc shell remove bash
 cowc shell remove zsh
 ```
 
-Use only the shell you configured. For PowerShell 7, use its released shell identifier with `cowc shell remove`. If setup used `--file`, select that same file for removal. Removal shows the target and change, requires interactive confirmation or noninteractive `--yes`, removes only the owned block, and preserves unrelated text. Repeated removal is idempotent; failed writes preserve the original file.
+Use only the shell you configured. For PowerShell 7, use `cowc shell remove powershell --file "$PROFILE"`. If setup used `--file`, select that same file for removal. Removal shows the target and change, requires interactive confirmation or noninteractive `--yes`, removes only the owned block, and preserves unrelated text. Repeated removal is idempotent; failed writes preserve the original file.
 
 Removal affects new shells. In the current session, remove the CowCache shim directory from PATH and refresh shell command lookup, or open a new shell after persistent removal. Do not erase unrelated PATH entries.
 

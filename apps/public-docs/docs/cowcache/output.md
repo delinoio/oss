@@ -6,7 +6,7 @@
 
 CLI messages are in English. Child stdout and stderr pass through unchanged. CowCache notices go to stderr so they do not contaminate child stdout. Shell initialization emits shell code separately from diagnostics; it is not a management JSON stream.
 
-Use `cowc doctor` and `--verbose` to inspect paths, tool versions, CoW capability, lock state, and failure causes. `cowc shim doctor` also explains installation state, selected executables, and PATH precedence. ANSI output is the intended default; the color opt-out syntax must be documented with the finalized runtime before release.
+Use `cowc doctor` and `--verbose` to inspect paths, tool versions, CoW capability, lock state, and failure causes. `cowc shim doctor` also explains installation state, selected executables, and PATH precedence. ANSI notices are enabled by default. Set `NO_COLOR` to disable them.
 
 Diagnostics must not persist original file contents, environment-variable values, or full command arguments. The exact command displayed for interactive source-build confirmation is not permission to save it in logs. Review diagnostic material before sharing it. CowCache has no remote telemetry.
 
@@ -20,7 +20,7 @@ cowc doctor --json
 cowc shim list --json
 ```
 
-The required envelope includes a schema version and success indication, plus either result data or an error code, cause, and remediation. Exact field names and result schemas remain dependent on the finalized runtime. No speculative JSON object is provided here. Automation must check the released schema before depending on its fields.
+The envelope uses `schemaVersion: 1`, `success`, and either `result` or `error`. Errors contain `code`, `cause`, and `remediation`. Result fields depend on the command. Check the schema version and success indication before reading the result.
 
 A text or JSON error must provide actionable remediation for noninteractive decisions, unsupported CoW, permissions, source selection, and lock contention. `run` preserves child output and is not a JSON wrapper around the build command.
 

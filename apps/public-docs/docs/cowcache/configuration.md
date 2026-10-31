@@ -26,7 +26,21 @@ Configure a persistent cache for the selected project. Only that cache is eligib
 
 Rspack exposes [persistent cache configuration](https://rspack.rs/config/cache). Rsbuild must expose its configured persistent cache through the frontend integration. CowCache needs verified cache locations and compatibility information for the actual tool invocation, including its version and build settings.
 
-The CowCache configuration integration format is not finalized. No configuration filename, JSON keys, plugin API, or environment-variable schema is specified here. Concrete Rspack/Rsbuild setup examples will follow the finalized integration. Merely wrapping a command does not prove that a persistent cache is discoverable or compatible; unknown locations and unverified compatibility must stop reuse.
+Create `.cowc/discover.cjs` in the directory where you run the build. Export an async function that receives `{ preset, argv, cwd, env }`, resolves the same configuration as your build, and returns:
+
+```js
+{
+  schema: 1,
+  preset, // "rspack" or "rsbuild"
+  caches: [{ type: "persistent", path: absolutePersistentCachePath }],
+  outputs: [absoluteFinalOutputPath],
+  settings: resolvedBuildSettings,
+}
+```
+
+Include every compiler's persistent cache and final output. Use absolute paths and a nonempty settings object that identifies the resolved build settings. This shape is an integration contract, not a complete configuration resolver: connect it to your project's actual Rspack or Rsbuild configuration. Reject options or dynamic configuration you cannot resolve faithfully. Do not build, write artifacts, or print to stdout from the hook. The hook runs as trusted project code.
+
+Add managed cache contents to Git ignore rules. CowCache refuses caches containing tracked or non-ignored files. Unknown locations and unverified compatibility stop reuse.
 
 Use explicit `cowc run` when a package-manager script or local executable bypasses PATH shims. It still requires verified preset configuration. Automatic npm/pnpm/yarn script or local-bin integration is outside the first release.
 
@@ -36,7 +50,7 @@ The default source is the repository's primary checkout. Select another checkout
 
 ```sh
 cowc run --preset cargo --source "../main-checkout" -- cargo build
-cowc prepare --preset cargo --source "../main-checkout"
+cowc prepare --preset cargo --source "../main-checkout" -- cargo build
 ```
 
 The paths are examples; replace them with your source worktree. The source must have a usable, compatible cache. Different tool versions, platforms, architectures, or build settings make a source incompatible. Unknown compatibility also prohibits reuse.
