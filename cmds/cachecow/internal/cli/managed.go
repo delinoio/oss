@@ -610,19 +610,41 @@ func Records() session.RecordHooks {
 			if e != nil {
 				return e
 			}
-			path := metadataPath(p.Root, c.Current)
-			var old provenance
-			if e = state.Read(path, &old); e != nil && !os.IsNotExist(e) {
-				return e
-			}
-			if e == nil && old.SchemaVersion != 1 {
-				return errors.New("unsupported cache provenance schemaVersion; use a compatible ccow")
-			}
 			if p.Action == session.Prepare && c.Source == nil {
 				return nil
 			}
-			if e = os.Remove(path); e != nil && !os.IsNotExist(e) {
+			// Leases serialize every overlapping resource set, including sets
+			// with different metadata keys. Invalidate all intersecting records
+			// before a writer can change any certified cache.
+			entries, e := filepath.Glob(filepath.Join(p.Root, "cache-*.json"))
+			if e != nil {
 				return e
+			}
+			var remove []string
+			for _, path := range entries {
+				var old provenance
+				if e := state.Read(path, &old); os.IsNotExist(e) {
+					continue // A disjoint session may remove its own record.
+				} else if e != nil {
+					return e
+				}
+				if old.SchemaVersion != 1 {
+					return errors.New("unsupported cache provenance schemaVersion; use a compatible ccow")
+				}
+				overlap := false
+				for _, previous := range old.Paths {
+					for _, current := range paths(c.Current) {
+						overlap = overlap || repository.Overlaps(previous, current)
+					}
+				}
+				if overlap {
+					remove = append(remove, path)
+				}
+			}
+			for _, path := range remove {
+				if e := os.Remove(path); e != nil && !os.IsNotExist(e) {
+					return e
+				}
 			}
 			return nil
 		},
