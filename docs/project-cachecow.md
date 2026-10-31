@@ -10,13 +10,13 @@ Prepare independent writable build caches for Git worktrees with filesystem copy
 
 ## Domain Ownership Map
 
-| Domain   | Canonical path                   | Ownership                                                                                        |
-| -------- | -------------------------------- | ------------------------------------------------------------------------------------------------ |
-| cmds     | `cmds/cachecow`                  | Planned Go CLI, cache management, presets, shims, shell integration and native process ownership |
-| packages | `packages/ccow`                  | Planned `@delino/ccow` launcher and native distribution tooling                                  |
-| apps     | `apps/public-docs/docs/cachecow` | Planned public guides, built and published by public-docs                                        |
+| Domain   | Canonical path                   | Ownership                                                                                |
+| -------- | -------------------------------- | ---------------------------------------------------------------------------------------- |
+| cmds     | `cmds/cachecow`                  | Go CLI, cache management, presets, shims, shell integration and native process ownership |
+| packages | `packages/ccow`                  | `@delino/ccow` launcher and native distribution tooling                                  |
+| apps     | `apps/public-docs/docs/cachecow` | Public guides, built and published by public-docs                                        |
 
-These paths are onboarding skeletons. Their existence does not establish runtime support, published artifacts, or native acceptance.
+Implementation and packaging do not establish published availability or native acceptance. The complete requirements retain their actual platform and tool acceptance gates.
 
 ## Domain Contract Documents
 

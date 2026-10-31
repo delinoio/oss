@@ -40,6 +40,7 @@ describe("DocsSiteSwitcher", () => {
       "async-commit-hook",
       "clibox",
       "pnport",
+      "CacheCow",
     ]);
     expect(menu.getAttribute("id")).toBe(trigger.getAttribute("aria-controls"));
     expect(items[1]?.getAttribute("aria-current")).toBe("page");
@@ -51,6 +52,7 @@ describe("DocsSiteSwitcher", () => {
       "/async-commit-hook/",
       "/clibox/",
       "/pnport/",
+      "/cachecow/",
     ]);
   });
 

@@ -112,7 +112,22 @@ const pnportPages = [
   { text: "Releases and Rollback", link: "/pnport/releases" },
 ];
 
+const cachecowPages = [
+  { text: "Overview", link: "/cachecow/" },
+  { text: "Installation and Availability", link: "/cachecow/installation" },
+  { text: "Configuration and Sources", link: "/cachecow/configuration" },
+  { text: "Cache Lifecycle", link: "/cachecow/cache" },
+  { text: "Concurrency and Processes", link: "/cachecow/concurrency" },
+  { text: "Shims and Shells", link: "/cachecow/shims" },
+  { text: "Output and Exit Codes", link: "/cachecow/output" },
+  {
+    text: "Troubleshooting and Performance",
+    link: "/cachecow/troubleshooting",
+  },
+];
+
 const projectPages = [
+  { text: "CacheCow", link: "/cachecow/", activeMatch: "^/cachecow(?:/|$)" },
   { text: "Runmoor", link: "/runmoor/", activeMatch: "^/runmoor" },
   { text: "Nodeup", link: "/nodeup/", activeMatch: "^/nodeup" },
   { text: "binpm", link: "/binpm/", activeMatch: "^/binpm" },
@@ -145,6 +160,7 @@ export default defineConfig({
       "/": [
         { text: "Get Started", items: homePages.slice(0, 2) },
         { text: "Reference", items: homePages.slice(2) },
+        { text: "CacheCow", items: cachecowPages },
         {
           text: "Rust Monorepo Tooling",
           items: [productPages[0]],
@@ -154,6 +170,7 @@ export default defineConfig({
           items: [productPages[1]],
         },
       ],
+      "/cachecow/": [{ text: "CacheCow", items: cachecowPages }],
       "/clibox/": [{ text: "clibox", items: cliboxPages }],
       "/pnport/": [{ text: "pnport", items: pnportPages }],
       "/runmoor/": [{ text: "Runmoor", items: runmoorPages }],

@@ -1,0 +1,15 @@
+{
+  "name": "@delino/ccow",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CacheCow native CLI distribution (unreleased)",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "package": "node scripts/package.mjs",
+    "release:dry-run": "node scripts/release-dry-run.mjs"
+  }
+}
