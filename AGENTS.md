@@ -64,6 +64,8 @@
 
 ## Canonical Directory Map
 
+- [CacheCow project ownership](docs/project-cachecow.md): command, distribution, and public-guide entry point.
+
 - `docs/README.md`: Canonical docs catalog and naming rules.
 - `docs/repository-defaults.md`: Repository-wide default technology choices.
 - `docs/repository-environment-contract.md`: Repository configuration classification, local development modes, secret ownership, and orchestration contract.
