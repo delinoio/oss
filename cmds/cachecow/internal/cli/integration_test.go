@@ -463,3 +463,39 @@ wait
 	}
 	f.run(f.main, 0, "clean")
 }
+
+func TestPrepareWaitsForSourceProvenance(t *testing.T) {
+	f := newFixture(t)
+	writeTest(t, filepath.Join(f.main, "scenario"), "touch target/ready\nwhile [ ! -f target/release ]; do sleep 0.05; done\nprintf 'finished source' > target/data\n", 0600)
+	source := f.cmd(f.main, "run", "--", "cargo", "build")
+	if err := source.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer func() { source.Process.Kill(); source.Wait() }()
+	waitFile(t, filepath.Join(f.main, "target", "ready"))
+	waiter := f.cmd(f.work, "prepare", "--preset", "cargo", "--", "cargo", "build")
+	var stderr bytes.Buffer
+	waiter.Stderr = &stderr
+	if err := waiter.Start(); err != nil {
+		t.Fatal(err)
+	}
+	defer waiter.Process.Kill()
+	done := make(chan error, 1)
+	go func() { done <- waiter.Wait() }()
+	select {
+	case err := <-done:
+		t.Fatalf("source waiter exited before build completion: %v %s", err, &stderr)
+	case <-time.After(800 * time.Millisecond):
+	}
+	writeTest(t, filepath.Join(f.main, "target", "release"), "release", 0600)
+	if err := source.Wait(); err != nil {
+		t.Fatal(err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("waiter: %v %s", err, &stderr)
+	}
+	data, err := os.ReadFile(filepath.Join(f.work, "target", "data"))
+	if err != nil || string(data) != "finished source" {
+		t.Fatalf("incomplete source clone: %q %v", data, err)
+	}
+}

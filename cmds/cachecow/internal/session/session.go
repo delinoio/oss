@@ -50,9 +50,10 @@ type Plan struct {
 	Claims        json.RawMessage  `json:"claims"`
 }
 type Response struct {
-	Ticket string           `json:"ticket,omitempty"`
-	Result lifecycle.Result `json:"result"`
-	Error  string           `json:"error,omitempty"`
+	Ticket        string           `json:"ticket,omitempty"`
+	Result        lifecycle.Result `json:"result"`
+	Error         string           `json:"error,omitempty"`
+	SourceFailure bool             `json:"sourceFailure,omitempty"`
 }
 type request struct {
 	Cancel   bool
@@ -66,10 +67,27 @@ type request struct {
 // filesystem reads only. Supervisor callbacks cannot create subprocesses.
 type Validate func(Plan) error
 
+// SourceError indicates an unusable source after acquiring its lease. Clients
+// can offer the same source-recovery choices as discovery failures.
+type SourceError struct{ Message string }
+
+func (e *SourceError) Error() string { return e.Message }
+func failedResponse(err error) Response {
+	var source *SourceError
+	return Response{Error: err.Error(), SourceFailure: errors.As(err, &source)}
+}
+func (r Response) failure() error {
+	if r.SourceFailure {
+		return &SourceError{Message: r.Error}
+	}
+	return errors.New(r.Error)
+}
+
 type RecordHooks struct {
-	Compatible func(Plan, Plan) bool
-	Before     func(Plan) error
-	After      func(Plan, int) error
+	ValidateSource func(Plan) error
+	Compatible     func(Plan, Plan) bool
+	Before         func(Plan) error
+	After          func(Plan, int) error
 }
 
 type nestedRecord struct {
@@ -110,7 +128,7 @@ func Hooks(validate Validate, recordHooks ...RecordHooks) process.SupervisorHook
 				return e
 			}
 			fail := func(e error) error {
-				_ = state.Write(filepath.Join(scope.Directory, "result.json"), Response{Error: e.Error()})
+				_ = state.Write(filepath.Join(scope.Directory, "result.json"), failedResponse(e))
 				return e
 			}
 			if p.SchemaVersion != 1 || filepath.Dir(filepath.Dir(scope.Directory)) != p.Root {
@@ -221,6 +239,11 @@ func (s *server) apply(ctx context.Context, p Plan) (result lifecycle.Result, re
 	}
 	if e := s.validate(p); e != nil {
 		return lifecycle.Result{}, e
+	}
+	if s.records.ValidateSource != nil {
+		if e := s.records.ValidateSource(p); e != nil {
+			return lifecycle.Result{}, &SourceError{Message: e.Error()}
+		}
 	}
 	if g.Borrowed {
 		if p.Action == Clean || p.Replace {
@@ -344,7 +367,7 @@ func (s *server) serve() {
 				result, e := s.apply(s.scope.Context, r.Plan)
 				out.Result = result
 				if e != nil {
-					out.Error = e.Error()
+					out = failedResponse(e)
 				} else {
 					id, e := uuid.NewV7()
 					if e != nil {
@@ -400,7 +423,7 @@ func exchange(ctx context.Context, capability string, r request) (Response, erro
 		return out, e
 	}
 	if out.Error != "" {
-		return out, errors.New(out.Error)
+		return out, out.failure()
 	}
 	return out, nil
 }
@@ -418,7 +441,7 @@ func Execute(ctx context.Context, p Plan, c process.Command, streams process.Str
 		if readErr := state.Read(filepath.Join(r.Scope.Directory, "result.json"), &out); readErr == nil {
 			prepared = out.Result
 			if out.Error != "" {
-				e = errors.New(out.Error)
+				e = out.failure()
 			}
 		}
 	}

@@ -107,13 +107,7 @@ func Validate(p session.Plan) error {
 				return e
 			}
 		}
-		var saved provenance
-		if e := state.Read(metadataPath(p.Root, *c.Source), &saved); e != nil {
-			return fmt.Errorf("source provenance is unavailable; run the exact requested command through ccow in the source first: %w", e)
-		}
-		if saved.SchemaVersion != 1 || !saved.Compatibility.Compatible(c.Source.Compatibility) || !equalPaths(saved.Paths, p.Resources.Sources) {
-			return errors.New("source provenance does not match current settings; run the exact command through ccow in the source first")
-		}
+
 	} else if len(p.Resources.Sources) != 0 {
 		return errors.New("source resources have no verified claims")
 	}
@@ -258,7 +252,18 @@ func (a *app) managed(action string, argv []string) (int, error) {
 		}
 	}
 	p, c, e := a.plan(action, current, argv, false)
-	for e != nil {
+	for {
+		if e == nil {
+			code, err := a.execute(p, c, current)
+			if err == nil {
+				return code, nil
+			}
+			var source *session.SourceError
+			if !errors.As(err, &source) {
+				return code, err
+			}
+			e = &sourceError{err}
+		}
 		var missing *sourceError
 		if !errors.As(e, &missing) {
 			return 0, e
@@ -336,7 +341,6 @@ func (a *app) managed(action string, argv []string) (int, error) {
 			continue
 		}
 	}
-	return a.execute(p, c, current)
 }
 
 type sourceError struct{ error }
@@ -413,30 +417,10 @@ func (a *app) plan(action string, current preset.Result, argv []string, withoutS
 				if repository.Overlaps(sr.Path, dst.Path) {
 					return p, c, &sourceError{errors.New("source and destination cache paths overlap")}
 				}
-				ok, e := lifecycle.Exists(sr.Path)
-				if e != nil || !ok {
-					return p, c, &sourceError{fmt.Errorf("source cache is missing or unusable: %s", sr.Path)}
-				}
-				if e := filepath.WalkDir(sr.Path, func(_ string, d fs.DirEntry, e error) error {
-					if e != nil {
-						return e
-					}
-					if !d.IsDir() && !d.Type().IsRegular() {
-						return &sourceError{errors.New("source cache contains a symlink or special file; repair it or select another source")}
-					}
-					return nil
-				}); e != nil {
-					return p, c, e
-				}
+
 				p.Pairs = append(p.Pairs, lifecycle.Pair{Source: sr.Path, Destination: dst.Path})
 			}
-			var prior provenance
-			if e := state.Read(metadataPath(a.store.Root, source), &prior); e != nil {
-				return p, c, &sourceError{errors.New("source compatibility is unrecorded; build it through ccow with the exact requested command first")}
-			}
-			if prior.SchemaVersion != 1 || !prior.Compatibility.Compatible(source.Compatibility) {
-				return p, c, &sourceError{errors.New("source provenance is incompatible with the requested command")}
-			}
+
 			claim.Source = &source
 			p.Resources.Sources = paths(source)
 		}
@@ -568,6 +552,40 @@ func (a *app) inspect(r preset.Result, doctor bool) error {
 func Records() session.RecordHooks {
 	decode := func(p session.Plan) (claims, error) { var c claims; e := json.Unmarshal(p.Claims, &c); return c, e }
 	return session.RecordHooks{
+		ValidateSource: func(p session.Plan) error {
+			c, e := decode(p)
+			if e != nil {
+				return e
+			}
+			if c.Source == nil {
+				return nil
+			}
+			for _, root := range c.Source.Roots {
+				ok, e := lifecycle.Exists(root.Path)
+				if e != nil || !ok {
+					return errors.New("source cache is missing or unusable; build the source first")
+				}
+				if e := filepath.WalkDir(root.Path, func(_ string, d fs.DirEntry, err error) error {
+					if err != nil {
+						return err
+					}
+					if !d.IsDir() && !d.Type().IsRegular() {
+						return errors.New("source cache contains a symlink or special file; repair it or select another source")
+					}
+					return nil
+				}); e != nil {
+					return e
+				}
+			}
+			var saved provenance
+			if e := state.Read(metadataPath(p.Root, *c.Source), &saved); e != nil {
+				return fmt.Errorf("source provenance is unavailable; run the exact requested command through ccow in the source first: %w", e)
+			}
+			if saved.SchemaVersion != 1 || !saved.Compatibility.Compatible(c.Source.Compatibility) || !equalPaths(saved.Paths, p.Resources.Sources) {
+				return errors.New("source provenance does not match current settings; run the exact command through ccow in the source first")
+			}
+			return nil
+		},
 		Compatible: func(a, b session.Plan) bool {
 			x, e := decode(a)
 			if e != nil {
