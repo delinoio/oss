@@ -501,3 +501,80 @@ func TestPreparedSourceReleaseRetainsDestination(t *testing.T) {
 	finish(t, other)
 	finish(t, s)
 }
+
+func TestReleaseUnstartedGrant(t *testing.T) {
+	r, root := setup(t)
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	outer, source, dest := filepath.Join(root, "outer"), filepath.Join(root, "source"), filepath.Join(root, "dest")
+	s := session(t, r)
+	acquire(t, s, outer)
+	paths := func() []string {
+		t.Helper()
+		all, err := r.Records(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, v := range all {
+			if v.ID == s.ID() {
+				return v.Paths
+			}
+		}
+		t.Fatal("record missing")
+		return nil
+	}
+	g, err := s.Acquire(ctx, Resources{Sources: []string{source}, Destinations: []string{dest}}, false)
+	if err != nil || len(g.NewPaths) != 2 {
+		t.Fatal(g, err)
+	}
+	if err = s.ReleaseUnstartedGrant(g); err != nil {
+		t.Fatal(err)
+	}
+	if got := paths(); len(got) != 1 || got[0] != outer {
+		t.Fatalf("paths after release = %v", got)
+	}
+	// Released resources are free for other sessions and for a fresh grant.
+	other := session(t, r)
+	acquire(t, other, source)
+	finish(t, other)
+	if g, err = s.Acquire(ctx, Resources{Destinations: []string{dest}}, false); err != nil || g.Borrowed || len(g.NewPaths) != 1 {
+		t.Fatal("released path still borrowed", g, err)
+	}
+	// An empty or borrowed-only grant is a no-op without a registry write.
+	registry := filepath.Join(root, "registry")
+	db, err := sql.Open("sqlite", filepath.Join(registry, "leases.sqlite"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err = conn.ExecContext(ctx, "PRAGMA busy_timeout=0; BEGIN IMMEDIATE"); err != nil {
+		t.Fatal(err)
+	}
+	if err = s.ReleaseUnstartedGrant(Grant{Borrowed: true}); err != nil {
+		t.Fatalf("empty grant touched the registry: %v", err)
+	}
+	if _, err = conn.ExecContext(ctx, "ROLLBACK"); err != nil {
+		t.Fatal(err)
+	}
+	if got := paths(); len(got) != 2 {
+		t.Fatalf("paths changed by empty grant: %v", got)
+	}
+	// Releasing the whole record is refused and leaves it unchanged.
+	if err = s.ReleaseUnstartedGrant(Grant{NewPaths: []string{outer, dest}}); !errors.Is(err, ErrUnverified) {
+		t.Fatal("emptied the record", err)
+	}
+	if got := paths(); len(got) != 2 {
+		t.Fatalf("refused release changed record: %v", got)
+	}
+	finish(t, s)
+	if err = s.ReleaseUnstartedGrant(g); !errors.Is(err, ErrUnverified) {
+		t.Fatal("released after finish", err)
+	}
+}

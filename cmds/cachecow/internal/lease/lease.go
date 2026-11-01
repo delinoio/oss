@@ -231,8 +231,11 @@ func (r *Registry) NewSession(ownership string) (*Session, error) {
 func (s *Session) ID() string { s.mu.Lock(); defer s.mu.Unlock(); return s.record.ID }
 
 // Grant reports whether the complete request was already protected. When Borrowed
-// is true, the caller must skip preparation. Grants have no independent release:
-// all accumulated resources remain held until the entire session is finished.
+// is true, the caller must skip preparation. Grants have no independent release
+// once a command may use the resources: all accumulated resources remain held
+// until the entire session is finished. The only exceptions are
+// ReleasePreparedSources after copying and ReleaseUnstartedGrant when the request
+// failed before any command started.
 type Grant struct {
 	Borrowed bool
 	// NewPaths are newly protected resources, including sources. Preparation may
@@ -555,6 +558,61 @@ func (s *Session) ReleasePreparedSources(paths []string, grant Grant) error {
 	})
 	if e == nil {
 		s.record = next
+	}
+	return e
+}
+
+// ReleaseUnstartedGrant undoes an acquisition whose request failed before any
+// command could use the resources. It removes exactly grant.NewPaths from the
+// session record and never touches paths borrowed from the parent. Nested
+// extensions always start from a nonempty record, so emptying the record is
+// refused. An empty grant is a no-op without a registry write.
+func (s *Session) ReleaseUnstartedGrant(grant Grant) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.finished {
+		return ErrUnverified
+	}
+	if len(grant.NewPaths) == 0 {
+		return nil
+	}
+	remove := map[string]bool{}
+	for _, p := range grant.NewPaths {
+		remove[p] = true
+	}
+	next := s.record
+	next.Paths = nil
+	for _, p := range s.record.Paths {
+		if !remove[p] {
+			next.Paths = append(next.Paths, p)
+		}
+	}
+	if len(next.Paths) == 0 {
+		return ErrUnverified
+	}
+	e := s.registry.transaction(context.Background(), func(c *sql.Conn) error {
+		all, e := records(context.Background(), c)
+		if e != nil {
+			return e
+		}
+		for _, r := range all {
+			if r.ID == s.record.ID {
+				if !equal(r, s.record) {
+					return ErrUnverified
+				}
+				b, e := json.Marshal(next)
+				if e != nil {
+					return e
+				}
+				_, e = c.ExecContext(context.Background(), "UPDATE leases SET record=? WHERE id=?", string(b), r.ID)
+				return e
+			}
+		}
+		return ErrUnverified
+	})
+	if e == nil {
+		s.record = next
+		slog.Debug("unstarted cache lease grant released", "session", s.record.ID, "paths", len(remove))
 	}
 	return e
 }

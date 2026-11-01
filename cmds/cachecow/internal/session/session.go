@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"path/filepath"
 	"strings"
@@ -152,7 +153,7 @@ func Hooks(validate Validate, recordHooks ...RecordHooks) process.SupervisorHook
 				return fail(e)
 			}
 			s = &server{scope: scope, registry: r, session: session, validate: validate, root: p.Root, records: records, initial: p, pending: map[string]Plan{}, ambiguous: map[string]bool{}, tickets: map[string]*nestedRecord{}}
-			result, e := s.apply(scope.Context, p)
+			result, e := s.apply(scope.Context, p, false)
 			if e != nil {
 				return fail(e)
 			}
@@ -231,7 +232,12 @@ func finishSession(s *lease.Session, verify lease.Verify) error {
 	}
 }
 
-func (s *server) apply(ctx context.Context, p Plan) (result lifecycle.Result, resultErr error) {
+// apply admits and prepares one plan. A nested request extends the outer
+// session record, so a failure after admission must hand back exactly the paths
+// that request acquired; otherwise they stay leased until the outer tree exits
+// and make retries borrow resources that were never prepared. The initial
+// request needs no such release because its failure finishes the whole session.
+func (s *server) apply(ctx context.Context, p Plan, nested bool) (result lifecycle.Result, resultErr error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p.PreparedAll = false
@@ -253,6 +259,19 @@ func (s *server) apply(ctx context.Context, p Plan) (result lifecycle.Result, re
 	g, e := s.session.Acquire(ctx, p.Resources, p.Action != Clean)
 	if e != nil {
 		return lifecycle.Result{}, e
+	}
+	if nested {
+		defer func() {
+			if resultErr == nil || len(g.NewPaths) == 0 {
+				return
+			}
+			if releaseErr := s.session.ReleaseUnstartedGrant(g); releaseErr != nil {
+				slog.Warn("nested cache lease release failed", "session", s.session.ID(), "paths", len(g.NewPaths), "request_error", fmt.Sprintf("%T", resultErr), "error", releaseErr)
+				resultErr = errors.Join(resultErr, releaseErr)
+				return
+			}
+			slog.Debug("released cache leases of failed nested request", "session", s.session.ID(), "paths", len(g.NewPaths), "request_error", fmt.Sprintf("%T", resultErr))
+		}()
 	}
 	if e := s.validate(p); e != nil {
 		return lifecycle.Result{}, e
@@ -381,7 +400,7 @@ func (s *server) serve() {
 				}
 				s.mu.Unlock()
 			} else {
-				result, e := s.apply(s.scope.Context, r.Plan)
+				result, e := s.apply(s.scope.Context, r.Plan, true)
 				out.Result = result
 				if e != nil {
 					out = failedResponse(e)
