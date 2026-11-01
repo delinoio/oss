@@ -213,3 +213,81 @@ func TestInitValidation(t *testing.T) {
 		t.Fatal(code, err)
 	}
 }
+
+func TestOwnedChange(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "shims")
+	code, err := Init(Bash, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	owned := func(marker, nl string) string {
+		return marker + nl + strings.ReplaceAll(code, "\n", nl) + end + nl
+	}
+	oldBlock := begin + "\n# stale activation\n" + end + "\n"
+	for _, tc := range []struct {
+		name      string
+		original  string
+		action    Action
+		removed   string
+		added     string
+		separator bool
+		changed   bool
+	}{
+		{"append to empty", "", Setup, "", owned(begin, "\n"), false, true},
+		{"append to newline-terminated", "# keep\n", Setup, "", owned(begin, "\n"), false, true},
+		{"append to profile without final newline", "# keep", Setup, "", owned(joinedBegin, "\n"), true, true},
+		{"append to CRLF profile", "# keep\r\n", Setup, "", owned(begin, "\r\n"), false, true},
+		{"append to CRLF profile without final newline", "# keep\r\n# tail", Setup, "", owned(joinedBegin, "\r\n"), true, true},
+		{"replace different block", "# keep\n" + oldBlock + "# after\n", Setup, oldBlock, owned(begin, "\n"), false, true},
+		{"replace different joined block", "# keep\n" + joinedBegin + "\n# stale\n" + end + "\n", Setup, joinedBegin + "\n# stale\n" + end + "\n", owned(joinedBegin, "\n"), false, true},
+		{"identical block", "# keep\n" + owned(begin, "\n"), Setup, "", "", false, false},
+		{"remove normal block", "# keep\n" + owned(begin, "\n") + "# after\n", Remove, owned(begin, "\n"), "", false, true},
+		{"remove joined block", "# keep" + "\n" + owned(joinedBegin, "\n"), Remove, owned(joinedBegin, "\n"), "", true, true},
+		{"remove joined CRLF block", "# keep\r\n" + owned(joinedBegin, "\r\n"), Remove, owned(joinedBegin, "\r\n"), "", true, true},
+		{"remove joined block at file start", owned(joinedBegin, "\n"), Remove, owned(joinedBegin, "\n"), "", false, true},
+		{"remove without block", "# keep\n", Remove, "", "", false, false},
+		{"remove from empty", "", Remove, "", "", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "profile")
+			if err := os.WriteFile(path, []byte(tc.original), 0600); err != nil {
+				t.Fatal(err)
+			}
+			p, err := Prepare(Bash, tc.action, path, dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if p.Changed() != tc.changed {
+				t.Fatalf("changed=%v want %v", p.Changed(), tc.changed)
+			}
+			removed, added, separator := p.OwnedChange()
+			if string(removed) != tc.removed || string(added) != tc.added || separator != tc.separator {
+				t.Fatalf("OwnedChange = %q, %q, %v; want %q, %q, %v", removed, added, separator, tc.removed, tc.added, tc.separator)
+			}
+			for _, b := range [][]byte{removed, added} {
+				if len(b) == 0 {
+					continue
+				}
+				if strings.Contains(string(b), "# keep") || strings.Contains(string(b), "# after") {
+					t.Fatalf("block contains unrelated content: %q", b)
+				}
+				first, _, _ := strings.Cut(string(b), "\n")
+				first = strings.TrimSuffix(first, "\r")
+				if first != begin && first != joinedBegin {
+					t.Fatalf("block does not start with a marker: %q", b)
+				}
+				if !strings.HasSuffix(strings.TrimSuffix(strings.TrimSuffix(string(b), "\n"), "\r"), end) {
+					t.Fatalf("block does not end with the end marker: %q", b)
+				}
+			}
+			// Returned slices must be copies.
+			if len(added) > 0 {
+				added[0] = 'X'
+				_, again, _ := p.OwnedChange()
+				if again[0] == 'X' {
+					t.Fatal("OwnedChange exposed internal bytes")
+				}
+			}
+		})
+	}
+}
