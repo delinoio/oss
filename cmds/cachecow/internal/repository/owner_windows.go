@@ -3,9 +3,11 @@ package repository
 
 import (
 	"errors"
-	"golang.org/x/sys/windows"
 	"os"
 	"path/filepath"
+
+	"github.com/delinoio/oss/cmds/cachecow/internal/ownership"
+	"golang.org/x/sys/windows"
 )
 
 func CheckOwner(path string) error {
@@ -31,11 +33,11 @@ func CheckOwner(path string) error {
 	if e != nil {
 		return e
 	}
-	user, e := windows.GetCurrentProcessToken().GetTokenUser()
+	ok, e := ownership.Accepted(owner)
 	if e != nil {
 		return e
 	}
-	if !owner.Equals(user.User.Sid) {
+	if !ok {
 		return errors.New("path is not owned by the current user; select current-user storage")
 	}
 	return nil

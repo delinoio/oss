@@ -10,6 +10,7 @@ import (
 	"unsafe"
 
 	"github.com/Microsoft/go-winio"
+	"github.com/delinoio/oss/cmds/cachecow/internal/ownership"
 	"github.com/google/uuid"
 	"golang.org/x/sys/windows"
 )
@@ -25,19 +26,25 @@ func privateRoot(path string, _ os.FileInfo) error {
 	if err != nil {
 		return err
 	}
-	tokenUser, err := windows.GetCurrentProcessToken().GetTokenUser()
+	accepted, err := ownership.Accepted(owner)
 	if err != nil {
 		return err
 	}
-	if !windows.EqualSid(owner, tokenUser.User.Sid) {
+	if !accepted {
 		return infrastructureError("state directory has a different owner")
+	}
+	user, err := ownership.CurrentUser()
+	if err != nil {
+		return err
 	}
 	dacl, _, err := sd.DACL()
 	if err != nil || dacl == nil {
 		return infrastructureError("state directory needs a private DACL")
 	}
-	// The parent storage layer must establish an owner-only ACL. Conservatively
-	// reject every allow ACE for a different SID, including inherited grants.
+	// The parent storage layer must establish a current-user-only ACL. An
+	// elevated administrator's objects are owned by Administrators, so compare
+	// grants with the user SID rather than the owner. Conservatively reject every
+	// allow ACE for a different SID, including inherited grants.
 	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
 		var ace *windows.ACCESS_ALLOWED_ACE
 		if err = windows.GetAce(dacl, i, &ace); err != nil {
@@ -46,7 +53,7 @@ func privateRoot(path string, _ os.FileInfo) error {
 		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
 			return infrastructureError("state directory must use simple owner-only allow ACEs")
 		}
-		if !windows.EqualSid((*windows.SID)(unsafe.Pointer(&ace.SidStart)), owner) {
+		if !windows.EqualSid((*windows.SID)(unsafe.Pointer(&ace.SidStart)), user) {
 			return infrastructureError("state directory grants another principal access")
 		}
 	}

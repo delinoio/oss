@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -165,6 +166,15 @@ func TestConflictAndUnknownManifest(t *testing.T) {
 		t.Fatal("removed unknown version")
 	}
 }
+
+// samePath compares resolved paths. Windows PATHEXT entries keep their
+// configured case, such as cargo.EXE, on a case-insensitive filesystem.
+func samePath(a, b string) bool {
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(a, b)
+	}
+	return a == b
+}
 func TestResolveDynamicAliases(t *testing.T) {
 	dir := private(t)
 	source := filepath.Join(t.TempDir(), "ccow")
@@ -181,12 +191,12 @@ func TestResolveDynamicAliases(t *testing.T) {
 	write(t, filepath.Join(alias, filename(Cargo)), "ccow native")
 	options := ResolveOptions{Path: dir + string(os.PathListSeparator) + alias + string(os.PathListSeparator) + a + string(os.PathListSeparator) + b, ShimDir: dir, CcowExecutable: source}
 	r, err := Resolve(Cargo, options)
-	if err != nil || r.Path != filepath.Join(a, filename(Cargo)) {
+	if err != nil || !samePath(r.Path, filepath.Join(a, filename(Cargo))) {
 		t.Fatalf("%+v %v", r, err)
 	}
 	options.Path = b + string(os.PathListSeparator) + a
 	r, err = Resolve(Cargo, options)
-	if err != nil || r.Path != filepath.Join(b, filename(Cargo)) {
+	if err != nil || !samePath(r.Path, filepath.Join(b, filename(Cargo))) {
 		t.Fatalf("%+v %v", r, err)
 	}
 	options.Path = dir + string(os.PathListSeparator) + alias
@@ -202,7 +212,7 @@ func TestResolveDynamicAliases(t *testing.T) {
 		}
 		options.Path = alias + string(os.PathListSeparator) + a
 		r, err = Resolve(Cargo, options)
-		if err != nil || r.Path != filepath.Join(a, filename(Cargo)) {
+		if err != nil || !samePath(r.Path, filepath.Join(a, filename(Cargo))) {
 			t.Fatalf("symlink recursion: %+v %v", r, err)
 		}
 		os.Remove(filepath.Join(alias, filename(Cargo)))
@@ -210,7 +220,7 @@ func TestResolveDynamicAliases(t *testing.T) {
 			t.Fatal(err)
 		}
 		r, err = Resolve(Cargo, options)
-		if err != nil || r.Path != filepath.Join(a, filename(Cargo)) {
+		if err != nil || !samePath(r.Path, filepath.Join(a, filename(Cargo))) {
 			t.Fatalf("hardlink recursion: %+v %v", r, err)
 		}
 		os.Chmod(filepath.Join(a, filename(Cargo)), 0600)
