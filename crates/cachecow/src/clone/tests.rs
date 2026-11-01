@@ -98,22 +98,38 @@ fn perm(path: &str) -> u32 {
     paths::go_file_mode(&fs::metadata(path).unwrap()) & 0o777
 }
 
+/// Opens a file or directory with permission to change its times. Windows
+/// opens directories only with backup semantics.
+fn open_for_times(path: &str) -> File {
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+
+        use windows_sys::Win32::Storage::FileSystem::{
+            FILE_FLAG_BACKUP_SEMANTICS, FILE_WRITE_ATTRIBUTES,
+        };
+        File::options()
+            .access_mode(FILE_WRITE_ATTRIBUTES)
+            .custom_flags(FILE_FLAG_BACKUP_SEMANTICS)
+            .open(path)
+            .unwrap()
+    }
+    #[cfg(unix)]
+    File::options()
+        .write(!fs::metadata(path).unwrap().is_dir())
+        .read(true)
+        .open(path)
+        .unwrap()
+}
+
 #[test]
 fn copy_preserves_freshness_and_isolation() {
     let f = fixture();
     let stamp = std::time::UNIX_EPOCH + std::time::Duration::new(1_700_000_000, 123_456_700);
     for name in ["a", "nested/b", "nested", "."] {
-        let path = join(&f.src, name);
-        let file = File::options()
-            .write(!fs::metadata(&path).unwrap().is_dir())
-            .read(true)
-            .open(&path);
-        match file {
-            Ok(file) => file
-                .set_times(fs::FileTimes::new().set_accessed(stamp).set_modified(stamp))
-                .unwrap(),
-            Err(e) => panic!("{e}"),
-        }
+        open_for_times(&join(&f.src, name))
+            .set_times(fs::FileTimes::new().set_accessed(stamp).set_modified(stamp))
+            .unwrap();
     }
     let result = tree_with(&bg(), &f.src, &f.dst, true, &mut unsupported_clone).unwrap();
     assert_eq!(
