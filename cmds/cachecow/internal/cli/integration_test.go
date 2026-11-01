@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/delinoio/oss/cmds/cachecow/internal/lease"
+	"github.com/delinoio/oss/cmds/cachecow/internal/process"
 	_ "modernc.org/sqlite"
 )
 
@@ -803,5 +805,90 @@ func TestRegistryContentionIsDistinctFromCacheUse(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// strandLease registers a lease on the fixture's cargo cache whose owner is the
+// supervisor described by a hand-written journal, as if that supervisor had
+// died without releasing it. It returns the journal directory.
+func strandLease(t *testing.T, f *fixture, journalFields map[string]any) string {
+	t.Helper()
+	var registryDir string
+	_ = filepath.WalkDir(f.home, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && d.Name() == "leases.sqlite" {
+			registryDir = filepath.Dir(path)
+		}
+		return nil
+	})
+	if registryDir == "" {
+		t.Fatal("lease registry was not created")
+	}
+	reg, err := lease.Open(context.Background(), registryDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reg.Close()
+	dir := journal(t, journalFields)
+	owner, err := reg.NewSession(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = owner.Acquire(context.Background(), lease.Resources{Destinations: []string{filepath.Join(f.main, "target")}}, false); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+func TestExecutableRecoversStrandedLeaseWithoutDoctor(t *testing.T) {
+	f := newFixture(t)
+	f.run(f.main, 0, "run", "--", "cargo", "build")
+	for _, command := range [][]string{{"run", "--", "cargo", "build"}, {"clean", "--preset", "cargo"}} {
+		dir := strandLease(t, f, previousIdentity())
+		start := time.Now()
+		_, stderr := f.run(f.main, 0, command...)
+		if time.Since(start) > 10*time.Second {
+			t.Fatalf("%v waited %s for a recoverable lease", command, time.Since(start))
+		}
+		if strings.Contains(stderr, "ccow: cache") {
+			t.Fatalf("notice for a recoverable lease: %s", stderr)
+		}
+		if scope, err := process.LoadScope(dir); err != nil || !scope.Complete {
+			t.Fatalf("journal not completed: %+v %v", scope, err)
+		}
+	}
+}
+
+func TestExecutableUnrecoverableLeaseNoticesOnceAndCleanFails(t *testing.T) {
+	f := newFixture(t)
+	f.run(f.main, 0, "run", "--", "cargo", "build")
+	dir := strandLease(t, f, map[string]any{"version": 1, "owner_pid": 2147483647, "started": true, "complete": false, "exit_code": 125})
+	_, stderr := f.run(f.main, 125, "clean", "--preset", "cargo")
+	if !strings.Contains(stderr, "cache is in use") {
+		t.Fatalf("clean did not report cache use: %s", stderr)
+	}
+	c := f.cmd(f.main, "run", "--", "cargo", "build")
+	var out bytes.Buffer
+	c.Stderr = &out
+	if e := c.Start(); e != nil {
+		t.Fatal(e)
+	}
+	// Longer than the recheck interval, so a repeated notice would show.
+	time.Sleep(3 * time.Second)
+	_ = c.Process.Kill()
+	_ = c.Wait()
+	notices := 0
+	for _, line := range strings.Split(out.String(), "\n") {
+		if strings.HasPrefix(line, "ccow: cache ") {
+			notices++
+			if !strings.Contains(line, filepath.Join(f.main, "target")) || !strings.Contains(line, dir) {
+				t.Errorf("notice lacks cache path or journal dir: %s", line)
+			}
+		}
+	}
+	if notices != 1 {
+		t.Fatalf("notices = %d, want exactly 1\nstderr=%s", notices, out.String())
+	}
+	if scope, _ := process.LoadScope(dir); scope.Complete {
+		t.Fatal("unrecoverable journal was completed")
 	}
 }

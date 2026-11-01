@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"github.com/delinoio/oss/cmds/cachecow/internal/lease"
 	"github.com/delinoio/oss/cmds/cachecow/internal/lifecycle"
+	"github.com/delinoio/oss/cmds/cachecow/internal/process"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"sort"
 	"strings"
@@ -324,5 +326,148 @@ func TestRegistryBusyCrossesResultBoundary(t *testing.T) {
 	}
 	if other := failedResponse(lease.ErrBusy).failure(); errors.Is(other, lease.ErrRegistryBusy) {
 		t.Fatalf("cache overlap reported as registry contention: %v", other)
+	}
+}
+
+// writeJournal stores a scope.json fixture and returns its journal directory.
+func writeJournal(t *testing.T, fields map[string]any) string {
+	t.Helper()
+	dir := t.TempDir()
+	fields["id"], fields["directory"] = filepath.Base(dir), dir
+	raw, err := json.Marshal(fields)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = os.WriteFile(filepath.Join(dir, "scope.json"), raw, 0600); err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
+// previousBoot is a version 2 journal whose identity cannot name the current
+// boot (Unix) or a running supervisor (Windows).
+func previousBoot() map[string]any {
+	fields := map[string]any{"version": 2, "owner_pid": 2147483647, "started": true, "complete": false, "exit_code": 125}
+	if runtime.GOOS == "windows" {
+		fields["owner_created"] = int64(1)
+	} else {
+		fields["boot_id"] = "00000000-0000-0000-0000-000000000000"
+	}
+	return fields
+}
+
+func conflictFixture(t *testing.T, journal string) (*lease.Registry, string, string) {
+	t.Helper()
+	ctx := context.Background()
+	root := t.TempDir()
+	r, err := lease.Open(ctx, filepath.Join(root, "leases"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { r.Close() })
+	cache := filepath.Join(root, "target")
+	owner, err := r.NewSession(journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = owner.Acquire(ctx, lease.Resources{Destinations: []string{cache}}, false); err != nil {
+		t.Fatal(err)
+	}
+	return r, cache, journal
+}
+
+func TestWaitingAcquireRecoversLeaseOfPreviousBoot(t *testing.T) {
+	r, cache, journal := conflictFixture(t, writeJournal(t, previousBoot()))
+	var notice strings.Builder
+	waiter, err := r.NewSession(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiter.SetConflictHandler(ConflictHandler(r, &notice))
+	c, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if _, err = waiter.Acquire(c, lease.Resources{Destinations: []string{cache}}, true); err != nil {
+		t.Fatalf("waiting acquire did not recover: %v", err)
+	}
+	if notice.Len() != 0 {
+		t.Fatalf("unexpected notice for a recoverable lease: %q", notice.String())
+	}
+	scope, err := process.LoadScope(journal)
+	if err != nil || !scope.Complete || scope.ExitCode != 125 {
+		t.Fatalf("journal not completed by recovery: %+v %v", scope, err)
+	}
+}
+
+func TestUnrecoverableConflictNoticesExactlyOnce(t *testing.T) {
+	legacy := writeJournal(t, map[string]any{"version": 1, "owner_pid": 2147483647, "started": true, "complete": false, "exit_code": 125})
+	r, cache, journal := conflictFixture(t, legacy)
+	var notice strings.Builder
+	waiter, err := r.NewSession(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	waiter.SetConflictHandler(ConflictHandler(r, &notice))
+	// Wait long enough for the handler to be offered the conflict repeatedly.
+	c, cancel := context.WithTimeout(context.Background(), 2500*time.Millisecond)
+	defer cancel()
+	if _, err = waiter.Acquire(c, lease.Resources{Destinations: []string{cache}}, true); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected the wait to end by deadline, got %v", err)
+	}
+	got := notice.String()
+	if n := strings.Count(got, "\n"); n != 1 {
+		t.Fatalf("notice lines = %d, want exactly 1: %q", n, got)
+	}
+	for _, want := range []string{cache, journal, string(process.RecoveryNoNativeIdentity)} {
+		if !strings.Contains(got, want) {
+			t.Errorf("notice %q does not name %q", got, want)
+		}
+	}
+	// The lease is still protected and the journal untouched.
+	if all, err := r.Records(context.Background()); err != nil || len(all) != 1 {
+		t.Fatalf("lease released without proof: %+v %v", all, err)
+	}
+	if scope, _ := process.LoadScope(journal); scope.Complete {
+		t.Fatal("version 1 journal was completed")
+	}
+}
+
+func TestCleanStyleAcquireRecoversOrReportsBusy(t *testing.T) {
+	ctx := context.Background()
+	for name, tc := range map[string]struct {
+		fields    map[string]any
+		wantBusy  bool
+		wantNotes int
+	}{
+		"recoverable":   {previousBoot(), false, 0},
+		"unrecoverable": {map[string]any{"version": 1, "owner_pid": 2147483647, "started": true, "complete": false, "exit_code": 125}, true, 1},
+	} {
+		t.Run(name, func(t *testing.T) {
+			r, cache, _ := conflictFixture(t, writeJournal(t, tc.fields))
+			var notice strings.Builder
+			cleaner, err := r.NewSession(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			cleaner.SetConflictHandler(ConflictHandler(r, &notice))
+			_, err = cleaner.Acquire(ctx, lease.Resources{Destinations: []string{cache}}, false)
+			if tc.wantBusy != errors.Is(err, lease.ErrBusy) || (!tc.wantBusy && err != nil) {
+				t.Fatalf("busy=%v, err=%v", tc.wantBusy, err)
+			}
+			if got := strings.Count(notice.String(), "\n"); got != tc.wantNotes {
+				t.Fatalf("notices = %d, want %d: %q", got, tc.wantNotes, notice.String())
+			}
+		})
+	}
+}
+
+func TestRecoverLeaseKeepsRecordWhenJournalMissing(t *testing.T) {
+	r, _, _ := conflictFixture(t, filepath.Join(t.TempDir(), "missing"))
+	all, err := r.Records(context.Background())
+	if err != nil || len(all) != 1 {
+		t.Fatalf("records: %+v %v", all, err)
+	}
+	reason, recovered, err := RecoverLease(context.Background(), r, all[0])
+	if err != nil || recovered || reason != process.RecoveryJournalUnreadable {
+		t.Fatalf("reason=%s recovered=%v err=%v", reason, recovered, err)
 	}
 }

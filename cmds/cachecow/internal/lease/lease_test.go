@@ -878,3 +878,142 @@ func TestReleaseUnstartedGrant(t *testing.T) {
 		t.Fatal("released after finish", err)
 	}
 }
+
+// releasingHandler reconciles every offered conflict as a verified-finished
+// owner would and records each call.
+func releasingHandler(t *testing.T, r *Registry, calls *[][]Record) ConflictHandler {
+	return func(c context.Context, conflicts []Record) bool {
+		*calls = append(*calls, conflicts)
+		for _, v := range conflicts {
+			if err := r.Reconcile(c, v, verified); err != nil {
+				t.Errorf("reconcile conflict: %v", err)
+			}
+		}
+		return true
+	}
+}
+
+func TestWaitingAcquireProceedsWhenHandlerRecoversConflict(t *testing.T) {
+	r, root := setup(t)
+	path := filepath.Join(root, "cache")
+	holder := session(t, r)
+	acquire(t, holder, path)
+	var calls [][]Record
+	waiter := session(t, r)
+	waiter.SetConflictHandler(releasingHandler(t, r, &calls))
+	c, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if _, err := waiter.Acquire(c, Resources{Destinations: []string{path}}, true); err != nil {
+		t.Fatalf("waiting acquire did not proceed: %v", err)
+	}
+	if len(calls) != 1 || len(calls[0]) != 1 || calls[0][0].ID != holder.ID() {
+		t.Fatalf("handler calls: %+v", calls)
+	}
+	// The recovered owner's own Finish finds no record and must still succeed.
+	if err := holder.Finish(ctx, verified); err != nil {
+		t.Fatalf("finish after concurrent recovery: %v", err)
+	}
+}
+
+func TestNonblockingAcquireOffersConflictOnceThenReportsBusy(t *testing.T) {
+	r, root := setup(t)
+	path := filepath.Join(root, "cache")
+	acquire(t, session(t, r), path)
+	calls := 0
+	s := session(t, r)
+	s.SetConflictHandler(func(context.Context, []Record) bool { calls++; return false })
+	if _, err := s.Acquire(ctx, Resources{Destinations: []string{path}}, false); err != ErrBusy {
+		t.Fatalf("expected the ErrBusy sentinel, got %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("handler calls = %d, want 1", calls)
+	}
+	// The same handler recovering lets the nonblocking clean path proceed.
+	var recovered [][]Record
+	s.SetConflictHandler(releasingHandler(t, r, &recovered))
+	if _, err := s.Acquire(ctx, Resources{Destinations: []string{path}}, false); err != nil {
+		t.Fatalf("clean-style acquire after recovery: %v", err)
+	}
+}
+
+func TestWaitingAcquireRechecksUnrecoverableConflict(t *testing.T) {
+	old := conflictRecheckInterval
+	conflictRecheckInterval = 20 * time.Millisecond
+	defer func() { conflictRecheckInterval = old }()
+	r, root := setup(t)
+	path := filepath.Join(root, "cache")
+	holder := session(t, r)
+	acquire(t, holder, path)
+	var calls int
+	s := session(t, r)
+	s.SetConflictHandler(func(c context.Context, conflicts []Record) bool {
+		calls++
+		if calls == 3 {
+			// The owner proves finished only on the third look.
+			return r.Reconcile(c, conflicts[0], verified) == nil
+		}
+		return false
+	})
+	c, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	if _, err := s.Acquire(c, Resources{Destinations: []string{path}}, true); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 3 {
+		t.Fatalf("handler calls = %d, want 3", calls)
+	}
+}
+
+func TestConflictHandlerSkippedForContentionAndNestedRequests(t *testing.T) {
+	r, root := setup(t)
+	other, err := Open(ctx, filepath.Join(root, "registry"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	path := filepath.Join(root, "cache")
+	calls := 0
+	handler := func(context.Context, []Record) bool { calls++; return true }
+	release := holdRegistry(t, r)
+	s := session(t, other)
+	s.SetConflictHandler(handler)
+	if _, err = s.Acquire(ctx, Resources{Destinations: []string{path}}, false); !errors.Is(err, ErrRegistryBusy) {
+		t.Fatalf("expected ErrRegistryBusy, got %v", err)
+	}
+	release()
+	if calls != 0 {
+		t.Fatalf("handler ran for registry contention: %d", calls)
+	}
+	// A nested extension must fail on overlap with another session.
+	outer := session(t, r)
+	outer.SetConflictHandler(handler)
+	acquire(t, outer, filepath.Join(root, "outer"))
+	acquire(t, session(t, r), path)
+	if _, err = outer.Acquire(ctx, Resources{Destinations: []string{path}}, true); !errors.Is(err, ErrNestedConflict) {
+		t.Fatalf("expected ErrNestedConflict, got %v", err)
+	}
+	if calls != 0 {
+		t.Fatalf("handler ran for a nested request: %d", calls)
+	}
+}
+
+func TestReconcileReportsMissingRecordAsAlreadyReleased(t *testing.T) {
+	r, root := setup(t)
+	s := session(t, r)
+	acquire(t, s, filepath.Join(root, "cache"))
+	all, err := r.Records(ctx)
+	if err != nil || len(all) != 1 {
+		t.Fatalf("records: %+v %v", all, err)
+	}
+	if err = r.Reconcile(ctx, all[0], verified); err != nil {
+		t.Fatal(err)
+	}
+	err = r.Reconcile(ctx, all[0], verified)
+	if !errors.Is(err, ErrAlreadyReleased) || !errors.Is(err, ErrUnverified) {
+		t.Fatalf("second reconcile: %v", err)
+	}
+	// A failed verification is still unverified, never "released".
+	if err = r.Reconcile(ctx, all[0], func(context.Context, Record) error { return errors.New("alive") }); errors.Is(err, ErrAlreadyReleased) {
+		t.Fatalf("failed verification reported as released: %v", err)
+	}
+}

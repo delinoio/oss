@@ -596,19 +596,14 @@ func (a *app) inspect(r preset.Result, doctor bool) error {
 // point; the reason values are process.Recovery identifiers.
 func recoverLeases(ctx context.Context, reg *lease.Registry, records []lease.Record) (recovered, kept []leaseDiagnosis, err error) {
 	for _, v := range records {
-		reason := process.RecoveryJournalUnreadable
-		scope, loadErr := process.LoadScope(v.Ownership)
-		if loadErr == nil {
-			var recoverErr error
-			reason, recoverErr = process.Recover(scope)
-			if recoverErr == nil {
-				if err = reg.Reconcile(ctx, v, func(context.Context, lease.Record) error { return process.Reconcile(scope) }); err != nil {
-					return recovered, kept, err
-				}
-				slog.Info("recovered cache lease", "lease_id", v.ID, "journal_dir", v.Ownership, "reason", string(reason))
-				recovered = append(recovered, leaseDiagnosis{ID: v.ID, Ownership: v.Ownership, Paths: v.Paths, Reason: reason})
-				continue
-			}
+		reason, ok, recoverErr := session.RecoverLease(ctx, reg, v)
+		if recoverErr != nil {
+			return recovered, kept, recoverErr
+		}
+		if ok {
+			slog.Info("recovered cache lease", "lease_id", v.ID, "journal_dir", v.Ownership, "reason", string(reason))
+			recovered = append(recovered, leaseDiagnosis{ID: v.ID, Ownership: v.Ownership, Paths: v.Paths, Reason: reason})
+			continue
 		}
 		slog.Info("cache lease retained", "lease_id", v.ID, "journal_dir", v.Ownership, "reason", string(reason))
 		kept = append(kept, leaseDiagnosis{ID: v.ID, Ownership: v.Ownership, Paths: v.Paths, Reason: reason})

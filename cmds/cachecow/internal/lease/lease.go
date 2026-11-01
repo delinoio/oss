@@ -33,7 +33,37 @@ var (
 	// lock for the whole contention budget. It says nothing about cache use: no
 	// lease overlap was evaluated, so the request is safe to retry unchanged.
 	ErrRegistryBusy = errors.New("lease registry is locked by another ccow process; no cache conflict was found, retry shortly")
+	// ErrAlreadyReleased reports that a reconcile found its record already
+	// removed after verification succeeded. It matches ErrUnverified for callers
+	// that only test that class, but a concurrent recovery that proved the same
+	// tree finished leaves nothing to release, so Session.Finish accepts it.
+	ErrAlreadyReleased error = alreadyReleasedError{}
 )
+
+type alreadyReleasedError struct{}
+
+func (alreadyReleasedError) Error() string {
+	return "lease record was already released after the owner's completion was verified"
+}
+func (alreadyReleasedError) Is(target error) bool { return target == ErrUnverified }
+
+// busyError is the internal form of ErrBusy: it also carries the committed
+// records that overlap the request so a ConflictHandler can examine them.
+type busyError struct{ conflicts []Record }
+
+func (e *busyError) Error() string        { return ErrBusy.Error() }
+func (e *busyError) Is(target error) bool { return target == ErrBusy }
+
+// ConflictHandler is offered the committed records that block an Acquire. It
+// runs outside registry transactions and must release only records whose owners
+// it positively verified as finished (Registry.Reconcile). It returns true when
+// the registry may have changed so the request should be evaluated again at
+// once. It is never called for registry lock contention (ErrRegistryBusy).
+type ConflictHandler func(ctx context.Context, conflicts []Record) bool
+
+// conflictRecheckInterval spaces repeated handler calls while a request waits,
+// so an owner that dies mid-wait is noticed without polling files continuously.
+var conflictRecheckInterval = time.Second
 
 const (
 	// defaultRegistryContentionBudget bounds how long one registry transaction
@@ -266,6 +296,16 @@ type Session struct {
 	registry *Registry
 	record   Record
 	finished bool
+	conflict ConflictHandler
+}
+
+// SetConflictHandler installs the handler Acquire offers conflicting records of
+// a new top-level request. Nested extensions never use it: they fail on any
+// contention to avoid dynamic cycles.
+func (s *Session) SetConflictHandler(h ConflictHandler) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.conflict = h
 }
 
 func (r *Registry) NewSession(ownership string) (*Session, error) {
@@ -311,6 +351,7 @@ func (s *Session) Acquire(ctx context.Context, resources Resources, wait bool) (
 			return Grant{}, errors.New("lease registry must remain outside every cache resource")
 		}
 	}
+	var nextConflictCheck time.Time
 	for {
 		if err := ctx.Err(); err != nil {
 			return Grant{}, err
@@ -330,6 +371,7 @@ func (s *Session) Acquire(ctx context.Context, resources Resources, wait bool) (
 				return err
 			}
 			found := false
+			var conflicts []Record
 			for _, v := range all {
 				if v.ID == s.record.ID {
 					found = true
@@ -338,13 +380,12 @@ func (s *Session) Acquire(ctx context.Context, resources Resources, wait bool) (
 					}
 					continue
 				}
-				for _, p := range paths {
-					for _, q := range v.Paths {
-						if overlap(p, q) {
-							return ErrBusy
-						}
-					}
+				if overlapsAny(paths, v.Paths) {
+					conflicts = append(conflicts, v)
 				}
+			}
+			if len(conflicts) > 0 {
+				return &busyError{conflicts: conflicts}
 			}
 			if len(s.record.Paths) > 0 && !found {
 				return ErrUnverified
@@ -393,6 +434,19 @@ func (s *Session) Acquire(ctx context.Context, resources Resources, wait bool) (
 			if len(s.record.Paths) > 0 {
 				return Grant{}, ErrNestedConflict
 			}
+			// Offer the conflicting records for recovery: always once, and while
+			// waiting again every conflictRecheckInterval. Recovery needs positive
+			// owner-completion evidence, so a live owner is never displaced.
+			var busy *busyError
+			if s.conflict != nil && errors.As(err, &busy) && !time.Now().Before(nextConflictCheck) {
+				nextConflictCheck = time.Now().Add(conflictRecheckInterval)
+				if !wait {
+					nextConflictCheck = time.Now().Add(24 * time.Hour)
+				}
+				if s.conflict(ctx, busy.conflicts) {
+					continue
+				}
+			}
 			if !wait {
 				return Grant{}, ErrBusy
 			}
@@ -422,7 +476,9 @@ func (s *Session) Finish(ctx context.Context, verify Verify) error {
 		s.finished = true
 		return nil
 	}
-	if err := s.registry.reconcile(ctx, s.record, verify); err != nil {
+	// A record another process already released after proving the same
+	// completion needs no further release.
+	if err := s.registry.reconcile(ctx, s.record, verify); err != nil && !errors.Is(err, ErrAlreadyReleased) {
 		return err
 	}
 	s.finished = true
@@ -463,7 +519,7 @@ func (r *Registry) reconcile(ctx context.Context, record Record, verify Verify) 
 				return err
 			}
 		}
-		return ErrUnverified
+		return ErrAlreadyReleased
 	})
 }
 func equal(a, b Record) bool {
@@ -548,6 +604,16 @@ func contains(parent, child string) bool {
 		}
 		if filepath.Dir(p) == p {
 			break
+		}
+	}
+	return false
+}
+func overlapsAny(requested, held []string) bool {
+	for _, p := range requested {
+		for _, q := range held {
+			if overlap(p, q) {
+				return true
+			}
 		}
 	}
 	return false

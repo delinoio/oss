@@ -165,6 +165,7 @@ func Hooks(validate Validate, recordHooks ...RecordHooks) process.SupervisorHook
 				r.Close()
 				return fail(e)
 			}
+			session.SetConflictHandler(ConflictHandler(r, scope.Stderr))
 			s = &server{scope: scope, registry: r, session: session, validate: validate, root: p.Root, records: records, initial: p, pending: map[string]Plan{}, ambiguous: map[string]bool{}, tickets: map[string]*nestedRecord{}}
 			result, e := s.apply(scope.Context, p, false)
 			if e != nil {
@@ -229,6 +230,69 @@ func Hooks(validate Validate, recordHooks ...RecordHooks) process.SupervisorHook
 				return process.Reconcile(scope)
 			})
 		},
+	}
+}
+
+// RecoverLease applies the journal recovery rules to one lease record and
+// removes the record only when its owner is provably finished (durable
+// completion, or native identity evidence). It is shared by ccow doctor and by
+// waiting or cleaning commands. recovered is false when the lease is kept; the
+// returned reason says why in both cases. Registry contention is returned as
+// lease.ErrRegistryBusy and leaves the record in place.
+func RecoverLease(ctx context.Context, reg *lease.Registry, record lease.Record) (reason process.Recovery, recovered bool, err error) {
+	reason = process.RecoveryJournalUnreadable
+	scope, err := process.LoadScope(record.Ownership)
+	if err != nil {
+		return reason, false, nil
+	}
+	reason, err = process.Recover(scope)
+	if err != nil {
+		return reason, false, nil
+	}
+	err = reg.Reconcile(ctx, record, func(context.Context, lease.Record) error { return process.Reconcile(scope) })
+	// A concurrent recovery or the finishing supervisor may have deleted the
+	// record after the same proof; the cache is no longer held either way.
+	if err != nil && !errors.Is(err, lease.ErrAlreadyReleased) {
+		return reason, false, err
+	}
+	return reason, true, nil
+}
+
+// ConflictHandler returns the lease.ConflictHandler used by supervisor
+// sessions. For each conflicting lease whose owner is provably finished it
+// releases the lease so the waiting or cleaning request proceeds. A lease that
+// stays blocked for any reason other than a running owner produces one stderr
+// notice per lease and supervisor naming the cache paths and journal directory,
+// because the command would otherwise wait silently at the default log level.
+// notice may be nil.
+func ConflictHandler(reg *lease.Registry, notice io.Writer) lease.ConflictHandler {
+	var mu sync.Mutex
+	told := map[string]bool{}
+	return func(ctx context.Context, conflicts []lease.Record) bool {
+		changed := false
+		for _, v := range conflicts {
+			reason, recovered, err := RecoverLease(ctx, reg, v)
+			switch {
+			case err != nil:
+				// Contention or cancellation says nothing about the owner; retry later.
+				slog.Debug("conflicting lease recovery deferred", "lease_id", v.ID, "error", err)
+			case recovered:
+				slog.Debug("recovered cache lease of a finished owner", "lease_id", v.ID, "journal_dir", v.Ownership, "reason", string(reason))
+				changed = true
+			case reason == process.RecoveryOwnerRunning:
+				slog.Debug("cache lease is held by a running owner", "lease_id", v.ID, "journal_dir", v.Ownership)
+			default:
+				slog.Debug("cache lease retained", "lease_id", v.ID, "journal_dir", v.Ownership, "reason", string(reason))
+				mu.Lock()
+				first := !told[v.ID]
+				told[v.ID] = true
+				mu.Unlock()
+				if first && notice != nil {
+					fmt.Fprintf(notice, "ccow: cache %s is locked by lease %s whose process journal %s is incomplete (%s); it cannot be released automatically. If no managed build is running, inspect it with `ccow doctor`.\n", strings.Join(v.Paths, ", "), v.ID, v.Ownership, reason)
+				}
+			}
+		}
+		return changed
 	}
 }
 

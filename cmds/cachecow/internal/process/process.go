@@ -52,12 +52,16 @@ type Streams struct{ Stdin, Stdout, Stderr *os.File }
 // Scope contains no command arguments, environment, or captured child output.
 // Directory is a unique private journal directory beneath the supplied state root.
 type Scope struct {
-	Context   context.Context `json:"-"`
-	Version   int             `json:"version"`
-	ID        string          `json:"id"`
-	Directory string          `json:"directory"`
-	OwnerPID  int             `json:"owner_pid"`
-	NativeID  uint64          `json:"native_id,omitempty"`
+	Context context.Context `json:"-"`
+	// Stderr is set only inside the supervisor, on the Scope passed to
+	// SupervisorHooks. It is the stderr stream the calling CLI supplied, so a
+	// hook can show a user-visible notice. It is never persisted.
+	Stderr    io.Writer `json:"-"`
+	Version   int       `json:"version"`
+	ID        string    `json:"id"`
+	Directory string    `json:"directory"`
+	OwnerPID  int       `json:"owner_pid"`
+	NativeID  uint64    `json:"native_id,omitempty"`
 	// BootID identifies the boot session that owned the supervisor (version 2,
 	// Linux and macOS). A different current boot is proof that every process of
 	// the previous boot, including the whole owned tree, has exited.
@@ -482,6 +486,9 @@ func supervise(dir, endpoint string, hooks SupervisorHooks) int {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	scope.Context = ctx
+	if streams.Stderr != nil {
+		scope.Stderr = streams.Stderr
+	}
 	signals, stopSignals := terminationSignals()
 	defer stopSignals()
 	stopControl := context.AfterFunc(ctx, func() { _ = conn.Close() })
