@@ -1,5 +1,15 @@
 // Stable public routes shared by generated-output validators.
 export const projectRoutes = {
+  cachecow: [
+    "/",
+    "/installation",
+    "/configuration",
+    "/cache",
+    "/concurrency",
+    "/shims",
+    "/output",
+    "/troubleshooting",
+  ],
   clibox: [
     "/releases",
     "/troubleshooting",
