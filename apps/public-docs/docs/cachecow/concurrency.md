@@ -33,7 +33,7 @@ If a run ends unexpectedly:
 
 ### What `ccow doctor` can recover
 
-A build can lose its CacheCow supervisor before the supervisor records that the build finished, for example after a reboot, power loss, or a `SIGKILL` or out-of-memory kill of the supervisor. CacheCow releases the lease for such a build only when the operating system gives positive proof that the whole process tree has exited. Run `ccow doctor` to apply that check. It never releases a lease because a process ID is missing or because time has passed.
+A build can lose its CacheCow supervisor before the supervisor records that the build finished, for example after a reboot, power loss, or a `SIGKILL` or out-of-memory kill of the supervisor. CacheCow releases the lease for such a build only when the operating system gives positive proof that the whole process tree has exited. `ccow doctor` applies that check to every lease. A waiting managed command and `ccow clean` apply it to the leases that block them, so after a reboot, or when a killed supervisor leaves a provably finished build, you do not need to run `ccow doctor` first. It never releases a lease because a process ID is missing or because time has passed.
 
 | Platform | Evidence CacheCow records and checks                                                                                                                                |
 | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -46,6 +46,8 @@ Limits:
 - On Linux, if only the supervisor is killed and the machine does not reboot, descendants of the build can keep running, so the lease stays until the next reboot.
 - Journals written by earlier CacheCow versions carry no recovery identity. If one is incomplete, it stays protected and cannot recover automatically.
 - If CacheCow cannot read the current identity, it keeps the lease.
+
+When a lease blocks a command and cannot be released, CacheCow keeps the command waiting (`ccow clean` fails with `cache is in use`) and prints one notice on stderr, at the default log level, that names the cache path, the lease and the journal directory with the reason. A lease whose build is still running is ordinary waiting and prints no notice. Registry lock contention is reported separately and is not treated as a lease conflict.
 
 `ccow doctor` lists every lease it released under `recoveredLeases` and every lease it kept under `keptLeases`, each with a reason: `native-completion`, `journal-complete`, `owner-running`, `same-boot-descendants-may-survive`, `incomplete-journal-without-native-identity`, `identity-check-failed`, or `journal-unreadable`. Older CacheCow versions cannot read the newer journals and keep their leases.
 
