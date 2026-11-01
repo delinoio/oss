@@ -66,6 +66,26 @@ func TestClassification(t *testing.T) {
 		{Rsbuild, []string{"--version"}, Passthrough, Query},
 		{Rsbuild, []string{"--port", "3000", "--help"}, Passthrough, Query},
 		{Rsbuild, []string{"--port"}, Passthrough, Unknown},
+		{Rspack, []string{"server"}, Managed, CacheOperation},
+		{Rspack, []string{"s"}, Managed, CacheOperation},
+		{Rspack, []string{"--config", "x.js", "server"}, Managed, CacheOperation},
+		{Rspack, []string{"bundle"}, Managed, CacheOperation},
+		{Rspack, []string{"b"}, Managed, CacheOperation},
+		{Rspack, []string{"--mode=production", "bundle"}, Managed, CacheOperation},
+		{Rspack, []string{"b", "--watch"}, Managed, CacheOperation},
+		{Rspack, []string{"dev"}, Managed, CacheOperation},
+		{Rspack, []string{"watch"}, Managed, CacheOperation},
+		{Rspack, []string{"p"}, Passthrough, Query},
+		{Rspack, []string{"p", "dist"}, Passthrough, Query},
+		{Rspack, []string{"preview"}, Passthrough, Query},
+		{Rspack, []string{"s", "--help"}, Passthrough, Query},
+		{Rspack, []string{"bundle", "--version"}, Passthrough, Query},
+		{Rspack, []string{"custom"}, Passthrough, Unknown},
+		{Rsbuild, []string{"server"}, Passthrough, Unknown},
+		{Rsbuild, []string{"s"}, Passthrough, Unknown},
+		{Rsbuild, []string{"bundle"}, Passthrough, Unknown},
+		{Rsbuild, []string{"b"}, Passthrough, Unknown},
+		{Rsbuild, []string{"p"}, Passthrough, Unknown},
 	}
 	for _, tt := range tests {
 		before := append([]string(nil), tt.args...)
@@ -78,7 +98,7 @@ func TestClassification(t *testing.T) {
 		}
 	}
 	for _, tool := range Tools() {
-		for _, args := range [][]string{{"build"}, {"clean"}, {"--version"}, nil} {
+		for _, args := range [][]string{{"build"}, {"clean"}, {"--version"}, {"s"}, nil} {
 			if got := Classify(tool, args, false, ""); got.Mode != Passthrough || got.Reason != OutsideGit {
 				t.Fatal(got)
 			}
