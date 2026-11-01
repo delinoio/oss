@@ -102,7 +102,7 @@
         "$TURBO_ROOT$/.github/**",
         "$TURBO_ROOT$/docs/repository-*-contract.md",
         "$TURBO_ROOT$/packages/ccow/**",
-        "$TURBO_ROOT$/cmds/cachecow/**",
+        "$TURBO_ROOT$/crates/cachecow/**",
         "$TURBO_ROOT$/docs/packages-ccow-distribution-contract.md"
       ],
       "outputs": [],

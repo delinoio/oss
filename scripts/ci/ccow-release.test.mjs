@@ -62,7 +62,7 @@ test("normal affected CI runs CacheCow distribution tests without native allocat
   for (const event of Object.values(Event))
     for (const file of [
       "packages/ccow/src/launcher.cjs",
-      "cmds/cachecow/main.go",
+      "crates/cachecow/src/main.rs",
       "scripts/release/ccow-acceptance.mjs",
       "scripts/release/ccow-publish.mjs",
       "scripts/release/ccow-publish.test.mjs",
