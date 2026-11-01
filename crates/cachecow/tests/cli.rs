@@ -507,25 +507,40 @@ fn interactive(f: &Fixture, cwd: &str, args: &[&str], answers: &str) -> (i32, St
     let pid = child.id();
     let (tx, rx) = mpsc::channel();
     let stdout = child.stdout.take();
-    let stderr = child.stderr.take();
+    let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let stderr_reader = child.stderr.take().map(|mut s| {
+        let captured = captured.clone();
+        thread::spawn(move || {
+            let mut buf = [0u8; 1024];
+            while let Ok(n) = s.read(&mut buf) {
+                if n == 0 {
+                    break;
+                }
+                captured.lock().unwrap().extend_from_slice(&buf[..n]);
+            }
+        })
+    });
     thread::spawn(move || {
         let mut out = String::new();
-        let mut err = String::new();
         if let Some(mut s) = stdout {
             let _ = s.read_to_string(&mut out);
         }
-        if let Some(mut s) = stderr {
-            let _ = s.read_to_string(&mut err);
+        if let Some(reader) = stderr_reader {
+            let _ = reader.join();
         }
-        let _ = tx.send((out, err));
+        let _ = tx.send(out);
     });
-    let (out, err) = rx
+    let out = rx
         .recv_timeout(Duration::from_secs(60))
         .unwrap_or_else(|_| {
             // SAFETY: signalling a child process ID owned by this test.
             unsafe { libc::kill(pid as i32, libc::SIGKILL) };
-            panic!("interactive command timed out");
+            panic!(
+                "interactive command timed out; stderr so far:\n{}",
+                String::from_utf8_lossy(&captured.lock().unwrap())
+            );
         });
+    let err = String::from_utf8_lossy(&captured.lock().unwrap()).into_owned();
     let code = child.wait().unwrap().code().unwrap_or(-1);
     drop(term);
     (code, out, err)
@@ -715,11 +730,19 @@ wait
     );
     let mut outer = spawn_quiet(f.cmd(&f.main, &["run", "--", "cargo", "build"]));
     wait_file(&join(&f.main, "target/inner-ready"));
-    let pid: i32 = fs::read_to_string(join(&f.main, "target/nested-pid"))
-        .unwrap()
-        .trim()
-        .parse()
-        .unwrap();
+    // The outer shell records the nested PID concurrently with the inner
+    // command's readiness; wait for a complete value.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    let pid: i32 = loop {
+        if let Some(pid) = fs::read_to_string(join(&f.main, "target/nested-pid"))
+            .ok()
+            .and_then(|s| s.trim().parse().ok())
+        {
+            break pid;
+        }
+        assert!(Instant::now() < deadline, "nested PID was not recorded");
+        thread::sleep(Duration::from_millis(20));
+    };
     let start = Instant::now();
     // SAFETY: signalling the nested ccow started by this fixture.
     assert_eq!(unsafe { libc::kill(pid, libc::SIGTERM) }, 0);

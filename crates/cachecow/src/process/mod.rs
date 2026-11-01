@@ -706,6 +706,12 @@ fn supervise(dir: &str, endpoint: &str, hooks: SupervisorHooks) -> i32 {
         }) => c,
         _ => return sup.finish(),
     };
+    // Closing the control channel only interrupts the startup exchange. Once
+    // the command is received, keep it open so the caller observes completion
+    // only through the drained tree's final frame, never at cancellation time.
+    if let Some(stop) = sup.stop_control.take() {
+        stop.stop();
+    }
     if let Ok(mut reader) = sup.conn.try_clone() {
         let cancel = cancel.clone();
         let _ = std::thread::Builder::new()

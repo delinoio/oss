@@ -327,8 +327,9 @@ impl App {
                     self.plan(action, &current, argv, false)
                 }
                 "3" if action == "run" => match self.build_source_first(&current, argv)? {
-                    Some(code) => return Ok(code),
-                    None => Err(failure),
+                    SourceBuild::Failed(code) => return Ok(code),
+                    SourceBuild::Built => self.plan(action, &current, argv, false),
+                    SourceBuild::Skipped => Err(failure),
                 },
                 "4" => return Err(anyhow!("operation cancelled")),
                 _ => Err(failure),
@@ -337,13 +338,12 @@ impl App {
     }
 
     /// Choice 3: runs the exact requested command in the source after
-    /// confirmation. Returns `Some(code)` to stop with that result, or `None`
-    /// to retry the derived plan.
+    /// confirmation.
     fn build_source_first(
         &mut self,
         current: &PresetResult,
         argv: &[String],
-    ) -> Result<Option<i32>> {
+    ) -> Result<SourceBuild> {
         let settings = self.store.settings(&current.repository.id)?;
         let src = match repository::select_source(
             &self.ctx,
@@ -354,12 +354,12 @@ impl App {
             Ok(src) => src,
             Err(e) => {
                 notice(&error_text(&e));
-                return Ok(None);
+                return Ok(SourceBuild::Skipped);
             }
         };
         if src.is_self {
             notice("Source is the current worktree; choose build here instead.");
-            return Ok(None);
+            return Ok(SourceBuild::Skipped);
         }
         let source_cwd = source_working_directory(&current.repository, &src.repository.root)?;
         notice(&format!(
@@ -367,21 +367,21 @@ impl App {
             quote_argv(argv)
         ));
         if !self.confirm("Run this exact command in the source?")? {
-            return Ok(None);
+            return Ok(SourceBuild::Skipped);
         }
         let source_result = match self.discover(&source_cwd, argv) {
             Ok(r) => r,
             Err(e) => {
                 notice(&error_text(&e));
-                return Ok(None);
+                return Ok(SourceBuild::Skipped);
             }
         };
         let (sp, sc) = self.plan("run", &source_result, argv, true)?;
         let code = self.execute(&sp, sc)?;
         if code != 0 {
-            return Ok(Some(code));
+            return Ok(SourceBuild::Failed(code));
         }
-        Ok(None)
+        Ok(SourceBuild::Built)
     }
 
     /// Builds the supervisor plan and the command to run.
@@ -638,6 +638,17 @@ impl App {
         }
         self.output(&out)
     }
+}
+
+/// Outcome of the interactive "build source first" choice.
+enum SourceBuild {
+    /// Not built (declined, unusable selection or failed discovery); prompt
+    /// again with the previous failure.
+    Skipped,
+    /// The source build succeeded; plan the derived operation again.
+    Built,
+    /// The source build exited with this nonzero code; stop with it.
+    Failed(i32),
 }
 
 fn report_copy(result: &LifecycleResult) {

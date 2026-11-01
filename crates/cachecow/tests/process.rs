@@ -379,7 +379,10 @@ mod unix_tests {
             shell(&dir, "trap '' TERM; touch ready; while :; do sleep 1; done"),
             Streams::default(),
             &mut |s| {
-                fs::write(paths::join2(&dir, "owned"), &s.directory)?;
+                // Publish atomically: the test reads the path once it exists.
+                let staged = paths::join2(&dir, "owned.tmp");
+                fs::write(&staged, &s.directory)?;
+                fs::rename(&staged, paths::join2(&dir, "owned"))?;
                 Ok(())
             },
             &mut |_| Ok(()),
@@ -598,11 +601,12 @@ mod unix_tests {
             Duration::from_secs(10)
         ));
         process::request_termination(scope.owner_pid).unwrap();
-        // The supervisor closes control as soon as it is cancelled, so the
-        // caller (whose own context is live) reports unproven completion, as in
-        // Go. The supervisor still drains and records the child's status.
-        let (_r, e) = runner.join().unwrap();
-        assert!(e.is_err());
+        // Cancellation does not close the control channel after the command
+        // started: the caller (whose own context is live) observes completion
+        // only through the final frame, after the supervisor drained the tree.
+        let (r, e) = runner.join().unwrap();
+        e.unwrap();
+        assert_eq!(r.exit_code, 7);
         assert!(wait_for(
             &paths::join2(&scope.directory, "test-drained"),
             Duration::from_secs(10)
