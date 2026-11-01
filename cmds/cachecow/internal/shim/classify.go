@@ -81,7 +81,7 @@ func Classify(tool Tool, args []string, inGit bool, bypass string) Classificatio
 		a := args[i]
 		if tool != Cargo {
 			// Frontend CLIs accept common options before the subcommand. Rspack
-			// also uses its default build command when only build options occur.
+			// and Rsbuild also use a default command when only options occur.
 			switch a {
 			case "--watch", "-w", "--hot", "--no-hot", "--open", "--no-open":
 				i++
@@ -120,7 +120,8 @@ func Classify(tool Tool, args []string, inGit bool, bypass string) Classificatio
 		}
 	}
 	if i == len(args) {
-		if tool == Rspack {
+		// Rspack defaults to build and Rsbuild defaults to the dev server.
+		if tool == Rspack || tool == Rsbuild {
 			return Classification{Managed, CacheOperation}
 		}
 		return pass(Query)

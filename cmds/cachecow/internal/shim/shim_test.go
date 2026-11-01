@@ -54,6 +54,18 @@ func TestClassification(t *testing.T) {
 		{Rsbuild, []string{"preview"}, Passthrough, Query},
 		{Rsbuild, []string{"inspect"}, Passthrough, Query},
 		{Rsbuild, []string{"custom"}, Passthrough, Unknown},
+		{Rsbuild, nil, Managed, CacheOperation},
+		{Rsbuild, []string{"--port", "3000"}, Managed, CacheOperation},
+		{Rsbuild, []string{"--port=3000"}, Managed, CacheOperation},
+		{Rsbuild, []string{"--open"}, Managed, CacheOperation},
+		{Rsbuild, []string{"-c", "rsbuild.config.ts"}, Managed, CacheOperation},
+		{Rsbuild, []string{"--config=rsbuild.config.ts"}, Managed, CacheOperation},
+		{Rsbuild, []string{"--host", "0.0.0.0"}, Managed, CacheOperation},
+		{Rsbuild, []string{"--help"}, Passthrough, Query},
+		{Rsbuild, []string{"-h"}, Passthrough, Query},
+		{Rsbuild, []string{"--version"}, Passthrough, Query},
+		{Rsbuild, []string{"--port", "3000", "--help"}, Passthrough, Query},
+		{Rsbuild, []string{"--port"}, Passthrough, Unknown},
 	}
 	for _, tt := range tests {
 		before := append([]string(nil), tt.args...)
@@ -66,7 +78,7 @@ func TestClassification(t *testing.T) {
 		}
 	}
 	for _, tool := range Tools() {
-		for _, args := range [][]string{{"build"}, {"clean"}, {"--version"}} {
+		for _, args := range [][]string{{"build"}, {"clean"}, {"--version"}, nil} {
 			if got := Classify(tool, args, false, ""); got.Mode != Passthrough || got.Reason != OutsideGit {
 				t.Fatal(got)
 			}
