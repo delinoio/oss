@@ -110,3 +110,12 @@ func startUnix(cmd *exec.Cmd) (<-chan int, error) {
 	}()
 	return done, nil
 }
+
+// pidAlive is diagnostic only (doctor reasons). It never proves completion.
+func pidAlive(pid int) bool {
+	if pid <= 0 {
+		return false
+	}
+	err := syscall.Kill(pid, 0)
+	return err == nil || errors.Is(err, syscall.EPERM)
+}

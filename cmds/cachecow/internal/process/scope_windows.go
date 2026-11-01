@@ -1,6 +1,7 @@
 package process
 
 import (
+	"errors"
 	"os/exec"
 	"syscall"
 	"unsafe"
@@ -14,7 +15,21 @@ type windowsBackend struct {
 	signalled bool
 }
 
-func newBackend(_ *Scope) (nativeBackend, error) {
+// ownerCreation returns the creation time (FILETIME) of the current process.
+func ownerCreation() (int64, error) {
+	var created, exit, kernel, user windows.Filetime
+	if err := windows.GetProcessTimes(windows.CurrentProcess(), &created, &exit, &kernel, &user); err != nil {
+		return 0, err
+	}
+	return int64(created.HighDateTime)<<32 | int64(created.LowDateTime), nil
+}
+
+func newBackend(s *Scope) (nativeBackend, error) {
+	created, err := ownerCreation()
+	if err != nil || created == 0 {
+		return nil, infrastructureError("supervisor creation time is unavailable")
+	}
+	s.OwnerCreated = created
 	job, err := windows.CreateJobObject(nil, nil)
 	if err != nil {
 		return nil, err
@@ -81,5 +96,44 @@ func (b *windowsBackend) empty(rootDone bool) (bool, error) {
 	return err == nil && info.ActiveProcesses == 0, err
 }
 
-// This backend has no persistent native identity for post-supervisor recovery.
-func nativeCompletion(Scope) bool { return false }
+// probeOwner is replaceable in tests. ERROR_INVALID_PARAMETER from OpenProcess
+// means no process has this PID; every other failure (for example access
+// denied) is an error and therefore not evidence.
+var probeOwner = func(pid int) (ownerProbe, error) {
+	h, err := windows.OpenProcess(windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE, false, uint32(pid))
+	if err != nil {
+		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+			return ownerProbe{}, nil
+		}
+		return ownerProbe{}, err
+	}
+	defer windows.CloseHandle(h)
+	var created, exit, kernel, user windows.Filetime
+	if err = windows.GetProcessTimes(h, &created, &exit, &kernel, &user); err != nil {
+		return ownerProbe{}, err
+	}
+	probe := ownerProbe{Found: true, Created: int64(created.HighDateTime)<<32 | int64(created.LowDateTime)}
+	switch event, err := windows.WaitForSingleObject(h, 0); {
+	case err != nil:
+		return ownerProbe{}, err
+	case event == windows.WAIT_OBJECT_0:
+		probe.Exited = true
+	case event != uint32(windows.WAIT_TIMEOUT):
+		return ownerProbe{}, errors.New("unexpected process wait result")
+	}
+	return probe, nil
+}
+
+// The supervisor holds the only handle to its unnamed, non-inheritable job,
+// and the job has JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: when the supervisor
+// process ends, Windows terminates every process in the job. A supervisor
+// identity (PID plus creation time) that no longer names a running process is
+// therefore whole-tree proof, with or without a reboot. A bare missing PID is
+// not enough because the journal must also carry the creation time. Windows has
+// no documented user-mode boot identity, so none is used.
+func completionEvidence(s Scope) (bool, error) { return ownerIdentityGone(s, probeOwner) }
+
+func ownerRunning(s Scope) bool {
+	p, err := probeOwner(s.OwnerPID)
+	return err == nil && p.Found && !p.Exited && p.Created == s.OwnerCreated
+}

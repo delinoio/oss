@@ -341,6 +341,14 @@ func TestSupervisorDeathBlocksRecovery(t *testing.T) {
 	if !errors.Is(Reconcile(scope), ErrReconciliation) {
 		t.Fatal("dead supervisor unlocked unfinished scope")
 	}
+	// The live supervisor journaled its boot identity before Owned ran, but in
+	// the same boot the surviving descendant keeps the journal protected.
+	if scope.Version != 2 || scope.BootID == "" {
+		t.Fatalf("supervisor journal lacks native identity: %+v", scope)
+	}
+	if reason, err := Recover(scope); !errors.Is(err, ErrReconciliation) || reason != RecoverySameBoot {
+		t.Fatalf("same-boot dead supervisor: reason=%q err=%v", reason, err)
+	}
 }
 func TestStartFailureExitCodes(t *testing.T) {
 	dir := stateRoot(t)

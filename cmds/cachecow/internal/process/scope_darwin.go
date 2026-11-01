@@ -46,7 +46,16 @@ func coalitionCount(id uint64) (uint64, error) {
 	}
 	return usage[0] - usage[1], nil
 }
+
+// currentBootID is replaceable in tests. kern.bootsessionuuid changes on each boot.
+var currentBootID = func() (string, error) { return unix.Sysctl("kern.bootsessionuuid") }
+
 func newBackend(s *Scope) (nativeBackend, error) {
+	boot, err := currentBootID()
+	if err != nil || boot == "" {
+		return nil, infrastructureError("boot identity is unavailable")
+	}
+	s.BootID = boot
 	id, err := coalition(os.Getpid())
 	if err != nil {
 		return nil, err
@@ -97,7 +106,7 @@ func launch(s Scope, endpoint string, _ Streams) (func(), error) {
 		deadline := time.Now().Add(time.Second)
 		for {
 			id, err := coalition(saved.OwnerPID)
-			if nativeCompletion(saved) || errors.Is(syscall.Kill(saved.OwnerPID, 0), syscall.ESRCH) || (err == nil && id != saved.NativeID) {
+			if coalitionEmpty(saved) || errors.Is(syscall.Kill(saved.OwnerPID, 0), syscall.ESRCH) || (err == nil && id != saved.NativeID) {
 				_ = ctl("bootout", domain+"/"+label)
 				return
 			}
@@ -161,12 +170,22 @@ func (b *darwinBackend) signal(force bool) error {
 	return nil
 }
 
-// A surviving coalition with zero members is positive whole-tree evidence.
-// Missing or unsupported coalition accounting is not evidence of completion.
-func nativeCompletion(s Scope) bool {
+// A different boot session proves every process of the recorded boot has
+// exited. In the same boot, a surviving coalition with zero members is positive
+// whole-tree evidence. Missing or unsupported coalition accounting is not
+// evidence of completion.
+func completionEvidence(s Scope) (bool, error) {
+	if changed, err := bootChanged(s, currentBootID); err != nil || changed {
+		return changed, err
+	}
+	return coalitionEmpty(s), nil
+}
+func coalitionEmpty(s Scope) bool {
 	if s.NativeID == 0 {
 		return false
 	}
 	n, err := coalitionCount(s.NativeID)
 	return err == nil && n == 0
 }
+
+func ownerRunning(s Scope) bool { return pidAlive(s.OwnerPID) }

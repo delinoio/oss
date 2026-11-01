@@ -32,7 +32,7 @@ func TestReconcileRequiresDurableCompletion(t *testing.T) {
 	if err := Reconcile(s); err != nil {
 		t.Fatal(err)
 	}
-	s.Version = 2
+	s.Version = 3
 	if err := save(s); err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestReconcileRequiresDurableCompletion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(raw), `"version":2`) {
+	if !strings.Contains(string(raw), `"version":3`) {
 		t.Fatal("unknown journal rewritten")
 	}
 }

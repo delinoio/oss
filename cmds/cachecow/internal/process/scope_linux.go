@@ -13,11 +13,27 @@ import (
 
 // A dedicated subreaper retains orphan ancestry even when a descendant calls
 // setsid. No writable delegated cgroup is assumed: most user sessions do not
-// have one. If the subreaper dies, its unfinished journal remains blocked.
+// have one. If the subreaper dies, its unfinished journal remains blocked until the
+// next boot, which the journal's boot_id proves.
 // Requiring pidfd avoids signalling a recycled PID while enumerating the tree.
 type linuxBackend struct{ signalled map[string]bool }
 
-func newBackend(_ *Scope) (nativeBackend, error) {
+// currentBootID is replaceable in tests. random(4) documents that boot_id is
+// generated once per boot, so it changes across reboots and never otherwise.
+var currentBootID = func() (string, error) {
+	raw, err := os.ReadFile("/proc/sys/kernel/random/boot_id")
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(raw)), nil
+}
+
+func newBackend(s *Scope) (nativeBackend, error) {
+	boot, err := currentBootID()
+	if err != nil || boot == "" {
+		return nil, infrastructureError("boot identity is unavailable")
+	}
+	s.BootID = boot
 	if err := unix.Prctl(unix.PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0); err != nil {
 		return nil, err
 	}
@@ -142,5 +158,9 @@ func (b *linuxBackend) empty(rootDone bool) (bool, error) {
 	}
 }
 
-// This backend has no persistent native identity for post-supervisor recovery.
-func nativeCompletion(Scope) bool { return false }
+// A different boot proves every process of the recorded boot has exited,
+// including descendants of a dead subreaper. In the same boot a killed
+// subreaper leaves orphans running, so no completion can be inferred.
+func completionEvidence(s Scope) (bool, error) { return bootChanged(s, currentBootID) }
+
+func ownerRunning(s Scope) bool { return pidAlive(s.OwnerPID) }

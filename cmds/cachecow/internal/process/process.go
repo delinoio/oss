@@ -20,6 +20,15 @@ import (
 )
 
 const supervisorArgument = "__ccow_process_supervisor_v1"
+
+// Journal versions. Version 1 carries no native identity for recovery after
+// the supervisor dies. Version 2 adds BootID or OwnerCreated, written before
+// any lease is acquired. Older binaries reject version 2 and fail closed.
+const (
+	journalVersionLegacy   = 1
+	journalVersionIdentity = 2
+)
+
 const GracePeriod = 5 * time.Second
 
 var ErrReconciliation = errors.New("cannot prove the owned process tree has exited; retain the cache claim and retry recovery")
@@ -49,9 +58,16 @@ type Scope struct {
 	Directory string          `json:"directory"`
 	OwnerPID  int             `json:"owner_pid"`
 	NativeID  uint64          `json:"native_id,omitempty"`
-	Started   bool            `json:"started"`
-	Complete  bool            `json:"complete"`
-	ExitCode  int             `json:"exit_code"`
+	// BootID identifies the boot session that owned the supervisor (version 2,
+	// Linux and macOS). A different current boot is proof that every process of
+	// the previous boot, including the whole owned tree, has exited.
+	BootID string `json:"boot_id,omitempty"`
+	// OwnerCreated is the supervisor creation time as a Windows FILETIME
+	// (version 2, Windows). With OwnerPID it names one supervisor process.
+	OwnerCreated int64 `json:"owner_created,omitempty"`
+	Started      bool  `json:"started"`
+	Complete     bool  `json:"complete"`
+	ExitCode     int   `json:"exit_code"`
 }
 
 // Hooks integrate durable cache ownership. Owned MUST durably associate the
@@ -105,7 +121,7 @@ func Run(ctx context.Context, stateRoot string, command Command, streams Streams
 	if err = os.Mkdir(dir, 0700); err != nil {
 		return result, err
 	}
-	scope := Scope{Version: 1, ID: id.String(), Directory: dir, ExitCode: 125}
+	scope := Scope{Version: journalVersionLegacy, ID: id.String(), Directory: dir, ExitCode: 125}
 	result.Scope = scope
 	if err = save(scope); err != nil {
 		return result, err
@@ -213,7 +229,7 @@ func LoadScope(directory string) (Scope, error) {
 	if !filepath.IsAbs(directory) || filepath.Clean(directory) != directory {
 		return Scope{}, ErrReconciliation
 	}
-	return read(Scope{Version: 1, ID: filepath.Base(directory), Directory: directory})
+	return read(Scope{Version: journalVersionLegacy, ID: filepath.Base(directory), Directory: directory})
 }
 
 // Reconcile accepts durable completion or positive native whole-tree evidence.
@@ -236,6 +252,110 @@ func Reconcile(scope Scope) error {
 		}
 	}
 	return nil
+}
+
+// Recovery explains the outcome of Recover. Values are stable identifiers
+// reported by ccow doctor.
+type Recovery string
+
+const (
+	// RecoveryJournalComplete: the supervisor durably recorded completion.
+	RecoveryJournalComplete Recovery = "journal-complete"
+	// RecoveryNativeCompletion: native identity proved the owned tree exited
+	// although the supervisor never wrote completion; the journal now says so.
+	RecoveryNativeCompletion Recovery = "native-completion"
+	// RecoveryOwnerRunning: the recorded supervisor still appears to run.
+	RecoveryOwnerRunning Recovery = "owner-running"
+	// RecoveryNoNativeIdentity: an incomplete journal without usable identity
+	// (version 1 or an empty identity). It cannot be recovered automatically.
+	RecoveryNoNativeIdentity Recovery = "incomplete-journal-without-native-identity"
+	// RecoverySameBoot: the identity matches the current boot (or supervisor), so
+	// descendants of a dead supervisor may survive. Retained until a reboot.
+	RecoverySameBoot Recovery = "same-boot-descendants-may-survive"
+	// RecoveryIdentityCheckFailed: the current identity could not be read.
+	RecoveryIdentityCheckFailed Recovery = "identity-check-failed"
+	// RecoveryJournalUnreadable: the journal is missing, malformed or unsupported.
+	RecoveryJournalUnreadable Recovery = "journal-unreadable"
+)
+
+// Recover is the single recovery entry point used by ccow doctor. It applies
+// the same rules as Reconcile and also reports why a journal was accepted or
+// kept. It returns nil only when ownership is provably complete. A PID that no
+// longer exists, or elapsed time, never permits release by itself.
+func Recover(scope Scope) (Recovery, error) {
+	s, err := read(scope)
+	if err != nil || s.OwnerPID <= 0 {
+		return RecoveryJournalUnreadable, ErrReconciliation
+	}
+	if s.Complete {
+		return RecoveryJournalComplete, nil
+	}
+	evidence, evidenceErr := completionEvidence(s)
+	if evidenceErr == nil && evidence {
+		if err = Reconcile(scope); err != nil {
+			return RecoveryJournalUnreadable, ErrReconciliation
+		}
+		return RecoveryNativeCompletion, nil
+	}
+	reason := RecoveryNoNativeIdentity
+	switch {
+	case evidenceErr != nil:
+		reason = RecoveryIdentityCheckFailed
+	case s.Version != journalVersionIdentity || !hasIdentity(s):
+	case ownerRunning(s):
+		reason = RecoveryOwnerRunning
+	default:
+		reason = RecoverySameBoot
+	}
+	slog.Debug("process journal retained", "scope_id", s.ID, "reason", string(reason))
+	return reason, ErrReconciliation
+}
+
+// nativeCompletion is positive native whole-tree evidence for an incomplete
+// journal. Any error or missing identity is not evidence.
+func nativeCompletion(s Scope) bool {
+	ok, err := completionEvidence(s)
+	return err == nil && ok
+}
+
+// hasIdentity reports whether the journal carries the identity its platform records.
+func hasIdentity(s Scope) bool { return s.BootID != "" || s.OwnerCreated != 0 }
+
+// bootChanged is true only when both boot identities are known and differ.
+// An unreadable current boot is an error, never evidence.
+func bootChanged(s Scope, current func() (string, error)) (bool, error) {
+	if s.Version != journalVersionIdentity || s.BootID == "" {
+		return false, nil
+	}
+	now, err := current()
+	if err != nil {
+		return false, err
+	}
+	if now == "" {
+		return false, errors.New("current boot identity is empty")
+	}
+	return now != s.BootID, nil
+}
+
+// ownerProbe is what a platform could learn about a recorded supervisor PID.
+type ownerProbe struct {
+	Found   bool  // a process with this PID exists
+	Created int64 // its creation time (FILETIME)
+	Exited  bool  // the process object exists but has terminated
+}
+
+// ownerIdentityGone proves the recorded supervisor no longer exists, using PID
+// plus creation time: PID absence alone is not enough, so a journal without a
+// creation time never qualifies. Probe errors are never evidence.
+func ownerIdentityGone(s Scope, probe func(pid int) (ownerProbe, error)) (bool, error) {
+	if s.Version != journalVersionIdentity || s.OwnerCreated == 0 || s.OwnerPID <= 0 {
+		return false, nil
+	}
+	p, err := probe(s.OwnerPID)
+	if err != nil {
+		return false, err
+	}
+	return !p.Found || p.Created != s.OwnerCreated || p.Exited, nil
 }
 
 func defaultStreams(s Streams) Streams {
@@ -264,11 +384,12 @@ func read(expected Scope) (Scope, error) {
 	if err = decoder.Decode(new(any)); err != io.EOF {
 		return s, ErrReconciliation
 	}
-	if s.Version != 1 || expected.Version != 1 || s.ID != expected.ID || s.Directory != expected.Directory {
+	if !supportedVersion(s.Version) || !supportedVersion(expected.Version) || s.ID != expected.ID || s.Directory != expected.Directory {
 		return s, ErrReconciliation
 	}
 	return s, nil
 }
+func supportedVersion(v int) bool { return v == journalVersionLegacy || v == journalVersionIdentity }
 func save(s Scope) error {
 	b, err := json.Marshal(s)
 	if err != nil {
@@ -328,7 +449,7 @@ func SupervisorMain(hooks SupervisorHooks) (code int, handled bool) {
 }
 
 func supervise(dir, endpoint string, hooks SupervisorHooks) int {
-	scope := Scope{Version: 1, ID: filepath.Base(dir), Directory: dir}
+	scope := Scope{Version: journalVersionLegacy, ID: filepath.Base(dir), Directory: dir}
 	var err error
 	if scope, err = read(scope); err != nil || scope.Started || scope.Complete {
 		return 125
@@ -347,6 +468,12 @@ func supervise(dir, endpoint string, hooks SupervisorHooks) int {
 		return 125
 	}
 	defer backend.close()
+	// The backend recorded native identity; persist it before Owned can acquire
+	// any lease, so no durable claim exists without recovery evidence.
+	scope.Version = journalVersionIdentity
+	if !hasIdentity(scope) {
+		return 125
+	}
 	scope.OwnerPID = os.Getpid()
 	slog.Debug("process scope ready", "scope_id", scope.ID, "owner_pid", scope.OwnerPID)
 	if save(scope) != nil {
