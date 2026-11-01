@@ -187,22 +187,22 @@ func Recover(record string, pairs []Pair) error {
 			return e
 		}
 		if j.Committed {
-			if e = removeTree(v.Backup); e != nil {
+			if e = RemoveTree(v.Backup); e != nil {
 				return e
 			}
 		} else if backup {
-			if e = removeTree(v.Destination); e != nil {
+			if e = RemoveTree(v.Destination); e != nil {
 				return e
 			}
 			if e = os.Rename(v.Backup, v.Destination); e != nil {
 				return e
 			}
 		} else if !v.Existing && !stage {
-			if e = removeTree(v.Destination); e != nil {
+			if e = RemoveTree(v.Destination); e != nil {
 				return e
 			}
 		}
-		if e = removeTree(v.Stage); e != nil {
+		if e = RemoveTree(v.Stage); e != nil {
 			return e
 		}
 	}
@@ -223,9 +223,10 @@ func lenPrefix(s, p string) int {
 	return 0
 }
 
-// Only transaction-owned trees use this cleanup. Restore owner write permission
-// on read-only cloned directories so a failed publication cannot leak staging.
-func removeTree(path string) error {
+// RemoveTree deletes a leased or transaction-owned cache tree. It restores owner
+// write permission on read-only cloned directories first, without following
+// symlinks, so neither a failed publication nor clean can leak a partial tree.
+func RemoveTree(path string) error {
 	if _, e := os.Lstat(path); os.IsNotExist(e) {
 		return nil
 	} else if e != nil {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/delinoio/oss/cmds/cachecow/internal/state"
 	"github.com/google/uuid"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
@@ -95,6 +96,72 @@ func TestUnknownJournalPreserved(t *testing.T) {
 		t.Fatal("accepted unknown version")
 	}
 	if _, e := os.Stat(p); e != nil {
+		t.Fatal(e)
+	}
+}
+
+// unlockTree lets t.TempDir cleanup delete read-only fixtures after a failure.
+func unlockTree(root string) {
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, e error) error {
+		if e == nil && d.IsDir() {
+			_ = os.Chmod(p, 0700)
+		}
+		return nil
+	})
+}
+func TestRemoveTreeReadOnlyDirectories(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "cache")
+	t.Cleanup(func() { unlockTree(filepath.Dir(root)) })
+	leaf := filepath.Join(root, "ro", "sub")
+	if e := os.MkdirAll(leaf, 0700); e != nil {
+		t.Fatal(e)
+	}
+	file := filepath.Join(leaf, "f")
+	if e := os.WriteFile(file, []byte("x"), 0400); e != nil {
+		t.Fatal(e)
+	}
+	for _, d := range []string{leaf, filepath.Join(root, "ro")} {
+		if e := os.Chmod(d, 0555); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if e := RemoveTree(root); e != nil {
+		t.Fatal(e)
+	}
+	if _, e := os.Lstat(root); !os.IsNotExist(e) {
+		t.Fatalf("cache remains: %v", e)
+	}
+}
+func TestRemoveTreeMissingPath(t *testing.T) {
+	if e := RemoveTree(filepath.Join(t.TempDir(), "missing")); e != nil {
+		t.Fatal(e)
+	}
+}
+func TestRemoveTreeDoesNotFollowSymlinks(t *testing.T) {
+	d := t.TempDir()
+	outside := filepath.Join(d, "outside")
+	t.Cleanup(func() { unlockTree(d) })
+	if e := os.MkdirAll(filepath.Join(outside, "inner"), 0700); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.Chmod(outside, 0500); e != nil {
+		t.Fatal(e)
+	}
+	root := filepath.Join(d, "cache")
+	if e := os.MkdirAll(root, 0700); e != nil {
+		t.Fatal(e)
+	}
+	if e := os.Symlink(outside, filepath.Join(root, "link")); e != nil {
+		t.Skip("symlinks unavailable:", e)
+	}
+	if e := RemoveTree(root); e != nil {
+		t.Fatal(e)
+	}
+	info, e := os.Stat(outside)
+	if e != nil || info.Mode().Perm() != 0500 {
+		t.Fatalf("outside target changed: %v %v", info, e)
+	}
+	if _, e = os.Stat(filepath.Join(outside, "inner")); e != nil {
 		t.Fatal(e)
 	}
 }

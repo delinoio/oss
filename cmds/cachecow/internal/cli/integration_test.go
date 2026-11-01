@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -648,5 +649,57 @@ func TestDerivedWorktreePathPrefixSettingIsNotTranslated(t *testing.T) {
 	_, stderr := f.runEnv(f.work, []string{"X=" + f.work + "-other"}, 125, "prepare", "--allow-copy", "--", "cargo", "build")
 	if !strings.Contains(stderr, "build settings are incompatible") {
 		t.Fatal(stderr)
+	}
+}
+
+func unlockCacheTree(root string) {
+	_ = filepath.WalkDir(root, func(p string, d fs.DirEntry, e error) error {
+		if e == nil && d.IsDir() {
+			_ = os.Chmod(p, 0700)
+		}
+		return nil
+	})
+}
+func TestCleanRemovesReadOnlyClonedCache(t *testing.T) {
+	f := newFixture(t)
+	t.Cleanup(func() { unlockCacheTree(f.dir) })
+	f.run(f.main, 0, "run", "--", "cargo", "build")
+	sub := filepath.Join(f.main, "target", "ro", "sub")
+	if e := os.MkdirAll(sub, 0700); e != nil {
+		t.Fatal(e)
+	}
+	writeTest(t, filepath.Join(sub, "f"), "x", 0400)
+	for _, d := range []string{sub, filepath.Dir(sub)} {
+		if e := os.Chmod(d, 0555); e != nil {
+			t.Fatal(e)
+		}
+	}
+	f.run(f.work, 0, "prepare", "--replace", "--", "cargo", "build")
+	info, e := os.Stat(filepath.Join(f.work, "target", "ro"))
+	if e != nil || info.Mode().Perm() != 0555 {
+		t.Fatalf("clone did not preserve read-only directory: %v %v", info, e)
+	}
+	f.run(f.work, 0, "clean", "--preset", "cargo")
+	if _, e = os.Lstat(filepath.Join(f.work, "target")); !os.IsNotExist(e) {
+		t.Fatalf("cache remains: %v", e)
+	}
+}
+func TestCleanRefusesNonDirectoryCache(t *testing.T) {
+	f := newFixture(t)
+	outside := filepath.Join(f.dir, "outside")
+	if e := os.MkdirAll(outside, 0500); e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() { unlockCacheTree(f.dir) })
+	target := filepath.Join(f.work, "target")
+	if e := os.Symlink(outside, target); e != nil {
+		t.Skip("symlinks unavailable:", e)
+	}
+	f.run(f.work, 125, "clean", "--preset", "cargo")
+	if info, e := os.Stat(outside); e != nil || info.Mode().Perm() != 0500 {
+		t.Fatalf("symlink target changed: %v %v", info, e)
+	}
+	if _, e := os.Lstat(target); e != nil {
+		t.Fatal("symlink was removed")
 	}
 }

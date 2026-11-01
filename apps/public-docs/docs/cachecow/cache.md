@@ -56,7 +56,7 @@ Failed or cancelled builds retain their working cache. The build tool decides wh
 ccow clean --preset cargo
 ```
 
-`ccow clean` deletes the selected verified cache without confirmation and without `--yes`, including in scripts. Check `ccow status` and the preset before running it. It immediately refuses an in-use cache. Stop the managed build and allow its process tree to exit before retrying.
+`ccow clean` deletes the selected verified cache without confirmation and without `--yes`, including in scripts. Check `ccow status` and the preset before running it. It immediately refuses an in-use cache. Read-only directories inside the cache, which cloning preserves, do not block deletion. Stop the managed build and allow its process tree to exit before retrying.
 
 Only preset-verified cache paths may be deleted. Sources, Git metadata, CacheCow settings, external link targets, and unrelated files must remain intact. Normal cache subdirectories within a worktree are allowed; the entire worktree is never a cache.
 

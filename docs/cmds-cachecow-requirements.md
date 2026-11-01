@@ -99,7 +99,7 @@ CoW is not a compiler cache key algorithm, a shared process heap, or automatic s
 - Automatically detect the preset; allow `--preset cargo|rspack|rsbuild`. Ambiguous detection is an actionable error.
 - `ccow status`: inspect cache state.
 - `ccow prepare`: prepare a cache without running a build, including explicit re-cloning.
-- `ccow clean`: delete the selected cache without confirmation or `--yes`, in both interactive and noninteractive use. Refuse to delete an in-use cache.
+- `ccow clean`: delete the selected cache without confirmation or `--yes`, in both interactive and noninteractive use. Refuse to delete an in-use cache. Restore owner write permission on read-only directories inside the verified cache, without following symlinks, so a cloned cache with read-only directories is removed completely.
 - `ccow doctor`: diagnose configuration, environment, cache, and locking problems.
 - `--source <worktree>`: select a source checkout/worktree in the same Git repository.
 - `--allow-copy`: explicitly permit ordinary copying when CoW is unavailable.

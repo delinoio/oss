@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -303,7 +302,7 @@ func (s *server) apply(ctx context.Context, p Plan) (result lifecycle.Result, re
 			if _, e = lifecycle.Exists(v); e != nil {
 				return lifecycle.Result{}, e
 			}
-			if e = os.RemoveAll(v); e != nil {
+			if e = lifecycle.RemoveTree(v); e != nil {
 				return lifecycle.Result{}, e
 			}
 		}
