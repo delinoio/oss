@@ -140,9 +140,17 @@ func Classify(tool Tool, args []string, inGit bool, bypass string) Classificatio
 		switch command {
 		case "build", "dev":
 			return Classification{Managed, CacheOperation}
-		case "serve", "watch":
+		case "serve", "watch", "server", "s", "bundle", "b":
+			// The Rspack entries follow the aliases registered by @rspack/cli
+			// (build: "", build, bundle, b; serve: serve, server, s, dev). Rsbuild
+			// does not define these names, so they stay unknown for it.
 			if tool == Rspack {
 				return Classification{Managed, CacheOperation}
+			}
+		case "p":
+			// Rspack preview alias; Rsbuild does not define it.
+			if tool == Rspack {
+				return pass(Query)
 			}
 		case "help", "version", "inspect", "preview":
 			return pass(Query)
