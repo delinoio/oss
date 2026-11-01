@@ -8,7 +8,7 @@ CLI messages are in English. Child stdout and stderr pass through unchanged. Cac
 
 Use `ccow doctor` and `--verbose` to inspect paths, tool versions, CoW capability, lock state, and failure causes. `ccow shim doctor` also explains installation state, selected executables, and PATH precedence. ANSI notices are enabled by default. Set `NO_COLOR` to disable them.
 
-Diagnostics must not persist original file contents, environment-variable values, or full command arguments. The exact command displayed for interactive source-build confirmation is not permission to save it in logs. Review diagnostic material before sharing it. CacheCow has no remote telemetry.
+CacheCow shell setup and removal print only the CacheCow-owned block they change, never other shell configuration content. Diagnostics must not persist original file contents, environment-variable values, or full command arguments. The exact command displayed for interactive source-build confirmation is not permission to save it in logs. Review diagnostic material before sharing it. CacheCow has no remote telemetry.
 
 ## Management JSON
 
