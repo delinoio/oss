@@ -94,6 +94,15 @@ pub struct Response {
         skip_serializing_if = "std::ops::Not::not"
     )]
     pub source_failure: bool,
+    /// Registry contention outlived its retry budget in the supervisor. The
+    /// client restores [`LeaseError::RegistryBusy`] so it keeps its distinct
+    /// remediation (#4583).
+    #[serde(
+        rename = "registryBusy",
+        default,
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    pub registry_busy: bool,
 }
 
 impl Response {
@@ -101,6 +110,7 @@ impl Response {
         Self {
             error: error_text(error),
             source_failure: error::find::<SourceError>(error).is_some(),
+            registry_busy: error::is(error, &LeaseError::RegistryBusy),
             ..Self::default()
         }
     }
@@ -110,6 +120,8 @@ impl Response {
             anyhow::Error::new(SourceError {
                 message: self.error.clone(),
             })
+        } else if self.registry_busy {
+            anyhow::Error::new(LeaseError::RegistryBusy).context(self.error.clone())
         } else {
             anyhow!("{}", self.error)
         }

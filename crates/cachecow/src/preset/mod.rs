@@ -494,44 +494,20 @@ pub fn verify_cache_paths(result: &PresetResult) -> Result<()> {
 /// environment entries (`KEY=value`) and arguments before source discovery
 /// (#4578), so equivalent worktrees produce equal settings digests.
 ///
-/// The rule is purely lexical and case-sensitive. An occurrence of `from_root`
-/// is replaced by `to_root` only when it starts a path: it begins the value or
-/// follows `=` or the platform PATH list separator (`:` on Unix, `;` on
-/// Windows), and it ends the value or is followed by a path separator or the
-/// list separator. Other occurrences, such as a longer sibling path
-/// (`<root>-other`) or a root embedded in a word, are unchanged. Empty or
-/// identical roots return the values unchanged.
+/// The rule is purely lexical and case-sensitive, and it is the exact inverse
+/// of the digest normalization: every occurrence of `from_root` becomes
+/// `to_root`, just as discovery replaces every occurrence of a worktree's own
+/// root with `${WORKTREE}`. A value that differs only by the worktree root, at
+/// any position (for example `NODE_OPTIONS=--require <root>/.pnp.cjs`),
+/// therefore digests identically; every other difference stays visible. Empty
+/// or identical roots return the values unchanged.
 pub fn translate_worktree_root(values: &[String], from_root: &str, to_root: &str) -> Vec<String> {
     if from_root.is_empty() || from_root == to_root {
         return values.to_vec();
     }
     values
         .iter()
-        .map(|value| {
-            let mut out = String::with_capacity(value.len());
-            let mut last = 0;
-            for (i, _) in value.match_indices(from_root) {
-                if i < last {
-                    continue;
-                }
-                let end = i + from_root.len();
-                let before_ok = value[..i]
-                    .chars()
-                    .next_back()
-                    .is_none_or(|c| c == '=' || c == paths::LIST_SEPARATOR);
-                let after_ok = value[end..]
-                    .chars()
-                    .next()
-                    .is_none_or(|c| paths::is_separator(c) || c == paths::LIST_SEPARATOR);
-                if before_ok && after_ok {
-                    out.push_str(&value[last..i]);
-                    out.push_str(to_root);
-                    last = end;
-                }
-            }
-            out.push_str(&value[last..]);
-            out
-        })
+        .map(|value| value.replace(from_root, to_root))
         .collect()
 }
 

@@ -1201,6 +1201,19 @@ fn registry_contention_is_retried_and_reported_separately() {
         out.contains("Another ccow process held the shared lease registry"),
         "{out}"
     );
+    // The supervisor reports clean's contention through its result record;
+    // the client keeps the registry-busy remediation.
+    let held = hold_registry(&registry, Duration::from_secs(4));
+    let (out, _) = f.run(&f.main, 125, &["clean", "--preset", "cargo", "--json"]);
+    held.join().unwrap();
+    assert!(
+        out.contains("lease registry is temporarily locked"),
+        "{out}"
+    );
+    assert!(
+        out.contains("Another ccow process held the shared lease registry"),
+        "{out}"
+    );
 }
 
 /// #4582: doctor reports why it keeps a lease.

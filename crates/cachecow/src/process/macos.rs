@@ -354,15 +354,16 @@ fn same_boot_coalition_empty(s: &Scope) -> bool {
 
 /// Version 2: a different boot session proves completion; within the same
 /// boot the zero-member coalition check applies unchanged.
+/// A version-2 journal without its recorded identity stays protected.
 pub fn native_completion(s: &Scope) -> bool {
-    if !s.boot_id.is_empty() {
-        match super::current_boot_identity() {
-            Ok(current) if current != s.boot_id => return true,
-            Ok(_) => {}
-            Err(_) => return false,
-        }
+    if s.boot_id.is_empty() {
+        return false;
     }
-    same_boot_coalition_empty(s)
+    match super::current_boot_identity() {
+        Ok(current) if current != s.boot_id => true,
+        Ok(_) => same_boot_coalition_empty(s),
+        Err(_) => false,
+    }
 }
 
 /// Version 1 journals keep the zero-member coalition check.

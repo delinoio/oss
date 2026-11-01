@@ -93,8 +93,9 @@ pub trait WaitObserver: Send + Sync {
     /// Positive native completion evidence for a conflicting record's owner.
     /// Returning `Ok` lets the lease layer delete that record.
     fn verify(&self, ctx: &Context, record: &Record) -> Result<()>;
-    /// Called once per acquisition when it must wait for, or refuse, an
-    /// unrecoverable conflicting record. `cache_path` is the requested path.
+    /// Called once per waiting acquisition when an unrecoverable conflicting
+    /// record blocks it. `cache_path` is the requested path. Nonblocking
+    /// acquisitions (clean) refuse without a waiting notice.
     fn blocked(&self, cache_path: &str, record: &Record);
 }
 
@@ -225,6 +226,19 @@ impl Registry {
 
     /// Deletes `record` after `verify` succeeds and the stored record is equal.
     pub fn reconcile(&self, ctx: &Context, record: &Record, verify: Verify<'_>) -> Result<()> {
+        self.reconcile_with(ctx, record, verify, false)
+    }
+
+    /// Like [`Registry::reconcile`]. With `allow_missing`, an absent record is
+    /// already released: only another process that verified the same complete
+    /// journal (automatic recovery while waiting, or doctor) can delete it.
+    fn reconcile_with(
+        &self,
+        ctx: &Context,
+        record: &Record,
+        verify: Verify<'_>,
+        allow_missing: bool,
+    ) -> Result<()> {
         let snapshot = record.clone();
         if let Err(e) = verify(ctx, &snapshot) {
             return Err(anyhow::Error::new(LeaseError::Unverified)
@@ -233,6 +247,10 @@ impl Registry {
         self.transaction(ctx, |c| {
             let all = records(c)?;
             let Some(stored) = all.iter().find(|v| v.id == record.id) else {
+                if allow_missing {
+                    tracing::debug!(lease = %record.id, "cache lease was already released by verified recovery");
+                    return Ok(());
+                }
                 return Err(LeaseError::Unverified.into());
             };
             if stored != record {
@@ -483,14 +501,14 @@ impl Session {
             if nested {
                 return Err(LeaseError::NestedConflict.into());
             }
+            if !wait {
+                return Err(error);
+            }
             if !notified {
                 notified = true;
                 if let (Some(observer), Some((record, path))) = (&observer, conflicts.first()) {
                     observer.blocked(path, record);
                 }
-            }
-            if !wait {
-                return Err(error);
             }
             tracing::debug!(session = %st.record.id, conflicts = conflicts.len(), "waiting for cache lease");
             ctx.sleep(LEASE_POLL)?;
@@ -540,7 +558,10 @@ impl Session {
             st.finished = true;
             return Ok(());
         }
-        self.registry.reconcile(ctx, &st.record, verify)?;
+        // Waiting commands may recover this record after the journal became
+        // complete but before this deletion; that is the same verified release.
+        self.registry
+            .reconcile_with(ctx, &st.record, verify, true)?;
         st.finished = true;
         Ok(())
     }

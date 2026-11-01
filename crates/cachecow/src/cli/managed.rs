@@ -362,21 +362,36 @@ impl App {
             return Ok(SourceBuild::Skipped);
         }
         let source_cwd = source_working_directory(&current.repository, &src.repository.root)?;
+        // Run the request as it would run in the source (#4578): translate
+        // current-root paths so the recorded provenance matches the translated
+        // source discovery of the following derived plan.
+        let source_env = crate::preset::translate_worktree_root(
+            &environ(),
+            &current.repository.root,
+            &src.repository.root,
+        );
+        let source_argv = crate::preset::translate_worktree_root(
+            argv,
+            &current.repository.root,
+            &src.repository.root,
+        );
         notice(&format!(
             "Source working directory: {source_cwd}\nExact requested argv: {}",
-            quote_argv(argv)
+            quote_argv(&source_argv)
         ));
         if !self.confirm("Run this exact command in the source?")? {
             return Ok(SourceBuild::Skipped);
         }
-        let source_result = match self.discover(&source_cwd, argv) {
+        let source_result = match self.discover_with(&source_cwd, &source_argv, source_env.clone())
+        {
             Ok(r) => r,
             Err(e) => {
                 notice(&error_text(&e));
                 return Ok(SourceBuild::Skipped);
             }
         };
-        let (sp, sc) = self.plan("run", &source_result, argv, true)?;
+        let (sp, mut sc) = self.plan("run", &source_result, &source_argv, true)?;
+        sc.env = source_env;
         let code = self.execute(&sp, sc)?;
         if code != 0 {
             return Ok(SourceBuild::Failed(code));
@@ -422,7 +437,9 @@ impl App {
         };
         let mut need = self.o.replace;
         for root in &current.roots {
-            need = need || !lifecycle::exists(&root.path)?;
+            // Validate every root, as Go did, before deciding.
+            let exists = lifecycle::exists(&root.path)?;
+            need = need || !exists;
         }
         if action == "clean" || action == "tool-clean" {
             need = false;

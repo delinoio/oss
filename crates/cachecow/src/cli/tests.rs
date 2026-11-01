@@ -147,7 +147,7 @@ fn prepare_requires_supervisor_clone_evidence() {
 
 #[cfg(unix)]
 #[test]
-fn translates_only_worktree_root_boundaries() {
+fn translates_every_worktree_root_occurrence() {
     let from = "/repo/wt";
     let to = "/repo/main";
     let values = strings(&[
@@ -164,8 +164,8 @@ fn translates_only_worktree_root_boundaries() {
         strings(&[
             "PATH=/repo/main/node_modules/.bin:/usr/bin",
             "INIT_CWD=/repo/main",
-            "OTHER=/repo/wt2/x",
-            "NESTED=/x/repo/wt/y",
+            "OTHER=/repo/main2/x",
+            "NESTED=/x/repo/main/y",
             "--config",
             "/repo/main/rspack.config.js",
             "FOO=1",

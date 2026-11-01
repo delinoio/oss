@@ -869,9 +869,39 @@ fn waiting_on_unrecoverable_owner_notifies_once() {
         lease_err(clean.acquire(&bg(), &dests(&[&cache]), false)),
         LeaseError::Busy
     );
-    assert_eq!(observer.blocked.lock().unwrap().len(), 1);
+    assert!(
+        observer.blocked.lock().unwrap().is_empty(),
+        "clean refuses without a waiting notice"
+    );
     // A recoverable record lets clean proceed.
     let clean = session(&f.registry);
     clean.set_observer(Observer::new(true));
     clean.acquire(&bg(), &dests(&[&cache]), false).unwrap();
+}
+
+#[test]
+fn finish_accepts_record_released_by_verified_recovery() {
+    let f = Fixture::new();
+    let cache = f.path("cache");
+    let owner = session(&f.registry);
+    acquire(&owner, &[&cache]);
+    // A waiting command verified the completed journal and released the
+    // record before the owner's own Finish ran.
+    let record = f
+        .registry
+        .records(&bg())
+        .unwrap()
+        .into_iter()
+        .find(|r| r.id == owner.id())
+        .unwrap();
+    f.registry.reconcile(&bg(), &record, &verified).unwrap();
+    owner.finish(&bg(), &verified).unwrap();
+    // Verification failure still retains protection semantics.
+    let other = session(&f.registry);
+    acquire(&other, &[&cache]);
+    let failing = |_: &Context, _: &Record| -> anyhow::Result<()> { Err(anyhow!("alive")) };
+    assert_eq!(
+        lease_err(other.finish(&bg(), &failing)),
+        LeaseError::Unverified
+    );
 }

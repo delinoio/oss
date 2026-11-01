@@ -524,11 +524,8 @@ pub fn new_exec_command(command: &Command) -> Result<std::process::Command> {
     for entry in &command.env {
         // Windows keeps per-drive entries such as "=C:=C:\dir": the key ends at
         // the first '=' after the first character.
-        if let Some(i) = entry
-            .get(1..)
-            .and_then(|rest| rest.find('='))
-            .map(|i| i + 1)
-        {
+        let first = entry.chars().next().map_or(0, char::len_utf8);
+        if let Some(i) = entry[first..].find('=').map(|i| i + first) {
             cmd.env(&entry[..i], &entry[i + 1..]);
         }
     }

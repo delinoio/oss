@@ -430,7 +430,7 @@ fn worktree_root_translation_makes_equivalent_requests_compatible() {
 }
 
 #[test]
-fn translate_worktree_root_respects_path_boundaries() {
+fn translate_worktree_root_mirrors_digest_normalization() {
     let values = strings(&[
         "/w/a",
         "PATH=/w/bin:/w:/w-other/bin:/x/w/y",
@@ -443,11 +443,11 @@ fn translate_worktree_root_respects_path_boundaries() {
         translate_worktree_root(&values, "/w", "/src"),
         strings(&[
             "/src/a",
-            "PATH=/src/bin:/src:/w-other/bin:/x/w/y",
+            "PATH=/src/bin:/src:/src-other/bin:/x/src/y",
             "--manifest-path=/src/Cargo.toml",
             "/src",
-            "word/w/x",
-            "/wx",
+            "word/src/x",
+            "/srcx",
         ])
     );
     assert_eq!(translate_worktree_root(&values, "", "/src"), values);
