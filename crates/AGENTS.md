@@ -32,6 +32,7 @@
 
 - [clibox public documentation foundation](../docs/apps-clibox-docs-foundation.md)
 - [crates-binpm-foundation](../docs/crates-binpm-foundation.md)
+- [CacheCow Rust command foundation](../docs/crates-cachecow-foundation.md) and [complete requirements](../docs/crates-cachecow-requirements.md)
 - [crates-cargo-mono-foundation](../docs/crates-cargo-mono-foundation.md)
 - [clibox Rust foundation](../docs/crates-clibox-foundation.md)
 - [clibox fspy workflow contract](../docs/crates-clibox-fspy-contract.md)
@@ -46,6 +47,7 @@
 - [crates-serde-feather-macros-foundation](../docs/crates-serde-feather-macros-foundation.md)
 - [crates-with-watch-foundation](../docs/crates-with-watch-foundation.md)
 - [Project: binpm](../docs/project-binpm.md)
+- [Project: CacheCow](../docs/project-cachecow.md)
 - [Project: cargo-mono](../docs/project-cargo-mono.md)
 - [Project: nodeup](../docs/project-nodeup.md)
 - [pnport](../docs/project-pnport.md)
