@@ -2,12 +2,14 @@ package process
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"testing"
 	"time"
@@ -169,4 +171,74 @@ func TestWindowsTreeHelper(t *testing.T) {
 			time.Sleep(time.Second)
 		}
 	}
+}
+
+func TestWindowsBatchArguments(t *testing.T) {
+	dir := windowsStateRoot(t)
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ext := range []string{".cmd", ".bat"} {
+		t.Run(ext, func(t *testing.T) {
+			wrapper := filepath.Join(dir, "npm wrapper 한글"+ext)
+			body := "@echo off\r\n\"" + exe + "\" -test.run=^TestWindowsBatchChild$ -- %*\r\n"
+			if err := os.WriteFile(wrapper, []byte(body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			args := []string{"", "space value", "한글", "a&b", "a|b", "a<b", "a>b", "(value)", "caret^", "!VALUE!", `trailing\`}
+			c := Command{Path: wrapper, Args: append([]string{wrapper}, args...), Dir: dir, Env: append(os.Environ(), "CCOW_BATCH_CHILD=1")}
+			cmd, err := NewExecCommand(c)
+			if err != nil {
+				t.Fatal(err)
+			}
+			out, err := cmd.Output()
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			if err := json.Unmarshal(out, &got); err != nil {
+				t.Fatalf("%s: %v", out, err)
+			}
+			if !reflect.DeepEqual(got, args) {
+				t.Fatalf("got=%q want=%q", got, args)
+			}
+			stdout, err := os.CreateTemp(dir, "batch-output")
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer stdout.Close()
+			h := Hooks{Owned: func(Scope) error { return nil }, Drained: Reconcile}
+			r, err := Run(context.Background(), dir, c, Streams{Stdout: stdout}, h)
+			if err != nil || r.ExitCode != 0 {
+				t.Fatalf("supervised batch: %+v %v", r, err)
+			}
+			out, err = os.ReadFile(stdout.Name())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(out, &got); err != nil || !reflect.DeepEqual(got, args) {
+				t.Fatalf("supervised output=%q: %v", out, err)
+			}
+			for _, arg := range []string{`%PATH%`, `"&echo injected`, "line\nnext"} {
+				c.Args = []string{wrapper, arg}
+				if _, err := NewExecCommand(c); err == nil {
+					t.Fatalf("unsafe argument accepted: %q", arg)
+				}
+			}
+		})
+	}
+}
+
+func TestWindowsBatchChild(t *testing.T) {
+	if os.Getenv("CCOW_BATCH_CHILD") != "1" {
+		return
+	}
+	for i, arg := range os.Args {
+		if arg == "--" {
+			_ = json.NewEncoder(os.Stdout).Encode(os.Args[i+1:])
+			os.Exit(0)
+		}
+	}
+	os.Exit(90)
 }

@@ -28,6 +28,8 @@ var ErrUnavailable = errors.New("native process ownership is unavailable; comman
 // Command uses an already resolved executable path. Args includes argv[0].
 // Env is explicit: an empty slice means an empty environment.
 type Command struct {
+	// Noop runs supervisor hooks without launching user code (prepare and clean).
+	Noop bool
 	Path string
 	Args []string
 	Dir  string
@@ -41,14 +43,15 @@ type Streams struct{ Stdin, Stdout, Stderr *os.File }
 // Scope contains no command arguments, environment, or captured child output.
 // Directory is a unique private journal directory beneath the supplied state root.
 type Scope struct {
-	Version   int    `json:"version"`
-	ID        string `json:"id"`
-	Directory string `json:"directory"`
-	OwnerPID  int    `json:"owner_pid"`
-	NativeID  uint64 `json:"native_id,omitempty"`
-	Started   bool   `json:"started"`
-	Complete  bool   `json:"complete"`
-	ExitCode  int    `json:"exit_code"`
+	Context   context.Context `json:"-"`
+	Version   int             `json:"version"`
+	ID        string          `json:"id"`
+	Directory string          `json:"directory"`
+	OwnerPID  int             `json:"owner_pid"`
+	NativeID  uint64          `json:"native_id,omitempty"`
+	Started   bool            `json:"started"`
+	Complete  bool            `json:"complete"`
+	ExitCode  int             `json:"exit_code"`
 }
 
 // Hooks integrate durable cache ownership. Owned MUST durably associate the
@@ -81,7 +84,7 @@ func Run(ctx context.Context, stateRoot string, command Command, streams Streams
 	if !filepath.IsAbs(stateRoot) {
 		return result, errors.New("absolute private process state root is required")
 	}
-	if command.Path == "" || !filepath.IsAbs(command.Path) || len(command.Args) == 0 || !filepath.IsAbs(command.Dir) {
+	if !command.Noop && (command.Path == "" || !filepath.IsAbs(command.Path) || len(command.Args) == 0 || !filepath.IsAbs(command.Dir)) {
 		return result, errors.New("resolved absolute executable, cwd, and argv are required")
 	}
 	if err := ctx.Err(); err != nil {
@@ -129,6 +132,9 @@ func Run(ctx context.Context, stateRoot string, command Command, streams Streams
 		return result, ErrReconciliation
 	}
 	defer conn.Close()
+	// Cancellation must also interrupt stream transfer and command encoding.
+	stopCancel := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stopCancel()
 	if err = sendStreams(conn, streams); err != nil {
 		return result, ErrReconciliation
 	}
@@ -170,8 +176,6 @@ func Run(ctx context.Context, stateRoot string, command Command, streams Streams
 	}
 	_ = conn.SetDeadline(time.Time{})
 	// EOF requests cancellation but keeps the helper alive to drain the tree.
-	stopCancel := context.AfterFunc(ctx, func() { _ = conn.Close() })
-	defer stopCancel()
 	var finished frame
 	err = dec.Decode(&finished)
 	if err != nil {
@@ -203,10 +207,6 @@ func Run(ctx context.Context, stateRoot string, command Command, streams Streams
 	return result, nil
 }
 
-// Reconcile deliberately fails closed for every unfinished journal, including
-// a dead supervisor. A live supervisor can finish after CLI death. A killed
-// supervisor needs external native recovery; PID absence alone cannot unlock.
-// Unknown versions are read-only and blocked.
 // LoadScope reads recovery metadata from an ownership directory saved in a
 // durable lease. This is verification metadata only, never session authority.
 func LoadScope(directory string) (Scope, error) {
@@ -216,10 +216,24 @@ func LoadScope(directory string) (Scope, error) {
 	return read(Scope{Version: 1, ID: filepath.Base(directory), Directory: directory})
 }
 
+// Reconcile accepts durable completion or positive native whole-tree evidence.
+// A dead PID, elapsed time, or unknown journal version never permits release.
 func Reconcile(scope Scope) error {
 	s, err := read(scope)
-	if err != nil || !s.Complete || s.OwnerPID <= 0 {
+	if err != nil || s.OwnerPID <= 0 {
 		return ErrReconciliation
+	}
+	if !s.Complete {
+		if !nativeCompletion(s) {
+			return ErrReconciliation
+		}
+		// Native recovery proves the supervisor and every descendant have exited.
+		// No IPC worker remains to acquire resources or start another command.
+		s.Complete = true
+		s.ExitCode = 125
+		if save(s) != nil {
+			return ErrReconciliation
+		}
 	}
 	return nil
 }
@@ -338,7 +352,23 @@ func supervise(dir, endpoint string, hooks SupervisorHooks) int {
 	if save(scope) != nil {
 		return 125
 	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	scope.Context = ctx
+	signals, stopSignals := terminationSignals()
+	defer stopSignals()
+	stopControl := context.AfterFunc(ctx, func() { _ = conn.Close() })
+	defer stopControl()
+	go func() {
+		select {
+		case <-signals:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
 	finish := func() int {
+		stopControl()
+		cancel()
 		if hooks.Quiesce != nil {
 			if hooks.Quiesce(scope) != nil {
 				return 125
@@ -356,6 +386,8 @@ func supervise(dir, endpoint string, hooks SupervisorHooks) int {
 		_ = json.NewEncoder(conn).Encode(frame{Scope: &scope})
 		return 0
 	}
+	// Ready can allocate durable ownership even if the request never arrives.
+	// Every subsequent no-child exit must quiesce IPC and persist completion.
 	if hooks.Ready != nil {
 		if hooks.Ready(scope) != nil {
 			return finish()
@@ -369,25 +401,32 @@ func supervise(dir, endpoint string, hooks SupervisorHooks) int {
 		return finish()
 	}
 	cancelled := make(chan struct{})
-	go func() { var ignored [1]byte; _, _ = conn.Read(ignored[:]); close(cancelled) }()
-	signals, stopSignals := terminationSignals()
-	defer stopSignals()
-	if hooks.BeforeStart != nil {
-		if hooks.BeforeStart(scope, request.Command) != nil {
-			return finish()
-		}
-	}
-
+	go func() { var ignored [1]byte; _, _ = conn.Read(ignored[:]); cancel(); close(cancelled) }()
 	scope.Started = true
 	if save(scope) != nil {
 		return 125
 	}
-	cmd := exec.Command(request.Command.Path)
-	cmd.Args = request.Command.Args
-	cmd.Dir = request.Command.Dir
-	cmd.Env = request.Command.Env
-	if cmd.Env == nil {
-		cmd.Env = []string{}
+	if hooks.BeforeStart != nil {
+		if hooks.BeforeStart(scope, request.Command) != nil {
+			scope.ExitCode = 125
+			return finish()
+		}
+	}
+	if ctx.Err() != nil {
+		scope.ExitCode = 125
+		return finish()
+	}
+	if request.Command.Noop {
+		scope.ExitCode = 0
+		return finish()
+	}
+	cmd, err := NewExecCommand(*request.Command)
+	if err != nil {
+		scope.ExitCode = 126
+		if errors.Is(err, os.ErrNotExist) {
+			scope.ExitCode = 127
+		}
+		return finish()
 	}
 	cmd.Stdin = streams.Stdin
 	cmd.Stdout = streams.Stdout
@@ -410,7 +449,7 @@ func supervise(dir, endpoint string, hooks SupervisorHooks) int {
 	case scope.ExitCode = <-waited:
 		rootDone = true
 	case <-cancelled:
-	case <-signals:
+	case <-ctx.Done():
 	}
 	slog.Debug("process scope draining", "scope_id", scope.ID, "grace_seconds", 5)
 	deadline := time.Now().Add(GracePeriod)
@@ -444,6 +483,7 @@ type nativeBackend interface {
 
 func infrastructureError(detail string) error { return fmt.Errorf("%w: %s", ErrUnavailable, detail) }
 
+// The timeout only bounds the caller's wait. It never establishes completion.
 func waitForCompletion(scope Scope) error {
 	deadline := time.Now().Add(GracePeriod + 5*time.Second)
 	for time.Now().Before(deadline) {
