@@ -10,6 +10,8 @@ Independent worktrees can build concurrently when their actual cache paths are i
 
 CacheCow must coordinate source reads with source builds so copies are consistent. If a source is busy, preparation waits. Overlapping source/destination requests and worktrees that select each other's caches must not deadlock. Use `ccow doctor` or `--verbose` to inspect waiting and lock state rather than deleting locks.
 
+Short-lived contention on the shared lease registry is different from cache use. CacheCow retries it for up to one second per registry operation, and waiting commands keep waiting. If another process holds the registry longer, a nonblocking command exits 125 with a lease-registry cause and a retry remediation, and does not report the cache as in use.
+
 ## Watch servers and nested commands
 
 Finite builds, checks, tests, and long-running watch/development servers use the same lifecycle. A cache remains locked for the process tree's lifetime. A watch server used as a source can therefore block copying until it exits.

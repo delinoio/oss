@@ -56,6 +56,9 @@ type Response struct {
 	Result        lifecycle.Result `json:"result"`
 	Error         string           `json:"error,omitempty"`
 	SourceFailure bool             `json:"sourceFailure,omitempty"`
+	// RegistryBusy preserves lease.ErrRegistryBusy across the supervisor result
+	// file and IPC boundary so clients can report registry lock contention.
+	RegistryBusy bool `json:"registryBusy,omitempty"`
 }
 type request struct {
 	Cancel   bool
@@ -74,13 +77,23 @@ type Validate func(Plan) error
 type SourceError struct{ Message string }
 
 func (e *SourceError) Error() string { return e.Message }
+
+// registryBusyError carries a remote lease.ErrRegistryBusy failure.
+type registryBusyError struct{ message string }
+
+func (e *registryBusyError) Error() string { return e.message }
+func (e *registryBusyError) Unwrap() error { return lease.ErrRegistryBusy }
+
 func failedResponse(err error) Response {
 	var source *SourceError
-	return Response{Error: err.Error(), SourceFailure: errors.As(err, &source)}
+	return Response{Error: err.Error(), SourceFailure: errors.As(err, &source), RegistryBusy: errors.Is(err, lease.ErrRegistryBusy)}
 }
 func (r Response) failure() error {
 	if r.SourceFailure {
 		return &SourceError{Message: r.Error}
+	}
+	if r.RegistryBusy {
+		return &registryBusyError{message: r.Error}
 	}
 	return errors.New(r.Error)
 }
@@ -225,7 +238,7 @@ func Hooks(validate Validate, recordHooks ...RecordHooks) process.SupervisorHook
 func finishSession(s *lease.Session, verify lease.Verify) error {
 	for {
 		err := s.Finish(context.Background(), verify)
-		if !errors.Is(err, lease.ErrBusy) {
+		if !errors.Is(err, lease.ErrRegistryBusy) && !errors.Is(err, lease.ErrBusy) {
 			return err
 		}
 		time.Sleep(25 * time.Millisecond)

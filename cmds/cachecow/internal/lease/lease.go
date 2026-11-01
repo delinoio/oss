@@ -29,6 +29,17 @@ var (
 	ErrBusy           = errors.New("cache is in use; wait for its managed process tree or reconcile its durable intent")
 	ErrNestedConflict = errors.New("nested cache request conflicts with another session; acquire the complete resource set before launching the outer command or run this command after it exits")
 	ErrUnverified     = errors.New("process-tree ownership is unverified; retain the lease and reconcile with the native supervisor")
+	// ErrRegistryBusy reports that another process held the registry database
+	// lock for the whole contention budget. It says nothing about cache use: no
+	// lease overlap was evaluated, so the request is safe to retry unchanged.
+	ErrRegistryBusy = errors.New("lease registry is locked by another ccow process; no cache conflict was found, retry shortly")
+)
+
+const (
+	// defaultRegistryContentionBudget bounds how long one registry transaction
+	// retries SQLite lock contention before reporting ErrRegistryBusy.
+	defaultRegistryContentionBudget = time.Second
+	registryRetryInterval           = 25 * time.Millisecond
 )
 
 // Resources must contain every source and destination before preparation starts.
@@ -53,6 +64,9 @@ type Verify func(context.Context, Record) error
 type Registry struct {
 	db  *sql.DB
 	dir string
+	// contentionBudget is the per-transaction retry budget for registry lock
+	// contention. Tests shorten or lengthen it; production uses the default.
+	contentionBudget time.Duration
 }
 
 // Open uses one stable, user-private directory shared by every worktree and
@@ -85,7 +99,7 @@ func Open(ctx context.Context, dir string) (*Registry, error) {
 	}
 	// Do not limit connections: a nonblocking clean must not wait for a local
 	// transaction to return its connection before SQLite can report contention.
-	r := &Registry{db: db, dir: dir}
+	r := &Registry{db: db, dir: dir, contentionBudget: defaultRegistryContentionBudget}
 	err = r.transaction(ctx, func(c *sql.Conn) error {
 		var version int
 		if err := c.QueryRowContext(ctx, "PRAGMA user_version").Scan(&version); err != nil {
@@ -117,11 +131,12 @@ func Open(ctx context.Context, dir string) (*Registry, error) {
 }
 
 // OpenWait waits for registry initialization contention without acquiring cache
-// resources. Use Open for nonblocking management operations such as clean.
+// resources. Open already retries brief contention; OpenWait keeps waiting after
+// that budget until ctx is done. Use Open for bounded management operations.
 func OpenWait(ctx context.Context, dir string) (*Registry, error) {
 	for {
 		r, err := Open(ctx, dir)
-		if !errors.Is(err, ErrBusy) {
+		if !errors.Is(err, ErrRegistryBusy) {
 			return r, err
 		}
 		select {
@@ -135,11 +150,50 @@ func OpenWait(ctx context.Context, dir string) (*Registry, error) {
 // Close closes the database connection only. It never releases durable intents.
 func (r *Registry) Close() error { return r.db.Close() }
 
-func (r *Registry) transaction(ctx context.Context, fn func(*sql.Conn) error) (result error) {
+func isSQLiteBusy(err error) bool {
+	var code interface{ Code() int }
+	return errors.As(err, &code) && (code.Code()&255 == 5 || code.Code()&255 == 6)
+}
+
+// transaction runs fn inside BEGIN IMMEDIATE. SQLite BUSY/LOCKED from the lock
+// request, fn or COMMIT is registry contention, not cache use: the whole attempt
+// is rolled back and repeated until the contention budget ends, then reported as
+// ErrRegistryBusy. fn therefore may run more than once and MUST derive all of its
+// per-attempt state inside the closure. Errors fn returns itself, including
+// ErrBusy for a real resource overlap, are never retried here.
+func (r *Registry) transaction(ctx context.Context, fn func(*sql.Conn) error) error {
+	budget := r.contentionBudget
+	if budget <= 0 {
+		budget = defaultRegistryContentionBudget
+	}
+	start := time.Now()
+	deadline := start.Add(budget)
+	for attempt := 1; ; attempt++ {
+		err := r.attempt(ctx, fn)
+		if !errors.Is(err, ErrRegistryBusy) {
+			return err
+		}
+		remaining := time.Until(deadline)
+		if remaining <= 0 {
+			slog.Debug("lease registry contention budget exhausted", "attempts", attempt, "budget", budget)
+			return err
+		}
+		wait := min(registryRetryInterval, remaining)
+		slog.Debug("lease registry locked; retrying", "attempt", attempt, "wait", wait, "elapsed", time.Since(start))
+		timer := time.NewTimer(wait)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func (r *Registry) attempt(ctx context.Context, fn func(*sql.Conn) error) (result error) {
 	defer func() {
-		var code interface{ Code() int }
-		if errors.As(result, &code) && (code.Code()&255 == 5 || code.Code()&255 == 6) {
-			result = ErrBusy
+		if isSQLiteBusy(result) {
+			result = ErrRegistryBusy
 		}
 	}()
 	c, err := r.db.Conn(ctx)
@@ -147,15 +201,11 @@ func (r *Registry) transaction(ctx context.Context, fn func(*sql.Conn) error) (r
 		return err
 	}
 	defer c.Close()
-	// Zero busy timeout keeps clean nonblocking and lets waiters honor context.
+	// Zero busy timeout lets this package own the retry budget and honor context.
 	if _, err = c.ExecContext(ctx, "PRAGMA busy_timeout=0; PRAGMA synchronous=FULL"); err != nil {
 		return err
 	}
 	if _, err = c.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
-		var code interface{ Code() int }
-		if errors.As(err, &code) && (code.Code()&255 == 5 || code.Code()&255 == 6) {
-			return ErrBusy
-		}
 		return err
 	}
 	defer c.ExecContext(context.Background(), "ROLLBACK")
@@ -265,11 +315,16 @@ func (s *Session) Acquire(ctx context.Context, resources Resources, wait bool) (
 		if err := ctx.Err(); err != nil {
 			return Grant{}, err
 		}
-		borrowed := len(s.record.Paths) > 0
+		var borrowed bool
 		var added []string
-		next := s.record
-		next.Paths = append([]string(nil), s.record.Paths...)
+		var next Record
 		err = s.registry.transaction(ctx, func(c *sql.Conn) error {
+			// The transaction may run this closure again after registry
+			// contention, so every attempt starts from the committed session state.
+			borrowed = len(s.record.Paths) > 0
+			added = nil
+			next = s.record
+			next.Paths = append([]string(nil), s.record.Paths...)
 			all, err := records(ctx, c)
 			if err != nil {
 				return err
@@ -326,17 +381,26 @@ func (s *Session) Acquire(ctx context.Context, resources Resources, wait bool) (
 			slog.Debug("cache lease acquired", "session", s.record.ID, "borrowed", borrowed)
 			return Grant{Borrowed: borrowed, NewPaths: added}, nil
 		}
-		if !errors.Is(err, ErrBusy) {
+		switch {
+		case errors.Is(err, ErrRegistryBusy):
+			// Registry lock contention is independent of cache overlap, so it is
+			// never reported as ErrBusy or ErrNestedConflict.
+			if !wait {
+				return Grant{}, err
+			}
+			slog.Debug("waiting for lease registry", "session", s.record.ID)
+		case errors.Is(err, ErrBusy):
+			if len(s.record.Paths) > 0 {
+				return Grant{}, ErrNestedConflict
+			}
+			if !wait {
+				return Grant{}, ErrBusy
+			}
+			slog.Debug("waiting for cache lease", "session", s.record.ID)
+		default:
 			return Grant{}, err
 		}
-		if len(s.record.Paths) > 0 {
-			return Grant{}, ErrNestedConflict
-		}
-		if !wait {
-			return Grant{}, ErrBusy
-		}
-		slog.Debug("waiting for cache lease", "session", s.record.ID)
-		timer := time.NewTimer(25 * time.Millisecond)
+		timer := time.NewTimer(registryRetryInterval)
 		select {
 		case <-ctx.Done():
 			timer.Stop()

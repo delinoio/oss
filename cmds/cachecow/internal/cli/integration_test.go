@@ -5,15 +5,20 @@ package cli
 import (
 	"bytes"
 	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
+
+	_ "modernc.org/sqlite"
 )
 
 // These tests execute the actual ccow binary and native process ownership on the
@@ -703,5 +708,100 @@ func TestCleanRefusesNonDirectoryCache(t *testing.T) {
 	}
 	if _, e := os.Lstat(target); e != nil {
 		t.Fatal("symlink was removed")
+	}
+}
+
+// holdLeaseRegistry takes the real registry's write lock, the way a concurrent
+// ccow transaction would, until the returned release function is called.
+func holdLeaseRegistry(t *testing.T, f *fixture) (release func()) {
+	t.Helper()
+	var database string
+	_ = filepath.WalkDir(f.home, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && !d.IsDir() && d.Name() == "leases.sqlite" {
+			database = path
+		}
+		return nil
+	})
+	if database == "" {
+		t.Fatal("lease registry was not created")
+	}
+	db, err := sql.Open("sqlite", "file:"+filepath.ToSlash(database))
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn, err := db.Conn(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = conn.ExecContext(context.Background(), "PRAGMA busy_timeout=0; BEGIN IMMEDIATE"); err != nil {
+		t.Fatal(err)
+	}
+	var once sync.Once
+	release = func() {
+		once.Do(func() {
+			conn.ExecContext(context.Background(), "ROLLBACK")
+			conn.Close()
+			db.Close()
+		})
+	}
+	t.Cleanup(release)
+	return release
+}
+
+func TestRegistryContentionIsDistinctFromCacheUse(t *testing.T) {
+	f := newFixture(t)
+	f.run(f.main, 0, "run", "--", "cargo", "build")
+	for _, command := range []string{"status", "doctor", "clean"} {
+		t.Run(command+"/brief", func(t *testing.T) {
+			release := holdLeaseRegistry(t, f)
+			time.AfterFunc(300*time.Millisecond, release)
+			f.run(f.main, 0, command, "--preset", "cargo")
+		})
+	}
+	for _, command := range []string{"status", "doctor", "clean"} {
+		for _, asJSON := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/sustained/json=%v", command, asJSON), func(t *testing.T) {
+				if command == "clean" {
+					// The brief clean above removed the cache; rebuild an idle one.
+					f.run(f.main, 0, "run", "--", "cargo", "build")
+				}
+				release := holdLeaseRegistry(t, f)
+				args := []string{command, "--preset", "cargo"}
+				if asJSON {
+					args = append(args, "--json")
+				}
+				start := time.Now()
+				stdout, stderr := f.run(f.main, 125, args...)
+				if elapsed := time.Since(start); elapsed < time.Second {
+					t.Fatalf("returned before the contention budget: %s", elapsed)
+				}
+				release()
+				const cause = "lease registry is locked by another ccow process"
+				const remediation = "no cache was found in use"
+				if strings.Contains(stdout+stderr, "cache is in use") {
+					t.Fatalf("registry contention reported as cache use\nstdout=%s\nstderr=%s", stdout, stderr)
+				}
+				if !asJSON {
+					if !strings.Contains(stderr, cause) || !strings.Contains(stderr, remediation) {
+						t.Fatalf("missing cause or remediation: %s", stderr)
+					}
+					return
+				}
+				var out struct {
+					Success bool `json:"success"`
+					Error   struct {
+						Code        int    `json:"code"`
+						Cause       string `json:"cause"`
+						Remediation string `json:"remediation"`
+					} `json:"error"`
+				}
+				if err := json.Unmarshal([]byte(stdout), &out); err != nil {
+					t.Fatalf("%v: %s", err, stdout)
+				}
+				if out.Success || out.Error.Code != 125 || !strings.Contains(out.Error.Cause, cause) || !strings.Contains(out.Error.Remediation, remediation) {
+					t.Fatalf("unexpected failure payload: %s", stdout)
+				}
+			})
+		}
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/delinoio/oss/cmds/cachecow/internal/lease"
 	"github.com/delinoio/oss/cmds/cachecow/internal/process"
 	"github.com/delinoio/oss/cmds/cachecow/internal/repository"
 	"github.com/delinoio/oss/cmds/cachecow/internal/shell"
@@ -163,6 +164,8 @@ func (a *app) fail(e error) int {
 	var own *failure
 	if errors.As(e, &own) {
 		f = own
+	} else if errors.Is(e, lease.ErrRegistryBusy) {
+		f = &failure{125, e.Error(), "The shared lease registry is locked by another ccow process and stayed locked past the retry budget; no cache was found in use. Retry the command shortly, or run ccow doctor --verbose if it persists."}
 	}
 	var x interface{ ExitCode() int }
 	if errors.As(e, &x) {

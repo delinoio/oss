@@ -3,7 +3,9 @@ package session
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"github.com/delinoio/oss/cmds/cachecow/internal/lease"
 	"github.com/delinoio/oss/cmds/cachecow/internal/lifecycle"
 	"os"
@@ -303,5 +305,24 @@ func TestPreparationEvidenceUsesLeasedResult(t *testing.T) {
 				t.Fatal("existing cache was overwritten")
 			}
 		})
+	}
+}
+
+func TestRegistryBusyCrossesResultBoundary(t *testing.T) {
+	busy := fmt.Errorf("open lease registry: %w", lease.ErrRegistryBusy)
+	raw, err := json.Marshal(failedResponse(busy))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var decoded Response
+	if err = json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	got := decoded.failure()
+	if !errors.Is(got, lease.ErrRegistryBusy) || errors.Is(got, lease.ErrBusy) || got.Error() != busy.Error() {
+		t.Fatalf("registry contention lost across the boundary: %v", got)
+	}
+	if other := failedResponse(lease.ErrBusy).failure(); errors.Is(other, lease.ErrRegistryBusy) {
+		t.Fatalf("cache overlap reported as registry contention: %v", other)
 	}
 }

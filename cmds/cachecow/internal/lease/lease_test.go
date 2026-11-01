@@ -331,6 +331,68 @@ func TestReconcileRejectsChangedRecord(t *testing.T) {
 	}
 }
 
+// holdRegistry takes the registry write lock on a separate connection until the
+// returned release function runs. release is idempotent.
+func holdRegistry(t *testing.T, r *Registry) (release func()) {
+	t.Helper()
+	conn, err := r.db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
+		conn.Close()
+		t.Fatal(err)
+	}
+	var once sync.Once
+	release = func() {
+		once.Do(func() {
+			conn.ExecContext(ctx, "ROLLBACK")
+			conn.Close()
+		})
+	}
+	t.Cleanup(release)
+	return release
+}
+
+// holdReaders keeps a SHARED lock so concurrent writers can start a transaction
+// but SQLite reports BUSY when they try to COMMIT.
+func holdReaders(t *testing.T, r *Registry) (release func()) {
+	t.Helper()
+	conn, err := r.db.Conn(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.ExecContext(ctx, "BEGIN"); err != nil {
+		conn.Close()
+		t.Fatal(err)
+	}
+	var n int
+	if err := conn.QueryRowContext(ctx, "SELECT count(*) FROM leases").Scan(&n); err != nil {
+		conn.Close()
+		t.Fatal(err)
+	}
+	var once sync.Once
+	release = func() {
+		once.Do(func() {
+			conn.ExecContext(ctx, "ROLLBACK")
+			conn.Close()
+		})
+	}
+	t.Cleanup(release)
+	return release
+}
+
+func releaseAfter(d time.Duration, release func()) {
+	go func() { time.Sleep(d); release() }()
+}
+
+func requireNotOverlapError(t *testing.T, err error) {
+	t.Helper()
+	if errors.Is(err, ErrBusy) || errors.Is(err, ErrNestedConflict) || errors.Is(err, ErrRegistryBusy) {
+		t.Fatalf("registry contention reported as %v", err)
+	}
+}
+
 func TestRegistryTransactionContention(t *testing.T) {
 	r, root := setup(t)
 	other, err := Open(ctx, filepath.Join(root, "registry"))
@@ -338,21 +400,15 @@ func TestRegistryTransactionContention(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer other.Close()
-	conn, err := r.db.Conn(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	if _, err := conn.ExecContext(ctx, "BEGIN IMMEDIATE"); err != nil {
-		t.Fatal(err)
-	}
-	defer conn.ExecContext(ctx, "ROLLBACK")
+	holdRegistry(t, r)
 	start := time.Now()
-	if _, err := session(t, other).Acquire(ctx, Resources{Destinations: []string{filepath.Join(root, "cache")}}, false); !errors.Is(err, ErrBusy) {
-		t.Fatal(err)
+	_, err = session(t, other).Acquire(ctx, Resources{Destinations: []string{filepath.Join(root, "cache")}}, false)
+	elapsed := time.Since(start)
+	if !errors.Is(err, ErrRegistryBusy) || errors.Is(err, ErrBusy) || errors.Is(err, ErrNestedConflict) {
+		t.Fatalf("expected only ErrRegistryBusy, got %v", err)
 	}
-	if time.Since(start) > time.Second {
-		t.Fatal("clean blocked on registry transaction")
+	if elapsed < time.Second || elapsed > time.Second+500*time.Millisecond {
+		t.Fatalf("contention budget not honored: %s", elapsed)
 	}
 	c, cancel := context.WithTimeout(ctx, 60*time.Millisecond)
 	defer cancel()
@@ -360,6 +416,250 @@ func TestRegistryTransactionContention(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRegistryBriefContentionIsRetried(t *testing.T) {
+	const hold = 250 * time.Millisecond
+	type operation struct {
+		name string
+		// prepare runs before the lock is held and returns the contended call.
+		prepare func(t *testing.T, r *Registry, root string) func() error
+	}
+	operations := []operation{
+		{"Open", func(t *testing.T, r *Registry, root string) func() error {
+			return func() error {
+				reopened, err := Open(ctx, filepath.Join(root, "registry"))
+				if err == nil {
+					reopened.Close()
+				}
+				return err
+			}
+		}},
+		{"Records", func(t *testing.T, r *Registry, root string) func() error {
+			return func() error { _, err := r.Records(ctx); return err }
+		}},
+		{"Reconcile", func(t *testing.T, r *Registry, root string) func() error {
+			s := session(t, r)
+			acquire(t, s, filepath.Join(root, "reconcile"))
+			all, err := r.Records(ctx)
+			if err != nil || len(all) != 1 {
+				t.Fatal(all, err)
+			}
+			return func() error { return r.Reconcile(ctx, all[0], verified) }
+		}},
+		{"AcquireNoWait", func(t *testing.T, r *Registry, root string) func() error {
+			s := session(t, r)
+			return func() error {
+				_, err := s.Acquire(ctx, Resources{Destinations: []string{filepath.Join(root, "acquire")}}, false)
+				return err
+			}
+		}},
+		{"NestedAcquire", func(t *testing.T, r *Registry, root string) func() error {
+			s := session(t, r)
+			acquire(t, s, filepath.Join(root, "outer"))
+			return func() error {
+				g, err := s.Acquire(ctx, Resources{Destinations: []string{filepath.Join(root, "inner")}}, false)
+				if err == nil && (len(g.NewPaths) != 1 || g.Borrowed) {
+					return fmt.Errorf("unexpected grant %+v", g)
+				}
+				return err
+			}
+		}},
+		{"ReleasePreparedSources", func(t *testing.T, r *Registry, root string) func() error {
+			s := session(t, r)
+			src, dst := filepath.Join(root, "src"), filepath.Join(root, "dst")
+			g, err := s.Acquire(ctx, Resources{Sources: []string{src}, Destinations: []string{dst}}, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return func() error { return s.ReleasePreparedSources([]string{src}, g) }
+		}},
+		{"ReleaseUnstartedGrant", func(t *testing.T, r *Registry, root string) func() error {
+			s := session(t, r)
+			acquire(t, s, filepath.Join(root, "outer"))
+			g := acquire(t, s, filepath.Join(root, "inner"))
+			return func() error { return s.ReleaseUnstartedGrant(g) }
+		}},
+	}
+	for _, op := range operations {
+		t.Run(op.name, func(t *testing.T) {
+			r, root := setup(t)
+			root, err := filepath.EvalSymlinks(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			call := op.prepare(t, r, root)
+			release := holdRegistry(t, r)
+			releaseAfter(hold, release)
+			start := time.Now()
+			err = call()
+			elapsed := time.Since(start)
+			if err != nil {
+				requireNotOverlapError(t, err)
+				t.Fatal(err)
+			}
+			if elapsed < hold/2 {
+				t.Fatalf("call did not wait for the registry lock: %s", elapsed)
+			}
+		})
+	}
+}
+
+func TestRegistryLongContentionReturnsRegistryBusy(t *testing.T) {
+	r, root := setup(t)
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.contentionBudget = 200 * time.Millisecond
+	nested := session(t, r)
+	acquire(t, nested, filepath.Join(root, "outer"))
+	prepared := session(t, r)
+	src := filepath.Join(root, "src")
+	grant, err := prepared.Acquire(ctx, Resources{Sources: []string{src}, Destinations: []string{filepath.Join(root, "dst")}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	all, err := r.Records(ctx)
+	if err != nil || len(all) != 2 {
+		t.Fatal(all, err)
+	}
+	calls := map[string]func() error{
+		"Records":   func() error { _, err := r.Records(ctx); return err },
+		"Reconcile": func() error { return r.Reconcile(ctx, all[0], verified) },
+		"AcquireNoWait": func() error {
+			_, err := session(t, r).Acquire(ctx, Resources{Destinations: []string{filepath.Join(root, "new")}}, false)
+			return err
+		},
+		"NestedAcquire": func() error {
+			_, err := nested.Acquire(ctx, Resources{Destinations: []string{filepath.Join(root, "inner")}}, false)
+			return err
+		},
+		"ReleasePreparedSources": func() error { return prepared.ReleasePreparedSources([]string{src}, grant) },
+	}
+	holdRegistry(t, r)
+	for name, call := range calls {
+		start := time.Now()
+		err := call()
+		elapsed := time.Since(start)
+		if !errors.Is(err, ErrRegistryBusy) || errors.Is(err, ErrBusy) || errors.Is(err, ErrNestedConflict) {
+			t.Fatalf("%s: expected only ErrRegistryBusy, got %v", name, err)
+		}
+		if elapsed < 200*time.Millisecond || elapsed > 700*time.Millisecond {
+			t.Fatalf("%s: contention budget not honored: %s", name, elapsed)
+		}
+	}
+	if _, err := Open(ctx, filepath.Join(root, "registry")); !errors.Is(err, ErrRegistryBusy) {
+		t.Fatalf("Open: %v", err)
+	}
+}
+
+func TestRealOverlapIsNotRegistryBusy(t *testing.T) {
+	r, root := setup(t)
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	holder := session(t, r)
+	acquire(t, holder, filepath.Join(root, "held"))
+	outer := session(t, r)
+	acquire(t, outer, filepath.Join(root, "outer"))
+	start := time.Now()
+	if _, err := session(t, r).Acquire(ctx, Resources{Destinations: []string{filepath.Join(root, "held")}}, false); !errors.Is(err, ErrBusy) || errors.Is(err, ErrRegistryBusy) {
+		t.Fatalf("top-level overlap: %v", err)
+	}
+	if _, err := outer.Acquire(ctx, Resources{Destinations: []string{filepath.Join(root, "held", "child")}}, false); !errors.Is(err, ErrNestedConflict) || errors.Is(err, ErrRegistryBusy) {
+		t.Fatalf("nested overlap: %v", err)
+	}
+	if elapsed := time.Since(start); elapsed > 500*time.Millisecond {
+		t.Fatalf("real overlap waited %s", elapsed)
+	}
+}
+
+func TestAcquireWaitContinuesThroughContentionAndOverlap(t *testing.T) {
+	r, root := setup(t)
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.contentionBudget = 100 * time.Millisecond
+	path := filepath.Join(root, "cache")
+	release := holdRegistry(t, r)
+	releaseAfter(350*time.Millisecond, release)
+	if _, err := session(t, r).Acquire(ctx, Resources{Destinations: []string{path}}, true); err != nil {
+		t.Fatalf("wait through contention: %v", err)
+	}
+	// The path is now held: a waiter keeps polling the overlap until ctx ends.
+	c, cancel := context.WithTimeout(ctx, 150*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if _, err := session(t, r).Acquire(c, Resources{Destinations: []string{path}}, true); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("wait through overlap: %v", err)
+	}
+	if time.Since(start) < 100*time.Millisecond {
+		t.Fatal("overlap waiter returned early")
+	}
+	// Contention longer than the budget also keeps waiting until ctx ends.
+	holdRegistry(t, r)
+	c2, cancel2 := context.WithTimeout(ctx, 350*time.Millisecond)
+	defer cancel2()
+	if _, err := session(t, r).Acquire(c2, Resources{Destinations: []string{filepath.Join(root, "other")}}, true); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("wait through long contention: %v", err)
+	}
+}
+
+func TestRegistryContentionHonorsContext(t *testing.T) {
+	r, root := setup(t)
+	holdRegistry(t, r)
+	c, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	_, err := session(t, r).Acquire(c, Resources{Destinations: []string{filepath.Join(root, "cache")}}, false)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("expected context deadline, got %v", err)
+	}
+	if time.Since(start) > 500*time.Millisecond {
+		t.Fatalf("context ignored for %s", time.Since(start))
+	}
+}
+
+// A reader's SHARED lock lets the writer enter BEGIN IMMEDIATE and run the
+// Acquire closure but makes COMMIT report BUSY, so the closure must be retried.
+func TestRetriedAcquireRecordsNewPathsOnce(t *testing.T) {
+	r, root := setup(t)
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := session(t, r)
+	outer, inner := filepath.Join(root, "outer"), filepath.Join(root, "inner")
+	acquire(t, s, outer)
+	release := holdReaders(t, r)
+	releaseAfter(300*time.Millisecond, release)
+	start := time.Now()
+	g, err := s.Acquire(ctx, Resources{Destinations: []string{inner}}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if time.Since(start) < 200*time.Millisecond {
+		t.Fatal("commit contention did not force a retry")
+	}
+	if g.Borrowed || len(g.NewPaths) != 1 || g.NewPaths[0] != inner {
+		t.Fatalf("grant %+v", g)
+	}
+	all, err := r.Records(ctx)
+	if err != nil || len(all) != 1 {
+		t.Fatal(all, err)
+	}
+	want := []string{inner, outer}
+	if len(all[0].Paths) != 2 || all[0].Paths[0] != want[0] || all[0].Paths[1] != want[1] {
+		t.Fatalf("durable paths %v want %v", all[0].Paths, want)
+	}
+	// The in-memory record must match the durable one, so later calls work.
+	if err := s.ReleaseUnstartedGrant(g); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestSessionIDDoesNotAuthenticate(t *testing.T) {
 	r, root := setup(t)
 	a := session(t, r)
