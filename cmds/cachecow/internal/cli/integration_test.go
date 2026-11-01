@@ -674,7 +674,9 @@ func TestCleanRemovesReadOnlyClonedCache(t *testing.T) {
 			t.Fatal(e)
 		}
 	}
-	f.run(f.work, 0, "prepare", "--replace", "--", "cargo", "build")
+	// --allow-copy keeps the test independent of copy-on-write support; the
+	// prepared tree must carry the same read-only directory modes either way.
+	f.run(f.work, 0, "prepare", "--replace", "--allow-copy", "--", "cargo", "build")
 	info, e := os.Stat(filepath.Join(f.work, "target", "ro"))
 	if e != nil || info.Mode().Perm() != 0555 {
 		t.Fatalf("clone did not preserve read-only directory: %v %v", info, e)
