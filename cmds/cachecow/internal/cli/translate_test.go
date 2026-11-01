@@ -21,6 +21,14 @@ func TestTranslateRootBoundaries(t *testing.T) {
 		{"longer leading path", "/a/t/repo/x", "/a/t/repo/x"},
 		{"flag value", "--manifest-path=/t/repo/Cargo.toml", "--manifest-path=/t/src/Cargo.toml"},
 		{"direnv marker", "-/t/repo", "-/t/src"},
+		{"direnv marker after list separator", "/a" + sep + "-/t/repo", "/a" + sep + "-/t/src"},
+		{"direnv marker after assignment", "DIRENV_DIR=-/t/repo", "DIRENV_DIR=-/t/src"},
+		{"hyphen inside unrelated path", "/backup-/t/repo/cargo", "/backup-/t/repo/cargo"},
+		{"hyphen after flag name", "--manifest-path-/t/repo/Cargo.toml", "--manifest-path-/t/repo/Cargo.toml"},
+		{"double hyphen inside unrelated path", "/backup--/t/repo/cargo", "/backup--/t/repo/cargo"},
+		{"punctuation inside unrelated path", "/backup+/t/repo/cargo" + sep + "/x@/t/repo" + sep + "/y~/t/repo", "/backup+/t/repo/cargo" + sep + "/x@/t/repo" + sep + "/y~/t/repo"},
+		{"unrelated hyphen path then real root", "/backup-/t/repo/cargo" + sep + "/t/repo/bin", "/backup-/t/repo/cargo" + sep + "/t/src/bin"},
+		{"quoted root", `cd "/t/repo/x"`, `cd "/t/src/x"`},
 		{"sibling then real", "/t/repo-wt/x" + sep + "/t/repo/y", "/t/repo-wt/x" + sep + "/t/src/y"},
 		{"sibling then real in one value", "/t/repo-wt/x/t/repo", "/t/repo-wt/x/t/repo"},
 		{"unrelated", "release", "release"},
@@ -45,9 +53,9 @@ func TestTranslateEnvAndArgs(t *testing.T) {
 	if env[0] != "DIRENV_DIR=-/t/repo" {
 		t.Fatal("input mutated")
 	}
-	argv := []string{"cargo", "build", "--target-dir", "/t/repo/target", "--manifest-path=/t/repo/Cargo.toml", "/t/repo-wt"}
+	argv := []string{"/backup-/t/repo/cargo", "build", "--target-dir", "/t/repo/target", "--manifest-path=/t/repo/Cargo.toml", "/t/repo-wt"}
 	gotArgs := tr.args(argv)
-	wantArgs := []string{"cargo", "build", "--target-dir", "/t/src/target", "--manifest-path=/t/src/Cargo.toml", "/t/repo-wt"}
+	wantArgs := []string{"/backup-/t/repo/cargo", "build", "--target-dir", "/t/src/target", "--manifest-path=/t/src/Cargo.toml", "/t/repo-wt"}
 	if !reflect.DeepEqual(gotArgs, wantArgs) {
 		t.Fatalf("args %q want %q", gotArgs, wantArgs)
 	}

@@ -16,19 +16,35 @@ import (
 //
 // Only whole-path occurrences are rewritten: the root must not continue into another path
 // component (/t/repo-wt/x stays unchanged for /t/repo) and must not be the tail of a longer
-// path (/a/t/repo/x stays unchanged). The translation is purely lexical; roots must be canonical.
+// path (/a/t/repo/x and /backup-/t/repo/x stay unchanged). The root must start a token, either at
+// the start of the value or after whitespace, a quote, '=', or a path-list separator, optionally
+// behind the direnv "-" marker. The translation is purely lexical; roots must be canonical.
 type rootTranslation struct{ from, to string }
 
 func (t rootTranslation) enabled() bool { return t.from != "" && t.from != t.to }
 
-// isPathByte reports whether b can belong to a path component, so an adjacent root match
-// would be part of a longer path instead of a standalone path.
-func isPathByte(b byte) bool {
-	switch {
-	case b >= 'a' && b <= 'z', b >= 'A' && b <= 'Z', b >= '0' && b <= '9', b >= 0x80:
+// isRootBoundary reports whether b separates tokens, so a root that follows it starts a
+// standalone path. Filename punctuation such as '-', '+', or '@' is not a boundary: a root that
+// follows it is the tail of a longer path (/backup-/t/repo/cargo for /t/repo).
+func isRootBoundary(b byte) bool {
+	switch b {
+	case ' ', '\t', '\n', '\r', '"', '\'', '`', '=', ':', ';', ',', '(', ')', '<', '>', '|', '&':
 		return true
 	}
-	return b == '_' || b == '.' || b == '/' || b == '\\'
+	return b == os.PathListSeparator
+}
+
+// isRootStart reports whether the root match beginning at start is a standalone path. A single
+// hyphen directly before the root is the direnv marker ("-/t/repo" in DIRENV_DIR) only when the
+// hyphen itself starts a token; a hyphen inside another path component is filename punctuation.
+func isRootStart(s string, start int) bool {
+	if start == 0 {
+		return true
+	}
+	if s[start-1] == '-' {
+		return start == 1 || isRootBoundary(s[start-2])
+	}
+	return isRootBoundary(s[start-1])
 }
 
 // isRootEnd reports whether the byte after a root match ends the path.
@@ -51,7 +67,7 @@ func (t rootTranslation) value(s string) string {
 		start := i + j
 		end := start + len(t.from)
 		i = start + 1
-		if start > 0 && isPathByte(s[start-1]) {
+		if !isRootStart(s, start) {
 			continue
 		}
 		if end < len(s) && !isRootEnd(s[end]) {
