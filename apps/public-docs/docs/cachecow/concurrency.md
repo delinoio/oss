@@ -14,13 +14,22 @@ CacheCow must coordinate source reads with source builds so copies are consisten
 
 Finite builds, checks, tests, and long-running watch/development servers use the same lifecycle. A cache remains locked for the process tree's lifetime. A watch server used as a source can therefore block copying until it exits.
 
-Nested invocations in the same management session and against the same cache reuse the lock without repeating preparation. Different-cache nesting remains managed separately. This applies when explicit `ccow run` enters a shim or a build script invokes Cargo. Nested execution must not release outer protection early. Cancelling a nested command cancels the whole managed session, including its outer build and other descendants. Protection remains active throughout graceful shutdown and forced termination.
+Nested invocations in the same management session and against the same cache reuse the lock without repeating preparation. Different-cache nesting remains managed separately. This applies when explicit `ccow run` enters a shim or a build script invokes Cargo. Nested execution must not release outer protection early. A nested command that fails before it starts, for example on an unusable source or a failed preparation, does not keep its source or new cache locked for the rest of the outer session; the outer session keeps only its own protection. Cancelling a nested command cancels the whole managed session, including its outer build and other descendants. Protection remains active throughout graceful shutdown and forced termination.
 
 ## Cancellation and recovery
 
 On termination, CacheCow must forward termination appropriately, allow five seconds for graceful shutdown, then terminate remaining owned descendants. It must release locks only after the relevant process tree exits. Failed or cancelled builds retain the working cache.
 
 Abnormal CacheCow termination must not leave descendants writing into an unlocked cache. Native platform process ownership and recovery are acceptance requirements; these guides do not claim that they have passed on any platform.
+
+CacheCow releases a lease left by a supervisor that died only when the platform proves that every owned process has exited:
+
+- After a reboot, leases recover automatically on Linux and macOS. A waiting command recovers them before it waits, so you do not need to run `ccow doctor` first.
+- On Windows, the supervisor's job object terminates every owned process when the supervisor exits, so a lease whose recorded supervisor no longer runs recovers automatically.
+- On Linux, if the supervisor is killed without a reboot, the lease stays protected because orphaned build processes can keep writing. It recovers after those processes exit and the machine reboots.
+- Leases recorded by an earlier CacheCow version carry no native identity and cannot recover automatically. Stop any remaining build processes and reboot; if `ccow doctor` still keeps the lease, report it.
+
+When a command must wait for a lease that cannot be recovered, it prints one notice with the cache path and the blocking journal directory. `ccow doctor` lists the leases it recovered and the reason it keeps each remaining lease: `owner running`, `same boot; descendants may survive`, or `incomplete journal without native identity (version 1)`.
 
 If a run ends unexpectedly:
 

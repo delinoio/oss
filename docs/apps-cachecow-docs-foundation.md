@@ -51,6 +51,6 @@ Update the project index, complete requirements, affected consumer contracts, an
 ## References
 
 - [Project index](project-cachecow.md)
-- [Complete requirements](cmds-cachecow-requirements.md)
+- [Complete requirements](crates-cachecow-requirements.md)
 - [Repository defaults](repository-defaults.md)
 - [Workflow](repository-workflow-contract.md)

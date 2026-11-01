@@ -2,11 +2,11 @@
 
 ## Scope
 
-This contract preserves the complete CacheCow product requirements, acceptance criteria, and test scenarios. It governs `cmds/cachecow`, `packages/ccow`, and `apps/public-docs/docs/cachecow`. The sections after References retain the source requirements and decision context. Requirements describe the intended release, not completed implementation or native acceptance.
+This contract preserves the complete CacheCow product requirements, acceptance criteria, and test scenarios. It governs `crates/cachecow`, `packages/ccow`, and `apps/public-docs/docs/cachecow`. The sections after References retain the source requirements and decision context. Requirements describe the intended release, not completed implementation or native acceptance.
 
 ## Runtime and Language
 
-Go CLI; native Cargo use requires no Node.js. The npm launcher and frontend integrations require Node.js 24+. See the exact support matrix below.
+Rust CLI (crate `cachecow`, binary `ccow`); native Cargo use requires no Node.js. The npm launcher and frontend integrations require Node.js 24+. See the exact support matrix below.
 
 ## Users and Operators
 
@@ -26,7 +26,7 @@ The path, repository, user, process ownership, and sensitive-log boundaries belo
 
 ## Logging
 
-English diagnostics, structured Go logging, unchanged child streams, and no sensitive persisted diagnostic content, as specified below.
+English diagnostics, structured Rust `tracing` logging, unchanged child streams, and no sensitive persisted diagnostic content, as specified below.
 
 ## Build and Test
 
@@ -43,7 +43,7 @@ Keep this full requirements contract, the project index, and affected domain con
 ## References
 
 - [Project index](project-cachecow.md)
-- [Command foundation](cmds-cachecow-foundation.md)
+- [Command foundation](crates-cachecow-foundation.md)
 - [Distribution](packages-ccow-distribution-contract.md)
 - [Public documentation](apps-cachecow-docs-foundation.md)
 - [Repository defaults](repository-defaults.md)
@@ -83,7 +83,7 @@ CoW is not a compiler cache key algorithm, a shared process heap, or automatic s
 ### Product and support matrix
 
 - Product: CacheCow. CLI: `ccow`. Use the lowercase project identifier `cachecow` for project onboarding.
-- Implement the CLI in Go under the repository's default-language rule; license repository-owned code and distributions under Apache-2.0.
+- Implement the CLI in Rust as the `crates/cachecow` crate with the `ccow` binary; license repository-owned code and distributions under Apache-2.0. The owner later decided to port the original Go implementation to Rust; see the decision ledger below.
 - First-release presets: `cargo`, `rspack`, `rsbuild`.
 - Native support and actual acceptance floors:
   - macOS 15+, arm64, APFS.
@@ -188,6 +188,8 @@ Disk exhaustion, permission errors, and other actual preparation failures stop b
 - Support finite builds/checks/tests and long-running watch/development servers. Hold the cache lock for the process tree's lifetime; copies that need that source wait.
 - Forward termination appropriately, allow five seconds for graceful shutdown, then terminate remaining owned descendants. Release locks only after the relevant process tree has exited.
 - Abnormal CacheCow termination must not leave uncontrolled descendants writing into an unlocked cache. Include platform-specific ownership and recovery.
+- Recover leases only from positive per-platform completion evidence recorded before any lease is acquired (journal version 2). Linux records `/proc/sys/kernel/random/boot_id`; a different boot proves that every owned process exited. In the same boot, a dead Linux supervisor keeps its leases because orphaned descendants can survive. macOS records `kern.bootsessionuuid`; a different boot session, or a surviving coalition with zero members in the same boot, proves completion. Windows records the supervisor PID and creation time; the unnamed, non-inheritable job uses `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, so a supervisor that no longer runs proves whole-job termination. A dead PID or elapsed time alone never permits release. Incomplete version-1 journals carry no identity and stay protected.
+- An acquisition that must wait first tries this positive recovery once for each conflicting lease, then continues without a manual `ccow doctor` run when recovery succeeds. Otherwise it writes one notice to the user's terminal stderr that names the cache path, the blocking lease and its journal directory. `ccow doctor` reports the reason for each lease it keeps (`owner running`, `incomplete journal without native identity (version 1)`, or `same boot; descendants may survive`) and lists each lease it recovered.
 - Make waiting and cancellation diagnosable. Preserve working caches after failed/cancelled builds.
 
 ### Security and storage boundaries
@@ -207,7 +209,8 @@ Disk exhaustion, permission errors, and other actual preparation failures stop b
 - Preserve the child command's exit code. CacheCow-owned exit codes: 2 for arguments/configuration, 125 for cache/environment/internal failures, 126 for command execution denied/unavailable, and 127 for command not found.
 - Text and JSON errors must explain actionable fixes, especially noninteractive decisions, CoW capability, permissions, source selection, and lock contention.
 - `doctor` and `--verbose` expose paths, tool versions, CoW capability, lock state, and failure causes.
-- Follow repository structured logging requirements (Go `log/slog` or compatible) and ANSI output with a documented opt-out.
+- Follow repository structured logging requirements (Rust `tracing` or compatible) and ANSI output with a documented opt-out.
+- Report short SQLite lease-registry contention between `ccow` processes separately from an in-use cache. Retry registry transactions for up to one second, then fail with the "lease registry is temporarily locked" cause and retry guidance; never report contention as cache use or as a nested lease conflict.
 - Do not persist original file contents, environment variable values, or full command arguments in diagnostic logs. Do not print shell configuration content outside the CacheCow-owned block to any stream. Displaying the exact command for an interactive source-build confirmation does not authorize storing it in logs.
 - No remote metrics, dashboards, alerting service, or telemetry. Local diagnostics and release benchmark artifacts provide observability.
 
@@ -233,7 +236,7 @@ Disk exhaustion, permission errors, and other actual preparation failures stop b
 - [ ] Nested same-session/same-cache invocations reuse locks, different-cache nesting remains managed, and neither path deadlocks or releases protection prematurely.
 - [ ] Shim diagnostics and guides explain real executable selection, PATH priority, bypass, uninstall, and all unsupported interception paths.
 
-- [ ] CacheCow and `ccow` are onboarded with authoritative contracts, Go implementation, Apache-2.0 licensing, native packages, and `@delino/ccow`.
+- [ ] CacheCow and `ccow` are onboarded with authoritative contracts, Rust implementation, Apache-2.0 licensing, native packages, and `@delino/ccow`.
 - [ ] Every supported preset can identify and prepare its allowed cache paths without changing unrelated source, dependencies, Git metadata, or outputs.
 - [ ] Initial worktree preparation uses the primary checkout or explicit same-repository source; repeat runs preserve the local cache unless replacement is explicitly requested.
 - [ ] Real CoW is demonstrated on APFS, Btrfs, reflink-enabled XFS, and ReFS. Writing or cleaning a derived cache does not modify the source or another worktree.
@@ -311,7 +314,9 @@ The shim extension was decided by the owner after the original PRD: three PATH s
 | Failure modes                 | Answered                       | Source errors, preparation failure, cancellation, concurrent use, and replacement contracts above                             |
 | Documentation and support     | Answered / contract-determined | Approved public guides and GitHub Issues; documentation-first repository onboarding                                           |
 | Testing and acceptance        | Answered                       | Owner approved all native, failure, isolation, installation, and measurement gates                                            |
-| Language/license/identifiers  | Contract-determined            | Go, Apache-2.0, default UUID v7 for new persisted entities under repository rules                                             |
+| Language/license/identifiers  | Answered                       | Rust (owner decision to port the Go CLI), Apache-2.0, default UUID v7 for new persisted entities under repository rules       |
 | Filing                        | Contract-determined            | Current remote is delinoio/oss; repository issue style; no duplicate found; PRD label absent, so no labels added              |
+
+Language decision: the first implementation was Go under the repository default-language rule. The owner then decided to port the CLI completely to Rust (`crates/cachecow`, binary `ccow`). This supersedes the original "Implement the CLI in Go" scope item. Persisted record formats, commands, output, exit codes and every acceptance gate remain unchanged by the port.
 
 These are requirements, not evidence that the implementations or native tests have passed.

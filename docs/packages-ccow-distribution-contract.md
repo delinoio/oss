@@ -2,11 +2,11 @@
 
 ## Scope
 
-Own `packages/ccow`: distribution tooling and npm package `@delino/ccow`, exposing `ccow`. Native runtime remains owned by `cmds/cachecow`.
+Own `packages/ccow`: distribution tooling and npm package `@delino/ccow`, exposing `ccow`. Native runtime remains owned by `crates/cachecow`.
 
 ## Runtime and Language
 
-The native CLI is Go. The npm launcher requires Node.js 24+; native Cargo users must be able to use the native archive without Node.js. Repository-owned distribution code and metadata use Apache-2.0.
+The native CLI is the Rust `ccow` binary from `crates/cachecow`. The npm launcher requires Node.js 24+; native Cargo users must be able to use the native archive without Node.js. Repository-owned distribution code and metadata use Apache-2.0.
 
 ## Users and Operators
 
@@ -40,7 +40,7 @@ Validate native archive and npm installation on every supported minimum OS/archi
 
 ## Dependencies and Integrations
 
-Consumes the Go CLI and its shared managed lifecycle. Integrates with npm, GitHub Releases, and consolidated public installation/rollback guides. Support is through GitHub Issues with no response-time SLA.
+Consumes the Rust CLI and its shared managed lifecycle. Integrates with npm, GitHub Releases, and consolidated public installation/rollback guides. Support is through GitHub Issues with no response-time SLA.
 
 ## Change Triggers
 
@@ -49,16 +49,27 @@ Update the project index, complete requirements, affected consumer contracts, an
 ## References
 
 - [Project index](project-cachecow.md)
-- [Complete requirements](cmds-cachecow-requirements.md)
+- [Complete requirements](crates-cachecow-requirements.md)
 - [Repository defaults](repository-defaults.md)
 - [Workflow](repository-workflow-contract.md)
 
 ## Release candidate and native acceptance workflow
 
 `.github/workflows/release-ccow.yml` is a manual, main-only workflow restricted to `delinoio/oss`. Its `dry_run` input defaults to true; dry runs build and accept candidates without publication.
-It checks the requested version against `packages/ccow/package.json`, builds
-native binaries with `main.version`, packages the exact source revision, and
-verifies the versioned archives, npm tarballs and checksums. Candidate artifacts
+It checks the requested version against `packages/ccow/package.json`. A `build`
+matrix compiles each native target on a matching GitHub-hosted runner with the
+pinned `rust-toolchain`: `macos-15` for `aarch64-apple-darwin`, `ubuntu-22.04`
+for `x86_64-unknown-linux-gnu` (the glibc floor), and `windows-latest` for
+`x86_64-pc-windows-msvc`. `build-native.mjs` runs
+`cargo build --release --locked -p cachecow --bin ccow --target <triple>` with
+`CCOW_VERSION`, `CCOW_BUILD_REVISION` and `CCOW_BUILD_DIRTY`. Each executable
+embeds exactly one marker,
+`ccow-build-info:{"version":"<v>","revision":"<sha>","target":"<triple>","dirty":false}`.
+The candidate job downloads those binaries, and `package.mjs` rejects any binary
+whose marker does not match the requested version, exact source revision,
+target triple and a clean build. It then packages the exact source revision and
+verifies the versioned archives, npm tarballs and checksums. This release-only
+macOS build host is not CI allocation and does not establish native acceptance. Candidate artifacts
 are identified by source SHA. Every job checks out the immutable dispatch SHA.
 Validation jobs have read-only contents permission. The shared release project
 selector is unchanged. Publication requires successful candidate, native and

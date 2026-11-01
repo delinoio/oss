@@ -10,18 +10,18 @@ Prepare independent writable build caches for Git worktrees with filesystem copy
 
 ## Domain Ownership Map
 
-| Domain   | Canonical path                   | Ownership                                                                                |
-| -------- | -------------------------------- | ---------------------------------------------------------------------------------------- |
-| cmds     | `cmds/cachecow`                  | Go CLI, cache management, presets, shims, shell integration and native process ownership |
-| packages | `packages/ccow`                  | `@delino/ccow` launcher and native distribution tooling                                  |
-| apps     | `apps/public-docs/docs/cachecow` | Public guides, built and published by public-docs                                        |
+| Domain   | Canonical path                   | Ownership                                                                                           |
+| -------- | -------------------------------- | --------------------------------------------------------------------------------------------------- |
+| crates   | `crates/cachecow`                | Rust CLI (`ccow`), cache management, presets, shims, shell integration and native process ownership |
+| packages | `packages/ccow`                  | `@delino/ccow` launcher and native distribution tooling                                             |
+| apps     | `apps/public-docs/docs/cachecow` | Public guides, built and published by public-docs                                                   |
 
 Implementation and packaging do not establish published availability or native acceptance. The complete requirements retain their actual platform and tool acceptance gates.
 
 ## Domain Contract Documents
 
-- [Complete requirements](cmds-cachecow-requirements.md)
-- [Command foundation](cmds-cachecow-foundation.md)
+- [Complete requirements](crates-cachecow-requirements.md)
+- [Command foundation](crates-cachecow-foundation.md)
 - [npm and native distribution](packages-ccow-distribution-contract.md)
 - [Public documentation](apps-cachecow-docs-foundation.md)
 

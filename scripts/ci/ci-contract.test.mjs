@@ -43,6 +43,7 @@ const legacyJobs = [
   "node-clibox-test",
   "node-pnport-test",
   "pnport-native",
+  "cachecow-windows",
 ];
 const releaseJobs = ["release-contracts"];
 const achJobs = ["async-commit-hook"];
@@ -626,6 +627,31 @@ test("scoped Go caches preserve default keys and restore shared main caches on f
     action.outputs["cache-key"].value,
     "${{ steps.restore.outputs.cache-primary-key }}",
   );
+});
+
+test("CacheCow Windows tests run on affected PRs and main pushes without macOS", () => {
+  const job = workflow.jobs["cachecow-windows"];
+  assert.equal(job["runs-on"], "windows-latest");
+  assert.equal(jobPaths["cachecow-windows"].native, undefined);
+  const commands = job.steps.map(({ run }) => run).filter(Boolean);
+  assert.deepEqual(commands, [
+    "cargo clippy --locked -p cachecow --all-targets --all-features -- -D warnings",
+    "cargo test --locked -p cachecow --all-targets",
+  ]);
+  for (const event of Object.values(Event)) {
+    assert.equal(
+      planJobs(event, ["crates/cachecow/src/lease/mod.rs"]).jobs[
+        "cachecow-windows"
+      ],
+      true,
+      event,
+    );
+    assert.equal(
+      planJobs(event, ["crates/nodeup/src/main.rs"]).jobs["cachecow-windows"],
+      false,
+      event,
+    );
+  }
 });
 
 test("Rust CI consumes one verified prebuilt selection and gates native preparation", () => {

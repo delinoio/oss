@@ -2,11 +2,11 @@
 
 ## Scope
 
-Own `cmds/cachecow`: the planned `ccow` CLI, preset discovery, CoW preparation, cache lifecycle, locking, process ownership, shims, and shell integration. The [complete requirements](cmds-cachecow-requirements.md) govern every behavior and acceptance gate.
+Own `crates/cachecow`: the Rust crate `cachecow` and its `ccow` binary, preset discovery, CoW preparation, cache lifecycle, locking, process ownership, shims, and shell integration. The [complete requirements](crates-cachecow-requirements.md) govern every behavior and acceptance gate.
 
 ## Runtime and Language
 
-Go under the repository default. Use the repository Go toolchain. Native Cargo operation must not depend on Node.js. Supported platforms and tool versions are exactly those in the complete requirements.
+Rust, ported from the original Go implementation by owner decision. Use the workspace toolchain pinned in `rust-toolchain`. The crate is a workspace member with `publish = false`; release builds embed SQLite and set `CCOW_VERSION`, `CCOW_BUILD_REVISION` and `CCOW_BUILD_DIRTY`, which the binary exposes in its `ccow-build-info:` identity marker for distribution verification. Native Cargo operation must not depend on Node.js. Supported platforms and tool versions are exactly those in the complete requirements.
 
 ## Users and Operators
 
@@ -36,9 +36,13 @@ Cargo metadata resolves the workspace and configured `target_directory` and `bui
 
 ### Coordination and recovery
 
-Acquire the complete source and destination resource set before preparation. Inspect mutable source contents and provenance only after acquiring that complete set, so an active source build can finish before compatibility is checked. An unusable source after acquisition retains the existing interactive recovery choices. The initial coordinator uses exclusive leases for both sources and destinations; independent resource sets can proceed concurrently. Conflicts include aliases and ancestor/descendant paths. A nested request borrows existing protection only through authenticated session ownership. A nested extension that conflicts with another session fails with remediation instead of retaining a partial acquisition and waiting in a possible cycle.
+Acquire the complete source and destination resource set before preparation. Inspect mutable source contents and provenance only after acquiring that complete set, so an active source build can finish before compatibility is checked. An unusable source after acquisition retains the existing interactive recovery choices. The initial coordinator uses exclusive leases for both sources and destinations; independent resource sets can proceed concurrently. Conflicts include aliases and ancestor/descendant paths. A nested request borrows existing protection only through authenticated session ownership. A nested extension that conflicts with another session fails with remediation instead of retaining a partial acquisition and waiting in a possible cycle. A nested extension that fails after admission, for example on an unusable source or a failed preparation, releases exactly the resources it newly acquired before it reports the failure, and keeps the resources borrowed from the parent. Its recovery choices therefore retry with full validation and preparation.
 
-Persist ownership intent before permitting child execution. Release protection only after positive whole-process-tree completion evidence; a dead PID or released operating-system lock is insufficient. An unfinished ownership record remains protected until native recovery can prove completion. Unknown record versions are read-only. Supervisor recovery must never infer completion from elapsed time. A cancelled nested command requests termination from the authenticated outer native owner. This cancels the whole session with the same five-second graceful interval and retains outer protection until every owned descendant exits. Repository snapshots exclude contents of wholly ignored directories without tracked descendants; index, ignore-rule and directory-type changes still invalidate discovery.
+Lease registry transactions retry SQLite lock contention between `ccow` processes for up to one second, honoring cancellation, and then report the separate "lease registry is temporarily locked" error with retry guidance. Contention is never reported as an in-use cache or a nested conflict. `ccow clean` still refuses a real overlapping lease immediately; waiting commands keep waiting through both contention and real overlap.
+
+Source discovery for a derived worktree runs in the source worktree context. Before discovery, environment entries and arguments are translated lexically: the current worktree root prefix becomes the source worktree root. Only these two verified roots are translated; every other difference in tool versions, platform, architecture, environment or settings keeps the source incompatible.
+
+Persist ownership intent before permitting child execution. Release protection only after positive whole-process-tree completion evidence; a dead PID or released operating-system lock is insufficient. An unfinished ownership record remains protected until native recovery can prove completion. Process journals use version 2 and record native identity before any lease is acquired: Linux `boot_id`, macOS `kern.bootsessionuuid` (plus the coalition ID), and the Windows supervisor PID and creation time. A different boot proves completion on Linux and macOS; a zero-member coalition also proves it in the same macOS boot. On Windows, the unnamed, non-inheritable job uses `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`, so a recorded supervisor that no longer runs proves whole-job termination. In the same Linux boot, a dead supervisor keeps its leases because orphaned descendants can survive. Version-1 journals and journals without identity stay protected. A waiting acquisition attempts this positive recovery once per conflicting lease before it waits, and otherwise writes one notice with the cache path, lease and journal directory to the user's stderr; `ccow clean` attempts the same recovery once before it refuses. `ccow doctor` reports a typed reason for each kept lease and lists recovered leases. Unknown record versions are read-only. Supervisor recovery must never infer completion from elapsed time. A cancelled nested command requests termination from the authenticated outer native owner. This cancels the whole session with the same five-second graceful interval and retains outer protection until every owned descendant exits. Repository snapshots exclude contents of wholly ignored directories without tracked descendants; index, ignore-rule and directory-type changes still invalidate discovery.
 
 ## Storage
 
@@ -50,11 +54,11 @@ Validate same-user/same-repository ownership and resolved paths before mutation.
 
 ## Logging
 
-Use `log/slog` or compatible structured logging. English notices go to stderr; child streams remain unchanged. Support ANSI output with a documented opt-out. Doctor/verbose expose safe paths, versions, capability, lock state, and failure causes. Never persist source contents, environment values, or full command arguments. Shell setup and removal notices show only the CacheCow-owned block, never other profile content.
+Use `tracing` or compatible structured logging. English notices go to stderr; child streams remain unchanged. Support ANSI output with a documented opt-out. Doctor/verbose expose safe paths, versions, capability, lock state, and failure causes. Never persist source contents, environment values, or full command arguments. Shell setup and removal notices show only the CacheCow-owned block, never other profile content.
 
 ## Build and Test
 
-Once Go runtime code exists, run relevant `go test` coverage under the repository workflow. The full requirements enumerate failure, concurrency, nesting, shell, filesystem, and native acceptance tests. Preserve the five-second graceful shutdown interval and descendant termination tests. Physical sharing/isolation and minimum-version native execution require actual supported hosts; mocks and cross-builds are insufficient. Do not add macOS runners to PR, main-push, or affected manual CI.
+Run `cargo test -p cachecow` under the repository workflow. Ubuntu Rust CI and the affected `cachecow-windows` job cover Linux and Windows; macOS coverage remains local or release work. The full requirements enumerate failure, concurrency, nesting, shell, filesystem, and native acceptance tests. Preserve the five-second graceful shutdown interval and descendant termination tests. Physical sharing/isolation and minimum-version native execution require actual supported hosts; mocks and cross-builds are insufficient. Do not add macOS runners to PR, main-push, or affected manual CI.
 
 ## Dependencies and Integrations
 
@@ -67,6 +71,6 @@ Update the project index, complete requirements, affected consumer contracts, an
 ## References
 
 - [Project index](project-cachecow.md)
-- [Complete requirements](cmds-cachecow-requirements.md)
+- [Complete requirements](crates-cachecow-requirements.md)
 - [Repository defaults](repository-defaults.md)
 - [Workflow](repository-workflow-contract.md)

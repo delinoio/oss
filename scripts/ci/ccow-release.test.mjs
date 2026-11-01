@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import yaml from "js-yaml";
 import { Event, planJobs } from "./plan.mjs";
 const workflow = yaml.load(
@@ -58,11 +59,45 @@ test("CacheCow native gate is manual, main-only and owns four real environments"
     if (name !== "publish") assert(!JSON.stringify(job).includes("secrets."));
   }
 });
+test("CacheCow candidates package Rust binaries built on matching hosts", () => {
+  const build = workflow.jobs.build;
+  assert.equal(build.if, workflow.jobs.candidate.if);
+  assert.equal(workflow.jobs.candidate.needs, "build");
+  const platforms = createRequire(import.meta.url)(
+    "../../packages/ccow/src/platforms.cjs",
+  );
+  assert.deepEqual(
+    build.strategy.matrix.include.map(({ target, rust }) => ({
+      target,
+      rust,
+    })),
+    platforms.targets.map(({ suffix, rust }) => ({ target: suffix, rust })),
+  );
+  assert.deepEqual(
+    build.strategy.matrix.include.map(({ runner }) => runner),
+    ["macos-15", "ubuntu-22.04", "windows-latest"],
+  );
+  const toolchain = build.steps.find(({ uses }) =>
+    uses?.startsWith("dtolnay/rust-toolchain@"),
+  );
+  assert.equal(
+    toolchain.with.toolchain,
+    readFileSync("rust-toolchain", "utf8").trim(),
+  );
+  assert.match(
+    build.steps.find(({ run }) => run?.includes("build-native.mjs")).run,
+    /--target "\$CCOW_TARGET"/u,
+  );
+  const candidate = JSON.stringify(workflow.jobs.candidate);
+  assert.doesNotMatch(candidate, /setup-go|build-native/u);
+  assert.match(candidate, /package\.mjs/u);
+  assert.match(candidate, /verify\.mjs/u);
+});
 test("normal affected CI runs CacheCow distribution tests without native allocation", () => {
   for (const event of Object.values(Event))
     for (const file of [
       "packages/ccow/src/launcher.cjs",
-      "cmds/cachecow/main.go",
+      "crates/cachecow/src/main.rs",
       "scripts/release/ccow-acceptance.mjs",
       "scripts/release/ccow-publish.mjs",
       "scripts/release/ccow-publish.test.mjs",
