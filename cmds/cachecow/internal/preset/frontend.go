@@ -176,6 +176,7 @@ func discoverFrontend(ctx context.Context, req Request, out *Result) (any, error
 		if e != nil {
 			return nil, e
 		}
+		out.CachePaths = append(out.CachePaths, CachePath{ToolPath: cache.Path, Canonical: p})
 		out.Roots = append(out.Roots, Root{p, []RootKind{Persistent}})
 	}
 	out.Compatibility.ToolVersion = probe.Tool

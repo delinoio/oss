@@ -68,6 +68,9 @@ func Validate(p session.Plan) error {
 		if len(selected.Inputs) == 0 {
 			return errors.New("preset cache-selection inputs are missing; repeat discovery")
 		}
+		if e := preset.VerifyCachePaths(*selected); e != nil {
+			return e
+		}
 		if e := repository.VerifyFileStamps(selected.Inputs); e != nil {
 			return e
 		}

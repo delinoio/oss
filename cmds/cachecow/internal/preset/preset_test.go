@@ -495,3 +495,36 @@ func TestFrontendConfigurationStamps(t *testing.T) {
 		})
 	}
 }
+
+func TestFrontendExternalCacheAliasRetarget(t *testing.T) {
+	req, runner, data := frontendFixture(t)
+	a, b := filepath.Join(req.CWD, ".cache", "a"), filepath.Join(req.CWD, ".cache", "b")
+	for _, p := range []string{a, b} {
+		if err := os.MkdirAll(p, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	alias := filepath.Join(t.TempDir(), "external-alias")
+	if err := os.Symlink(a, alias); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	data["result"].(map[string]any)["caches"] = []map[string]any{{"type": "persistent", "path": alias}}
+	raw, _ := json.Marshal(data)
+	runner.frontend = string(raw)
+	result, err := Discover(context.Background(), req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyCachePaths(result); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(b, alias); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyCachePaths(result); err == nil {
+		t.Fatal("retargeted external alias retained old lease claims")
+	}
+}

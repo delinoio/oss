@@ -74,7 +74,13 @@ func (c Compatibility) Compatible(other Compatibility) bool {
 	return c.Verified() && other.Verified() && c == other
 }
 
+type CachePath struct {
+	ToolPath  string
+	Canonical string
+}
+
 type Result struct {
+	CachePaths    []CachePath
 	Inputs        []repository.FileStamp
 	Preset        ID
 	Repository    repository.Info
@@ -207,6 +213,7 @@ func Discover(ctx context.Context, req Request) (Result, error) {
 		if e != nil {
 			return Result{}, e
 		}
+		out.CachePaths = append(out.CachePaths, CachePath{ToolPath: out.Roots[i].Path, Canonical: p})
 		out.Roots[i].Path = p
 	}
 	// Merge equal roots but reject partial overlap: lifecycle operations must never
@@ -267,5 +274,30 @@ func Discover(ctx context.Context, req Request) (Result, error) {
 		Settings         any
 	}{args, env, paths, normalize(req.CWD), settings})
 	slog.DebugContext(ctx, "cache discovery verified", "preset", out.Preset, "cache_roots", len(out.Roots), "tool_version", out.Compatibility.ToolVersion)
+	if e := VerifyCachePaths(out); e != nil {
+		return Result{}, e
+	}
 	return out, nil
+}
+
+// VerifyCachePaths binds tool-visible aliases to the resource names leased by
+// the supervisor. Repository snapshots cannot observe aliases outside a worktree.
+func VerifyCachePaths(r Result) error {
+	covered := make(map[string]bool)
+	for _, claim := range r.CachePaths {
+		current, err := repository.Canonical(claim.ToolPath)
+		if err != nil {
+			return err
+		}
+		if current != claim.Canonical {
+			return errors.New("cache path alias changed; repeat discovery")
+		}
+		covered[current] = true
+	}
+	for _, root := range r.Roots {
+		if !covered[root.Path] {
+			return errors.New("cache path alias evidence is missing; repeat discovery")
+		}
+	}
+	return nil
 }
