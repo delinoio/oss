@@ -163,7 +163,11 @@ func TestWindowsTreeHelper(t *testing.T) {
 		}
 		os.Exit(91)
 	case "child":
-		signal.Ignore(os.Interrupt)
+		// Survive the graceful CTRL_BREAK so the supervisor must wait for the
+		// grace interval. Go reports an ignored console event as unhandled, and
+		// Windows then terminates the process; a registered channel handles it.
+		interrupts := make(chan os.Signal, 1)
+		signal.Notify(interrupts, os.Interrupt)
 		if os.WriteFile(filepath.Join(os.Getenv("CCOW_TREE_DIR"), "child"), []byte(strconv.Itoa(os.Getpid())), 0600) != nil {
 			os.Exit(92)
 		}

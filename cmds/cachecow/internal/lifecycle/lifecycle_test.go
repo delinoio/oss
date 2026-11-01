@@ -2,6 +2,7 @@ package lifecycle
 
 import (
 	"context"
+	"github.com/delinoio/oss/cmds/cachecow/internal/lease"
 	"github.com/delinoio/oss/cmds/cachecow/internal/state"
 	"github.com/google/uuid"
 	"os"
@@ -25,8 +26,19 @@ func content(t *testing.T, p, want string) {
 		t.Fatalf("%s: %q %v, want %q", p, b, e, want)
 	}
 }
+
+// privateRoot creates transaction storage as production does. Windows
+// temporary directories inherit grants for other principals and are not private.
+func privateRoot(t *testing.T) string {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), "state")
+	if err := lease.EnsurePrivateDirectory(root); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
 func TestReplacementAndIsolation(t *testing.T) {
-	d := t.TempDir()
+	d := privateRoot(t)
 	src, dst := filepath.Join(d, "source"), filepath.Join(d, "target")
 	tree(t, src, "source")
 	tree(t, dst, "old")
@@ -46,7 +58,7 @@ func TestReplacementAndIsolation(t *testing.T) {
 	content(t, src, "source")
 }
 func TestFailedSecondTreePreservesBoth(t *testing.T) {
-	d := t.TempDir()
+	d := privateRoot(t)
 	a, b, c, f := filepath.Join(d, "a"), filepath.Join(d, "b"), filepath.Join(d, "c"), filepath.Join(d, "f")
 	tree(t, a, "new")
 	tree(t, b, "old-b")
@@ -69,7 +81,7 @@ func TestFailedSecondTreePreservesBoth(t *testing.T) {
 	}
 }
 func TestRecoverPartialPublication(t *testing.T) {
-	d := t.TempDir()
+	d := privateRoot(t)
 	src, dst := filepath.Join(d, "src"), filepath.Join(d, "dst")
 	tree(t, src, "new")
 	tree(t, dst, "new")
@@ -86,7 +98,7 @@ func TestRecoverPartialPublication(t *testing.T) {
 	content(t, dst, "old")
 }
 func TestUnknownJournalPreserved(t *testing.T) {
-	d := t.TempDir()
+	d := privateRoot(t)
 	p := filepath.Join(d, "txn.json")
 	if e := state.Write(p, journal{SchemaVersion: 99}); e != nil {
 		t.Fatal(e)
