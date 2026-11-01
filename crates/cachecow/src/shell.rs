@@ -548,6 +548,15 @@ mod tests {
         (t, p)
     }
 
+    /// Bash and Zsh refuse ':' in the shim directory, and Windows drive paths
+    /// contain one. The directory is never accessed, so a UNC form suffices.
+    fn posix_shims(dir: &str) -> String {
+        #[cfg(windows)]
+        return format!(r"\\ccow-test\share{}", &dir[2..]);
+        #[cfg(unix)]
+        dir.to_string()
+    }
+
     fn write_mode(path: &str, bytes: &[u8], mode: u32) {
         fs::write(path, bytes).unwrap();
         #[cfg(unix)]
@@ -576,7 +585,10 @@ mod tests {
                 let path = paths::join2(&base, "profile with spaces");
                 write_mode(&path, original.as_bytes(), 0o640);
                 let (_d, dir_base) = temp();
-                let dir = paths::join2(&dir_base, "shims '한 글' $x `cmd` [*]");
+                let mut dir = paths::join2(&dir_base, "shims '한 글' $x `cmd` [*]");
+                if kind != Kind::PowerShell {
+                    dir = posix_shims(&dir);
+                }
                 let p = prepare(kind, Action::Setup, &path, &dir).unwrap();
                 let e = p
                     .apply(Approval {
@@ -646,7 +658,7 @@ mod tests {
         let original = b"# unrelated\n";
         write_mode(&path, original, 0o600);
         let (_d, shims) = temp();
-        let p = prepare(Kind::Bash, Action::Setup, &path, &shims).unwrap();
+        let p = prepare(Kind::Bash, Action::Setup, &path, &posix_shims(&shims)).unwrap();
         let e = p
             .apply_with(&|_, _| Err(io::Error::other("simulated disk or rename failure")))
             .unwrap_err();
@@ -672,7 +684,7 @@ mod tests {
     fn appeared_after_review() {
         let (_t, base) = temp();
         let path = paths::join2(&base, "profile");
-        let p = prepare(Kind::Zsh, Action::Setup, &path, &base).unwrap();
+        let p = prepare(Kind::Zsh, Action::Setup, &path, &posix_shims(&base)).unwrap();
         write_mode(&path, b"new", 0o600);
         let e = p
             .apply(Approval {
@@ -899,7 +911,7 @@ mod tests {
     #[test]
     fn owned_change() {
         let (_t, base) = temp();
-        let dir = paths::join2(&base, "shims");
+        let dir = posix_shims(&paths::join2(&base, "shims"));
         let code = init(Kind::Bash, &dir).unwrap();
         let owned =
             |marker: &str, nl: &str| format!("{marker}{nl}{}{END}{nl}", code.replace('\n', nl));
@@ -1058,7 +1070,7 @@ mod tests {
     fn session_instructions() {
         let (_t, base) = temp();
         let path = paths::join2(&base, "profile");
-        let setup = prepare(Kind::Zsh, Action::Setup, &path, &base).unwrap();
+        let setup = prepare(Kind::Zsh, Action::Setup, &path, &posix_shims(&base)).unwrap();
         assert_eq!(
             setup.current_session_instruction(),
             "This change applies to new shells. Apply `ccow shell init zsh` output in this shell \
