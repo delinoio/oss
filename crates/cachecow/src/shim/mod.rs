@@ -6,6 +6,18 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+mod classify;
+mod install;
+#[cfg(not(windows))]
+#[path = "private_unix.rs"]
+mod private;
+#[cfg(windows)]
+#[path = "private_windows.rs"]
+mod private;
+mod resolve;
+#[cfg(test)]
+mod tests;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Tool {
@@ -38,8 +50,8 @@ impl std::fmt::Display for Tool {
 
 /// Recognizes installed native copies, including Windows `.exe` names.
 pub fn from_argv0(argv0: &str) -> Option<Tool> {
-    let _ = argv0;
-    todo!("shim::from_argv0")
+    let base = crate::paths::base(argv0);
+    Tool::parse(base.strip_suffix(".exe").unwrap_or(&base))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -73,10 +85,10 @@ pub struct Classification {
     pub reason: Reason,
 }
 
-/// Inspects arguments only; never removes or rewrites them.
+/// Inspects arguments only; never removes or rewrites them. The caller must
+/// pass the original argv to the selected executable, including `+toolchain`.
 pub fn classify(tool: Tool, args: &[String], in_git: bool, bypass: &str) -> Classification {
-    let _ = (tool, args, in_git, bypass);
-    todo!("shim::classify")
+    classify::classify(tool, args, in_git, bypass)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -97,22 +109,23 @@ pub struct Entry {
     pub state: State,
 }
 
-/// Content-verified ownership of each shim in `dir`.
+/// Content-verified ownership of each shim in `dir`, never mere filename
+/// ownership.
 pub fn list(dir: &str) -> Result<Vec<Entry>> {
-    let _ = dir;
-    todo!("shim::list")
+    install::list(dir)
 }
 
-/// Copies the native `ccow` executable to each shim name (idempotent).
+/// Copies the native `ccow` executable to each shim name (idempotent). A
+/// manifest records both old and new digests before replacement, so an
+/// interrupted upgrade can be retried safely.
 pub fn install(dir: &str, executable: &str) -> Result<()> {
-    let _ = (dir, executable);
-    todo!("shim::install")
+    install::install(dir, executable)
 }
 
-/// Removes only CacheCow-owned shims.
+/// Removes only CacheCow-owned shims. Modified or unrelated files and shell
+/// registration remain; `ccow shell remove` removes registration.
 pub fn uninstall(dir: &str) -> Result<()> {
-    let _ = dir;
-    todo!("shim::uninstall")
+    install::uninstall(dir)
 }
 
 /// Populated for each invocation, never pinned at installation.
@@ -163,8 +176,13 @@ pub struct ResolveFailure {
     pub error: anyhow::Error,
 }
 
+impl std::fmt::Display for ResolveFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.error)
+    }
+}
+
 /// Selects the first executable in PATH after excluding CacheCow shims.
 pub fn resolve(tool: Tool, options: &ResolveOptions) -> Result<Resolution, ResolveFailure> {
-    let _ = (tool, options);
-    todo!("shim::resolve")
+    resolve::resolve(tool, options)
 }
