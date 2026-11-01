@@ -153,8 +153,8 @@ Record new implementation status, validation results and unresolved limits in pu
 ### cachecow
 
 - [Project index](project-cachecow.md)
-- [Complete requirements](cmds-cachecow-requirements.md) (full cache/shim requirements and native acceptance gates)
-- [Go command foundation](cmds-cachecow-foundation.md) (`cmds/cachecow`)
+- [Complete requirements](crates-cachecow-requirements.md) (full cache/shim requirements and native acceptance gates)
+- [Rust command foundation](crates-cachecow-foundation.md) (`crates/cachecow`)
 - [npm and native distribution](packages-ccow-distribution-contract.md) (`packages/ccow`, package `@delino/ccow`)
 - [Public documentation](apps-cachecow-docs-foundation.md) (`apps/public-docs/docs/cachecow`)
 

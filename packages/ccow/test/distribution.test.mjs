@@ -21,6 +21,7 @@ import {
   packageRelease,
   verifyRelease,
   identity,
+  buildInfo,
   sha256,
 } from "../scripts/package.mjs";
 import { dryRun } from "../scripts/release-dry-run.mjs";
@@ -58,6 +59,43 @@ test("exact support matrix and unsupported platforms", () => {
   );
   assert.equal(platforms.selectTarget("darwin", "x64"), undefined);
   assert.throws(() => launcher.resolveBinary("unused", null), /Unsupported/);
+});
+test("native build identity is read from the embedded marker", () => {
+  const info = {
+    version: "0.1.0",
+    revision,
+    target: "x86_64-unknown-linux-gnu",
+    dirty: false,
+  };
+  const marker = `ccow-build-info:${JSON.stringify(info)}`;
+  const binary = Buffer.concat([
+    Buffer.from("\x7fELF\0prefix\0"),
+    Buffer.from(marker),
+    Buffer.from("\0middle\0"),
+    Buffer.from(marker),
+    Buffer.from("\0suffix"),
+  ]);
+  assert.deepEqual(buildInfo(binary), info);
+  assert.throws(() => buildInfo(Buffer.from("no identity")), /exactly one/);
+  assert.throws(
+    () =>
+      buildInfo(
+        Buffer.concat([
+          Buffer.from(marker),
+          Buffer.from("\0"),
+          Buffer.from(marker.replace(revision, "b".repeat(40))),
+        ]),
+      ),
+    /exactly one/,
+  );
+  assert.throws(
+    () => buildInfo(Buffer.from('ccow-build-info:{"version":"0.1.0"}')),
+    /fields/,
+  );
+  assert.throws(
+    () => buildInfo(Buffer.from("ccow-build-info:x}")),
+    /Malformed/,
+  );
 });
 test("fixture dry-run is labeled and private", () => {
   const result = dryRun();

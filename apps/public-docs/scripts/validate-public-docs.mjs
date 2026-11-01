@@ -32,7 +32,7 @@ const forbiddenProjectContent = [
   /(?:\/Users\/|\/home\/[a-z]|\.infisical)/iu,
   /(?:apps|cmds|servers|protos)\/(?:runmoor|async-commit-hook)(?:\/|\b)/iu,
   /(?:crates|packages)\/pnport(?:\/|\b)/iu,
-  /(?:cmds\/cachecow|packages\/ccow|docs\/(?:project-cachecow|cmds-cachecow|apps-cachecow|packages-ccow))/iu,
+  /(?:(?:cmds|crates)\/cachecow|packages\/ccow|docs\/(?:project-cachecow|cmds-cachecow|crates-cachecow|apps-cachecow|packages-ccow))/iu,
 ];
 const rootRoutes = [
   "/",

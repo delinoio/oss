@@ -38,6 +38,35 @@ export function identity(sourceRevision, fixture = false) {
   );
   return { version, sourceRevision, fixture, tag: `ccow@v${version}` };
 }
+// The Rust build script embeds one static marker in each native executable:
+// `ccow-build-info:{"version":"<v>","revision":"<sha>","target":"<triple>","dirty":false}`.
+// Cross-built binaries cannot run on the packaging host, so verify the bytes.
+export const BUILD_INFO_MARKER = "ccow-build-info:";
+export function buildInfo(bytes) {
+  const marker = Buffer.from(BUILD_INFO_MARKER);
+  const found = new Set();
+  for (
+    let index = bytes.indexOf(marker);
+    index >= 0;
+    index = bytes.indexOf(marker, index + 1)
+  ) {
+    const start = index + marker.length;
+    const end = bytes.indexOf(0x7d, start);
+    assert(
+      bytes[start] === 0x7b && end > start && end - start < 1024,
+      "Malformed embedded build identity",
+    );
+    found.add(bytes.subarray(start, end + 1).toString("utf8"));
+  }
+  assert.equal(found.size, 1, "Expected exactly one embedded build identity");
+  const info = JSON.parse([...found][0]);
+  assert.deepEqual(
+    Object.keys(info).sort(),
+    ["dirty", "revision", "target", "version"],
+    "Unexpected embedded build identity fields",
+  );
+  return info;
+}
 function manifest(id, target, digest) {
   return {
     name: target?.name ?? "@delino/ccow",
@@ -113,26 +142,17 @@ export function packageRelease({
       );
       const bytes = readFileSync(file);
       assert(bytes.length > 0, "Empty binary");
-      if (!fixture) {
-        const build = execFileSync("go", ["version", "-m", file], {
-          encoding: "utf8",
-          stdio: "pipe",
-        });
-        assert(
-          build.includes(`GOOS=${target.goos}`) &&
-            build.includes(`GOARCH=${target.goarch}`),
-          "Go binary target mismatch",
+      if (!fixture)
+        assert.deepEqual(
+          buildInfo(bytes),
+          {
+            version,
+            revision: sourceRevision,
+            target: target.rust,
+            dirty: false,
+          },
+          "Native binary build identity mismatch or dirty build",
         );
-        assert(
-          build.includes(`-X main.version=${version}`),
-          "Go binary version linker identity mismatch",
-        );
-        assert(
-          build.includes(`vcs.revision=${sourceRevision}`) &&
-            build.includes("vcs.modified=false"),
-          "Go binary source revision mismatch or dirty build",
-        );
-      }
       if (
         !fixture &&
         target.os === process.platform &&

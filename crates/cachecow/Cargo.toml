@@ -1,0 +1,65 @@
+[package]
+name = "cachecow"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Copy-on-write build caches for Git worktrees (ccow)"
+readme = "README.md"
+repository = "https://github.com/delinoio/oss"
+publish = false
+
+[[bin]]
+name = "ccow"
+path = "src/main.rs"
+
+# Process-ownership tests need the test executable itself to act as the native
+# supervisor, so they dispatch the supervisor before running test cases.
+[[test]]
+name = "process"
+path = "tests/process.rs"
+harness = false
+
+[features]
+default = ["bundled-sqlite"]
+# Release builds embed SQLite. Disable only for cross-target type checking.
+bundled-sqlite = ["rusqlite/bundled"]
+
+[dependencies]
+anyhow = "1.0.100"
+getrandom = "0.3.4"
+hex = "0.4.3"
+rusqlite = "0.41.0"
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.140"
+sha2 = "0.10.8"
+thiserror = "2.0.12"
+toml = "0.8.20"
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["fmt", "env-filter"] }
+uuid = { version = "1.18.1", features = ["v7"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.182"
+signal-hook = "0.3.18"
+
+[target.'cfg(windows)'.dependencies]
+dunce = "1.0.5"
+windows-sys = { version = "0.61", features = [
+  "Wdk_System_Threading",
+  "Win32_Foundation",
+  "Win32_Security",
+  "Win32_Security_Authorization",
+  "Win32_Storage_FileSystem",
+  "Win32_System_Console",
+  "Win32_System_IO",
+  "Win32_System_Ioctl",
+  "Win32_System_JobObjects",
+  "Win32_System_Pipes",
+  "Win32_System_SystemInformation",
+  "Win32_System_SystemServices",
+  "Win32_System_Threading",
+  "Win32_System_WindowsProgramming",
+] }
+
+[dev-dependencies]
+tempfile = "3.18.0"
