@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/delinoio/oss/cmds/cachecow/internal/lease"
@@ -174,7 +175,9 @@ func (a *app) detect(cwd string) (string, error) {
 	if e != nil {
 		return "", e
 	}
-	for dir := cwd; repository.Contains(r.Root, dir); dir = filepath.Dir(dir) {
+	// Walk from the canonical directory: r.Root is canonical and Contains is lexical, so the raw
+	// cwd would be rejected when it is spelled through a symlink.
+	for dir := r.CWD; repository.Contains(r.Root, dir); dir = filepath.Dir(dir) {
 		found := []string{}
 		if _, e := os.Stat(filepath.Join(dir, "Cargo.toml")); e == nil {
 			found = append(found, "cargo")
@@ -198,6 +201,17 @@ func (a *app) detect(cwd string) (string, error) {
 		}
 	}
 	return "", bad("cannot detect a preset; select --preset cargo, rspack, or rsbuild")
+}
+
+// sourceWorkingDirectory maps the canonical working directory of the current worktree to the same
+// relative directory in the source worktree. The raw os.Getwd value may be spelled through a
+// symlink and cannot be compared with the canonical repository root.
+func sourceWorkingDirectory(current, source repository.Info) (string, error) {
+	rel, err := filepath.Rel(current.Root, current.CWD)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", bad("cannot map the working directory into the source worktree; run from inside the repository")
+	}
+	return filepath.Join(source.Root, rel), nil
 }
 func (a *app) discover(cwd string, argv []string) (preset.Result, error) {
 	id := a.o.preset
@@ -324,8 +338,11 @@ func (a *app) managed(action string, argv []string) (int, error) {
 				a.notice("Source is the current worktree; choose build here instead.")
 				continue
 			}
-			rel, _ := filepath.Rel(current.Repository.Root, cwd)
-			sourceCWD := filepath.Join(src.Repository.Root, rel)
+			sourceCWD, err := sourceWorkingDirectory(current.Repository, src.Repository)
+			if err != nil {
+				a.notice("%s", err)
+				continue
+			}
 			a.notice("Source working directory: %s\nExact requested argv: %q", sourceCWD, argv)
 			ok, err := a.confirm("Run this exact command in the source?")
 			if err != nil {
