@@ -150,6 +150,14 @@ Record new implementation status, validation results and unresolved limits in pu
 - [npm/native distribution](packages-pnport-distribution-contract.md)
 - [Public documentation](apps-pnport-docs-foundation.md) (ten guides under `/pnport`, with 0.1.0 marked unreleased)
 
+### cachecow
+
+- [Project index](project-cachecow.md)
+- [Complete requirements](cmds-cachecow-requirements.md) (full cache/shim requirements and native acceptance gates)
+- [Go command foundation](cmds-cachecow-foundation.md) (`cmds/cachecow`)
+- [npm and native distribution](packages-ccow-distribution-contract.md) (`packages/ccow`, package `@delino/ccow`)
+- [Public documentation](apps-cachecow-docs-foundation.md) (planned section at `apps/public-docs/docs/cachecow`; skeleton only)
+
 ## Transferred projects
 
 Delcore, DeliDev, and DeliTools, including their contracts and historical DeliDev validation records, are maintained in [delino-apps](https://github.com/delinoio/delino-apps). This repository no longer owns their runtime paths or CI jobs.

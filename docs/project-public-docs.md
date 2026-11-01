@@ -20,6 +20,8 @@ Provide the Rspress-based public documentation site for user-facing product and 
 
 ## Cross-Domain Invariants
 
+- CacheCow reserves `apps/public-docs/docs/cachecow` for a planned `/cachecow` section under the [CacheCow documentation contract](apps-cachecow-docs-foundation.md). The skeleton adds no published routes or navigation entries; content and route validation must be integrated together.
+
 - The root site’s top-level navbar contains no route items. Product pages `cargo-mono` and `with-watch` remain available through the sidebar and documented links.
 
 - Rspress clean routes, navigation, sidebar, and docs structure must stay aligned with documented contracts.

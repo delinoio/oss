@@ -10,6 +10,8 @@
 
 ## Owning contracts
 
+- [CacheCow npm and native distribution](../docs/packages-ccow-distribution-contract.md)
+
 - [async-commit-hook API client contract](../docs/packages-async-commit-hook-api-client-contract.md)
 - [clibox npm and native distribution](../docs/packages-clibox-distribution-contract.md)
 - [packages-docs-site-switcher-contract](../docs/packages-docs-site-switcher-contract.md)
