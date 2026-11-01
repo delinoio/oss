@@ -108,3 +108,47 @@ func TestFinishSessionRetriesRegistryContention(t *testing.T) {
 		t.Fatalf("leases retained: %v %v", records, err)
 	}
 }
+
+func TestPreparationEvidenceUsesLeasedResult(t *testing.T) {
+	for _, existing := range []bool{false, true} {
+		t.Run(map[bool]string{false: "cloned", true: "created-before-acquisition"}[existing], func(t *testing.T) {
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			r, err := lease.Open(context.Background(), filepath.Join(root, "registry"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer r.Close()
+			owner, err := r.NewSession("fixture")
+			if err != nil {
+				t.Fatal(err)
+			}
+			src, dst := filepath.Join(root, "source"), filepath.Join(root, "dest")
+			os.Mkdir(src, 0700)
+			os.WriteFile(filepath.Join(src, "data"), []byte("source"), 0600)
+			p := Plan{SchemaVersion: 1, Root: root, Action: Prepare, PreparedAll: true, AllowCopy: true, Resources: lease.Resources{Sources: []string{src}, Destinations: []string{dst}}, Pairs: []lifecycle.Pair{{Source: src, Destination: dst}}, Record: filepath.Join(root, "transaction.json")}
+			// The plan was built while dst was absent. Another owner creates it before
+			// this request acquires protection; it must not acquire new provenance.
+			if existing {
+				os.Mkdir(dst, 0700)
+				os.WriteFile(filepath.Join(dst, "data"), []byte("retained"), 0600)
+			}
+			s := &server{root: root, session: owner, validate: func(Plan) error { return nil }, pending: map[string]Plan{}, ambiguous: map[string]bool{}}
+			if _, err := s.apply(context.Background(), p); err != nil {
+				t.Fatal(err)
+			}
+			if got := s.pending[p.Record].PreparedAll; got == existing {
+				t.Fatalf("PreparedAll=%v for existing=%v", got, existing)
+			}
+			data, err := os.ReadFile(filepath.Join(dst, "data"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if existing && string(data) != "retained" {
+				t.Fatal("existing cache was overwritten")
+			}
+		})
+	}
+}

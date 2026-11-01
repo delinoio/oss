@@ -23,10 +23,9 @@ import (
 )
 
 type claims struct {
-	PreparedAll bool
-	Current     preset.Result
-	Source      *preset.Result
-	Snapshot    repository.Snapshot
+	Current  preset.Result
+	Source   *preset.Result
+	Snapshot repository.Snapshot
 }
 type provenance struct {
 	SchemaVersion int                  `json:"schemaVersion"`
@@ -375,14 +374,12 @@ func (a *app) plan(action string, current preset.Result, argv []string, withoutS
 	p.Resources.Destinations = paths(current)
 	claim := claims{Current: current}
 	need := a.o.replace
-	allMissing := true
 	for _, v := range current.Roots {
 		exists, e := lifecycle.Exists(v.Path)
 		if e != nil {
 			return p, c, e
 		}
 		need = need || !exists
-		allMissing = allMissing && !exists
 	}
 	if action == "clean" || action == "tool-clean" {
 		need = false
@@ -444,7 +441,6 @@ func (a *app) plan(action string, current preset.Result, argv []string, withoutS
 			p.Pairs = append(p.Pairs, lifecycle.Pair{Source: path, Destination: path})
 		}
 	}
-	claim.PreparedAll = claim.Source != nil && (allMissing || a.o.replace)
 	all := append(append([]string{}, p.Resources.Destinations...), p.Resources.Sources...)
 	snapshot, e := repository.CaptureSnapshot(a.ctx, current.Repository, all, a.store.Root)
 	if e != nil {
@@ -659,7 +655,7 @@ func Records() session.RecordHooks {
 			if e != nil {
 				return e
 			}
-			if p.Action == session.Prepare && !c.PreparedAll {
+			if p.Action == session.Prepare && !p.PreparedAll {
 				return nil
 			}
 			return state.Write(metadataPath(p.Root, c.Current), provenance{1, c.Current.Compatibility, paths(c.Current)})

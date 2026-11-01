@@ -39,6 +39,8 @@ const (
 )
 
 type Plan struct {
+	// PreparedAll is supervisor-owned evidence and never accepted over IPC.
+	PreparedAll   bool             `json:"-"`
 	SchemaVersion int              `json:"schemaVersion"`
 	Root          string           `json:"root"`
 	Action        Action           `json:"action"`
@@ -233,8 +235,10 @@ func finishSession(s *lease.Session, verify lease.Verify) error {
 func (s *server) apply(ctx context.Context, p Plan) (result lifecycle.Result, resultErr error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	p.PreparedAll = false
 	defer func() {
 		if resultErr == nil {
+			p.PreparedAll = len(p.Resources.Destinations) > 0 && len(result.Trees) == len(p.Resources.Destinations)
 			if old, ok := s.pending[p.Record]; ok && s.records.Compatible != nil && !s.records.Compatible(old, p) {
 				s.ambiguous[p.Record] = true
 			}

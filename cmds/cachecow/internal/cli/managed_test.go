@@ -47,3 +47,23 @@ func TestWriterInvalidatesOverlappingProvenance(t *testing.T) {
 		})
 	}
 }
+
+func TestPrepareRequiresSupervisorCloneEvidence(t *testing.T) {
+	root := t.TempDir()
+	current := preset.Result{Roots: []preset.Root{{Path: filepath.Join(root, "cache")}}}
+	data, _ := json.Marshal(claims{Current: current})
+	p := session.Plan{Root: root, Action: session.Prepare, Claims: data}
+	if err := Records().After(p, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(metadataPath(root, current)); !os.IsNotExist(err) {
+		t.Fatal("retained cache acquired provenance")
+	}
+	p.PreparedAll = true
+	if err := Records().After(p, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(metadataPath(root, current)); err != nil {
+		t.Fatal(err)
+	}
+}
