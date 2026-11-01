@@ -27,6 +27,10 @@ pub mod winsec;
 
 pub use context::Context;
 
+/// Release identity marker scanned by the distribution tooling:
+/// `ccow-build-info:{"version":…,"revision":…,"target":…,"dirty":…}`.
+pub const BUILD_INFO: &str = env!("CCOW_BUILD_INFO");
+
 /// Version reported by `ccow --version`. Release builds set `CCOW_VERSION`.
 pub const VERSION: &str = match option_env!("CCOW_VERSION") {
     Some(v) => v,
