@@ -410,13 +410,56 @@ func (a *app) shell() error {
 	if e != nil {
 		return e
 	}
-	a.notice("Shell configuration target: %s\nProposed contents:\n%s", p.Path, p.After)
+	slog.Debug("shell configuration plan prepared", "shell", kind, "action", action, "path", p.Path, "changed", p.Changed())
+	a.notice("%s", shellChangeNotice(p))
 	e = p.Apply(shell.Approval{Yes: a.o.yes, Interactive: a.interactive(), Confirm: func(*shell.Plan) (bool, error) { return a.confirm("Apply this shell configuration change?") }})
 	if e != nil {
 		return e
 	}
 	a.notice("%s", p.CurrentSessionInstruction())
 	return a.output(map[string]any{"path": p.Path, "changed": p.Changed()})
+}
+
+// shellChangeNotice describes the proposed shell configuration change. It shows
+// only the CacheCow-owned block and never any other profile content.
+func shellChangeNotice(p *shell.Plan) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "Shell configuration target: %s", p.Path)
+	if !p.Changed() {
+		if p.Action == shell.Remove {
+			b.WriteString("\nNo change: no CacheCow block to remove.")
+		} else {
+			b.WriteString("\nNo change: CacheCow block already up to date.")
+		}
+		return b.String()
+	}
+	removed, added, separator := p.OwnedChange()
+	switch {
+	case len(removed) > 0 && len(added) > 0:
+		b.WriteString("\nAction: replace CacheCow block")
+	case len(added) > 0:
+		b.WriteString("\nAction: add CacheCow block")
+	default:
+		b.WriteString("\nAction: remove CacheCow block")
+	}
+	writeBlockLines(&b, "- ", removed)
+	writeBlockLines(&b, "+ ", added)
+	if separator {
+		if len(added) > 0 {
+			b.WriteString("\nA separator line break is added before the block.")
+		} else {
+			b.WriteString("\nThe separator line break before the block is removed.")
+		}
+	}
+	return b.String()
+}
+func writeBlockLines(b *strings.Builder, prefix string, block []byte) {
+	if len(block) == 0 {
+		return
+	}
+	for _, line := range strings.Split(strings.TrimSuffix(string(block), "\n"), "\n") {
+		b.WriteString("\n" + prefix + strings.TrimSuffix(line, "\r"))
+	}
 }
 func (a *app) shimRun(t shim.Tool, args []string) int {
 	r, e := a.resolve(t)

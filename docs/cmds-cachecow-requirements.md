@@ -119,7 +119,7 @@ CoW is not a compiler cache key algorithm, a shared process heap, or automatic s
 - Uninstall removes only CacheCow-owned shims. Preserve caches, settings, and shell registration blocks, and explain how to remove those blocks with `ccow shell remove`.
 - `ccow shell init <shell>` emits activation code for the selected shell. Keep generated shell code usable as code, separate from diagnostic output.
 - `ccow shell setup <shell>` and `ccow shell remove <shell>` add or remove only a CacheCow-owned block in the user's shell configuration. Preserve unrelated content, make repeated operations idempotent, and preserve the original file if an update fails.
-- Show the target file and proposed change and obtain confirmation. Noninteractive setup/remove requires `--yes`. Support `--file` to select the configuration file; if automatic file selection is ambiguous, return an actionable error.
+- Show the target file and the proposed change and obtain confirmation. The proposed change is only the CacheCow-owned block that is added, replaced, or removed (shown as `- ` removed and `+ ` added lines), plus a note when a separator line break is added or removed. A run that changes nothing shows the target and a no-change notice without block contents. CacheCow never prints other shell configuration content on stdout or stderr, in interactive, `--yes`, `--json`, or unconfirmed runs. Noninteractive setup/remove requires `--yes`. Support `--file` to select the configuration file; if automatic file selection is ambiguous, return an actionable error.
 - Persistent setup/removal applies to new shells; explain how to apply the change to the current session.
 - Resolve the real executable at each invocation by selecting the first executable in PATH after excluding CacheCow shims, rather than pinning a path during installation. Prevent self-recursion while preserving existing version-manager behavior, including rustup toolchain selection.
 - If no real executable is found, return an actionable command-not-found error under the existing exit-code contract.
@@ -208,7 +208,7 @@ Disk exhaustion, permission errors, and other actual preparation failures stop b
 - Text and JSON errors must explain actionable fixes, especially noninteractive decisions, CoW capability, permissions, source selection, and lock contention.
 - `doctor` and `--verbose` expose paths, tool versions, CoW capability, lock state, and failure causes.
 - Follow repository structured logging requirements (Go `log/slog` or compatible) and ANSI output with a documented opt-out.
-- Do not persist original file contents, environment variable values, or full command arguments in diagnostic logs. Displaying the exact command for an interactive source-build confirmation does not authorize storing it in logs.
+- Do not persist original file contents, environment variable values, or full command arguments in diagnostic logs. Do not print shell configuration content outside the CacheCow-owned block to any stream. Displaying the exact command for an interactive source-build confirmation does not authorize storing it in logs.
 - No remote metrics, dashboards, alerting service, or telemetry. Local diagnostics and release benchmark artifacts provide observability.
 
 ### Distribution, rollback, documentation, and support

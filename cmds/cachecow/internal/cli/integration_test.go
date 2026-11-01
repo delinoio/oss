@@ -88,7 +88,8 @@ esac
 	for _, v := range os.Environ() {
 		key, _, _ := strings.Cut(v, "=")
 		switch key {
-		case "HOME", "XDG_CONFIG_HOME", "CARGO_HOME", "PATH", "RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "CCOW_SESSION":
+		// ZDOTDIR must not leak: shell setup tests would otherwise rewrite the real zsh profile.
+		case "HOME", "XDG_CONFIG_HOME", "CARGO_HOME", "PATH", "RUSTC", "RUSTC_WRAPPER", "RUSTC_WORKSPACE_WRAPPER", "CCOW_SESSION", "ZDOTDIR":
 			continue
 		}
 		f.env = append(f.env, v)
@@ -543,5 +544,196 @@ func TestWaitingCommandRejectsChangedCargoConfiguration(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "cache-selection configuration changed") {
 		t.Fatal(stderr.String())
+	}
+}
+
+const shellSentinelProfile = "export PATH=/usr/bin:$PATH\nexport SENTINEL_SECRET=c8-sentinel-value\n"
+
+var shellProfileFragments = []string{"c8-sentinel-value", "SENTINEL_SECRET", "export PATH=/usr/bin"}
+
+func requireNoProfileLeak(t *testing.T, what string, streams ...string) {
+	t.Helper()
+	for _, s := range streams {
+		for _, fragment := range shellProfileFragments {
+			if strings.Contains(s, fragment) {
+				t.Fatalf("%s leaked profile content %q:\n%s", what, fragment, s)
+			}
+		}
+	}
+}
+
+// requireBlockLines checks that every line of the shell init code appears in
+// notice with the given diff prefix.
+func requireBlockLines(t *testing.T, notice, prefix, code string) {
+	t.Helper()
+	for _, line := range strings.Split(strings.TrimSuffix(code, "\n"), "\n") {
+		if !strings.Contains(notice, "\n"+prefix+line+"\n") && !strings.HasSuffix(notice, "\n"+prefix+line) {
+			t.Fatalf("notice does not show %q line %q:\n%s", prefix, line, notice)
+		}
+	}
+}
+func readFileTest(t *testing.T, path string) string {
+	t.Helper()
+	b, e := os.ReadFile(path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	return string(b)
+}
+
+func TestShellSetupRemoveShowOnlyOwnedBlock(t *testing.T) {
+	for _, tc := range []struct {
+		shell string
+		file  string // relative to home
+		flag  bool
+	}{{"zsh", ".zshrc", false}, {"bash", ".bashrc", false}, {"powershell", "profile.ps1", true}} {
+		t.Run(tc.shell, func(t *testing.T) {
+			f := newFixture(t)
+			path := filepath.Join(f.home, tc.file)
+			writeTest(t, path, shellSentinelProfile, 0600)
+			args := func(action string) []string {
+				a := []string{"shell", action, tc.shell}
+				if tc.flag {
+					a = append(a, "--file", path)
+				}
+				return append(a, "--yes")
+			}
+			code, _ := f.run(f.main, 0, "shell", "init", tc.shell)
+			out, stderr := f.run(f.main, 0, args("setup")...)
+			requireNoProfileLeak(t, "setup", out, stderr)
+			if !strings.Contains(out, `"changed": true`) {
+				t.Fatalf("stdout %q", out)
+			}
+			for _, want := range []string{"Shell configuration target: " + path, "Action: add CacheCow block", "+ # >>> CacheCow owned activation >>>", "+ # <<< CacheCow owned activation <<<"} {
+				if !strings.Contains(stderr, want) {
+					t.Fatalf("setup notice missing %q:\n%s", want, stderr)
+				}
+			}
+			if strings.Contains(stderr, "\n- ") || strings.Contains(stderr, "separator") {
+				t.Fatalf("unexpected removal or separator in setup notice:\n%s", stderr)
+			}
+			requireBlockLines(t, stderr, "+ ", strings.TrimSuffix(code, "\n"))
+			if got := readFileTest(t, path); !strings.HasPrefix(got, shellSentinelProfile+"# >>> CacheCow owned activation >>>\n") {
+				t.Fatalf("profile %q", got)
+			}
+			withBlock := readFileTest(t, path)
+
+			out, stderr = f.run(f.main, 0, args("setup")...)
+			requireNoProfileLeak(t, "repeated setup", out, stderr)
+			if !strings.Contains(out, `"changed": false`) || !strings.Contains(stderr, "Shell configuration target: "+path) || !strings.Contains(stderr, "No change: CacheCow block already up to date.") {
+				t.Fatalf("repeated setup out=%q stderr=%q", out, stderr)
+			}
+			if strings.Contains(stderr, "CacheCow owned activation") || strings.Contains(stderr, "_ccow_") {
+				t.Fatalf("no-change notice shows block contents:\n%s", stderr)
+			}
+			if readFileTest(t, path) != withBlock {
+				t.Fatal("no-change setup modified the profile")
+			}
+
+			out, stderr = f.run(f.main, 0, args("remove")...)
+			requireNoProfileLeak(t, "remove", out, stderr)
+			for _, want := range []string{"Shell configuration target: " + path, "Action: remove CacheCow block", "- # >>> CacheCow owned activation >>>", "- # <<< CacheCow owned activation <<<"} {
+				if !strings.Contains(stderr, want) {
+					t.Fatalf("remove notice missing %q:\n%s", want, stderr)
+				}
+			}
+			requireBlockLines(t, stderr, "- ", strings.TrimSuffix(code, "\n"))
+			if strings.Contains(stderr, "\n+ ") || !strings.Contains(out, `"changed": true`) {
+				t.Fatalf("remove out=%q stderr=%q", out, stderr)
+			}
+			if got := readFileTest(t, path); got != shellSentinelProfile {
+				t.Fatalf("round trip changed profile: %q", got)
+			}
+
+			out, stderr = f.run(f.main, 0, args("remove")...)
+			requireNoProfileLeak(t, "repeated remove", out, stderr)
+			if !strings.Contains(out, `"changed": false`) || !strings.Contains(stderr, "Shell configuration target: "+path) || !strings.Contains(stderr, "No change: no CacheCow block to remove.") {
+				t.Fatalf("repeated remove out=%q stderr=%q", out, stderr)
+			}
+		})
+	}
+}
+
+func TestShellSetupWithoutConfirmationShowsOnlyOwnedBlock(t *testing.T) {
+	f := newFixture(t)
+	path := filepath.Join(f.home, ".zshrc")
+	writeTest(t, path, shellSentinelProfile, 0600)
+	out, stderr := f.run(f.main, 125, "shell", "setup", "zsh")
+	requireNoProfileLeak(t, "unconfirmed setup", out, stderr)
+	if out != "" || !strings.Contains(stderr, "shell update requires confirmation") || !strings.Contains(stderr, "Shell configuration target: "+path) || !strings.Contains(stderr, "+ # >>> CacheCow owned activation >>>") {
+		t.Fatalf("out=%q stderr=%q", out, stderr)
+	}
+	if readFileTest(t, path) != shellSentinelProfile {
+		t.Fatal("unconfirmed setup modified the profile")
+	}
+}
+
+func TestShellJSONReportsSeparatorWithoutProfileContent(t *testing.T) {
+	f := newFixture(t)
+	path := filepath.Join(f.home, ".bashrc")
+	original := "export SENTINEL_SECRET=c8-sentinel-value"
+	writeTest(t, path, original, 0600)
+	out, stderr := f.run(f.main, 0, "shell", "setup", "bash", "--yes", "--json")
+	requireNoProfileLeak(t, "json setup", out, stderr)
+	if !strings.Contains(out, `"schemaVersion":1`) || !strings.Contains(out, `"changed":true`) {
+		t.Fatalf("json envelope %q", out)
+	}
+	for _, want := range []string{"Action: add CacheCow block", "+ # >>> CacheCow owned activation (joined) >>>", "A separator line break is added before the block."} {
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("setup notice missing %q:\n%s", want, stderr)
+		}
+	}
+	out, stderr = f.run(f.main, 0, "shell", "remove", "bash", "--yes", "--json")
+	requireNoProfileLeak(t, "json remove", out, stderr)
+	for _, want := range []string{"Action: remove CacheCow block", "- # >>> CacheCow owned activation (joined) >>>", "The separator line break before the block is removed."} {
+		if !strings.Contains(stderr, want) {
+			t.Fatalf("remove notice missing %q:\n%s", want, stderr)
+		}
+	}
+	if got := readFileTest(t, path); got != original {
+		t.Fatalf("round trip changed profile: %q", got)
+	}
+}
+
+func TestShellInteractiveConfirmationShowsOnlyOwnedBlock(t *testing.T) {
+	f := newFixture(t)
+	path := filepath.Join(f.home, ".zshrc")
+	writeTest(t, path, shellSentinelProfile, 0600)
+	interactive := func(answer string, want int, args ...string) string {
+		t.Helper()
+		master, slave := terminalInput(t)
+		c := f.cmd(f.main, args...)
+		c.Stdin = slave
+		var out, stderr bytes.Buffer
+		c.Stdout = &out
+		c.Stderr = &stderr
+		if e := c.Start(); e != nil {
+			t.Fatal(e)
+		}
+		master.WriteString(answer)
+		code := 0
+		if e := c.Wait(); e != nil {
+			code = c.ProcessState.ExitCode()
+		}
+		requireNoProfileLeak(t, "interactive "+strings.Join(args, " "), out.String(), stderr.String())
+		if code != want {
+			t.Fatalf("exit %d want %d: %s", code, want, stderr.String())
+		}
+		return stderr.String()
+	}
+	stderr := interactive("y\n", 0, "shell", "setup", "zsh")
+	if i, j := strings.Index(stderr, "+ # >>> CacheCow owned activation >>>"), strings.Index(stderr, "Apply this shell configuration change?"); i < 0 || j < i || !strings.Contains(stderr, "Shell configuration target: "+path) {
+		t.Fatalf("setup notice must precede the prompt:\n%s", stderr)
+	}
+	if got := readFileTest(t, path); !strings.HasPrefix(got, shellSentinelProfile+"# >>> CacheCow owned activation >>>") {
+		t.Fatalf("profile %q", got)
+	}
+	withBlock := readFileTest(t, path)
+	stderr = interactive("n\n", 125, "shell", "remove", "zsh")
+	if i, j := strings.Index(stderr, "- # >>> CacheCow owned activation >>>"), strings.Index(stderr, "Apply this shell configuration change?"); i < 0 || j < i || !strings.Contains(stderr, "shell update cancelled") {
+		t.Fatalf("remove notice must precede the prompt:\n%s", stderr)
+	}
+	if readFileTest(t, path) != withBlock {
+		t.Fatal("cancelled removal modified the profile")
 	}
 }

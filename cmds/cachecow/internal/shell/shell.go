@@ -126,9 +126,26 @@ type Plan struct {
 	existed  bool
 	info     os.FileInfo
 	security *fileSecurity
+	// Owned-block change, recorded by Prepare so callers can show the proposed
+	// change without printing unrelated configuration content.
+	removedBlock []byte
+	addedBlock   []byte
+	separator    bool
 }
 
 func (p *Plan) Changed() bool { return !bytes.Equal(p.Before, p.After) }
+
+// OwnedChange returns only the CacheCow-owned block bytes that the plan
+// removes from Before (removed) and adds to After (added), plus whether a
+// separator line break outside the block is added (setup on a profile without a
+// final newline) or removed (removal of a joined block). It returns zero values
+// when the plan changes nothing. It never returns bytes outside the markers.
+func (p *Plan) OwnedChange() (removed, added []byte, separator bool) {
+	if !p.Changed() {
+		return nil, nil, false
+	}
+	return bytes.Clone(p.removedBlock), bytes.Clone(p.addedBlock), p.separator
+}
 
 // CurrentSessionInstruction is a notice, not activation code.
 func (p *Plan) CurrentSessionInstruction() string {
@@ -173,11 +190,14 @@ func Prepare(kind Kind, action Action, path, shimDir string) (*Plan, error) {
 	if action == Remove {
 		p.After = bytes.Clone(p.Before)
 		if start >= 0 {
+			p.removedBlock = bytes.Clone(p.Before[start:stop])
 			if joined {
 				if start >= 2 && bytes.Equal(p.Before[start-2:start], []byte("\r\n")) {
 					start -= 2
+					p.separator = true
 				} else if start > 0 && p.Before[start-1] == '\n' {
 					start--
+					p.separator = true
 				}
 			}
 			p.After = append(bytes.Clone(p.Before[:start]), p.Before[stop:]...)
@@ -200,13 +220,16 @@ func Prepare(kind Kind, action Action, path, shimDir string) (*Plan, error) {
 		marker = joinedBegin
 	}
 	owned := []byte(marker + nl + strings.ReplaceAll(code, "\n", nl) + end + nl)
+	p.addedBlock = bytes.Clone(owned)
 	if start >= 0 {
+		p.removedBlock = bytes.Clone(p.Before[start:stop])
 		p.After = append(bytes.Clone(p.Before[:start]), owned...)
 		p.After = append(p.After, p.Before[stop:]...)
 	} else {
 		p.After = bytes.Clone(p.Before)
 		if marker == joinedBegin {
 			p.After = append(p.After, []byte(nl)...)
+			p.separator = true
 		}
 		p.After = append(p.After, owned...)
 	}
@@ -243,7 +266,8 @@ func block(b []byte) (start, stop int, joined bool, err error) {
 type Approval struct {
 	Yes         bool
 	Interactive bool
-	// Confirm must show the target Path and proposed Before/After change before asking.
+	// Confirm must show the target Path and the proposed owned-block change (see
+	// Plan.OwnedChange) before asking. It must not print other Before/After content.
 	// It returns false on cancellation. No callback is called in noninteractive mode.
 	Confirm func(*Plan) (bool, error)
 }

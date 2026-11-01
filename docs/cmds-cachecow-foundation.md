@@ -50,7 +50,7 @@ Validate same-user/same-repository ownership and resolved paths before mutation.
 
 ## Logging
 
-Use `log/slog` or compatible structured logging. English notices go to stderr; child streams remain unchanged. Support ANSI output with a documented opt-out. Doctor/verbose expose safe paths, versions, capability, lock state, and failure causes. Never persist source contents, environment values, or full command arguments.
+Use `log/slog` or compatible structured logging. English notices go to stderr; child streams remain unchanged. Support ANSI output with a documented opt-out. Doctor/verbose expose safe paths, versions, capability, lock state, and failure causes. Never persist source contents, environment values, or full command arguments. Shell setup and removal notices show only the CacheCow-owned block, never other profile content.
 
 ## Build and Test
 
