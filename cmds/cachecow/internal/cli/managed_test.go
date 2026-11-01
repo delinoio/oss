@@ -7,15 +7,27 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/delinoio/oss/cmds/cachecow/internal/lease"
 	"github.com/delinoio/oss/cmds/cachecow/internal/preset"
 	"github.com/delinoio/oss/cmds/cachecow/internal/session"
 	"github.com/delinoio/oss/cmds/cachecow/internal/state"
 )
 
+// privateStateRoot creates state storage as production does. Windows temporary
+// directories inherit grants for other principals and are not private storage.
+func privateStateRoot(t *testing.T) string {
+	t.Helper()
+	root := filepath.Join(t.TempDir(), "state")
+	if err := lease.EnsurePrivateDirectory(root); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
 func TestWriterInvalidatesOverlappingProvenance(t *testing.T) {
 	for _, nested := range []bool{false, true} {
 		t.Run(map[bool]string{false: "equal", true: "ancestor"}[nested], func(t *testing.T) {
-			root := t.TempDir()
+			root := privateStateRoot(t)
 			target := filepath.Join(root, "target")
 			old := preset.Result{Roots: []preset.Root{{Path: target}, {Path: filepath.Join(root, "build-a")}}}
 			changedTarget := target
@@ -49,7 +61,7 @@ func TestWriterInvalidatesOverlappingProvenance(t *testing.T) {
 }
 
 func TestPrepareRequiresSupervisorCloneEvidence(t *testing.T) {
-	root := t.TempDir()
+	root := privateStateRoot(t)
 	current := preset.Result{Roots: []preset.Root{{Path: filepath.Join(root, "cache")}}}
 	data, _ := json.Marshal(claims{Current: current})
 	p := session.Plan{Root: root, Action: session.Prepare, Claims: data}

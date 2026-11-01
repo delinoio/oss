@@ -112,8 +112,14 @@ func TestFinishSessionRetriesRegistryContention(t *testing.T) {
 func TestPreparationEvidenceUsesLeasedResult(t *testing.T) {
 	for _, existing := range []bool{false, true} {
 		t.Run(map[bool]string{false: "cloned", true: "created-before-acquisition"}[existing], func(t *testing.T) {
-			root, err := filepath.EvalSymlinks(t.TempDir())
+			temp, err := filepath.EvalSymlinks(t.TempDir())
 			if err != nil {
+				t.Fatal(err)
+			}
+			// The transaction record requires private storage. Windows temporary
+			// directories inherit grants for other principals.
+			root := filepath.Join(temp, "state")
+			if err := lease.EnsurePrivateDirectory(root); err != nil {
 				t.Fatal(err)
 			}
 			r, err := lease.Open(context.Background(), filepath.Join(root, "registry"))
