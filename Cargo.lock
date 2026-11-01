@@ -528,6 +528,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "dunce",
+ "getrandom 0.3.4",
  "hex",
  "libc",
  "rusqlite",
