@@ -73,7 +73,7 @@ func newFixture(t *testing.T) *fixture {
 	writeTest(t, filepath.Join(f.bin, "cargo"), `#!/bin/sh
 case "$1" in
  --version) echo 'cargo 1.99.1 (fixture)' ;;
- metadata) printf '{"version":1,"workspace_root":"%s","target_directory":"%s/target","build_directory":"%s/target"}\n' "$PWD" "$PWD" "$PWD" ;;
+ metadata) target="${CARGO_TARGET_DIR:-$PWD/target}"; printf '{"version":1,"workspace_root":"%s","target_directory":"%s","build_directory":"%s"}\n' "$PWD" "$target" "$target" ;;
  clean) rm -rf target; printf 'clean:%s\n' "$*" ;;
  *) mkdir -p target; if [ -f scenario ]; then exec /bin/sh "$PWD/scenario" "$@"; fi; printf 'source artifact' > target/data ;;
 esac
@@ -106,7 +106,14 @@ func (f *fixture) cmd(cwd string, args ...string) *exec.Cmd {
 }
 func (f *fixture) run(cwd string, want int, args ...string) (string, string) {
 	f.t.Helper()
+	return f.runEnv(cwd, nil, want, args...)
+}
+
+// runEnv runs ccow with extra environment entries that apply to this invocation only.
+func (f *fixture) runEnv(cwd string, extra []string, want int, args ...string) (string, string) {
+	f.t.Helper()
 	c := f.cmd(cwd, args...)
+	c.Env = append(append([]string(nil), f.env...), extra...)
 	var out, errout bytes.Buffer
 	c.Stdout = &out
 	c.Stderr = &errout
@@ -289,6 +296,8 @@ func TestInteractiveSourceChoices(t *testing.T) {
 			switch choice {
 			case "source":
 				answers = "3\ny\n"
+				// Tools such as direnv export the worktree path; the source build must still be accepted.
+				f.env = append(f.env, "DIRENV_DIR=-"+f.work)
 			case "select":
 				f.run(f.main, 0, "run", "--", "cargo", "build")
 				args = []string{"run", "--source", filepath.Join(f.dir, "missing"), "--allow-copy", "--", "cargo", "build"}
@@ -318,6 +327,11 @@ func TestInteractiveSourceChoices(t *testing.T) {
 			}
 			if code != want {
 				t.Fatalf("exit %d want %d: %s", code, want, stderr.String())
+			}
+			if choice == "source" {
+				if b, _ := os.ReadFile(filepath.Join(f.work, "target", "data")); string(b) != "source artifact" {
+					t.Fatalf("derived worktree did not clone the rebuilt source cache: %q\n%s", b, stderr.String())
+				}
 			}
 			if choice == "source" && (!strings.Contains(stderr.String(), "Exact requested argv") || !strings.Contains(stderr.String(), f.main)) {
 				t.Fatal("missing exact source-build confirmation", stderr.String())
@@ -543,5 +557,96 @@ func TestWaitingCommandRejectsChangedCargoConfiguration(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "cache-selection configuration changed") {
 		t.Fatal(stderr.String())
+	}
+}
+
+func TestLookPathUsesTranslatedPath(t *testing.T) {
+	dir := t.TempDir()
+	writeTest(t, filepath.Join(dir, "bin", "tool"), "#!/bin/sh\n", 0700)
+	got, err := lookPath("tool", []string{"PATH=" + filepath.Join(dir, "missing") + string(os.PathListSeparator) + filepath.Join(dir, "bin")})
+	if err != nil || got != filepath.Join(dir, "bin", "tool") {
+		t.Fatal(got, err)
+	}
+	if _, err := lookPath("tool", []string{"PATH=" + filepath.Join(dir, "missing")}); err == nil {
+		t.Fatal("found a tool outside the translated PATH")
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	b, e := os.ReadFile(path)
+	if e != nil {
+		t.Fatal(e)
+	}
+	return string(b)
+}
+
+// Settings that differ only by the worktree root must not make the source cache incompatible.
+func TestDerivedWorktreeAcceptsSourceWithWorktreePathSettings(t *testing.T) {
+	type variant struct {
+		name string
+		// settings returns the per-worktree environment and the arguments after "cargo build".
+		settings func(root string) ([]string, []string)
+	}
+	for _, v := range []variant{
+		{"direnv", func(root string) ([]string, []string) { return []string{"DIRENV_DIR=-" + root}, nil }},
+		{"virtualenv-and-path", func(root string) ([]string, []string) {
+			return []string{"VIRTUAL_ENV=" + filepath.Join(root, ".venv"), "TOOLS=/opt/tools" + string(os.PathListSeparator) + filepath.Join(root, "bin")}, nil
+		}},
+		{"target-dir-flag", func(root string) ([]string, []string) {
+			return nil, []string{"--target-dir", filepath.Join(root, "target")}
+		}},
+		{"target-dir-env", func(root string) ([]string, []string) {
+			return []string{"CARGO_TARGET_DIR=" + filepath.Join(root, "target")}, nil
+		}},
+		{"manifest-path", func(root string) ([]string, []string) {
+			return nil, []string{"--manifest-path=" + filepath.Join(root, "Cargo.toml")}
+		}},
+	} {
+		for _, action := range []string{"prepare", "run"} {
+			t.Run(v.name+"/"+action, func(t *testing.T) {
+				f := newFixture(t)
+				mainEnv, mainArgs := v.settings(f.main)
+				workEnv, workArgs := v.settings(f.work)
+				f.runEnv(f.main, mainEnv, 0, append([]string{"run", "--", "cargo", "build"}, mainArgs...)...)
+				if readFile(t, filepath.Join(f.main, "target", "data")) != "source artifact" {
+					t.Fatal("source build did not run")
+				}
+				// The scenario records what the destination cache held when the build started.
+				writeTest(t, filepath.Join(f.work, "scenario"), "cat target/data > target/seen\nprintf 'rebuilt' > target/data\n", 0600)
+				args := append([]string{action, "--allow-copy", "--", "cargo", "build"}, workArgs...)
+				f.runEnv(f.work, workEnv, 0, args...)
+				if action == "prepare" {
+					if got := readFile(t, filepath.Join(f.work, "target", "data")); got != "source artifact" {
+						t.Fatalf("prepare data %q", got)
+					}
+				} else if got := readFile(t, filepath.Join(f.work, "target", "seen")); got != "source artifact" {
+					t.Fatalf("run started without the cloned source cache: %q", got)
+				}
+			})
+		}
+	}
+}
+
+func TestDerivedWorktreeRejectsDifferentNonPathSetting(t *testing.T) {
+	f := newFixture(t)
+	f.runEnv(f.main, []string{"X=1"}, 0, "run", "--", "cargo", "build")
+	_, stderr := f.runEnv(f.work, []string{"X=2"}, 125, "prepare", "--allow-copy", "--", "cargo", "build")
+	if !strings.Contains(stderr, "source provenance does not match current settings") {
+		t.Fatal(stderr)
+	}
+	if _, e := os.Stat(filepath.Join(f.work, "target")); !os.IsNotExist(e) {
+		t.Fatal("incompatible source was cloned")
+	}
+}
+
+// A root that is only a string prefix of another path is a different path. It is not
+// translated, so the settings keep differing and the source stays incompatible.
+func TestDerivedWorktreePathPrefixSettingIsNotTranslated(t *testing.T) {
+	f := newFixture(t)
+	f.runEnv(f.main, []string{"X=" + f.main + "-other"}, 0, "run", "--", "cargo", "build")
+	_, stderr := f.runEnv(f.work, []string{"X=" + f.work + "-other"}, 125, "prepare", "--allow-copy", "--", "cargo", "build")
+	if !strings.Contains(stderr, "build settings are incompatible") {
+		t.Fatal(stderr)
 	}
 }

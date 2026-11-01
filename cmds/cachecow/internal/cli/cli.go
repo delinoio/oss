@@ -205,26 +205,36 @@ func (a *app) confirm(prompt string) (bool, error) {
 	return strings.EqualFold(s, "y") || strings.EqualFold(s, "yes"), e
 }
 func (a *app) resolve(t shim.Tool) (shim.Resolution, error) {
+	return a.resolveWith(t, os.Environ())
+}
+
+// resolveWith resolves the real tool through the PATH and PATHEXT values of env.
+func (a *app) resolveWith(t shim.Tool, env []string) (shim.Resolution, error) {
 	exe, e := os.Executable()
 	if e != nil {
 		return shim.Resolution{}, e
 	}
-	return shim.Resolve(t, shim.ResolveOptions{Path: os.Getenv("PATH"), PathExt: os.Getenv("PATHEXT"), ShimDir: filepath.Join(a.store.Root, "shims"), CcowExecutable: exe})
+	return shim.Resolve(t, shim.ResolveOptions{Path: envValue(env, "PATH"), PathExt: envValue(env, "PATHEXT"), ShimDir: filepath.Join(a.store.Root, "shims"), CcowExecutable: exe})
 }
 func (a *app) command(argv []string, cwd string) (process.Command, error) {
+	return a.commandWith(argv, cwd, os.Environ())
+}
+
+// commandWith resolves argv[0] through the PATH of env and runs the command with env.
+func (a *app) commandWith(argv []string, cwd string, env []string) (process.Command, error) {
 	if len(argv) == 0 {
 		return process.Command{}, bad("run requires -- COMMAND [ARGS...]")
 	}
 	path := argv[0]
 	if !strings.ContainsAny(path, "/\\") {
 		if t, ok := shim.FromArgv0(path); ok {
-			r, e := a.resolve(t)
+			r, e := a.resolveWith(t, env)
 			if e != nil {
 				return process.Command{}, e
 			}
 			path = r.Path
 		} else {
-			p, e := exec.LookPath(path)
+			p, e := lookPath(path, env)
 			if e != nil {
 				return process.Command{}, &failure{executionCode(e), e.Error(), "Install the command and add its executable directory to PATH."}
 			}
@@ -238,7 +248,7 @@ func (a *app) command(argv []string, cwd string) (process.Command, error) {
 	if e != nil {
 		return process.Command{}, e
 	}
-	return process.Command{Path: path, Args: append([]string(nil), argv...), Dir: cwd, Env: os.Environ()}, nil
+	return process.Command{Path: path, Args: append([]string(nil), argv...), Dir: cwd, Env: append([]string(nil), env...)}, nil
 }
 func executionCode(e error) int {
 	if errors.Is(e, exec.ErrNotFound) || errors.Is(e, os.ErrNotExist) {

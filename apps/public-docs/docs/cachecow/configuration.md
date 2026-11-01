@@ -18,7 +18,7 @@ These examples assume the real tool is installed and executable and that its cac
 
 Keep Cargo's configured target-dir and build-dir. CacheCow must manage both, processing coincident paths once. Do not relocate source files or treat the whole checkout as a cache. Use [Cargo's build-cache documentation](https://doc.rust-lang.org/cargo/reference/build-cache.html) to configure Cargo itself.
 
-Toolchain selection and build settings must match the source cache. CacheCow must reject reuse when locations or compatibility cannot be verified. It must not change fingerprints or modification times to force a cache hit. Dirty tracked files and untracked files are allowed; Cargo and rustc retain responsibility for rebuilding them correctly.
+Toolchain selection and build settings must match the source cache. Settings that only name the current worktree, such as `DIRENV_DIR`, `VIRTUAL_ENV`, `CARGO_TARGET_DIR`, `--target-dir`, or `--manifest-path` under the worktree, are compared as the equivalent path in the source worktree, so they do not prevent reuse. Any other difference still makes the source incompatible. CacheCow must reject reuse when locations or compatibility cannot be verified. It must not change fingerprints or modification times to force a cache hit. Dirty tracked files and untracked files are allowed; Cargo and rustc retain responsibility for rebuilding them correctly.
 
 ## Rspack and Rsbuild configuration
 

@@ -214,6 +214,12 @@ func sourceWorkingDirectory(current, source repository.Info) (string, error) {
 	return filepath.Join(source.Root, rel), nil
 }
 func (a *app) discover(cwd string, argv []string) (preset.Result, error) {
+	return a.discoverWith(cwd, argv, os.Environ())
+}
+
+// discoverWith discovers cache roots for argv using env instead of the process environment. Source
+// discovery passes an environment and argv translated into the source worktree.
+func (a *app) discoverWith(cwd string, argv, env []string) (preset.Result, error) {
 	id := a.o.preset
 	if id == "" {
 		if len(argv) > 0 {
@@ -231,7 +237,7 @@ func (a *app) discover(cwd string, argv []string) (preset.Result, error) {
 	}
 	discovery := append([]string(nil), argv...)
 	if len(discovery) == 0 {
-		r, e := a.resolve(shim.Tool(id))
+		r, e := a.resolveWith(shim.Tool(id), env)
 		if e != nil {
 			return preset.Result{}, e
 		}
@@ -239,13 +245,13 @@ func (a *app) discover(cwd string, argv []string) (preset.Result, error) {
 	} else {
 		// Discovery and execution must resolve the same executable. In particular,
 		// an explicit path must never certify the unrelated tool found on PATH.
-		command, e := a.command(discovery, cwd)
+		command, e := a.commandWith(discovery, cwd, env)
 		if e != nil {
 			return preset.Result{}, e
 		}
 		discovery[0] = command.Path
 	}
-	return preset.Discover(a.ctx, preset.Request{CWD: cwd, Argv: discovery, Env: os.Environ(), Preset: preset.ID(id), Protected: []string{a.store.Root}})
+	return preset.Discover(a.ctx, preset.Request{CWD: cwd, Argv: discovery, Env: env, Preset: preset.ID(id), Protected: []string{a.store.Root}})
 }
 func (a *app) managed(action string, argv []string) (int, error) {
 	cwd, e := os.Getwd()
@@ -278,7 +284,7 @@ func (a *app) managed(action string, argv []string) (int, error) {
 			return 0, e
 		}
 	}
-	p, c, e := a.plan(action, current, argv, false)
+	p, c, e := a.plan(action, current, argv, os.Environ(), false)
 	for {
 		if e == nil {
 			code, err := a.execute(p, c, current)
@@ -312,14 +318,14 @@ func (a *app) managed(action string, argv []string) (int, error) {
 			if action != "run" {
 				continue
 			}
-			p, c, e = a.plan(action, current, argv, true)
+			p, c, e = a.plan(action, current, argv, os.Environ(), true)
 		case "2":
 			selected, err := a.answer("Source worktree: ")
 			if err != nil {
 				return 0, err
 			}
 			a.o.source = selected
-			p, c, e = a.plan(action, current, argv, false)
+			p, c, e = a.plan(action, current, argv, os.Environ(), false)
 		case "3":
 			if action != "run" {
 				continue
@@ -343,7 +349,12 @@ func (a *app) managed(action string, argv []string) (int, error) {
 				a.notice("%s", err)
 				continue
 			}
-			a.notice("Source working directory: %s\nExact requested argv: %q", sourceCWD, argv)
+			// The source build must run with exactly the settings that later source discovery
+			// uses, so the recorded provenance matches the re-plan.
+			translation := rootTranslation{from: current.Repository.Root, to: src.Repository.Root}
+			sourceArgv := translation.args(argv)
+			sourceEnv := translation.env(os.Environ())
+			a.notice("Source working directory: %s\nExact requested argv: %q", sourceCWD, sourceArgv)
 			ok, err := a.confirm("Run this exact command in the source?")
 			if err != nil {
 				return 0, err
@@ -351,12 +362,12 @@ func (a *app) managed(action string, argv []string) (int, error) {
 			if !ok {
 				continue
 			}
-			sourceResult, err := a.discover(sourceCWD, argv)
+			sourceResult, err := a.discoverWith(sourceCWD, sourceArgv, sourceEnv)
 			if err != nil {
 				a.notice("%s", err)
 				continue
 			}
-			sp, sc, err := a.plan("run", sourceResult, argv, true)
+			sp, sc, err := a.plan("run", sourceResult, sourceArgv, sourceEnv, true)
 			if err != nil {
 				return 0, err
 			}
@@ -364,7 +375,7 @@ func (a *app) managed(action string, argv []string) (int, error) {
 			if err != nil || code != 0 {
 				return code, err
 			}
-			p, c, e = a.plan(action, current, argv, false)
+			p, c, e = a.plan(action, current, argv, os.Environ(), false)
 		case "4":
 			return 0, errors.New("operation cancelled")
 		default:
@@ -375,7 +386,8 @@ func (a *app) managed(action string, argv []string) (int, error) {
 
 type sourceError struct{ error }
 
-func (a *app) plan(action string, current preset.Result, argv []string, withoutSource bool) (session.Plan, process.Command, error) {
+// plan builds the session plan. env is the environment of the command that the plan executes.
+func (a *app) plan(action string, current preset.Result, argv, env []string, withoutSource bool) (session.Plan, process.Command, error) {
 	p := session.Plan{SchemaVersion: 1, Root: a.store.Root, Action: session.Action(action), Replace: a.o.replace, AllowCopy: a.o.allowCopy, Record: transactionPath(a.store.Root, current)}
 	if withoutSource {
 		p.Replace = false
@@ -383,7 +395,7 @@ func (a *app) plan(action string, current preset.Result, argv []string, withoutS
 	c := process.Command{Noop: true}
 	var e error
 	if action == "run" || action == "tool-clean" {
-		c, e = a.command(argv, current.Repository.CWD)
+		c, e = a.commandWith(argv, current.Repository.CWD, env)
 		if e != nil {
 			return p, c, e
 		}
@@ -423,11 +435,14 @@ func (a *app) plan(action string, current preset.Result, argv []string, withoutS
 				return p, c, &sourceError{errors.New("selected source is the current derived worktree; choose another source")}
 			}
 		} else {
-			rel, e := filepath.Rel(current.Repository.Root, current.Repository.CWD)
+			sourceCWD, e := sourceWorkingDirectory(current.Repository, src.Repository)
 			if e != nil {
 				return p, c, e
 			}
-			source, e := a.discover(filepath.Join(src.Repository.Root, rel), argv)
+			// Settings that mention the current worktree describe the same build in the source
+			// only after translation; otherwise path values would change discovery and digests.
+			translation := rootTranslation{from: current.Repository.Root, to: src.Repository.Root}
+			source, e := a.discoverWith(sourceCWD, translation.args(argv), translation.env(env))
 			if e != nil {
 				return p, c, &sourceError{e}
 			}
