@@ -77,8 +77,10 @@ func TestAdministratorsRequireMembership(t *testing.T) {
 	}
 	linked, err := windows.GetCurrentProcessToken().GetLinkedToken()
 	if err != nil {
-		if ok {
-			t.Fatal("accepted Administrators without membership or a linked token")
+		// Tokens without a linked token, such as administrators with UAC
+		// disabled, are accepted only through direct membership.
+		if ok != member {
+			t.Fatalf("accepted=%v member=%v without a linked token", ok, member)
 		}
 		return
 	}
