@@ -31,6 +31,24 @@ If a run ends unexpectedly:
 3. Stop remaining build activity before attempting recovery or deletion.
 4. Follow the reported remediation, then retry the managed command.
 
+### What `ccow doctor` can recover
+
+A build can lose its CacheCow supervisor before the supervisor records that the build finished, for example after a reboot, power loss, or a `SIGKILL` or out-of-memory kill of the supervisor. CacheCow releases the lease for such a build only when the operating system gives positive proof that the whole process tree has exited. Run `ccow doctor` to apply that check. It never releases a lease because a process ID is missing or because time has passed.
+
+| Platform | Evidence CacheCow records and checks                                                                                                                                |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Linux    | The boot ID. A different boot ID proves every process from the earlier boot has exited.                                                                             |
+| macOS    | The boot session UUID (`kern.bootsessionuuid`). A different one proves the earlier boot ended. In the same boot, an empty process coalition also proves completion. |
+| Windows  | The supervisor process ID and creation time. If no running process has that identity, Windows has already ended the build's job and all its processes.              |
+
+Limits:
+
+- On Linux, if only the supervisor is killed and the machine does not reboot, descendants of the build can keep running, so the lease stays until the next reboot.
+- Journals written by earlier CacheCow versions carry no recovery identity. If one is incomplete, it stays protected and cannot recover automatically.
+- If CacheCow cannot read the current identity, it keeps the lease.
+
+`ccow doctor` lists every lease it released under `recoveredLeases` and every lease it kept under `keptLeases`, each with a reason: `native-completion`, `journal-complete`, `owner-running`, `same-boot-descendants-may-survive`, `incomplete-journal-without-native-identity`, `identity-check-failed`, or `journal-unreadable`. Older CacheCow versions cannot read the newer journals and keep their leases.
+
 Do not force-delete protection records to make an active writer appear idle. Do not start an unmanaged build against a cache whose ownership is uncertain. If diagnostics cannot establish a safe recovery, preserve the cache and report the failure through [GitHub Issues](https://github.com/delinoio/oss/issues).
 
 ## Cleaning during use

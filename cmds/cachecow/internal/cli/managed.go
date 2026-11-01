@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -565,16 +566,13 @@ func (a *app) inspect(r preset.Result, doctor bool) error {
 	if e != nil {
 		return e
 	}
-	// Reconcile only completed native journals. Incomplete journals retain their
-	// protection, even when the owner PID no longer exists.
+	// Release only leases whose journal proves completion, either durably or with
+	// native identity evidence (a different boot, or a vanished Windows
+	// supervisor). A dead PID or elapsed time alone never releases protection.
+	var recovered, kept []leaseDiagnosis
 	if doctor {
-		for _, v := range records {
-			scope, e := process.LoadScope(v.Ownership)
-			if e == nil && process.Reconcile(scope) == nil {
-				if e = reg.Reconcile(a.ctx, v, func(context.Context, lease.Record) error { return process.Reconcile(scope) }); e != nil {
-					return e
-				}
-			}
+		if recovered, kept, e = recoverLeases(a.ctx, reg, records); e != nil {
+			return e
 		}
 		records, e = reg.Records(a.ctx)
 		if e != nil {
@@ -585,7 +583,53 @@ func (a *app) inspect(r preset.Result, doctor bool) error {
 	if e != nil {
 		return e
 	}
-	return a.output(map[string]any{"preset": r.Preset, "cachePaths": caches, "compatibility": r.Compatibility, "settings": saved, "leases": records, "cowCapability": "tested during preparation; --allow-copy permits ordinary fallback", "recovery": "Incomplete native journals retain leases. PID death alone cannot release protection."})
+	out := map[string]any{"preset": r.Preset, "cachePaths": caches, "compatibility": r.Compatibility, "settings": saved, "leases": records, "cowCapability": "tested during preparation; --allow-copy permits ordinary fallback", "recovery": "Incomplete journals retain leases unless native identity proves the owned tree exited (a different boot, or a vanished Windows supervisor). PID death alone cannot release protection."}
+	if doctor {
+		out["keptLeases"] = nonNilDiagnoses(kept)
+		out["recoveredLeases"] = nonNilDiagnoses(recovered)
+	}
+	return a.output(out)
+}
+
+// recoverLeases releases every lease whose journal proves completion and
+// reports why each remaining lease is kept. It is the doctor recovery entry
+// point; the reason values are process.Recovery identifiers.
+func recoverLeases(ctx context.Context, reg *lease.Registry, records []lease.Record) (recovered, kept []leaseDiagnosis, err error) {
+	for _, v := range records {
+		reason := process.RecoveryJournalUnreadable
+		scope, loadErr := process.LoadScope(v.Ownership)
+		if loadErr == nil {
+			var recoverErr error
+			reason, recoverErr = process.Recover(scope)
+			if recoverErr == nil {
+				if err = reg.Reconcile(ctx, v, func(context.Context, lease.Record) error { return process.Reconcile(scope) }); err != nil {
+					return recovered, kept, err
+				}
+				slog.Info("recovered cache lease", "lease_id", v.ID, "journal_dir", v.Ownership, "reason", string(reason))
+				recovered = append(recovered, leaseDiagnosis{ID: v.ID, Ownership: v.Ownership, Paths: v.Paths, Reason: reason})
+				continue
+			}
+		}
+		slog.Info("cache lease retained", "lease_id", v.ID, "journal_dir", v.Ownership, "reason", string(reason))
+		kept = append(kept, leaseDiagnosis{ID: v.ID, Ownership: v.Ownership, Paths: v.Paths, Reason: reason})
+	}
+	return recovered, kept, nil
+}
+
+// leaseDiagnosis is one ccow doctor finding about a lease record. Reason is a
+// stable process.Recovery identifier.
+type leaseDiagnosis struct {
+	ID        string           `json:"id"`
+	Ownership string           `json:"ownership"`
+	Paths     []string         `json:"paths"`
+	Reason    process.Recovery `json:"reason"`
+}
+
+func nonNilDiagnoses(v []leaseDiagnosis) []leaseDiagnosis {
+	if v == nil {
+		return []leaseDiagnosis{}
+	}
+	return v
 }
 
 // Records updates provenance under the supervisor's lease, never after the

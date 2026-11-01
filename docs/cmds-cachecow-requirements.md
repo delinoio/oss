@@ -189,6 +189,7 @@ Disk exhaustion, permission errors, and other actual preparation failures stop b
 - Support finite builds/checks/tests and long-running watch/development servers. Hold the cache lock for the process tree's lifetime; copies that need that source wait.
 - Forward termination appropriately, allow five seconds for graceful shutdown, then terminate remaining owned descendants. Release locks only after the relevant process tree has exited.
 - Abnormal CacheCow termination must not leave uncontrolled descendants writing into an unlocked cache. Include platform-specific ownership and recovery.
+- Recover from a supervisor that died before writing completion only with native evidence: a different boot (Linux `boot_id`, macOS `kern.bootsessionuuid`) or, on Windows, a supervisor PID plus creation time that no longer names a running process (the job object kills its tree when the supervisor ends). Never recover from PID absence or elapsed time alone; version 1 journals, the same boot on Linux, and unreadable identity stay protected. `ccow doctor` reports a typed reason per kept lease and lists recovered leases. Details: `docs/cmds-cachecow-foundation.md`.
 - Make waiting and cancellation diagnosable. Preserve working caches after failed/cancelled builds.
 
 ### Security and storage boundaries
