@@ -131,7 +131,21 @@ func Classify(tool Tool, args []string, inGit bool, bypass string) Classificatio
 		switch command {
 		case "clean":
 			return Classification{Clean, CleanOperation}
-		case "build", "b", "check", "c", "test", "t", "bench", "run", "r", "doc", "d", "rustc", "rustdoc", "clippy", "fix":
+		case "build", "b", "check", "c", "test", "t", "bench", "run", "r", "doc", "d", "rustc", "rustdoc", "clippy", "fix", "publish":
+			// publish packages the crate into <target-dir>/package and, unless
+			// --no-verify is set, runs a verification build into the cache roots.
+			return Classification{Managed, CacheOperation}
+		case "package":
+			// package writes the .crate file into <target-dir>/package even with
+			// --no-verify. Only --list/-l prints the file list without writing.
+			for _, arg := range args[i+1:] {
+				if arg == "--" {
+					break
+				}
+				if arg == "--list" || arg == "-l" {
+					return pass(Query)
+				}
+			}
 			return Classification{Managed, CacheOperation}
 		case "help", "version", "metadata", "locate-project", "read-manifest", "pkgid", "tree", "search", "info", "verify-project":
 			return pass(Query)

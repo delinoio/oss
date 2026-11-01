@@ -46,6 +46,21 @@ func TestClassification(t *testing.T) {
 		{Cargo, []string{"--config"}, Passthrough, Unknown},
 		{Cargo, nil, Passthrough, Query},
 		{Cargo, []string{"run", "--", "--version"}, Managed, CacheOperation},
+		{Cargo, []string{"package"}, Managed, CacheOperation},
+		{Cargo, []string{"package", "--no-verify"}, Managed, CacheOperation},
+		{Cargo, []string{"package", "--allow-dirty", "-p", "x"}, Managed, CacheOperation},
+		{Cargo, []string{"+stable", "-v", "package", "--target-dir", "a b"}, Managed, CacheOperation},
+		{Cargo, []string{"publish"}, Managed, CacheOperation},
+		{Cargo, []string{"publish", "--dry-run"}, Managed, CacheOperation},
+		{Cargo, []string{"publish", "--no-verify", "--registry", "r"}, Managed, CacheOperation},
+		{Cargo, []string{"publish", "--list"}, Managed, CacheOperation},
+		{Cargo, []string{"package", "--", "--list"}, Managed, CacheOperation},
+		{Cargo, []string{"package", "--list"}, Passthrough, Query},
+		{Cargo, []string{"package", "-l"}, Passthrough, Query},
+		{Cargo, []string{"package", "-p", "x", "--list"}, Passthrough, Query},
+		{Cargo, []string{"package", "--help"}, Passthrough, Query},
+		{Cargo, []string{"publish", "-h"}, Passthrough, Query},
+		{Cargo, []string{"install", "--path", "."}, Passthrough, Unknown},
 		{Rspack, nil, Managed, CacheOperation},
 		{Rspack, []string{"--watch", "--config", "한 글.js"}, Managed, CacheOperation},
 		{Rsbuild, []string{"--config=x.js", "dev"}, Managed, CacheOperation},
@@ -99,7 +114,7 @@ func TestClassification(t *testing.T) {
 		}
 	}
 	for _, tool := range Tools() {
-		for _, args := range [][]string{{"build"}, {"clean"}, {"--version"}, {"s"}, nil} {
+		for _, args := range [][]string{{"build"}, {"clean"}, {"--version"}, {"s"}, {"package"}, {"publish"}, nil} {
 			if got := Classify(tool, args, false, ""); got.Mode != Passthrough || got.Reason != OutsideGit {
 				t.Fatal(got)
 			}
