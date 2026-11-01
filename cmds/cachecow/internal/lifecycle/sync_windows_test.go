@@ -8,7 +8,7 @@ import (
 )
 
 func TestPrepareReadOnlyWindowsFile(t *testing.T) {
-	root := t.TempDir()
+	root := privateRoot(t)
 	src, dst := filepath.Join(root, "source"), filepath.Join(root, "destination")
 	if err := os.Mkdir(src, 0700); err != nil {
 		t.Fatal(err)

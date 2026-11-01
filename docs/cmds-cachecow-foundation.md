@@ -46,7 +46,7 @@ Keep caches in tool-selected locations; keep settings, locks, and records in cur
 
 ## Security
 
-Validate same-user/same-repository ownership and resolved paths before mutation. Protect sources, Git metadata, settings, and unrelated files. Do not follow external links during copies or escape the cache during deletion. Ordinary hard links cannot provide CoW isolation. Build code is not sandboxed. Process ownership must survive abnormal parent termination without unlocked writers.
+Validate same-user/same-repository ownership and resolved paths before mutation. On Windows, the current user's SID identifies an owned path. `BUILTIN\Administrators` also identifies one only while the current token or its linked token is an Administrators member, because Windows assigns that owner to objects created by elevated administrators. Current-user-private storage still requires an access-control list that grants only the current user's SID. Protect sources, Git metadata, settings, and unrelated files. Do not follow external links during copies or escape the cache during deletion. Ordinary hard links cannot provide CoW isolation. Build code is not sandboxed. Process ownership must survive abnormal parent termination without unlocked writers.
 
 ## Logging
 

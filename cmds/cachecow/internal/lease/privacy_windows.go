@@ -4,11 +4,13 @@ package lease
 
 import (
 	"errors"
-	"golang.org/x/sys/windows"
 	"os"
 	"path/filepath"
 	"strings"
 	"unsafe"
+
+	"github.com/delinoio/oss/cmds/cachecow/internal/ownership"
+	"golang.org/x/sys/windows"
 )
 
 // The registry parent must exist. Creation applies the private ACL atomically;
@@ -32,11 +34,11 @@ func privateDir(path string) error {
 	if err != nil {
 		return err
 	}
-	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	accepted, err := ownership.Accepted(owner)
 	if err != nil {
 		return err
 	}
-	if !owner.Equals(user.User.Sid) {
+	if !accepted {
 		return ErrUnverified
 	}
 	ok, err := stateDirectoryPrivate(path)
@@ -64,7 +66,7 @@ func privateDatabase(path string) error {
 	if !info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0 {
 		return ErrUnverified
 	}
-	// Require the existing file's owner and effective ACL to match the directory.
+	// Require an accepted owner and the directory's current-user-only ACL.
 	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.OWNER_SECURITY_INFORMATION|windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
 		return err
@@ -73,12 +75,16 @@ func privateDatabase(path string) error {
 	if err != nil {
 		return err
 	}
-	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	accepted, err := ownership.Accepted(owner)
 	if err != nil {
 		return err
 	}
-	if !owner.Equals(user.User.Sid) {
+	if !accepted {
 		return ErrUnverified
+	}
+	user, err := ownership.CurrentUser()
+	if err != nil {
+		return err
 	}
 	acl, _, err := sd.DACL()
 	if err != nil {
@@ -103,7 +109,7 @@ func privateDatabase(path string) error {
 	if err := windows.GetAce(expectedACL, 0, &want); err != nil {
 		return err
 	}
-	if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Mask != want.Mask || !(*windows.SID)(unsafe.Pointer(&ace.SidStart)).Equals(user.User.Sid) {
+	if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE || ace.Mask != want.Mask || !(*windows.SID)(unsafe.Pointer(&ace.SidStart)).Equals(user) {
 		return ErrUnverified
 	}
 	return nil
