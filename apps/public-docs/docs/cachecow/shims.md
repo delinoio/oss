@@ -73,6 +73,10 @@ Recognized cache-using operations, such as builds, checks, tests, and developmen
 
 Version/help requests and cache-nonmutating queries pass through without preparation, prompts, or cache locks. Calls outside Git also pass through; that does not provide managed-cache support outside Git. Unknown commands and custom Cargo subcommands pass through without automatic protection. Use explicit `ccow run` if such a command needs cache management and its preset can be verified.
 
+The managed built-in Cargo commands are `build`, `check`, `test`, `bench`, `run`, `doc`, `rustc`, `rustdoc`, `clippy`, `fix`, `package`, and `publish`, including their short aliases such as `b`, `c`, `t`, `r`, and `d`. `cargo package` and `cargo publish` write the `.crate` file into `<target-dir>/package` and, unless `--no-verify` is set, run a verification build into the target and build directories. Both stay managed with `--no-verify`, and `cargo publish --dry-run` stays managed too. `cargo publish` holds the cache lease until the upload finishes. `cargo package --list` (or `-l`) only prints the file list, so it is a query and passes through.
+
+`cargo install` is not managed automatically. A `cargo install --path` build writes that workspace's `target` directory without protection, so do not run it concurrently with managed sessions. Use `CCOW_BYPASS=1` only when no managed access to the same cache is running.
+
 Shim-dispatched `cargo clean` waits for the relevant lock without preparing or cloning a cache. It preserves Cargo's original arguments and deletion behavior. `ccow clean` instead refuses an in-use cache immediately.
 
 Same-session/same-cache nesting reuses protection without preparation. Different-cache nesting remains managed. See [process ownership](/cachecow/concurrency) before running nested tools or watch servers.
