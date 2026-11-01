@@ -160,7 +160,7 @@ fn translates_only_worktree_root_boundaries() {
         "FOO=1",
     ]);
     assert_eq!(
-        super::managed::translate_worktree_root(&values, from, to),
+        crate::preset::translate_worktree_root(&values, from, to),
         strings(&[
             "PATH=/repo/main/node_modules/.bin:/usr/bin",
             "INIT_CWD=/repo/main",

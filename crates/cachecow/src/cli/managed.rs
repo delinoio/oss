@@ -65,49 +65,6 @@ pub(crate) fn transaction_path(root: &str, r: &PresetResult) -> String {
     )
 }
 
-/// Translates the current worktree root to the source root in environment
-/// entries and arguments, so equivalent worktrees produce equal settings
-/// digests (#4578). Purely lexical: only occurrences of `from_root` that start
-/// at a value or list boundary and end at a path boundary are replaced.
-// TODO(merge): replace with `preset::translate_worktree_root` once fork D
-// lands.
-pub(crate) fn translate_worktree_root(
-    values: &[String],
-    from_root: &str,
-    to_root: &str,
-) -> Vec<String> {
-    if from_root.is_empty() || from_root == to_root {
-        return values.to_vec();
-    }
-    let starts = |c: char| matches!(c, '=' | ':' | ';' | ',' | '"' | '\'') || c.is_whitespace();
-    let ends = |c: char| {
-        paths::is_separator(c) || matches!(c, ':' | ';' | ',' | '"' | '\'') || c.is_whitespace()
-    };
-    values
-        .iter()
-        .map(|value| {
-            let mut out = String::with_capacity(value.len());
-            let mut rest = value.as_str();
-            let mut previous: Option<char> = None;
-            while let Some(i) = rest.find(from_root) {
-                let before = rest[..i].chars().last().or(previous);
-                let after = rest[i + from_root.len()..].chars().next();
-                let boundary = before.is_none_or(starts) && after.is_none_or(ends);
-                out.push_str(&rest[..i]);
-                if boundary {
-                    out.push_str(to_root);
-                } else {
-                    out.push_str(from_root);
-                }
-                previous = from_root.chars().last();
-                rest = &rest[i + from_root.len()..];
-            }
-            out.push_str(rest);
-            out
-        })
-        .collect()
-}
-
 /// Working directory in the source worktree that corresponds to the
 /// canonical current directory (#4575).
 pub(crate) fn source_working_directory(current: &Info, source_root: &str) -> Result<String> {
@@ -504,13 +461,16 @@ impl App {
                 // Discover the source as if it ran there: current-root paths in
                 // the environment and arguments become
                 // source-root paths (#4578).
-                let env = translate_worktree_root(
+                let env = crate::preset::translate_worktree_root(
                     &environ(),
                     &current.repository.root,
                     &src.repository.root,
                 );
-                let source_argv =
-                    translate_worktree_root(argv, &current.repository.root, &src.repository.root);
+                let source_argv = crate::preset::translate_worktree_root(
+                    argv,
+                    &current.repository.root,
+                    &src.repository.root,
+                );
                 let source = self
                     .discover_with(&source_cwd, &source_argv, env)
                     .map_err(source_unavailable)?;

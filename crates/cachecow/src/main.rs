@@ -2,6 +2,9 @@
 use cachecow::{cli, process, session};
 
 fn main() {
+    // Keep the release identity marker in stripped LTO binaries; the
+    // distribution tooling scans for it.
+    std::hint::black_box(cachecow::BUILD_INFO);
     // The native supervisor re-executes this binary. Dispatch it before any
     // normal argument parsing or worker creation.
     if let Some(code) = process::supervisor_main(session::hooks(cli::validate, cli::records())) {
