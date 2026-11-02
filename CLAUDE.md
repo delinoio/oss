@@ -43,6 +43,7 @@ _Source: `AGENTS.md`_
 - `servers/`: Backend services and APIs.
 - `packaging/`: Package-manager template assets for release automation.
 - `.agents/skills/`: Workspace-local Codex skills and reusable agent workflows.
+- `.claude/skills`: Symlink to `.agents/skills/` so Claude Code loads the same workspace-local skills.
 
 ### Canonical Directory Map
 
