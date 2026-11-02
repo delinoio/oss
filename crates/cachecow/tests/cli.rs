@@ -2076,7 +2076,9 @@ fn stale_worktree_record_does_not_block_commands() {
         }
         fs::remove_dir_all(&stale).unwrap();
         for cwd in [&f.main, &f.work] {
-            f.run(cwd, 0, &["run", "--", "cargo", "build"]);
+            // Ordinary copying keeps the test independent of the host
+            // filesystem: a Linux CI runner has no copy-on-write support.
+            f.run(cwd, 0, &["run", "--allow-copy", "--", "cargo", "build"]);
             f.run(cwd, 0, &["status"]);
             f.run(cwd, 0, &["prepare", "--allow-copy", "--", "cargo", "build"]);
         }
