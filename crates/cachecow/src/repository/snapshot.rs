@@ -52,9 +52,12 @@ pub fn capture_snapshot(
         // A deleted or unmounted worktree has no index or sources to capture.
         // The worktree registry in the inventory still changes when Git prunes
         // or re-adds the record, and the cache validation below rejects a
-        // cache inside its reserved path.
+        // cache inside its reserved path. The snapshot records the skipped
+        // path because restoring the directory leaves the registry unchanged;
+        // verification then requires fresh discovery.
         if worktree_missing(worktree)? {
             tracing::debug!(worktree, "skipping missing registered worktree");
+            s.missing_worktrees.push(worktree.to_string());
             continue;
         }
         let w = discover(ctx, worktree)?;
@@ -190,6 +193,16 @@ impl Snapshot {
         }
         for p in &self.caches {
             verify_cache_claim(&self.repository, p, &self.protected)?;
+        }
+        // A skipped worktree that reappears (restore or remount) adds source
+        // paths that the captured inventory does not cover.
+        for p in &self.missing_worktrees {
+            if !worktree_missing(p)? {
+                bail!(
+                    "a registered worktree that was missing at discovery is available again; \
+                     repeat discovery"
+                );
+            }
         }
         for old in &self.files {
             if *old != file_stamp(&old.path)? {

@@ -392,6 +392,35 @@ fn missing_worktree_is_skipped() {
 }
 
 #[test]
+fn restored_missing_worktree_invalidates_snapshot() {
+    for lock in [false, true] {
+        let (_t, p) = fixture();
+        fs::write(paths::join2(&p, ".gitignore"), "/target/\n").unwrap();
+        let t2 = tempfile::tempdir().unwrap();
+        let stale = stale_worktree(&p, &t2, lock);
+        let r = discover(&ctx(), &p).unwrap();
+        let cache = paths::join2(&r.root, "target");
+        let snap = capture_snapshot(&ctx(), &r, &[cache], &[]).unwrap();
+        assert_eq!(
+            snap.missing_worktrees.as_slice(),
+            std::slice::from_ref(&stale),
+            "lock={lock}"
+        );
+        snap.verify().unwrap();
+        // Restoring the directory (or remounting its volume) leaves the
+        // worktree registry unchanged, so only the skipped path can reveal it.
+        fs::create_dir(&stale).unwrap();
+        let e = snap.verify().unwrap_err();
+        assert!(
+            format!("{e:#}").contains("available again"),
+            "lock={lock}: {e:#}"
+        );
+        fs::remove_dir(&stale).unwrap();
+        snap.verify().unwrap();
+    }
+}
+
+#[test]
 fn missing_worktree_is_skipped_from_linked_worktree() {
     let (_t, p) = fixture();
     let t2 = tempfile::tempdir().unwrap();

@@ -93,6 +93,12 @@ pub struct Snapshot {
     pub repository: Info,
     #[serde(rename = "Worktrees")]
     pub worktrees: Vec<Info>,
+    /// Registered worktree directories that were missing at capture and were
+    /// skipped. Verification requires them to stay missing, because a restored
+    /// or remounted directory brings sources that this snapshot never
+    /// inventoried.
+    #[serde(rename = "MissingWorktrees", default)]
+    pub missing_worktrees: Vec<String>,
     #[serde(rename = "IgnoredDirectories")]
     pub ignored_directories: Vec<String>,
     #[serde(rename = "Caches")]
