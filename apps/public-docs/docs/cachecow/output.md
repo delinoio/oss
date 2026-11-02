@@ -22,6 +22,8 @@ ccow shim list --json
 
 The envelope uses `schemaVersion: 1`, `success`, and either `result` or `error`. Errors contain `code`, `cause`, and `remediation`. Result fields depend on the command. Check the schema version and success indication before reading the result.
 
+Argument errors, such as an unknown option or preset, also use the envelope with error code 2 when `--json` is given as a CacheCow option. Arguments after `--` belong to the child command and never request JSON.
+
 A text or JSON error must provide actionable remediation for noninteractive decisions, unsupported CoW, permissions, source selection, and lock contention. `run` preserves child output and is not a JSON wrapper around the build command.
 
 ## Exit codes

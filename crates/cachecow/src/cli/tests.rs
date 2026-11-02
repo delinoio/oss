@@ -16,6 +16,26 @@ fn strings(values: &[&str]) -> Vec<String> {
 }
 
 #[test]
+fn json_request_scan() {
+    for (args, want) in [
+        (&["status", "--json"][..], true),
+        (&["status", "--json", "--bogus"], true),
+        (&["status", "--bogus", "--json"], true),
+        (&["status", "--json=x"], true),
+        (&["status", "--bogus"], false),
+        (&["run", "--", "tool", "--json"], false),
+        (&["run", "--preset", "bogus", "--", "tool", "--json"], false),
+        (&["status", "--source", "--json"], false),
+        (&["status", "--preset=--json"], false),
+        (&["status", "--source", "--json", "--json"], true),
+        (&["status", "--source=a", "--json"], true),
+        (&[], false),
+    ] {
+        assert_eq!(requests_json(&strings(args)), want, "{args:?}");
+    }
+}
+
+#[test]
 fn argument_errors() {
     for args in [
         &["run", "--wat"][..],

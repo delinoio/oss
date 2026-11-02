@@ -205,7 +205,7 @@ Disk exhaustion, permission errors, and other actual preparation failures stop b
 ### Output, errors, and observability
 
 - English CLI output. Pass child stdout/stderr through unchanged; CacheCow notices go to stderr.
-- Management commands support `--json` with a schema version, success indication, and either result data or an error code, cause, and remediation.
+- Management commands support `--json` with a schema version, success indication, and either result data or an error code, cause, and remediation. Argument parse errors use the JSON error envelope when `--json` is given as a CacheCow option before any `--`; shim invocations and arguments after `--` never request JSON.
 - Preserve the child command's exit code. CacheCow-owned exit codes: 2 for arguments/configuration, 125 for cache/environment/internal failures, 126 for command execution denied/unavailable, and 127 for command not found.
 - Text and JSON errors must explain actionable fixes, especially noninteractive decisions, CoW capability, permissions, source selection, and lock contention.
 - `doctor` and `--verbose` expose paths, tool versions, CoW capability, lock state, and failure causes.

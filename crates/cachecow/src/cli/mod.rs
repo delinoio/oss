@@ -136,6 +136,35 @@ pub(crate) fn parse(args: &[String]) -> Result<Options> {
     Ok(o)
 }
 
+/// Reports whether the caller asked for the JSON envelope as a CacheCow option.
+///
+/// Argument errors are found before `parse` can return its options, so this
+/// scans the raw arguments instead. It stops at `--` because later arguments
+/// belong to the child command, and it skips the value of `--preset`,
+/// `--source` and `--file` the same way `parse` does. `--json=value` counts as
+/// a request because `parse` rejects it as a boolean option with a value, and
+/// the caller still expects an envelope.
+pub(crate) fn requests_json(args: &[String]) -> bool {
+    let mut i = 0;
+    while i < args.len() {
+        let a = args[i].as_str();
+        if a == "--" {
+            return false;
+        }
+        match a.split_once('=') {
+            Some(("--json", _)) => return true,
+            Some(_) => {}
+            None => match a {
+                "--json" => return true,
+                "--preset" | "--source" | "--file" => i += 1,
+                _ => {}
+            },
+        }
+        i += 1;
+    }
+    false
+}
+
 const USAGE: &str = "ccow run [--preset cargo|rspack|rsbuild] [--source WORKTREE] [--allow-copy] \
                      [--replace] -- COMMAND [ARGS...]
 ccow prepare|status|clean|doctor [--preset PRESET] [--source WORKTREE] [--json]
@@ -199,17 +228,25 @@ fn init_logging(verbose: bool) {
 /// Process entry point after supervisor dispatch. Returns the exit code.
 pub fn main(version: &str) -> i32 {
     let mut args = Vec::new();
+    let mut non_utf8 = false;
     for arg in std::env::args_os() {
         match arg.into_string() {
             Ok(a) => args.push(a),
-            Err(_) => {
-                return fail_with(false, &bad("arguments must be valid UTF-8"));
+            Err(raw) => {
+                non_utf8 = true;
+                args.push(raw.to_string_lossy().into_owned());
             }
         }
     }
     let argv0 = args.first().cloned().unwrap_or_default();
     // A shim never parses the real tool's arguments as CacheCow options.
     let shim_tool = shim::from_argv0(&argv0);
+    if non_utf8 {
+        // Argument errors still honor --json. A shim has no CacheCow options,
+        // so its arguments never request JSON.
+        let json = shim_tool.is_none() && requests_json(&args[1..]);
+        return fail_with(json, &bad("arguments must be valid UTF-8"));
+    }
     if shim_tool.is_none() && args.len() == 2 && args[1] == "--version" {
         stdout_write(&format!("ccow {version}\n"));
         return 0;
@@ -218,7 +255,7 @@ pub fn main(version: &str) -> i32 {
     if shim_tool.is_none() {
         match parse(&args[1..]) {
             Ok(v) => o = v,
-            Err(e) => return fail_with(false, &e),
+            Err(e) => return fail_with(requests_json(&args[1..]), &e),
         }
         if o.help || o.args.is_empty() {
             stdout_write(USAGE);
