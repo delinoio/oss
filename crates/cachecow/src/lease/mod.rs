@@ -740,8 +740,16 @@ pub(crate) fn private_directory_sddl() -> Result<String> {
     privacy::state_sddl()
 }
 
-/// Validates an existing private record file without creating it.
+/// Validates an existing private record file without creating it. A missing
+/// file returns its I/O `NotFound` cause.
 pub fn validate_private_file(path: &str) -> Result<()> {
-    std::fs::symlink_metadata(path)?;
-    privacy::private_database(path)
+    privacy::validate_private_record(path)
+}
+
+/// Validates an existing private record file without creating it and returns
+/// its bytes. On Unix, validation and reading use the same open descriptor,
+/// so a record that another session replaces or removes meanwhile yields
+/// either a complete record or `NotFound`.
+pub fn read_private_file(path: &str) -> Result<Vec<u8>> {
+    privacy::read_private_record(path)
 }

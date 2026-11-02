@@ -355,6 +355,23 @@ fn executable_noninteractive_missing_and_settings() {
 }
 
 #[test]
+fn executable_empty_state_record_names_the_file() {
+    let f = Fixture::new();
+    f.run(&f.main, 0, &["run", "--", "cargo", "build"]);
+    let record = join(&f.state_base(), "cache-deadbeef.json");
+    write_file(&record, "", 0o600);
+    let (_, err) = f.run(&f.main, 125, &["run", "--", "cargo", "build"]);
+    assert!(
+        err.contains(&record) && err.contains("delete"),
+        "empty record error must name the file: {err}"
+    );
+    // The check must not delete the record or create other empty records.
+    assert!(exists(&record));
+    fs::remove_file(&record).unwrap();
+    f.run(&f.main, 0, &["run", "--", "cargo", "build"]);
+}
+
+#[test]
 fn executable_contention_and_parent_death() {
     let f = Fixture::new();
     write_file(

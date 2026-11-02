@@ -604,6 +604,101 @@ fn private_database_and_dangling_alias() {
     );
 }
 
+#[cfg(unix)]
+mod private_records {
+    use std::os::unix::fs::PermissionsExt;
+
+    use super::*;
+
+    fn record_dir() -> (tempfile::TempDir, String) {
+        let temp = tempfile::tempdir().unwrap();
+        let dir = paths::join2(temp.path().to_str().unwrap(), "state");
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+        (temp, dir)
+    }
+
+    fn record(path: &str, mode: u32) {
+        std::fs::write(path, b"{}").unwrap();
+        std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+    }
+
+    #[test]
+    fn missing_record_is_not_found_and_not_created() {
+        let (_temp, dir) = record_dir();
+        let path = paths::join2(&dir, "cache-missing.json");
+        let err = validate_private_file(&path).unwrap_err();
+        assert!(crate::error::is_not_found(&err), "{err:#}");
+        let err = read_private_file(&path).unwrap_err();
+        assert!(crate::error::is_not_found(&err), "{err:#}");
+        assert!(std::fs::symlink_metadata(&path).is_err(), "record created");
+    }
+
+    #[test]
+    fn record_removed_after_a_successful_check_is_not_created() {
+        let (_temp, dir) = record_dir();
+        let path = paths::join2(&dir, "cache-gone.json");
+        record(&path, 0o600);
+        std::fs::symlink_metadata(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        let err = validate_private_file(&path).unwrap_err();
+        assert!(crate::error::is_not_found(&err), "{err:#}");
+        assert!(std::fs::symlink_metadata(&path).is_err(), "record created");
+    }
+
+    #[test]
+    fn private_record_is_read_through_the_validated_descriptor() {
+        let (_temp, dir) = record_dir();
+        let path = paths::join2(&dir, "cache-ok.json");
+        record(&path, 0o600);
+        validate_private_file(&path).unwrap();
+        assert_eq!(read_private_file(&path).unwrap(), b"{}");
+    }
+
+    #[test]
+    fn unsafe_records_are_rejected_with_the_privacy_error() {
+        let (_temp, dir) = record_dir();
+        let reject = |path: &str| {
+            for err in [
+                validate_private_file(path).unwrap_err(),
+                read_private_file(path).unwrap_err(),
+            ] {
+                assert!(
+                    err.to_string().contains("not a private owned"),
+                    "{path}: {err:#}"
+                );
+            }
+        };
+        let public = paths::join2(&dir, "cache-public.json");
+        record(&public, 0o640);
+        reject(&public);
+        let linked = paths::join2(&dir, "cache-linked.json");
+        record(&linked, 0o600);
+        std::fs::hard_link(&linked, paths::join2(&dir, "alias.json")).unwrap();
+        reject(&linked);
+        let target = paths::join2(&dir, "target.json");
+        record(&target, 0o600);
+        let symlink = paths::join2(&dir, "cache-symlink.json");
+        std::os::unix::fs::symlink(&target, &symlink).unwrap();
+        reject(&symlink);
+        let directory = paths::join2(&dir, "cache-directory.json");
+        std::fs::create_dir(&directory).unwrap();
+        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+        reject(&directory);
+    }
+
+    #[test]
+    fn fifo_record_is_rejected_without_blocking() {
+        let (_temp, dir) = record_dir();
+        let path = paths::join2(&dir, "cache-fifo.json");
+        let c_path = std::ffi::CString::new(path.clone()).unwrap();
+        // SAFETY: c_path is a valid NUL-terminated path.
+        assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
+        let err = validate_private_file(&path).unwrap_err();
+        assert!(err.to_string().contains("not a private owned"), "{err:#}");
+    }
+}
+
 #[test]
 fn failed_complete_set_does_not_acquire_partial_resources() {
     let f = Fixture::new();
