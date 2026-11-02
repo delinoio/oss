@@ -934,10 +934,15 @@ mod tests {
     fn activation_in_powershell() {
         let Some(binary) = which("pwsh") else { return };
         let (_t, base) = temp();
-        let dir = paths::join2(
-            &base,
-            "한 글 ' ‘ ’ ‚ ‛ ’; Write-Output pwned; ’ $HOME `cmd` [*]",
-        );
+        // `init` rejects the PATH separator in the shim directory, and ';' is
+        // the Windows separator. The semicolon payload is covered through
+        // `psquote` in `powershell_quotes_typographic_single_quotes`.
+        let name = if paths::LIST_SEPARATOR == ';' {
+            "한 글 ' ‘ ’ ‚ ‛ ’ Write-Output pwned ’ $HOME `cmd` [*]"
+        } else {
+            "한 글 ' ‘ ’ ‚ ‛ ’; Write-Output pwned; ’ $HOME `cmd` [*]"
+        };
+        let dir = paths::join2(&base, name);
         let code = init(Kind::PowerShell, &dir).unwrap();
         let initial = paths::join2(&base, "real");
         let out = std::process::Command::new(binary)
@@ -955,8 +960,10 @@ mod tests {
 
     #[test]
     fn powershell_quotes_typographic_single_quotes() {
+        // `init` requires an absolute path, and "/x" has no drive on Windows.
+        let (_t, base) = temp();
         for quote in ['\'', '\u{2018}', '\u{2019}', '\u{201A}', '\u{201B}'] {
-            let dir = format!("/x/O{quote}Neil");
+            let dir = paths::join2(&base, &format!("O{quote}Neil"));
             let code = init(Kind::PowerShell, &dir).unwrap();
             let doubled = format!("O{quote}{quote}Neil");
             // The directory is embedded in two literals, each with a doubled
@@ -968,14 +975,13 @@ mod tests {
                 assert_eq!(code.matches(quote).count(), 4, "{quote:?}: {code}");
             }
         }
+        // Test the semicolon payload through `psquote` directly, because `init`
+        // rejects ';' as the PATH separator on Windows.
         let injection = "/x/a\u{2019}; Write-Output pwned; \u{2019}b";
-        let code = init(Kind::PowerShell, injection).unwrap();
-        let literal = psquote(injection);
         assert_eq!(
-            literal,
+            psquote(injection),
             "'/x/a\u{2019}\u{2019}; Write-Output pwned; \u{2019}\u{2019}b'"
         );
-        assert_eq!(code.matches(&literal).count(), 2, "{code}");
         // Other characters, including the double quote and the grave accent,
         // stay as is.
         assert_eq!(psquote("a\"b`c"), "'a\"b`c'");
