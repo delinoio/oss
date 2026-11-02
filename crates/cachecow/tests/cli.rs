@@ -688,6 +688,130 @@ fn rsbuild_version_flag_without_command_is_a_query() {
     }
 }
 
+/// Installs shims and a recording `cargo` that stores its first argument and
+/// `$BADENV` as hexadecimal bytes. Returns the shim directory, the recording
+/// tool directory and the log path.
+fn install_recording_shims(f: &mut Fixture) -> (String, String, String) {
+    f.run(&f.main, 0, &["shim", "install"]);
+    let shims = join(&f.state_base(), "shims");
+    let recorder = join(&f.dir, "recorder");
+    let log = join(&f.dir, "recorded");
+    write_file(
+        &join(&recorder, "cargo"),
+        &format!(
+            "#!/bin/sh\n{{ printf '%s' \"$1\" | od -An -tx1; printf '%s' \"$BADENV\" | od -An \
+             -tx1; }} > '{log}'\n"
+        ),
+        0o700,
+    );
+    (shims, recorder, log)
+}
+
+/// Normalizes `od` output so tests compare bytes, not spacing.
+fn recorded_bytes(log: &str) -> Vec<String> {
+    fs::read_to_string(log)
+        .unwrap()
+        .lines()
+        .map(|l| l.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+#[test]
+fn shim_passthrough_preserves_non_utf8_argument_and_environment() {
+    use std::os::unix::ffi::OsStrExt;
+    let mut f = Fixture::new();
+    let (shims, recorder, log) = install_recording_shims(&mut f);
+    f.set_env("PATH", &format!("{shims}:{recorder}:/usr/bin:/bin"));
+    // Outside Git the call must pass through unchanged.
+    let outside = f.dir.clone();
+    let mut c = f.command(&join(&shims, "cargo"), &outside, &[]);
+    c.arg(std::ffi::OsStr::from_bytes(b"\xff"))
+        .env("BADENV", std::ffi::OsStr::from_bytes(b"a\xffb"));
+    let out = output(c);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert_eq!(recorded_bytes(&log), ["ff", "61 ff 62"]);
+}
+
+#[test]
+fn shim_resolution_skips_non_utf8_path_entries() {
+    use std::os::unix::ffi::OsStrExt;
+    let mut f = Fixture::new();
+    let (shims, recorder, log) = install_recording_shims(&mut f);
+    // The entry does not have to exist: some file systems cannot create a
+    // directory with these bytes.
+    let mut path = format!("{shims}:{}/bad", f.dir).into_bytes();
+    path.extend_from_slice(b"\xff");
+    path.extend_from_slice(format!(":{recorder}:/usr/bin:/bin").as_bytes());
+    let outside = f.dir.clone();
+    let mut c = f.command(&join(&shims, "cargo"), &outside, &["--version"]);
+    c.env("PATH", std::ffi::OsStr::from_bytes(&path));
+    let out = output(c);
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    assert!(exists(&log), "the real tool did not run");
+}
+
+fn assert_rejected(out: &Output, log: &str, expected: &str) {
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains(expected), "stderr={stderr:?}");
+    assert!(
+        stderr.contains("managed commands require UTF-8 arguments and environment"),
+        "stderr={stderr:?}"
+    );
+    // Neither the raw byte nor its replacement character may be echoed.
+    assert!(!out.stderr.contains(&0xff));
+    assert!(!stderr.contains('\u{fffd}'), "stderr={stderr:?}");
+    assert!(!exists(log), "the tool must not start");
+}
+
+#[test]
+fn managed_commands_reject_non_utf8_arguments_and_environment() {
+    use std::os::unix::ffi::OsStrExt;
+    let mut f = Fixture::new();
+    let (shims, recorder, log) = install_recording_shims(&mut f);
+    f.set_env("PATH", &format!("{shims}:{recorder}:/usr/bin:/bin"));
+    let bad = std::ffi::OsStr::from_bytes(b"\xff");
+
+    let mut c = f.cmd(&f.main, &["run", "--", "cargo", "build"]);
+    c.arg(bad);
+    assert_rejected(&output(c), &log, "ARG #2 is not valid UTF-8");
+
+    let mut c = f.command(&join(&shims, "cargo"), &f.main, &["build"]);
+    c.arg(bad);
+    assert_rejected(&output(c), &log, "ARG #2 is not valid UTF-8");
+
+    let mut c = f.cmd(&f.main, &["run", "--", "cargo", "build"]);
+    c.env("BADENV", std::ffi::OsStr::from_bytes(b"a\xffb"));
+    assert_rejected(&output(c), &log, "variable BADENV is not valid UTF-8");
+
+    let mut c = f.command(&join(&shims, "cargo"), &f.main, &["build"]);
+    c.env("BADENV", std::ffi::OsStr::from_bytes(b"a\xffb"));
+    assert_rejected(&output(c), &log, "variable BADENV is not valid UTF-8");
+}
+
+#[test]
+fn non_utf8_argument_before_the_child_command_is_a_plain_argument_error() {
+    use std::os::unix::ffi::OsStrExt;
+    let f = Fixture::new();
+    let mut c = f.cmd(&f.main, &["status"]);
+    c.arg(std::ffi::OsStr::from_bytes(b"bad\xff"));
+    let out = output(c);
+    assert_eq!(out.status.code(), Some(2));
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("arguments must be valid UTF-8"), "{stderr}");
+}
+
 /// A pseudo-terminal whose secondary side is used as the child's stdin.
 struct Terminal {
     primary: fs::File,

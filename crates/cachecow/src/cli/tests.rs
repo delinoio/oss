@@ -263,3 +263,35 @@ fn quotes_shell_notice_lines() {
     write_block_lines(&mut b, "+ ", b"one\r\ntwo\n");
     assert_eq!(b, "\n+ one\n+ two");
 }
+
+#[cfg(unix)]
+#[test]
+fn path_lookup_drops_only_non_utf8_entries() {
+    use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+    assert_eq!(utf8_path_entries(OsStr::new("/a:/b")), "/a:/b");
+    assert_eq!(utf8_path_entries(OsStr::new("")), "");
+    assert_eq!(
+        utf8_path_entries(OsStr::from_bytes(b"/a:/b\xff:/c")),
+        "/a:/c"
+    );
+    assert_eq!(utf8_path_entries(OsStr::from_bytes(b"\xff")), "");
+}
+
+#[cfg(unix)]
+#[test]
+fn managed_argument_check_reports_child_argv_index() {
+    use std::{ffi::OsString, os::unix::ffi::OsStringExt};
+    let ok = [OsString::from("build"), OsString::from("--release")];
+    assert!(check_managed_args(&ok, 1).is_ok());
+    let args = [
+        OsString::from("build"),
+        OsString::from_vec(b"a\xffb".to_vec()),
+    ];
+    let error = check_managed_args(&args, 1).unwrap_err();
+    let text = error_text(&error);
+    assert_eq!(
+        text,
+        "managed commands require UTF-8 arguments and environment; ARG #2 is not valid UTF-8"
+    );
+    assert!(!text.contains('\u{fffd}'));
+}
