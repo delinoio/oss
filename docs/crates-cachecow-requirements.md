@@ -91,7 +91,7 @@ CoW is not a compiler cache key algorithm, a shared process heap, or automatic s
   - Windows 11 24H2+, x64, ReFS.
 - Tool support: Cargo 1.99.1 or later within 1.x; Rspack and Rsbuild 2.3.0 or later within 2.x. Older versions and nightly toolchains are outside the first-release support guarantee.
 - npm package: `@delino/ccow`, exposing `ccow`. npm launcher and Rspack/Rsbuild integration require Node.js 24+. Native Cargo usage must not require Node.js.
-- Other filesystems, or cross-volume operations where CoW cannot work, fail by default. Only an explicit `--allow-copy` permits ordinary copying. Report that ordinary copying was used.
+- Other filesystems, or cross-volume operations where CoW cannot work, fail by default. Only an explicit `--allow-copy` permits ordinary copying. Report that ordinary copying was used. For a managed command, report it before the command starts, once per run, even if the command later fails or the supervisor ends with an error.
 
 ### Commands and configuration
 

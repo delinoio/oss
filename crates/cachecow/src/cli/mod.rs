@@ -201,12 +201,8 @@ prepare never runs a build. Use its optional command after -- to discover exact 
 
 /// Writes an English notice to stderr, colored unless `NO_COLOR` is set.
 pub(crate) fn notice(message: &str) {
-    let line = if std::env::var_os("NO_COLOR").is_some() {
-        format!("ccow: {message}\n")
-    } else {
-        format!("\x1b[36mccow:\x1b[0m {message}\n")
-    };
-    let _ = std::io::stderr().write_all(line.as_bytes());
+    let color = std::env::var_os("NO_COLOR").is_none();
+    let _ = std::io::stderr().write_all(crate::session::notice_line(message, color).as_bytes());
 }
 
 fn stdout_write(text: &str) {

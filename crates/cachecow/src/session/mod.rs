@@ -602,6 +602,60 @@ fn finish_session(session: &lease::Session, verify: lease::Verify<'_>) -> Result
     }
 }
 
+/// One user-facing notice line: `ccow: ` prefix, ANSI-colored when `color` is
+/// set. Shared by the CLI and the supervisor so both print the same format.
+pub(crate) fn notice_line(message: &str, color: bool) -> String {
+    if color {
+        format!("\x1b[36mccow:\x1b[0m {message}\n")
+    } else {
+        format!("ccow: {message}\n")
+    }
+}
+
+/// Whether notices are colored for a process environment: colored unless
+/// `NO_COLOR` is set (to any value).
+pub(crate) fn color_enabled(env: &[String]) -> bool {
+    !env.iter()
+        .any(|entry| entry == "NO_COLOR" || entry.starts_with("NO_COLOR="))
+}
+
+/// Notice lines reporting ordinary copying, one per published tree that used
+/// it. Empty when every tree was cloned.
+pub(crate) fn copy_notice_lines(result: &LifecycleResult, color: bool) -> Vec<String> {
+    result
+        .trees
+        .iter()
+        .filter(|tree| tree.copied_files > 0)
+        .map(|tree| {
+            notice_line(
+                &format!(
+                    "Ordinary copying was used for {} files (--allow-copy).",
+                    tree.copied_files
+                ),
+                color,
+            )
+        })
+        .collect()
+}
+
+/// Reports ordinary copying on the user's stderr as received by the
+/// supervisor, falling back to the process stderr. Called before the managed
+/// command starts so long-running commands do not hide the copy mode. The
+/// supervisor does not share the caller's environment, so `color` comes from
+/// the command's environment.
+fn report_copy(scope: &Scope, result: &LifecycleResult, color: bool) {
+    for line in copy_notice_lines(result, color) {
+        match &scope.stderr {
+            Some(stderr) => {
+                let _ = (&**stderr).write_all(line.as_bytes());
+            }
+            None => {
+                let _ = std::io::stderr().write_all(line.as_bytes());
+            }
+        }
+    }
+}
+
 /// Supervisor hooks that bind leases, preparation and nested IPC.
 pub fn hooks(validate: Validate, records: RecordHooks) -> SupervisorHooks {
     let shared: Rc<RefCell<Option<Arc<Server>>>> = Rc::new(RefCell::new(None));
@@ -643,6 +697,7 @@ pub fn hooks(validate: Validate, records: RecordHooks) -> SupervisorHooks {
             ));
             *before_shared.borrow_mut() = Some(server.clone());
             let result = server.apply(&scope.context, plan, false).map_err(fail)?;
+            report_copy(scope, &result, color_enabled(&command.env));
             state::write(
                 &result_path(scope),
                 &Response {

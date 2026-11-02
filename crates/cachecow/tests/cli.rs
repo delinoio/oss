@@ -2100,3 +2100,78 @@ fn unreadable_worktree_directory_still_fails() {
     }
     fs::set_permissions(&denied, fs::Permissions::from_mode(0o755)).unwrap();
 }
+
+/// Counts the ordinary-copy notices in `text`.
+fn copy_notices(text: &str) -> usize {
+    text.lines()
+        .filter(|l| l.starts_with("ccow: Ordinary copying was used for "))
+        .count()
+}
+
+/// Whether `--allow-copy` preparation on this host falls back to ordinary
+/// copying. Copy-on-write volumes clone instead, so the notice only appears on
+/// hosts without reflinks (for example ext4 CI runners). Leaves no prepared
+/// derived cache behind.
+fn host_copies(f: &Fixture) -> bool {
+    f.run(&f.main, 0, &["run", "--", "cargo", "build"]);
+    let (out, _) = f.run(
+        &f.work,
+        0,
+        &["prepare", "--allow-copy", "--json", "--", "cargo", "build"],
+    );
+    fs::remove_dir_all(join(&f.work, "target")).unwrap();
+    let value: serde_json::Value = serde_json::from_str(&out).unwrap();
+    value["result"]["trees"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|t| t["copiedFiles"].as_i64().unwrap_or(0) > 0)
+}
+
+#[test]
+fn ordinary_copy_notice_precedes_the_managed_command() {
+    let f = Fixture::new();
+    if !host_copies(&f) {
+        eprintln!("skipped: this volume clones, so no ordinary copy occurs");
+        return;
+    }
+    // The child reports on stderr so ordering against the notice is observable
+    // in one stream.
+    for code in [0, 37] {
+        write_file(
+            &join(&f.work, "scenario"),
+            &format!("echo CHILD-START >&2; sleep 1; echo CHILD-END >&2; exit {code}\n"),
+            0o600,
+        );
+        let (_, err) = f.run(
+            &f.work,
+            code,
+            &["run", "--allow-copy", "--", "cargo", "build"],
+        );
+        assert_eq!(copy_notices(&err), 1, "stderr={err}");
+        let notice = err.find("ccow: Ordinary copying").unwrap();
+        let start = err.find("CHILD-START").unwrap();
+        assert!(notice < start, "notice after child output: {err}");
+        fs::remove_dir_all(join(&f.work, "target")).unwrap();
+    }
+    // Preparation keeps reporting once, before the JSON result.
+    let (out, err) = f.run(
+        &f.work,
+        0,
+        &["prepare", "--allow-copy", "--json", "--", "cargo", "build"],
+    );
+    assert_eq!(copy_notices(&err), 1, "stderr={err}");
+    assert!(out.starts_with('{'), "stdout={out}");
+}
+
+#[test]
+fn clone_only_run_prints_no_copy_notice() {
+    let f = Fixture::new();
+    if host_copies(&f) {
+        eprintln!("skipped: this volume copies, so a clone-only run is unavailable");
+        return;
+    }
+    write_file(&join(&f.work, "scenario"), "echo CHILD-START >&2\n", 0o600);
+    let (_, err) = f.run(&f.work, 0, &["run", "--allow-copy", "--", "cargo", "build"]);
+    assert_eq!(copy_notices(&err), 0, "stderr={err}");
+}

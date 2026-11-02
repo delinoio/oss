@@ -334,6 +334,117 @@ fn preparation_evidence_uses_leased_result() {
     }
 }
 
+fn copy_result(copied: &[i64]) -> LifecycleResult {
+    LifecycleResult {
+        reused: false,
+        trees: copied
+            .iter()
+            .map(|&copied_files| crate::clone::CloneResult {
+                copied_files,
+                cloned_files: 3,
+                ..crate::clone::CloneResult::default()
+            })
+            .collect(),
+    }
+}
+
+#[test]
+fn copy_notice_lines_report_only_copied_trees() {
+    assert!(copy_notice_lines(&copy_result(&[]), false).is_empty());
+    assert!(copy_notice_lines(&copy_result(&[0, 0]), true).is_empty());
+    assert_eq!(
+        copy_notice_lines(&copy_result(&[0, 4, 7]), false),
+        vec![
+            "ccow: Ordinary copying was used for 4 files (--allow-copy).\n",
+            "ccow: Ordinary copying was used for 7 files (--allow-copy).\n",
+        ]
+    );
+    assert_eq!(
+        copy_notice_lines(&copy_result(&[1]), true),
+        vec!["\x1b[36mccow:\x1b[0m Ordinary copying was used for 1 files (--allow-copy).\n"]
+    );
+}
+
+#[test]
+fn notice_color_follows_no_color_in_the_command_environment() {
+    let env = |entries: &[&str]| -> Vec<String> { entries.iter().map(|e| (*e).into()).collect() };
+    assert!(color_enabled(&env(&["PATH=/bin"])));
+    assert!(color_enabled(&env(&["NO_COLORS=1"])));
+    assert!(!color_enabled(&env(&["PATH=/bin", "NO_COLOR=1"])));
+    assert!(!color_enabled(&env(&["NO_COLOR="])));
+}
+
+#[test]
+fn report_copy_writes_to_supervisor_stderr() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("stderr");
+    let file = std::fs::File::create(&path).unwrap();
+    let scope = Scope {
+        stderr: Some(Arc::new(file)),
+        ..Scope::default()
+    };
+    report_copy(&scope, &copy_result(&[2]), false);
+    report_copy(&scope, &copy_result(&[0]), false);
+    let got = std::fs::read_to_string(&path).unwrap();
+    assert_eq!(
+        got,
+        "ccow: Ordinary copying was used for 2 files (--allow-copy).\n"
+    );
+}
+
+/// The start hook reports exactly the notices for the result it publishes,
+/// before it returns and so before the managed command could start. Whether
+/// a notice appears depends on the host volume: copy-on-write volumes clone.
+#[test]
+fn start_hook_reports_copy_before_command_starts() {
+    let temp = tempfile::tempdir().unwrap();
+    let base = paths::eval_symlinks(temp.path().to_str().unwrap()).unwrap();
+    let root = paths::join2(&base, "state");
+    lease::ensure_private_directory(&root).unwrap();
+    let directory = paths::join2(&paths::join2(&root, "scopes"), "scope-1");
+    lease::ensure_private_directory(&paths::join2(&root, "scopes")).unwrap();
+    lease::ensure_private_directory(&directory).unwrap();
+    let (src, dst) = (paths::join2(&base, "source"), paths::join2(&base, "dest"));
+    mkdir_with_file(&src, "source");
+    let plan = Plan {
+        schema_version: 1,
+        root: root.clone(),
+        action: Action::Prepare,
+        resources: Resources {
+            sources: vec![src.clone()],
+            destinations: vec![dst.clone()],
+        },
+        pairs: vec![Pair {
+            source: src,
+            destination: dst.clone(),
+        }],
+        record: paths::join2(&root, "transaction.json"),
+        allow_copy: true,
+        ..Plan::default()
+    };
+    state::write(&paths::join2(&directory, "operation.json"), &plan).unwrap();
+    let stderr_path = paths::join2(&base, "stderr");
+    let stderr = std::fs::File::create(&stderr_path).unwrap();
+    let scope = Scope {
+        directory: directory.clone(),
+        stderr: Some(Arc::new(stderr)),
+        ..Scope::default()
+    };
+    let mut hooks = hooks(accept, RecordHooks::default());
+    let mut before = hooks.before_start.take().unwrap();
+    let mut command = Command {
+        noop: true,
+        env: vec!["NO_COLOR=1".to_string()],
+        ..Command::default()
+    };
+    before(&scope, &mut command).unwrap();
+
+    let response: Response = state::read(&result_path(&scope)).unwrap();
+    let got = std::fs::read_to_string(&stderr_path).unwrap();
+    assert_eq!(got, copy_notice_lines(&response.result, false).concat());
+    assert!(std::fs::metadata(paths::join2(&dst, "data")).is_ok());
+}
+
 #[test]
 fn helpers() {
     assert_eq!(
