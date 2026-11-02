@@ -540,11 +540,63 @@ mod unix_tests {
             "error={err:#}"
         );
         assert!(still.is_err(), "dead supervisor unlocked unfinished scope");
-        if cfg!(target_os = "linux") {
-            assert_eq!(retention, process::Retention::SameBoot);
-        } else {
-            assert_ne!(retention, process::Retention::Unreadable);
+        assert_eq!(retention, process::Retention::SameBoot);
+    }
+
+    /// While the supervisor runs, the kept lease reports a running owner.
+    /// Journals without native identity report that instead, even though the
+    /// recorded coalition still has members.
+    #[cfg(target_os = "macos")]
+    pub fn live_supervisor_reports_owner_running() {
+        let (_guard, dir) = state_root();
+        let (tx, rx) = std::sync::mpsc::channel::<Scope>();
+        let run_dir = dir.clone();
+        let runner = std::thread::spawn(move || {
+            run_with(
+                &Context::background(),
+                &run_dir,
+                shell(&run_dir, "printf '%s' $$ > child; exec /bin/sleep 60"),
+                Streams::default(),
+                &mut |s| {
+                    let _ = tx.send(s.clone());
+                    Ok(())
+                },
+                &mut |_| Ok(()),
+            )
+        });
+        let scope = rx
+            .recv_timeout(Duration::from_secs(20))
+            .expect("no supervisor");
+        let child = paths::join2(&dir, "child");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut pid = 0;
+        while Instant::now() < deadline && pid <= 1 {
+            pid = fs::read_to_string(&child)
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0);
+            std::thread::sleep(Duration::from_millis(10));
         }
+        assert!(pid > 1, "no child");
+        let running = process::retention(&scope);
+        // `retention` reads the saved journal, so the version 1 record lives in
+        // its own directory and keeps the live coalition.
+        let mut legacy = scope.clone();
+        legacy.version = 1;
+        legacy.boot_id.clear();
+        legacy.directory = paths::join2(&dir, "legacy");
+        legacy.id = paths::base(&legacy.directory);
+        fs::create_dir(&legacy.directory).unwrap();
+        process::testing::save_scope(&legacy).unwrap();
+        let legacy_retention = process::retention(&legacy);
+        // SAFETY: kill has no memory-safety preconditions; this ends the
+        // fixture so the supervisor completes normally.
+        unsafe { libc::kill(pid, libc::SIGKILL) };
+        let (result, err) = runner.join().unwrap();
+        err.unwrap();
+        assert_eq!(running, process::Retention::OwnerRunning);
+        assert_eq!(legacy_retention, process::Retention::NoNativeIdentity);
+        assert!(result.exit_code != 0, "killed child reported success");
     }
 
     pub fn start_failure_exit_codes() {
@@ -1166,6 +1218,11 @@ fn cases() -> Vec<Case> {
             unix_tests::orphan_reaping_preserves_root_status,
         ),
     ]);
+    #[cfg(target_os = "macos")]
+    cases.push((
+        "live_supervisor_reports_owner_running",
+        unix_tests::live_supervisor_reports_owner_running,
+    ));
     #[cfg(windows)]
     cases.extend([
         (

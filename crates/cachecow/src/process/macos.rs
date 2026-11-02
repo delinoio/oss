@@ -525,14 +525,42 @@ pub fn legacy_completion(s: &Scope) -> bool {
     same_boot_coalition_empty(s)
 }
 
-pub fn retention(s: &Scope) -> Retention {
-    if s.native_id != 0 && coalition_count(s.native_id).is_ok_and(|n| n > 0) {
-        return Retention::OwnerRunning;
+/// True while `pid` is a live, non-zombie process. A killed supervisor stays a
+/// zombie until its parent reaps it; `kill(pid, 0)` and the coalition lookup
+/// still succeed for it, so a zombie must not count as a running owner.
+fn owner_running(pid: i64) -> bool {
+    if !unix::alive(pid) {
+        return false;
     }
+    let Ok(pid) = libc::c_int::try_from(pid) else {
+        return false;
+    };
+    // SAFETY: an all-zero proc_bsdinfo is a valid plain-data value.
+    let mut info: libc::proc_bsdinfo = unsafe { std::mem::zeroed() };
+    let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
+    // SAFETY: proc_pidinfo writes at most `size` bytes into `info`.
+    let n = unsafe {
+        libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            std::ptr::addr_of_mut!(info).cast(),
+            size,
+        )
+    };
+    // A failed lookup means the process is not inspectable; the preceding
+    // liveness check decides in that case.
+    n != size || info.pbi_status != libc::SZOMB
+}
+
+/// Reports why a kept lease is still protected. A coalition with members only
+/// shows that descendants survive; the owner is running only when its own
+/// process is alive in the recorded coalition.
+pub fn retention(s: &Scope) -> Retention {
     if s.version < 2 || s.boot_id.is_empty() {
         return Retention::NoNativeIdentity;
     }
-    if unix::alive(s.owner_pid) && coalition(s.owner_pid).is_ok_and(|id| id == s.native_id) {
+    if owner_running(s.owner_pid) && coalition(s.owner_pid).is_ok_and(|id| id == s.native_id) {
         return Retention::OwnerRunning;
     }
     Retention::SameBoot
