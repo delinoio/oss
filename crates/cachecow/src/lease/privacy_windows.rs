@@ -3,7 +3,11 @@
 //! applies the private ACL atomically; existing state is validated without
 //! taking ownership or repairing permissions.
 
-use std::{fs, io};
+use std::{
+    fs,
+    io::{self, Read},
+    os::windows::fs::OpenOptionsExt,
+};
 
 use anyhow::{Result, anyhow};
 
@@ -11,6 +15,8 @@ use super::LeaseError;
 use crate::winsec::{self, Ace, Parts};
 
 const ACCESS_ALLOWED_ACE_TYPE: u8 = 0;
+/// `FILE_FLAG_OPEN_REPARSE_POINT`: open a link itself instead of its target.
+const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
 const FILE_ALL_ACCESS: u32 = 0x001f_01ff;
 /// OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE, from `OICI` in the SDDL.
 const INHERIT_FLAGS: u8 = 0x03;
@@ -69,6 +75,42 @@ pub(super) fn private_database(path: &str) -> Result<()> {
         Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
         Err(e) => return Err(e.into()),
     }
+    check_private_file(path)
+}
+
+/// Opens an existing record without creating it. The handle is opened with
+/// `OPEN_EXISTING` semantics and without following reparse points, so a
+/// missing record keeps its `NotFound` I/O cause.
+fn open_existing(path: &str) -> Result<fs::File> {
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+        .open(path)?;
+    let info = file.metadata()?;
+    if !info.is_file() || info.file_type().is_symlink() {
+        return Err(LeaseError::Unverified.into());
+    }
+    Ok(file)
+}
+
+pub(super) fn validate_private_record(path: &str) -> Result<()> {
+    open_existing(path)?;
+    check_private_file(path)
+}
+
+pub(super) fn read_private_record(path: &str) -> Result<Vec<u8>> {
+    let mut file = open_existing(path)?;
+    // Residual race: the owner and ACL checks address the path because
+    // `winsec::read_security` is path based. Remove this note once it reads
+    // security descriptors from handles.
+    check_private_file(path)?;
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes)?;
+    Ok(bytes)
+}
+
+/// Checks the owner and the single current-user ACE of an existing file.
+fn check_private_file(path: &str) -> Result<()> {
     let info = fs::symlink_metadata(path)?;
     if !info.is_file() || info.file_type().is_symlink() {
         return Err(LeaseError::Unverified.into());

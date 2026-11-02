@@ -101,8 +101,14 @@ pub fn key(value: &str) -> String {
 /// Validates privacy, then strictly decodes one record. A missing file keeps
 /// its I/O `NotFound` cause (see [`crate::error::is_not_found`]).
 pub fn read<T: DeserializeOwned>(path: &str) -> Result<T> {
-    lease::validate_private_file(path)?;
-    let bytes = fs::read(path)?;
+    let bytes = lease::read_private_file(path)?;
+    if bytes.is_empty() {
+        // Older versions could leave an empty record behind. Nothing repairs
+        // it, so name the file for the user.
+        return Err(anyhow!(
+            "state record {path} is empty; delete the file and retry"
+        ));
+    }
     let mut de = serde_json::Deserializer::from_slice(&bytes);
     let value = T::deserialize(&mut de)?;
     de.end()
@@ -113,10 +119,10 @@ pub fn read<T: DeserializeOwned>(path: &str) -> Result<T> {
 /// Atomically replaces a private record (temporary file, fsync, rename, and
 /// parent directory sync on Unix).
 pub fn write<T: Serialize>(path: &str, value: &T) -> Result<()> {
-    match fs::symlink_metadata(path) {
-        Ok(_) => lease::validate_private_file(path)?,
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
-        Err(e) => return Err(e.into()),
+    match lease::validate_private_file(path) {
+        Ok(()) => {}
+        Err(e) if crate::error::is_not_found(&e) => {}
+        Err(e) => return Err(e),
     }
     let bytes = serde_json::to_vec(value)?;
     let dir = paths::dir(path);
@@ -251,5 +257,103 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn empty_record_error_names_the_file() {
+        let (_temp, s) = store();
+        let p = paths::join2(&s.root, "cache-empty.json");
+        fs::write(&p, "").unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            fs::set_permissions(&p, fs::Permissions::from_mode(0o600)).unwrap();
+        }
+        let err = read::<Settings>(&p).unwrap_err();
+        let text = err.to_string();
+        assert!(text.contains(&p) && text.contains("delete"), "{text}");
+        assert!(!crate::error::is_not_found(&err));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn missing_record_is_not_created_by_read_or_write_checks() {
+        let (_temp, s) = store();
+        let p = paths::join2(&s.root, "record.json");
+        assert!(crate::error::is_not_found(
+            &read::<Settings>(&p).unwrap_err()
+        ));
+        assert!(fs::symlink_metadata(&p).is_err());
+    }
+
+    /// Runs `writer` against a record while a reader loops for about two
+    /// seconds, then checks that every read result is a valid record or
+    /// `NotFound` and that no zero-length record ever existed.
+    #[cfg(unix)]
+    fn race(remove: bool) {
+        use std::{
+            sync::atomic::{AtomicBool, Ordering},
+            time::{Duration, Instant},
+        };
+        let (_temp, s) = store();
+        let p = paths::join2(&s.root, "cache-race.json");
+        let stop = AtomicBool::new(false);
+        // Stops the writer even when a reader assertion panics, otherwise the
+        // thread scope would wait forever.
+        struct Stop<'a>(&'a AtomicBool);
+        impl Drop for Stop<'_> {
+            fn drop(&mut self) {
+                self.0.store(true, Ordering::Relaxed);
+            }
+        }
+        let value = Settings {
+            schema_version: 1,
+            source: "/source".into(),
+        };
+        // Without removal the record always exists, so reads must never fail.
+        write(&p, &value).unwrap();
+        let (mut reads, mut found, mut empty_seen) = (0u64, 0u64, 0u64);
+        std::thread::scope(|scope| {
+            scope.spawn(|| {
+                while !stop.load(Ordering::Relaxed) {
+                    write(&p, &value).unwrap();
+                    if remove {
+                        let _ = fs::remove_file(&p);
+                    }
+                }
+            });
+            let _stop = Stop(&stop);
+            let deadline = Instant::now() + Duration::from_secs(2);
+            while Instant::now() < deadline {
+                match read::<Settings>(&p) {
+                    Ok(v) => {
+                        assert_eq!(v, value);
+                        found += 1;
+                    }
+                    Err(e) => assert!(
+                        remove && crate::error::is_not_found(&e),
+                        "unexpected read error: {e:#}"
+                    ),
+                }
+                if fs::metadata(&p).is_ok_and(|m| m.len() == 0) {
+                    empty_seen += 1;
+                }
+                reads += 1;
+            }
+        });
+        assert_eq!(empty_seen, 0, "zero-length record appeared");
+        assert!(found > 0 && reads >= found);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn concurrent_write_and_remove_never_leave_an_empty_record() {
+        race(true);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn concurrent_write_never_rejects_a_replaced_record() {
+        race(false);
     }
 }

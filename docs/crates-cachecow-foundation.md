@@ -46,7 +46,7 @@ Persist ownership intent before permitting child execution. Release protection o
 
 ## Storage
 
-Keep caches in tool-selected locations; keep settings, locks, and records in current-user-private local storage. Source precedence is invocation, saved per-worktree setting, then primary checkout. No remote storage, central cache, automatic publication, snapshots, or eviction. Unknown record versions must not be rewritten.
+Keep caches in tool-selected locations; keep settings, locks, and records in current-user-private local storage. Source precedence is invocation, saved per-worktree setting, then primary checkout. No remote storage, central cache, automatic publication, snapshots, or eviction. Unknown record versions must not be rewritten. Private records are validated and read through one non-creating open: a record removed or replaced by another session yields a complete record or a missing record, validation never creates a file, and an empty record left by an older version is reported with its path and a delete instruction.
 
 ## Security
 
