@@ -54,10 +54,14 @@ pub fn capture_snapshot(
         // or re-adds the record, and the cache validation below rejects a
         // cache inside its reserved path. The snapshot records the skipped
         // path because restoring the directory leaves the registry unchanged;
-        // verification then requires fresh discovery.
+        // verification then requires fresh discovery. The registration's
+        // `gitdir` backlink is stamped as well, because `git worktree repair`
+        // at a new location rewrites that file without renaming the
+        // registration, and the old path stays absent.
         if worktree_missing(worktree)? {
             tracing::debug!(worktree, "skipping missing registered worktree");
             s.missing_worktrees.push(worktree.to_string());
+            files.extend(registration_backlinks(&r.common_dir, worktree)?);
             continue;
         }
         let w = discover(ctx, worktree)?;
@@ -169,6 +173,46 @@ pub fn capture_snapshot(
         "discovery snapshot captured"
     );
     Ok(s)
+}
+
+/// Returns the `gitdir` backlink files of the registrations under
+/// `<common_dir>/worktrees` that point at `worktree`. Git keeps the worktree
+/// path in this file and `git worktree repair` rewrites it after a move
+/// without renaming the registration directory. The primary worktree has no
+/// registration, so it yields nothing.
+fn registration_backlinks(common_dir: &str, worktree: &str) -> Result<Vec<String>> {
+    let registry = paths::join2(common_dir, "worktrees");
+    let entries = match std::fs::read_dir(&registry) {
+        Ok(entries) => entries,
+        Err(e) if io_not_found(&e) => return Ok(Vec::new()),
+        Err(e) => return Err(path_error("open", &registry, e)),
+    };
+    let wanted = backlink_key(worktree);
+    let mut found = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| path_error("readdirent", &registry, e))?;
+        let backlink = paths::join2(&entry.path().to_string_lossy(), "gitdir");
+        let text = match std::fs::read_to_string(&backlink) {
+            Ok(text) => text,
+            Err(e) if io_not_found(&e) => continue,
+            Err(e) => return Err(path_error("open", &backlink, e)),
+        };
+        let target = text.trim_end_matches(['\n', '\r']);
+        let target = target
+            .strip_suffix("/.git")
+            .or_else(|| target.strip_suffix("\\.git"))
+            .unwrap_or(target);
+        if backlink_key(target) == wanted {
+            found.push(backlink);
+        }
+    }
+    found.sort();
+    Ok(found)
+}
+
+/// Compares Git worktree paths regardless of the separator style.
+fn backlink_key(path: &str) -> String {
+    path.replace('\\', "/")
 }
 
 impl Snapshot {

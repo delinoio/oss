@@ -421,6 +421,35 @@ fn restored_missing_worktree_invalidates_snapshot() {
 }
 
 #[test]
+fn repaired_missing_worktree_invalidates_snapshot() {
+    let (_t, p) = fixture();
+    fs::write(paths::join2(&p, ".gitignore"), "/target/\n").unwrap();
+    let t2 = tempfile::tempdir().unwrap();
+    let old = s(&t2.path().join("old"));
+    run_git(&p, &["worktree", "add", "-b", "moved", &old]);
+    // Move the worktree without telling Git: the registration keeps pointing
+    // at the absent old path.
+    let new = s(&t2.path().join("new"));
+    fs::rename(&old, &new).unwrap();
+    let new = canonical(&new).unwrap();
+    let r = discover(&ctx(), &p).unwrap();
+    let cache = paths::join2(&r.root, "target");
+    let snap = capture_snapshot(&ctx(), &r, &[cache], &[]).unwrap();
+    assert_eq!(snap.worktrees.len(), 1);
+    assert_eq!(snap.missing_worktrees.len(), 1);
+    snap.verify().unwrap();
+    // `git worktree repair` rewrites the registration's `gitdir` backlink to
+    // the new path without renaming the registration, and the old path stays
+    // absent, so only the stamped backlink can reveal the new source tree.
+    run_git(&p, &["worktree", "repair", &new]);
+    let e = snap.verify().unwrap_err();
+    assert!(
+        format!("{e:#}").contains("repository metadata changed"),
+        "{e:#}"
+    );
+}
+
+#[test]
 fn missing_worktree_is_skipped_from_linked_worktree() {
     let (_t, p) = fixture();
     let t2 = tempfile::tempdir().unwrap();
