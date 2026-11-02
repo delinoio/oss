@@ -79,8 +79,20 @@ fn quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\"'\"'"))
 }
 
+/// Quotes `s` as a PowerShell single-quoted literal. PowerShell treats the
+/// ASCII apostrophe and the typographic quotes U+2018, U+2019, U+201A and
+/// U+201B as single-quote delimiters, so each of them must be doubled.
 fn psquote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "''"))
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for c in s.chars() {
+        out.push(c);
+        if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
+            out.push(c);
+        }
+    }
+    out.push('\'');
+    out
 }
 
 /// Returns activation code only. The caller sends notices separately to stderr.
@@ -922,7 +934,15 @@ mod tests {
     fn activation_in_powershell() {
         let Some(binary) = which("pwsh") else { return };
         let (_t, base) = temp();
-        let dir = paths::join2(&base, "한 글 ' $HOME `cmd` [*]");
+        // `init` rejects the PATH separator in the shim directory, and ';' is
+        // the Windows separator. The semicolon payload is covered through
+        // `psquote` in `powershell_quotes_typographic_single_quotes`.
+        let name = if paths::LIST_SEPARATOR == ';' {
+            "한 글 ' ‘ ’ ‚ ‛ ’ Write-Output pwned ’ $HOME `cmd` [*]"
+        } else {
+            "한 글 ' ‘ ’ ‚ ‛ ’; Write-Output pwned; ’ $HOME `cmd` [*]"
+        };
+        let dir = paths::join2(&base, name);
         let code = init(Kind::PowerShell, &dir).unwrap();
         let initial = paths::join2(&base, "real");
         let out = std::process::Command::new(binary)
@@ -933,10 +953,38 @@ mod tests {
             .env("CCOW_TEST_INITIAL_PATH", &initial)
             .output()
             .unwrap();
+        let stdout = String::from_utf8(out.stdout).unwrap();
+        assert_eq!(stdout, format!("{dir}{}{initial}", paths::LIST_SEPARATOR));
+        assert!(!stdout.contains("pwned\n"), "{stdout}");
+    }
+
+    #[test]
+    fn powershell_quotes_typographic_single_quotes() {
+        // `init` requires an absolute path, and "/x" has no drive on Windows.
+        let (_t, base) = temp();
+        for quote in ['\'', '\u{2018}', '\u{2019}', '\u{201A}', '\u{201B}'] {
+            let dir = paths::join2(&base, &format!("O{quote}Neil"));
+            let code = init(Kind::PowerShell, &dir).unwrap();
+            let doubled = format!("O{quote}{quote}Neil");
+            // The directory is embedded in two literals, each with a doubled
+            // quote.
+            assert_eq!(code.matches(&doubled).count(), 2, "{quote:?}: {code}");
+            // The ASCII apostrophe also delimits the literals, so only the
+            // typographic quotes have a fixed total count.
+            if quote != '\'' {
+                assert_eq!(code.matches(quote).count(), 4, "{quote:?}: {code}");
+            }
+        }
+        // Test the semicolon payload through `psquote` directly, because `init`
+        // rejects ';' as the PATH separator on Windows.
+        let injection = "/x/a\u{2019}; Write-Output pwned; \u{2019}b";
         assert_eq!(
-            String::from_utf8(out.stdout).unwrap(),
-            format!("{dir}{}{initial}", paths::LIST_SEPARATOR)
+            psquote(injection),
+            "'/x/a\u{2019}\u{2019}; Write-Output pwned; \u{2019}\u{2019}b'"
         );
+        // Other characters, including the double quote and the grave accent,
+        // stay as is.
+        assert_eq!(psquote("a\"b`c"), "'a\"b`c'");
     }
 
     fn which(name: &str) -> Option<String> {
