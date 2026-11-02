@@ -69,7 +69,7 @@ A shim preserves the tool's arguments, working directory, stdout, stderr, and ex
 
 ## Managed and pass-through commands
 
-Recognized cache-using operations, such as builds, checks, tests, and development servers, enter the same managed lifecycle as `ccow run`. A bare `rsbuild` call, or one with only options such as `--port 3000`, starts Rsbuild's default dev server and is managed like `rsbuild dev`.
+Recognized cache-using operations, such as builds, checks, tests, and development servers, enter the same managed lifecycle as `ccow run`. A bare `rsbuild` call, or one with only options such as `--port 3000`, starts Rsbuild's default dev server and is managed like `rsbuild dev`. For Rspack and Rsbuild, a version flag (`-v` or `--version`) only prints the version when no command is given; with a command, such as `rspack build --version` or `rsbuild -v dev`, the tool runs that command, so it is managed.
 
 Version/help requests and cache-nonmutating queries pass through without preparation, prompts, or cache locks. Calls outside Git also pass through; that does not provide managed-cache support outside Git. Unknown commands and custom Cargo subcommands pass through without automatic protection. Use explicit `ccow run` if such a command needs cache management and its preset can be verified.
 
