@@ -1016,6 +1016,35 @@ fn shell_setup_remove_show_only_owned_block() {
 }
 
 #[test]
+fn shell_unsupported_name_exits_with_invalid_argument() {
+    let f = Fixture::new();
+    for args in [
+        &["shell", "init", "fish"][..],
+        &["shell", "setup", "fish", "--yes"][..],
+        &["shell", "remove", "fish", "--yes"][..],
+    ] {
+        let (out, stderr) = f.run(&f.main, 2, args);
+        assert!(out.is_empty(), "args={args:?} out={out:?}");
+        assert!(
+            stderr.contains("use bash, zsh, or powershell"),
+            "args={args:?} stderr={stderr:?}"
+        );
+    }
+    let (out, _) = f.run(&f.main, 2, &["shell", "setup", "fish", "--yes", "--json"]);
+    let value: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+    assert_eq!(value["success"], false, "out={out:?}");
+    assert_eq!(value["error"]["code"], 2, "out={out:?}");
+    assert!(
+        value["error"]["cause"]
+            .as_str()
+            .unwrap()
+            .contains("use bash, zsh, or powershell"),
+        "out={out:?}"
+    );
+    f.run(&f.main, 0, &["shell", "init", "bash"]);
+}
+
+#[test]
 fn shell_setup_without_confirmation_shows_only_owned_block() {
     let f = Fixture::new();
     let path = join(&f.home, ".zshrc");
