@@ -12,6 +12,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from "node:fs";
+import { randomBytes } from "node:crypto";
 import path from "node:path";
 import os from "node:os";
 import {
@@ -575,7 +576,7 @@ import importlib.util, struct
 from unittest.mock import patch, mock_open
 spec=importlib.util.spec_from_file_location('ccow_extents',${JSON.stringify(helper)})
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
-class FS: f_bsize=4096
+class FS: f_bsize=1048576; f_frsize=4096
 class Info: st_size=5000
 responses=[struct.pack('=Iqq',0,4096,8192),struct.pack('=Iqq',0,4096,16384)]
 with patch('builtins.open',mock_open()),patch.object(m.os,'statvfs',return_value=FS()),patch.object(m.os,'fsync'),patch.object(m.os,'fstat',return_value=Info()),patch.object(m.fcntl,'fcntl',side_effect=responses):
@@ -589,6 +590,50 @@ print('fixture-pass')
       command("python3", ["-B", "-c", program]).stdout.trim(),
       "fixture-pass",
     );
+  },
+);
+
+// Runs the real helper against the host APFS volume. The mocked fixture above
+// cannot detect a wrong block-size source because only the host reports the real
+// statvfs shape (f_bsize is the I/O size, f_frsize the allocation block).
+test(
+  "APFS helper separates cp -c clones from plain copies on the host volume",
+  { skip: process.platform !== "darwin" },
+  (t) => {
+    const helper = new URL("./ccow-extents.py", import.meta.url).pathname;
+    const root = temporary(t);
+    const layout = (name) => {
+      const source = path.join(root, name, "source");
+      const copy = path.join(root, name, "copy");
+      mkdirSync(source, { recursive: true });
+      mkdirSync(copy, { recursive: true });
+      return { source, copy };
+    };
+    const clone = layout("clone");
+    writeFileSync(path.join(clone.source, "data"), randomBytes(3_000_000));
+    command("cp", [
+      "-c",
+      path.join(clone.source, "data"),
+      path.join(clone.copy, "data"),
+    ]);
+    const single = JSON.parse(
+      command("python3", ["-B", helper, clone.source]).stdout,
+    );
+    const cloned = JSON.parse(
+      command("python3", ["-B", helper, clone.source, clone.copy]).stdout,
+    );
+    assert.equal(cloned.shared, true);
+    assert.equal(cloned.physicalBytes, single.physicalBytes);
+    const plain = layout("plain");
+    writeFileSync(path.join(plain.source, "data"), randomBytes(3_000_000));
+    command("cp", [
+      path.join(plain.source, "data"),
+      path.join(plain.copy, "data"),
+    ]);
+    const copied = JSON.parse(
+      command("python3", ["-B", helper, plain.source, plain.copy]).stdout,
+    );
+    assert.equal(copied.shared, false);
   },
 );
 
