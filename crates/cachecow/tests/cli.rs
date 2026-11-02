@@ -1253,3 +1253,108 @@ fn doctor_reports_retained_lease_reason() {
     let (_, stderr) = f.run(&f.main, 125, &["clean", "--preset", "cargo"]);
     assert!(stderr.contains("cache is in use"), "{stderr}");
 }
+
+fn config_json_error(out: &str) -> serde_json::Value {
+    let value: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+    assert_eq!(value["success"], false, "{out}");
+    value["error"].clone()
+}
+
+#[test]
+fn config_environment_failures_exit_125() {
+    let f = Fixture::new();
+    // Outside Git: the environment, not the arguments, is at fault.
+    let outside = join(&f.dir, "outside");
+    fs::create_dir_all(&outside).unwrap();
+    let (out, _) = f.run(&outside, 125, &["config", "get", "--json"]);
+    let error = config_json_error(&out);
+    assert_eq!(error["code"], 125, "{out}");
+    assert!(
+        !error["remediation"].as_str().unwrap().contains("arguments"),
+        "{out}"
+    );
+
+    // A non-writable state root is an I/O failure.
+    f.run(&f.work, 0, &["config", "set", "source", &f.main]);
+    let base = f.state_base();
+    fs::set_permissions(&base, fs::Permissions::from_mode(0o500)).unwrap();
+    let probe = join(&base, "write-probe");
+    let writable = fs::write(&probe, b"").is_ok();
+    if writable {
+        // Running as root: permission bits cannot make the directory
+        // read-only, so only the outside-Git assertions apply.
+        fs::remove_file(&probe).unwrap();
+        fs::set_permissions(&base, fs::Permissions::from_mode(0o700)).unwrap();
+        return;
+    }
+    for args in [
+        &["config", "set", "source", &f.main, "--json"][..],
+        &["config", "unset", "source", "--json"][..],
+    ] {
+        let (out, _) = f.run(&f.work, 125, args);
+        let error = config_json_error(&out);
+        assert_eq!(error["code"], 125, "{out}");
+        assert!(
+            !error["remediation"].as_str().unwrap().contains("arguments"),
+            "{out}"
+        );
+    }
+    fs::set_permissions(&base, fs::Permissions::from_mode(0o700)).unwrap();
+}
+
+#[test]
+fn config_argument_and_record_errors_exit_2() {
+    let f = Fixture::new();
+    // Unknown operations are usage errors even outside Git.
+    let outside = join(&f.dir, "outside");
+    fs::create_dir_all(&outside).unwrap();
+    for cwd in [&f.work, &outside] {
+        let (_, stderr) = f.run(cwd, 2, &["config", "bogus"]);
+        assert!(stderr.contains("ccow --help"), "{stderr}");
+        assert!(!stderr.contains("config get/set/unset"), "{stderr}");
+        f.run(cwd, 2, &["config", "set", "source"]);
+        f.run(cwd, 2, &["config", "unset", "other"]);
+        f.run(cwd, 2, &["config", "get", "other"]);
+        f.run(cwd, 2, &["config"]);
+    }
+
+    // A source outside the repository is an argument error.
+    let elsewhere = join(&f.dir, "elsewhere");
+    fs::create_dir_all(&elsewhere).unwrap();
+    let (out, _) = f.run(
+        &f.work,
+        2,
+        &["config", "set", "source", &elsewhere, "--json"],
+    );
+    let error = config_json_error(&out);
+    assert_eq!(error["code"], 2, "{out}");
+    assert!(
+        error["remediation"].as_str().unwrap().contains("arguments"),
+        "{out}"
+    );
+
+    // An unsupported saved record version is a configuration error.
+    f.run(&f.work, 0, &["config", "set", "source", &f.main]);
+    let base = f.state_base();
+    let record = fs::read_dir(&base)
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .find(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("settings-"))
+        })
+        .expect("settings record");
+    let record = record.to_str().unwrap().to_string();
+    for (text, mode) in [
+        (r#"{"schemaVersion":2,"source":""}"#, 0o600),
+        ("not json", 0o600),
+        (r#"{"schemaVersion":1,"source":""}"#, 0o644),
+    ] {
+        write_file(&record, text, mode);
+        let (out, _) = f.run(&f.work, 2, &["config", "get", "--json"]);
+        assert_eq!(config_json_error(&out)["code"], 2, "{out}");
+        f.run(&f.work, 2, &["config", "unset", "source"]);
+    }
+}

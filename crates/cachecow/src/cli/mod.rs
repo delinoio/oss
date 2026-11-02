@@ -65,6 +65,28 @@ const REGISTRY_BUSY_REMEDIATION: &str = "Another ccow process held the shared le
                                          retry the command. If this repeats, run ccow doctor \
                                          --verbose.";
 
+const CONFIG_REMEDIATION: &str = "Check config get/set/unset arguments, saved record version, and \
+                                  same-repository source selection.";
+
+/// A configuration error (exit 2) with the config remediation.
+fn config_failure(cause: impl Into<String>) -> anyhow::Error {
+    anyhow::Error::new(Failure::new(2, cause, CONFIG_REMEDIATION))
+}
+
+/// Classifies a failure from reading or writing the saved settings record.
+/// An I/O error anywhere in the cause chain (unwritable state root, failed
+/// read, rename or sync) and a busy lease registry are environment failures
+/// that keep their original error so `fail_with` reports exit 125. Every other
+/// failure means the saved record itself is invalid (unsupported
+/// `schemaVersion`, undecodable content, trailing data, or non-private
+/// permissions), which is a configuration error (exit 2).
+fn config_record_error(e: anyhow::Error) -> anyhow::Error {
+    if error::find::<std::io::Error>(&e).is_some() || error::is(&e, &LeaseError::RegistryBusy) {
+        return e;
+    }
+    config_failure(error_text(&e))
+}
+
 /// A usage error (exit 2).
 pub(crate) fn bad(cause: impl Into<String>) -> anyhow::Error {
     anyhow::Error::new(Failure::new(
@@ -397,14 +419,7 @@ impl App {
         match cmd.as_str() {
             "shim" => self.shims().map(|()| 0),
             "shell" => self.shell().map(|()| 0),
-            "config" => self.config().map(|()| 0).map_err(|e| {
-                anyhow::Error::new(Failure::new(
-                    2,
-                    error_text(&e),
-                    "Check config get/set/unset arguments, saved record version, and \
-                     same-repository source selection.",
-                ))
-            }),
+            "config" => self.config().map(|()| 0),
             "run" | "prepare" | "status" | "clean" | "doctor" => {
                 if self.o.args.len() != 1 {
                     return Err(bad(
@@ -427,31 +442,42 @@ impl App {
         if self.o.args.len() < 2 {
             return Err(bad("config requires get, set, or unset"));
         }
-        let cwd = paths::current_dir()?;
-        let r = repository::discover(&self.ctx, &cwd)?;
+        // Validate every argument before touching Git or the state root so
+        // usage mistakes never surface as environment failures.
         let args = self.o.args[1..].to_vec();
         match args[0].as_str() {
+            "get" if args.len() <= 2 && args.get(1).is_none_or(|a| a == "source") => {}
+            "get" => return Err(bad("config get [source]")),
+            "set" if args.len() == 3 && args[1] == "source" => {}
+            "set" => return Err(bad("config set source WORKTREE")),
+            "unset" if args.len() == 2 && args[1] == "source" => {}
+            "unset" => return Err(bad("config unset source")),
+            _ => return Err(bad("unknown config operation")),
+        }
+        let cwd = paths::current_dir()?;
+        // Git discovery of the current directory is an environment concern
+        // (exit 125), so it is deliberately not classified as a config error.
+        let r = repository::discover(&self.ctx, &cwd)?;
+        match args[0].as_str() {
             "get" => {
-                if args.len() > 2 || (args.len() == 2 && args[1] != "source") {
-                    return Err(bad("config get [source]"));
-                }
-                let v = self.store.settings(&r.id)?;
+                let v = self.store.settings(&r.id).map_err(config_record_error)?;
                 return self.output(&v);
             }
             "set" => {
-                if args.len() != 3 || args[1] != "source" {
-                    return Err(bad("config set source WORKTREE"));
-                }
-                let s = repository::select_source(&self.ctx, &r, &args[2], "")?;
-                self.store.set_source(&r.id, &s.repository.root)?;
+                // The source path is a user argument: every failure to
+                // resolve it, including Git discovery on that path, is an
+                // argument error.
+                let s = repository::select_source(&self.ctx, &r, &args[2], "")
+                    .map_err(|e| config_failure(error_text(&e)))?;
+                self.store
+                    .set_source(&r.id, &s.repository.root)
+                    .map_err(config_record_error)?;
             }
-            "unset" => {
-                if args.len() != 2 || args[1] != "source" {
-                    return Err(bad("config unset source"));
-                }
-                self.store.set_source(&r.id, "")?;
+            _ => {
+                self.store
+                    .set_source(&r.id, "")
+                    .map_err(config_record_error)?;
             }
-            _ => return Err(bad("unknown config operation")),
         }
         self.output(&BTreeMap::from([("updated", true)]))
     }

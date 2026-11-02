@@ -56,6 +56,19 @@ fn failure_mapping() {
     assert_eq!(fail_with(false, &resolve), 127);
 }
 
+#[test]
+fn config_record_error_classification() {
+    let code = |e: anyhow::Error| fail_with(false, &e);
+    let io = anyhow::Error::new(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+        .context("write settings");
+    assert_eq!(code(config_record_error(io)), 125);
+    let busy = anyhow::Error::new(LeaseError::RegistryBusy).context("records");
+    assert_eq!(code(config_record_error(busy)), 125);
+    let version = anyhow!("unsupported settings schemaVersion");
+    assert_eq!(code(config_record_error(version)), 2);
+    assert_eq!(code(config_failure("bad source")), 2);
+}
+
 fn root(path: &str) -> Root {
     Root {
         path: path.to_string(),
