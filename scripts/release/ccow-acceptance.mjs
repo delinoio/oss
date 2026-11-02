@@ -228,15 +228,33 @@ export function validateMeasurements(result) {
   };
 }
 
+// Fixed reasons that the driver may observe at run time and that evidence may
+// carry. Any other observed reason is dropped, so diagnostics never leak.
+export const ObservedBlockerReason = Object.freeze({
+  LinuxDiskFullMountPrivilegeRequired:
+    "linux-disk-full-mount-privilege-required",
+  LinuxDiskFullRetainedVolume: "linux-disk-full-retained-volume",
+});
+const observedBlockerReasons = new Set(Object.values(ObservedBlockerReason));
+
 export function projectProgress(observation, reasons = {}) {
   const unperformed = checks.filter((id) => observation.checks?.[id] !== true);
   return {
     unperformed,
     completedChecks: checks.filter((id) => observation.checks?.[id] === true),
     // reasons is the reviewed driver's source constant, not runtime diagnostics.
+    // An observed reason is projected only when it is on the fixed allowlist.
     blockers: unperformed.map((id) => ({
       id,
-      reason: reasons[id] || "scenario-assertion-or-prerequisite-failed",
+      reason:
+        observation.blockers?.find(
+          (item) =>
+            item?.id === id &&
+            typeof item.reason === "string" &&
+            observedBlockerReasons.has(item.reason),
+        )?.reason ||
+        reasons[id] ||
+        "scenario-assertion-or-prerequisite-failed",
     })),
   };
 }
