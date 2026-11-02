@@ -279,9 +279,15 @@ pub fn main(version: &str) -> i32 {
             Ok(v) => o = v,
             Err(e) => return fail_with(requests_json(&args[1..]), &e),
         }
-        if o.help || o.args.is_empty() {
+        // Usage is printed for --help and for a bare `ccow`. Any other input
+        // without a subcommand (for example `ccow -- cargo build`) is an
+        // argument error so that a forgotten `run` never reports success.
+        if o.help || args.len() == 1 {
             stdout_write(USAGE);
             return 0;
+        }
+        if o.args.is_empty() {
+            return fail_with(o.json, &bad("missing command; use ccow run -- COMMAND"));
         }
     }
     init_logging(o.verbose);
