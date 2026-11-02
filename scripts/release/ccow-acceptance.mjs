@@ -44,11 +44,55 @@ export const phases = Object.freeze([
 ]);
 const presets = ["cargo", "rspack", "rsbuild"];
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
-const run = (command, args) =>
+const run = (command, args, input, env) =>
   execFileSync(command, args, {
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "ignore"],
+    stdio: [input === undefined ? "ignore" : "pipe", "pipe", "ignore"],
+    ...(input === undefined ? {} : { input }),
+    ...(env === undefined ? {} : { env }),
   }).trim();
+
+// `diskutil info` accepts only a device, a mount point or a volume UUID, so a
+// plain directory must be resolved to its mount point first. `df -P` prints
+// the mount point as the remainder of the data line after the fifth column,
+// so mount points that contain spaces stay intact.
+export function mountPointOf(target, runner = run) {
+  const lines = runner("df", ["-P", target]).split("\n");
+  const match = /^\S+(?:\s+\S+){4}\s+(.+)$/u.exec(lines[1] ?? "");
+  assert(match, "Unable to resolve the mount point of the acceptance path");
+  return match[1].trim();
+}
+
+// Read the lower-case macOS filesystem type of the volume that owns `target`.
+// The runner executes one command and returns its stdout; `input` carries
+// stdin for commands that need it.
+export function darwinFilesystem(target, runner = run) {
+  const plist = runner("diskutil", [
+    "info",
+    "-plist",
+    mountPointOf(target, runner),
+  ]);
+  const info = JSON.parse(
+    runner("plutil", ["-convert", "json", "-o", "-", "-"], plist),
+  );
+  return String(info.FilesystemType).toLowerCase();
+}
+
+// Pin the toolchain the acceptance run uses. The checkout's rust-toolchain file
+// selects a nightly through rustup, while the driver runs scenarios with the
+// host's 1.99.1. RUSTUP_AUTO_INSTALL=0 makes a missing 1.99.1 fail the probe
+// instead of letting rustup download it onto the runner.
+export const cargoProbeEnv = Object.freeze({
+  RUSTUP_TOOLCHAIN: "1.99.1",
+  RUSTUP_AUTO_INSTALL: "0",
+});
+
+export function probeCargo(runner = run, env = process.env) {
+  assert.match(
+    runner("cargo", ["--version"], undefined, { ...env, ...cargoProbeEnv }),
+    /^cargo 1\.99\.1 /u,
+  );
+}
 
 export function releaseIdentity(requested, revision, ref) {
   assert.equal(ref, "refs/heads/main", "Release acceptance must use main");
@@ -78,14 +122,7 @@ export function probeHost(workspace, lane) {
       /^15\./u,
       "Minimum macOS 15 acceptance requires macOS 15",
     );
-    const plist = execFileSync("diskutil", ["info", "-plist", workspace]);
-    const info = JSON.parse(
-      execFileSync("plutil", ["-convert", "json", "-o", "-", "-"], {
-        input: plist,
-        encoding: "utf8",
-      }),
-    );
-    filesystem = String(info.FilesystemType).toLowerCase();
+    filesystem = darwinFilesystem(workspace);
   } else if (process.platform === "linux") {
     const release = readFileSync("/etc/os-release", "utf8");
     assert.match(release, /^ID=ubuntu$/mu);
@@ -130,7 +167,7 @@ export function probeHost(workspace, lane) {
     filesystem = info.fs.toLowerCase();
   }
   assert.equal(filesystem, expected.filesystem);
-  assert.match(run("cargo", ["--version"]), /^cargo 1\.99\.1 /u);
+  probeCargo();
   assert.equal(Number(process.versions.node.split(".")[0]), 24);
   return {
     ...expected,

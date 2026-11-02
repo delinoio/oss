@@ -86,7 +86,12 @@ Minimum-version runs require macOS 15 arm64, Ubuntu 22.04 x64, or Windows 11
 these gates. Linux runs cover Btrfs and XFS separately; actual physical-sharing
 checks must prove XFS reflink capability. Hosts supply Cargo 1.99.1, Node.js 24,
 Bash (including Windows), PowerShell 7 where required, and disposable native
-storage. The workflow never formats a runner volume.
+storage. The workflow never formats a runner volume. On macOS the probe resolves
+the checkout directory to its mount point before reading the volume filesystem
+type. The Cargo probe runs with `RUSTUP_TOOLCHAIN=1.99.1` and
+`RUSTUP_AUTO_INSTALL=0`, so the checkout's toolchain override cannot change the
+probed version and a missing 1.99.1 toolchain fails the probe without being
+downloaded onto the runner.
 
 `scripts/release/ccow-acceptance.mjs native` takes lane, candidate directory,
 workspace, evidence output and exact source revision. It verifies non-fixture

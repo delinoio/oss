@@ -1,15 +1,26 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import {
   accept,
+  cargoProbeEnv,
   checks,
+  darwinFilesystem,
   gate,
   lanes,
+  mountPointOf,
   phases,
+  probeCargo,
   releaseIdentity,
   validateMeasurements,
 } from "./ccow-acceptance.mjs";
@@ -109,3 +120,109 @@ test("missing evidence fails closed and blocked entrypoint retains unperformed c
     rmSync(directory, { recursive: true, force: true });
   }
 });
+
+const dfHeader = "Filesystem 1024-blocks Used Available Capacity Mounted on";
+test("mount point resolution keeps mount points that contain spaces", () => {
+  const seen = [];
+  const runner = (name, args) => {
+    seen.push([name, ...args]);
+    return `${dfHeader}\n/dev/disk3s5 488245288 1 2 3% /Volumes/My Disk`;
+  };
+  assert.equal(mountPointOf("/some/dir", runner), "/Volumes/My Disk");
+  assert.deepEqual(seen, [["df", "-P", "/some/dir"]]);
+  assert.throws(() => mountPointOf("/x", () => `${dfHeader}\n`));
+});
+test("macOS filesystem lookup passes the df mount point to diskutil", () => {
+  const calls = [];
+  const runner = (name, args, input) => {
+    calls.push([name, ...args]);
+    if (name === "df")
+      return `${dfHeader}\n/dev/disk3s5 1 2 3 4% /System/Volumes/Data`;
+    if (name === "diskutil") return "<plist/>";
+    assert.equal(name, "plutil");
+    assert.equal(input, "<plist/>");
+    return '{"FilesystemType":"APFS"}';
+  };
+  assert.equal(darwinFilesystem("/checkout/nested", runner), "apfs");
+  assert.deepEqual(calls[1], [
+    "diskutil",
+    "info",
+    "-plist",
+    "/System/Volumes/Data",
+  ]);
+  // A non-APFS volume is reported as-is so the lane assertion can reject it.
+  assert.equal(
+    darwinFilesystem("/x", (name) =>
+      name === "df"
+        ? `${dfHeader}\n/dev/disk4 1 2 3 4% /Volumes/X`
+        : name === "diskutil"
+          ? "<plist/>"
+          : '{"FilesystemType":"exfat"}',
+    ),
+    "exfat",
+  );
+});
+test(
+  "macOS filesystem lookup resolves nested directories and root on APFS",
+  { skip: process.platform !== "darwin" },
+  () => {
+    const root = mkdtempSync(path.join(os.tmpdir(), "ccow-mount-"));
+    try {
+      const nested = path.join(root, "a", "b");
+      mkdirSync(nested, { recursive: true });
+      assert.equal(darwinFilesystem(nested), "apfs");
+      assert.equal(darwinFilesystem("/"), "apfs");
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
+// A stub cargo that mimics rustup: the checkout override selects nightly
+// unless RUSTUP_TOOLCHAIN pins the version, and a missing toolchain fails.
+const stubCargo = (body) => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "ccow-cargo-"));
+  const file = path.join(dir, "cargo");
+  writeFileSync(file, `#!/bin/sh\n${body}\n`);
+  chmodSync(file, 0o755);
+  return dir;
+};
+test(
+  "cargo probe pins the toolchain over the checkout override",
+  { skip: process.platform === "win32" },
+  () => {
+    const dir = stubCargo(
+      'if [ "$RUSTUP_TOOLCHAIN" = 1.99.1 ] && [ "$RUSTUP_AUTO_INSTALL" = 0 ]; then echo "cargo 1.99.1 (stub)"; else echo "cargo 1.101.0-nightly (stub)"; fi',
+    );
+    try {
+      assert.equal(cargoProbeEnv.RUSTUP_TOOLCHAIN, "1.99.1");
+      assert.equal(cargoProbeEnv.RUSTUP_AUTO_INSTALL, "0");
+      probeCargo(undefined, {
+        ...process.env,
+        PATH: `${dir}:${process.env.PATH}`,
+      });
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);
+test(
+  "cargo probe fails when the pinned toolchain is unavailable",
+  { skip: process.platform === "win32" },
+  () => {
+    const nightly = stubCargo('echo "cargo 1.101.0-nightly (stub)"');
+    const missing = stubCargo("exit 1");
+    try {
+      for (const dir of [nightly, missing])
+        assert.throws(() =>
+          probeCargo(undefined, {
+            ...process.env,
+            PATH: `${dir}:${process.env.PATH}`,
+          }),
+        );
+    } finally {
+      rmSync(nightly, { recursive: true, force: true });
+      rmSync(missing, { recursive: true, force: true });
+    }
+  },
+);

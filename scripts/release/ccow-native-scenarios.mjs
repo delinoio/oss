@@ -20,6 +20,7 @@ import path from "node:path";
 import os from "node:os";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
+import { darwinFilesystem } from "./ccow-acceptance.mjs";
 
 // This is real build code compiled by the selected native Cargo toolchain. It
 // exercises the installed supervisor, not a replacement cargo or clone API.
@@ -1002,17 +1003,9 @@ export function unsupportedVolumeScenario({
         .stdout.trim()
         .toLowerCase();
     else if (process.platform === "darwin") {
-      const plist = command("diskutil", ["info", "-plist", root], {
-        cwd: root,
-        env,
-      }).stdout;
-      filesystem = JSON.parse(
-        command("plutil", ["-convert", "json", "-o", "-", "-"], {
-          cwd: root,
-          env,
-          input: plist,
-        }).stdout,
-      ).FilesystemType.toLowerCase();
+      filesystem = darwinFilesystem(root, (name, args, input) =>
+        command(name, args, { cwd: root, env, input }).stdout.trim(),
+      );
     } else
       filesystem = command(
         "pwsh",
