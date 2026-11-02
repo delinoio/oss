@@ -295,3 +295,68 @@ fn managed_argument_check_reports_child_argv_index() {
     );
     assert!(!text.contains('\u{fffd}'));
 }
+
+#[test]
+fn lookup_env_reads_path_from_the_given_environment() {
+    let env = strings(&["HOME=/h", "PATH=/a:/b", "PATH=/c:/d", "PATHEXT=.EXE;.CMD"]);
+    let lookup = LookupEnv::from_env(&env);
+    assert_eq!(lookup.path, "/c:/d", "last entry wins like the child sees");
+    assert_eq!(lookup.path_ext, ".EXE;.CMD");
+    let empty = LookupEnv::from_env(&strings(&["HOME=/h"]));
+    assert_eq!(empty.path, "");
+    assert_eq!(empty.path_ext, "");
+}
+
+#[test]
+fn lookup_env_drops_entries_with_replacement_characters() {
+    // PATH is split with the platform separator (`:` on Unix, `;` on Windows),
+    // so the input and the expectation are built with `std::env::join_paths`.
+    let join = |entries: &[&str]| {
+        std::env::join_paths(entries)
+            .unwrap()
+            .into_string()
+            .unwrap()
+    };
+    let env = strings(&[
+        &format!("PATH={}", join(&["/a", "/b\u{fffd}", "/c"])),
+        "PATHEXT=.EXE;.C\u{fffd}D;.BAT",
+    ]);
+    let lookup = LookupEnv::from_env(&env);
+    assert_eq!(lookup.path, join(&["/a", "/c"]));
+    assert_eq!(lookup.path_ext, ".EXE;.BAT");
+}
+
+#[cfg(unix)]
+#[test]
+fn look_path_searches_only_the_given_environment() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(temp.path()).unwrap();
+    let derived = root.join("derived/bin");
+    let source = root.join("source/bin");
+    for dir in [&derived, &source] {
+        std::fs::create_dir_all(dir).unwrap();
+        let tool = dir.join("fixture-tool");
+        std::fs::write(&tool, "#!/bin/sh\n").unwrap();
+        std::fs::set_permissions(&tool, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let source_only = root.join("source/only");
+    std::fs::create_dir_all(&source_only).unwrap();
+    let marker = source_only.join("source-only-tool");
+    std::fs::write(&marker, "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&marker, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+    let source_env = strings(&[&format!(
+        "PATH={}:{}",
+        source.display(),
+        source_only.display()
+    )]);
+    let derived_env = strings(&[&format!("PATH={}", derived.display())]);
+    let found = look_path("fixture-tool", &LookupEnv::from_env(&source_env)).unwrap();
+    assert_eq!(found, source.join("fixture-tool").to_str().unwrap());
+    let found = look_path("fixture-tool", &LookupEnv::from_env(&derived_env)).unwrap();
+    assert_eq!(found, derived.join("fixture-tool").to_str().unwrap());
+    // A tool that only the other environment provides is not found.
+    assert!(look_path("source-only-tool", &LookupEnv::from_env(&derived_env)).is_err());
+    assert!(look_path("source-only-tool", &LookupEnv::from_env(&source_env)).is_ok());
+}
