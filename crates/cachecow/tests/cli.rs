@@ -414,6 +414,78 @@ fn executable_noninteractive_missing_and_settings() {
     );
 }
 
+/// Parses a management JSON error envelope and checks the usage-error fields.
+fn require_usage_envelope(stdout: &str, what: &str) {
+    let v: serde_json::Value = serde_json::from_str(stdout).unwrap_or_else(|e| {
+        panic!("{what}: stdout is not JSON ({e}): {stdout:?}");
+    });
+    assert_eq!(v["schemaVersion"], 1, "{what}: {stdout}");
+    assert_eq!(v["success"], false, "{what}: {stdout}");
+    assert_eq!(v["error"]["code"], 2, "{what}: {stdout}");
+    for field in ["cause", "remediation"] {
+        assert!(
+            v["error"][field].as_str().is_some_and(|t| !t.is_empty()),
+            "{what}: empty {field}: {stdout}"
+        );
+    }
+}
+
+#[test]
+fn argument_errors_use_json_envelope() {
+    let f = Fixture::new();
+    for args in [
+        &["status", "--json", "--bogus"][..],
+        &["status", "--json", "--preset", "bogus"],
+        &["status", "--bogus", "--json"],
+        &["status", "--json", "--preset"],
+        &["doctor", "--json", "--source"],
+        &["status", "--json=yes"],
+    ] {
+        let (out, _) = f.run(&f.work, 2, args);
+        require_usage_envelope(&out, &format!("{args:?}"));
+    }
+}
+
+#[test]
+fn argument_errors_stay_text_without_json_option() {
+    let f = Fixture::new();
+    for args in [
+        &["status", "--bogus"][..],
+        &["run", "--preset", "bogus", "--", "cargo", "--json"],
+        // The value of --source is consumed by the option, not read as a flag.
+        &["status", "--source", "--json", "--bogus"],
+    ] {
+        let (out, err) = f.run(&f.work, 2, args);
+        assert!(out.is_empty(), "{args:?}: stdout={out:?}");
+        assert!(err.contains("error:"), "{args:?}: stderr={err:?}");
+    }
+}
+
+#[test]
+fn non_utf8_argument_honors_json_option() {
+    use std::os::unix::ffi::OsStrExt;
+    let f = Fixture::new();
+    let bad = std::ffi::OsStr::from_bytes(b"bad\xff");
+    let out = output({
+        let mut c = f.cmd(&f.work, &["status", "--json"]);
+        c.arg(bad);
+        c
+    });
+    assert_eq!(out.status.code(), Some(2));
+    require_usage_envelope(
+        &String::from_utf8_lossy(&out.stdout),
+        "non-UTF-8 with --json",
+    );
+    let out = output({
+        let mut c = f.cmd(&f.work, &["status"]);
+        c.arg(bad);
+        c
+    });
+    assert_eq!(out.status.code(), Some(2));
+    assert!(out.stdout.is_empty());
+    assert!(String::from_utf8_lossy(&out.stderr).contains("error:"));
+}
+
 #[test]
 fn executable_empty_state_record_names_the_file() {
     let f = Fixture::new();
