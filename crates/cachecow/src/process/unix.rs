@@ -33,10 +33,12 @@ pub fn base_command(c: &Command) -> Result<std::process::Command> {
     Ok(cmd)
 }
 
-/// Starts the root in its own process group and reports its exit code.
-pub fn start(mut cmd: std::process::Command) -> Result<mpsc::Receiver<i32>> {
+/// Starts the root in its own process group and reports its process ID and a
+/// receiver that yields its exit code once.
+pub fn start(mut cmd: std::process::Command) -> Result<(u32, mpsc::Receiver<i32>)> {
     cmd.process_group(0);
     let mut child = cmd.spawn()?;
+    let pid = child.id();
     let (tx, rx) = mpsc::channel();
     std::thread::Builder::new()
         .name("ccow-root-wait".into())
@@ -44,7 +46,7 @@ pub fn start(mut cmd: std::process::Command) -> Result<mpsc::Receiver<i32>> {
             let code = child.wait().map_or(125, super::exit_code);
             let _ = tx.send(code);
         })?;
-    Ok(rx)
+    Ok((pid, rx))
 }
 
 pub fn request_termination(owner_pid: i64) -> Result<()> {

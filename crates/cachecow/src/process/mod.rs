@@ -603,6 +603,13 @@ trait Backend {
     fn signal(&mut self, force: bool) -> Result<()>;
     /// Positive native evidence that no owned process remains.
     fn empty(&mut self, root_done: bool) -> Result<bool>;
+    /// Reaps exited orphans the supervisor adopted while the root command is
+    /// still unreaped, and returns how many it reaped. It must never consume
+    /// the root's exit status. Backends whose operating system reaps adopted
+    /// orphans itself keep this default.
+    fn reap(&mut self) -> usize {
+        0
+    }
 }
 
 struct Supervisor {
@@ -783,6 +790,7 @@ fn supervise(dir: &str, endpoint: &str, hooks: SupervisorHooks) -> i32 {
                 if ctx.is_done() {
                     break;
                 }
+                reap_orphans(&sup.scope, backend.as_mut());
             }
         }
     }
@@ -802,6 +810,10 @@ fn supervise(dir: &str, endpoint: &str, hooks: SupervisorHooks) -> i32 {
         if root_done && matches!(backend.empty(root_done), Ok(true)) {
             break;
         }
+        if !root_done {
+            // Cancellation can drain while the root is still unreaped.
+            reap_orphans(&sup.scope, backend.as_mut());
+        }
         // Each new descendant gets a graceful signal once. Native ownership,
         // not this enumeration, determines when the tree is empty.
         let _ = backend.signal(Instant::now() > deadline);
@@ -810,6 +822,15 @@ fn supervise(dir: &str, endpoint: &str, hooks: SupervisorHooks) -> i32 {
     tracing::debug!(scope_id = %sup.scope.id, exit_code = sup.scope.exit_code, "process scope drained");
     drop(backend);
     sup.finish()
+}
+
+/// Reaps adopted orphans that exited while the root command runs, so they do
+/// not accumulate as zombies for the whole session.
+fn reap_orphans(scope: &Scope, backend: &mut dyn Backend) {
+    let reaped = backend.reap();
+    if reaped > 0 {
+        tracing::debug!(scope_id = %scope.id, reaped, "reaped orphaned descendants");
+    }
 }
 
 /// Test-only overrides; never set in production code paths.
