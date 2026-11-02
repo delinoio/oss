@@ -732,6 +732,14 @@ pub fn ensure_private_directory(path: &str) -> Result<()> {
     privacy::private_dir(path)
 }
 
+/// SDDL that [`ensure_private_directory`] applies at creation and requires on
+/// validation. Directories created outside that function and later checked by
+/// it must be created with this descriptor.
+#[cfg(windows)]
+pub(crate) fn private_directory_sddl() -> Result<String> {
+    privacy::state_sddl()
+}
+
 /// Validates an existing private record file without creating it.
 pub fn validate_private_file(path: &str) -> Result<()> {
     std::fs::symlink_metadata(path)?;

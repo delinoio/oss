@@ -417,17 +417,22 @@ fn receive_streams(_conn: &ipc::Connection) -> Result<ResolvedStreams> {
     resolve_streams(Streams::default())
 }
 
+/// Creates a new scope directory that `lease::ensure_private_directory`
+/// accepts. An existing directory is an error on every platform.
 fn create_private_dir(dir: &str) -> Result<()> {
     #[cfg(unix)]
-    let builder = {
+    {
         use std::os::unix::fs::DirBuilderExt;
         let mut builder = fs::DirBuilder::new();
         builder.mode(0o700);
-        builder
-    };
-    #[cfg(not(unix))]
-    let builder = fs::DirBuilder::new();
-    builder.create(dir)?;
+        builder.create(dir)?;
+    }
+    // A plain `DirBuilder` would inherit an unprotected ACE from the private
+    // parent, which the supervisor `ready` check rejects. Apply the protected
+    // current-user-only descriptor atomically instead. `create_directory`
+    // fails with `AlreadyExists` for an existing directory.
+    #[cfg(windows)]
+    crate::winsec::create_directory(dir, &crate::lease::private_directory_sddl()?)?;
     Ok(())
 }
 
@@ -907,6 +912,22 @@ mod tests {
             started: true,
             ..Scope::default()
         }
+    }
+
+    /// The scope directory must pass the same check as the supervisor `ready`
+    /// hook, and an existing directory must still be an error.
+    #[test]
+    fn scope_directory_is_private_and_new() {
+        let dir = tempfile::tempdir().unwrap();
+        let parent = paths::join2(
+            &paths::eval_symlinks(dir.path().to_str().unwrap()).unwrap(),
+            "processes",
+        );
+        crate::lease::ensure_private_directory(&parent).unwrap();
+        let child = paths::join2(&parent, "scope");
+        create_private_dir(&child).unwrap();
+        crate::lease::ensure_private_directory(&child).unwrap();
+        assert!(create_private_dir(&child).is_err());
     }
 
     #[test]

@@ -21,6 +21,9 @@ use cachecow::{
 fn test_hooks() -> SupervisorHooks {
     SupervisorHooks {
         ready: Some(Box::new(|s: &Scope| {
+            // Production `ready` requires a private scope directory. Repeat it
+            // here so every process test covers the directory's creation ACL.
+            cachecow::lease::ensure_private_directory(&s.directory)?;
             fs::write(paths::join2(&s.directory, "test-ready"), "ready")?;
             Ok(())
         })),
