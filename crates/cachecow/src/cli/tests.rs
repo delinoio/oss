@@ -309,9 +309,20 @@ fn lookup_env_reads_path_from_the_given_environment() {
 
 #[test]
 fn lookup_env_drops_entries_with_replacement_characters() {
-    let env = strings(&["PATH=/a:/b\u{fffd}:/c", "PATHEXT=.EXE;.C\u{fffd}D;.BAT"]);
+    // PATH is split with the platform separator (`:` on Unix, `;` on Windows),
+    // so the input and the expectation are built with `std::env::join_paths`.
+    let join = |entries: &[&str]| {
+        std::env::join_paths(entries)
+            .unwrap()
+            .into_string()
+            .unwrap()
+    };
+    let env = strings(&[
+        &format!("PATH={}", join(&["/a", "/b\u{fffd}", "/c"])),
+        "PATHEXT=.EXE;.C\u{fffd}D;.BAT",
+    ]);
     let lookup = LookupEnv::from_env(&env);
-    assert_eq!(lookup.path, "/a:/c");
+    assert_eq!(lookup.path, join(&["/a", "/c"]));
     assert_eq!(lookup.path_ext, ".EXE;.BAT");
 }
 
