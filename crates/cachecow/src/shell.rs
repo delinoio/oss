@@ -442,7 +442,10 @@ pub fn prepare(kind: Kind, action: Action, path: &str, shim_dir: &str) -> Result
         p.after.clone_from(&p.before);
         if let Some((mut start, stop, joined)) = found {
             p.removed_block = p.before[start..stop].to_vec();
-            if joined {
+            // The separator added by setup can be removed only when the block
+            // ends the file. Otherwise the content after the block
+            // would run into the last line before it.
+            if joined && stop == p.before.len() {
                 if start >= 2 && &p.before[start - 2..start] == b"\r\n" {
                     start -= 2;
                     p.separator = true;
@@ -1104,6 +1107,24 @@ mod tests {
                 true,
             ),
             (
+                "remove joined block followed by content",
+                format!("# keep\n{}# after\n", owned(JOINED_BEGIN, "\n")),
+                Action::Remove,
+                owned(JOINED_BEGIN, "\n"),
+                String::new(),
+                false,
+                true,
+            ),
+            (
+                "remove joined CRLF block followed by content",
+                format!("# keep\r\n{}# after\r\n", owned(JOINED_BEGIN, "\r\n")),
+                Action::Remove,
+                owned(JOINED_BEGIN, "\r\n"),
+                String::new(),
+                false,
+                true,
+            ),
+            (
                 "remove joined block at file start",
                 owned(JOINED_BEGIN, "\n"),
                 Action::Remove,
@@ -1149,6 +1170,46 @@ mod tests {
                 got_added[0] = b'X';
                 assert_ne!(p.owned_change().1[0], b'X', "exposed internal bytes");
             }
+        }
+    }
+
+    #[test]
+    fn remove_joined_block_keeps_following_content_on_its_own_line() {
+        let (_d, dir_base) = temp();
+        let dir = posix_shims(&dir_base);
+        for (nl, original, appended) in [
+            ("\n", "# keep", "# after\n"),
+            ("\r\n", "# first\r\n# keep", "# after\r\n"),
+        ] {
+            let (_t, base) = temp();
+            let path = paths::join2(&base, "profile");
+            write_mode(&path, original.as_bytes(), 0o600);
+            let approve = || Approval {
+                yes: true,
+                interactive: false,
+                confirm: None,
+            };
+            prepare(Kind::Bash, Action::Setup, &path, &dir)
+                .unwrap()
+                .apply(approve())
+                .unwrap();
+            // Another tool appends content after the CacheCow block.
+            let mut grown = fs::read(&path).unwrap();
+            assert!(String::from_utf8_lossy(&grown).contains(JOINED_BEGIN));
+            grown.extend_from_slice(appended.as_bytes());
+            write_mode(&path, &grown, 0o600);
+
+            let remove = prepare(Kind::Bash, Action::Remove, &path, &dir).unwrap();
+            assert!(!remove.owned_change().2, "separator must stay");
+            assert_eq!(
+                String::from_utf8(remove.after.clone()).unwrap(),
+                format!("{original}{nl}{appended}")
+            );
+            remove.apply(approve()).unwrap();
+            assert_eq!(
+                fs::read(&path).unwrap(),
+                format!("{original}{nl}{appended}").as_bytes()
+            );
         }
     }
 
