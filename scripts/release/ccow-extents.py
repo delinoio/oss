@@ -49,7 +49,11 @@ def darwin_extents(file):
     # Darwin sys/fcntl.h packs log2phys to four-byte alignment. APFS may deny
     # physical mapping to an unprivileged caller: fail closed in that case.
     result = []
-    block = os.statvfs(file).f_bsize
+    # f_bsize is the preferred I/O size (1 MiB on APFS); the allocation block
+    # that F_LOG2PHYS_EXT offsets align to is f_frsize. Fall back to f_bsize
+    # only when a filesystem reports no fragment size.
+    info = os.statvfs(file)
+    block = info.f_frsize or info.f_bsize
     with open(file, "rb") as handle:
         os.fsync(handle.fileno())
         size = os.fstat(handle.fileno()).st_size
