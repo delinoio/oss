@@ -15,7 +15,9 @@ const FILE_ALL_ACCESS: u32 = 0x001f_01ff;
 /// OBJECT_INHERIT_ACE | CONTAINER_INHERIT_ACE, from `OICI` in the SDDL.
 const INHERIT_FLAGS: u8 = 0x03;
 
-fn state_sddl() -> Result<String> {
+/// Protected current-user-only descriptor shared by every private state
+/// directory, so creation and `private_dir` validation cannot drift apart.
+pub(super) fn state_sddl() -> Result<String> {
     let user = winsec::current_user()?.to_string_sid()?;
     Ok(format!("D:P(A;OICI;FA;;;{user})"))
 }
