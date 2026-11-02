@@ -284,7 +284,12 @@ fn remove_link(path: &str) -> Result<()> {
 #[cfg(unix)]
 fn sync_tree(path: &str) -> Result<()> {
     paths::walk_dir(path, &mut |entry| {
-        fs::File::open(&entry.path)?.sync_all()?;
+        // `File::open` follows links, so a dangling link would fail
+        // publication, and a link inode cannot be flushed on its own. The
+        // containing directory is flushed when the walk visits it.
+        if !entry.file_type.is_symlink() {
+            fs::File::open(&entry.path)?.sync_all()?;
+        }
         Ok(Walk::Continue)
     })
 }
@@ -292,7 +297,7 @@ fn sync_tree(path: &str) -> Result<()> {
 #[cfg(windows)]
 fn sync_tree(path: &str) -> Result<()> {
     paths::walk_dir(path, &mut |entry| {
-        if !entry.is_dir() {
+        if !entry.is_dir() && !entry.file_type.is_symlink() {
             sync_staged_file(&entry.path)?;
         }
         Ok(Walk::Continue)

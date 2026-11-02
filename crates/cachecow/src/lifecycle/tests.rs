@@ -328,3 +328,42 @@ fn prepare_read_only_windows_file() {
         let _ = clone::set_owner_access(&path, false);
     }
 }
+
+#[cfg(unix)]
+#[test]
+fn prepare_dangling_internal_link_and_remove_without_following() {
+    let root = private_root();
+    let (src, dst) = (
+        paths::join2(&root.path, "source"),
+        paths::join2(&root.path, "destination"),
+    );
+    tree(&src, "source");
+    std::os::unix::fs::symlink("absent-inside", paths::join2(&src, "dangling")).unwrap();
+    // Removal must not reach files outside the tree.
+    let sentinel = paths::join2(&root.path, "sentinel");
+    fs::write(&sentinel, b"keep").unwrap();
+    prepare(
+        &bg(),
+        &paths::join2(&root.path, "transaction.json"),
+        &[pair(&src, &dst)],
+        false,
+        true,
+    )
+    .unwrap();
+    let link = paths::join2(&dst, "dangling");
+    assert!(
+        fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(
+        fs::read_link(&link).unwrap().to_str().unwrap(),
+        "absent-inside"
+    );
+    content(&dst, "source");
+    remove_tree(&dst).unwrap();
+    assert!(fs::symlink_metadata(&dst).is_err());
+    assert_eq!(fs::read(&sentinel).unwrap(), b"keep");
+    content(&src, "source");
+}

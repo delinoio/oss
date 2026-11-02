@@ -13,7 +13,7 @@ use serde_json::json;
 
 use super::{App, Failure, bad, environ, notice};
 use crate::{
-    Context, error,
+    Context, clone, error,
     lease::{Record, Registry},
     lifecycle::{self, LifecycleResult, Pair},
     paths,
@@ -701,7 +701,9 @@ fn validate_source(p: &Plan) -> Result<()> {
             ));
         }
         paths::walk_dir(&root.path, &mut |entry| {
-            if !entry.is_dir() && !entry.file_type.is_file() {
+            let internal_link = entry.file_type.is_symlink()
+                && clone::source_link_is_internal(&root.path, &entry.path);
+            if !entry.is_dir() && !entry.file_type.is_file() && !internal_link {
                 return Err(anyhow!(
                     "source cache contains a symlink or special file; repair it or select another \
                      source"
