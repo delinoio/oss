@@ -189,6 +189,163 @@ fn launchctl(args: &[&str]) -> Result<()> {
     Ok(())
 }
 
+/// Resource limits that launchd can set, as (launchd key, `RLIMIT_*` resource).
+/// Names follow launchd.plist(5).
+const LAUNCHD_LIMITS: [(&str, libc::c_int); 9] = [
+    ("Core", libc::RLIMIT_CORE),
+    ("CPU", libc::RLIMIT_CPU),
+    ("Data", libc::RLIMIT_DATA),
+    ("FileSize", libc::RLIMIT_FSIZE),
+    ("MemoryLock", libc::RLIMIT_MEMLOCK),
+    ("NumberOfFiles", libc::RLIMIT_NOFILE),
+    ("NumberOfProcesses", libc::RLIMIT_NPROC),
+    ("ResidentSetSize", libc::RLIMIT_RSS),
+    ("Stack", libc::RLIMIT_STACK),
+];
+
+/// One caller resource limit. `None` means `RLIM_INFINITY`: the key is omitted
+/// so launchd keeps its own (unlimited) value for that bound.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct CallerLimit {
+    key: &'static str,
+    soft: Option<u64>,
+    hard: Option<u64>,
+}
+
+/// Process attributes that a `launchctl bootstrap` job would otherwise reset to
+/// launchd defaults. The supervisor, and so the managed command, runs as that
+/// job. Linux and Windows spawn the supervisor directly and inherit these.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+struct CallerAttributes {
+    /// File-mode creation mask. launchd takes it as a decimal integer.
+    umask: Option<u32>,
+    nice: Option<i32>,
+    limits: Vec<CallerLimit>,
+}
+
+impl CallerAttributes {
+    /// Reads the attributes of the calling process. A value that cannot be
+    /// read is left out, so launchd keeps its default for it.
+    fn capture() -> Self {
+        let limits = LAUNCHD_LIMITS
+            .iter()
+            .filter_map(|&(key, resource)| {
+                let mut limit = libc::rlimit {
+                    rlim_cur: 0,
+                    rlim_max: 0,
+                };
+                // SAFETY: getrlimit writes one rlimit into `limit`.
+                let rc = unsafe { libc::getrlimit(resource as _, &raw mut limit) };
+                (rc == 0).then(|| CallerLimit {
+                    key,
+                    soft: finite(limit.rlim_cur),
+                    hard: finite(limit.rlim_max),
+                })
+            })
+            .collect();
+        Self {
+            umask: caller_umask(),
+            nice: caller_nice(),
+            limits,
+        }
+    }
+
+    /// Plist keys that carry caller state; logged instead of their values.
+    fn applied_keys(&self) -> Vec<&'static str> {
+        let mut keys = Vec::new();
+        if self.umask.is_some() {
+            keys.push("Umask");
+        }
+        if self.nice.is_some() {
+            keys.push("Nice");
+        }
+        for limit in &self.limits {
+            if limit.soft.is_some() {
+                keys.push(limit.key);
+            }
+        }
+        keys
+    }
+}
+
+fn finite(value: libc::rlim_t) -> Option<u64> {
+    (value != libc::RLIM_INFINITY).then_some(value)
+}
+
+/// The caller's `umask`. `umask(2)` can only be read by replacing it, and that
+/// window would let a concurrent thread create files with mask 0. A child
+/// process inherits the mask, so ask a shell instead.
+fn caller_umask() -> Option<u32> {
+    let output = std::process::Command::new("/bin/sh")
+        .args(["-c", "umask"])
+        .env_clear()
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    // The shell prints the mask in octal, for example `0077`.
+    u32::from_str_radix(std::str::from_utf8(&output.stdout).ok()?.trim(), 8).ok()
+}
+
+fn caller_nice() -> Option<i32> {
+    // getpriority returns -1 for both an error and a nice value of -1.
+    // SAFETY: errno is thread-local and always writable.
+    unsafe { *libc::__error() = 0 };
+    // SAFETY: getpriority has no memory preconditions.
+    let nice = unsafe { libc::getpriority(libc::PRIO_PROCESS, 0) };
+    (nice != -1 || io::Error::last_os_error().raw_os_error() == Some(0)).then_some(nice)
+}
+
+fn write_limit_dict(plist: &mut String, key: &str, limits: &[CallerLimit], hard: bool) {
+    let values: Vec<_> = limits
+        .iter()
+        .filter_map(|l| Some((l.key, if hard { l.hard } else { l.soft }?)))
+        .collect();
+    if values.is_empty() {
+        return;
+    }
+    let _ = write!(plist, "<key>{key}</key><dict>");
+    for (name, value) in values {
+        // Keys are static launchd names and values are integers: nothing
+        // caller-controlled reaches the XML here.
+        let _ = write!(plist, "<key>{name}</key><integer>{value}</integer>");
+    }
+    plist.push_str("</dict>");
+}
+
+/// The launchd job definition of the supervisor. A pure function so the
+/// generated keys are unit-testable without launchd.
+fn build_plist(label: &str, program_arguments: &[&str], attributes: &CallerAttributes) -> String {
+    let mut plist = String::from(
+        r#"<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>Label</key><string>"#,
+    );
+    plist.push_str(&xml_escape(label));
+    plist.push_str("</string><key>ProgramArguments</key><array>");
+    for arg in program_arguments {
+        let _ = write!(plist, "<string>{}</string>", xml_escape(arg));
+    }
+    plist.push_str(
+        "</array><key>LimitLoadToSessionType</key><string>Background</string><key>RunAtLoad</\
+         key><true/><key>KeepAlive</key><false/><key>AbandonProcessGroup</key><true/>",
+    );
+    // Without ProcessType launchd may throttle CPU and I/O of the job, which
+    // would slow builds that the caller runs interactively.
+    plist.push_str("<key>ProcessType</key><string>Interactive</string>");
+    if let Some(umask) = attributes.umask {
+        let _ = write!(plist, "<key>Umask</key><integer>{umask}</integer>");
+    }
+    if let Some(nice) = attributes.nice {
+        let _ = write!(plist, "<key>Nice</key><integer>{nice}</integer>");
+    }
+    write_limit_dict(&mut plist, "SoftResourceLimits", &attributes.limits, false);
+    write_limit_dict(&mut plist, "HardResourceLimits", &attributes.limits, true);
+    plist.push_str("</dict></plist>");
+    plist
+}
+
 pub fn launch(
     scope: &Scope,
     endpoint: &str,
@@ -202,23 +359,20 @@ pub fn launch(
     let label = format!("io.delino.ccow.{}", scope.id);
     // SAFETY: getuid has no preconditions.
     let domain = format!("user/{}", unsafe { libc::getuid() });
-    let mut plist = String::from(
-        r#"<?xml version="1.0" encoding="UTF-8"?><plist version="1.0"><dict><key>Label</key><string>"#,
+    let attributes = CallerAttributes::capture();
+    tracing::debug!(
+        keys = ?attributes.applied_keys(),
+        "applying caller process attributes to the launchd job"
     );
-    plist.push_str(&xml_escape(&label));
-    plist.push_str("</string><key>ProgramArguments</key><array>");
-    for arg in [
-        executable.as_str(),
-        SUPERVISOR_ARGUMENT,
-        scope.directory.as_str(),
-        endpoint,
-    ] {
-        let _ = write!(plist, "<string>{}</string>", xml_escape(arg));
-    }
-    plist.push_str(
-        "</array><key>LimitLoadToSessionType</key><string>Background</string><key>RunAtLoad</\
-         key><true/><key>KeepAlive</key><false/><key>AbandonProcessGroup</key><true/></dict></\
-         plist>",
+    let plist = build_plist(
+        &label,
+        &[
+            executable.as_str(),
+            SUPERVISOR_ARGUMENT,
+            scope.directory.as_str(),
+            endpoint,
+        ],
+        &attributes,
     );
     let path = crate::paths::join2(&scope.directory, "supervisor.plist");
     {
@@ -382,4 +536,65 @@ pub fn retention(s: &Scope) -> Retention {
         return Retention::OwnerRunning;
     }
     Retention::SameBoot
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn limit(key: &'static str, soft: Option<u64>, hard: Option<u64>) -> CallerLimit {
+        CallerLimit { key, soft, hard }
+    }
+
+    #[test]
+    fn plist_carries_caller_attributes() {
+        let attributes = CallerAttributes {
+            // 0o077, written as a decimal integer.
+            umask: Some(0o077),
+            nice: Some(5),
+            limits: vec![
+                limit("NumberOfFiles", Some(4096), Some(10240)),
+                limit("Core", Some(0), None),
+                limit("Stack", None, None),
+            ],
+        };
+        let plist = build_plist("io.delino.ccow.x", &["/bin/ccow", "a&b"], &attributes);
+        assert!(plist.contains("<key>Umask</key><integer>63</integer>"));
+        assert!(plist.contains("<key>Nice</key><integer>5</integer>"));
+        assert!(plist.contains("<key>ProcessType</key><string>Interactive</string>"));
+        assert!(plist.contains("<string>a&amp;b</string>"));
+        assert!(plist.contains(
+            "<key>SoftResourceLimits</key><dict><key>NumberOfFiles</key><integer>4096</\
+             integer><key>Core</key><integer>0</integer></dict>"
+        ));
+        assert!(plist.contains(
+            "<key>HardResourceLimits</key><dict><key>NumberOfFiles</key><integer>10240</integer></\
+             dict>"
+        ));
+        // RLIM_INFINITY bounds are omitted.
+        assert!(!plist.contains("<key>Stack</key>"));
+    }
+
+    #[test]
+    fn plist_without_attributes_keeps_launchd_defaults() {
+        let plist = build_plist("l", &["/bin/ccow"], &CallerAttributes::default());
+        assert!(plist.contains("<key>ProcessType</key><string>Interactive</string>"));
+        for key in ["Umask", "Nice", "SoftResourceLimits", "HardResourceLimits"] {
+            assert!(!plist.contains(&format!("<key>{key}</key>")), "{key}");
+        }
+        assert!(plist.ends_with("</dict></plist>"));
+    }
+
+    #[test]
+    fn capture_reads_the_calling_process() {
+        let attributes = CallerAttributes::capture();
+        assert!(attributes.umask.is_some_and(|m| m <= 0o777));
+        assert!(attributes.nice.is_some());
+        assert!(
+            attributes
+                .limits
+                .iter()
+                .any(|l| l.key == "NumberOfFiles" && l.soft.is_some())
+        );
+    }
 }

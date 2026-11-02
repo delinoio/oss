@@ -437,6 +437,54 @@ mod unix_tests {
         std::process::exit(i32::from(e.is_err()) * 95);
     }
 
+    /// The managed command keeps the caller's open-file limits, `umask` and
+    /// priority. A helper process sets them before running `process::run`
+    /// so this test binary's own attributes stay untouched.
+    pub fn caller_attributes_preserved() {
+        let (_guard, dir) = state_root();
+        let exe = std::env::current_exe().unwrap();
+        let mut helper = std::process::Command::new(exe);
+        helper
+            .env("CCOW_ATTRIBUTES_HELPER", "1")
+            .env("CCOW_TEST_DIR", &dir);
+        // SAFETY: the closure only calls async-signal-safe libc functions.
+        unsafe {
+            helper.pre_exec(|| {
+                let limit = libc::rlimit {
+                    rlim_cur: 1000,
+                    rlim_max: 2000,
+                };
+                if libc::setrlimit(libc::RLIMIT_NOFILE, &limit) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                libc::umask(0o077);
+                if libc::setpriority(libc::PRIO_PROCESS, 0, 5) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+        let status = helper.status().unwrap();
+        assert!(status.success(), "helper failed: {status}");
+        assert_eq!(
+            fs::read_to_string(paths::join2(&dir, "attributes")).unwrap(),
+            "1000 2000 0077 5"
+        );
+    }
+
+    pub fn attributes_helper() -> ! {
+        let dir = std::env::var("CCOW_TEST_DIR").unwrap();
+        let (r, e) = run_plain(
+            &Context::background(),
+            &dir,
+            shell(
+                &dir,
+                r#"printf '%s %s %s %s' "$(ulimit -Sn)" "$(ulimit -Hn)" "$(umask)" "$(ps -o nice= -p $$ | tr -d ' ')" > attributes"#,
+            ),
+        );
+        std::process::exit(if e.is_ok() && r.exit_code == 0 { 0 } else { 96 });
+    }
+
     pub fn supervisor_death_blocks_recovery() {
         let (_guard, dir) = state_root();
         let (tx, rx) = std::sync::mpsc::channel::<Scope>();
@@ -1075,6 +1123,10 @@ fn cases() -> Vec<Case> {
             unix_tests::manager_death_still_drains,
         ),
         (
+            "caller_attributes_preserved",
+            unix_tests::caller_attributes_preserved,
+        ),
+        (
             "supervisor_death_blocks_recovery",
             unix_tests::supervisor_death_blocks_recovery,
         ),
@@ -1142,6 +1194,9 @@ fn dispatch_helpers() {
         }
         if std::env::var("CCOW_MANAGER_HELPER").as_deref() == Ok("1") {
             unix_tests::manager_helper();
+        }
+        if std::env::var("CCOW_ATTRIBUTES_HELPER").as_deref() == Ok("1") {
+            unix_tests::attributes_helper();
         }
     }
     #[cfg(windows)]

@@ -20,7 +20,7 @@ Implementation boundaries:
 
 - Preset discovery consumes the current working directory, requested command/arguments, tool selection, and optional preset. It identifies verified cache paths and compatibility information without changing tool freshness decisions. Unknown locations or compatibility prohibit reuse.
 - Cache preparation consumes the preset result, source selection, and explicit copy/replacement authorization. It retains existing caches by default and reports the actual copy mode. Failed preparation preserves the old cache and prevents build launch.
-- Managed execution coordinates canonical cache paths and source reads, owns the process tree, and returns the child exit status. Same-session/same-cache nesting reuses protection; different-cache nesting remains managed without deadlocks.
+- Managed execution coordinates canonical cache paths and source reads, owns the process tree, and returns the child exit status. Same-session/same-cache nesting reuses protection; different-cache nesting remains managed without deadlocks. The managed command keeps the caller's resource limits (soft and hard), `umask` and scheduling priority on every platform; on macOS the launchd job that hosts the supervisor carries them and runs with `ProcessType` `Interactive`.
 - Shim dispatch resolves the real tool for each invocation, classifies managed operations versus pass-through, and enters that same lifecycle. Managed `cargo clean` locks without preparation; `ccow clean` rejects in-use caches.
 - Management output supports a versioned JSON envelope with success and result or error code, cause, and remediation. Shell initialization emits shell code separately from diagnostics.
 
