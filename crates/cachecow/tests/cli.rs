@@ -462,6 +462,28 @@ fn executable_passthrough_and_cargo_clean() {
     );
 }
 
+#[test]
+fn rsbuild_version_flag_without_command_is_a_query() {
+    let mut f = Fixture::new();
+    write_file(
+        &join(&f.bin, "rsbuild"),
+        "#!/bin/sh\nprintf 'rsbuild-fixture %s\\n' \"$*\"\n",
+        0o700,
+    );
+    let shims = install_shims(&mut f);
+    let rsbuild = join(&shims, "rsbuild");
+    for flag in ["-v", "--version"] {
+        let out = output(f.command(&rsbuild, &f.main, &[flag]));
+        let stderr = String::from_utf8_lossy(&out.stderr);
+        assert!(out.status.success(), "{stderr}");
+        assert_eq!(
+            String::from_utf8_lossy(&out.stdout),
+            format!("rsbuild-fixture {flag}\n")
+        );
+        assert!(!stderr.contains("Unrecognized command"), "{stderr}");
+    }
+}
+
 /// A pseudo-terminal whose secondary side is used as the child's stdin.
 struct Terminal {
     primary: fs::File,

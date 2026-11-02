@@ -24,15 +24,29 @@ pub fn classify(tool: Tool, args: &[String], in_git: bool, bypass: &str) -> Clas
     if !in_git {
         return pass(Reason::OutsideGit);
     }
+    let frontend = matches!(tool, Tool::Rspack | Tool::Rsbuild);
     // Help/version flags after -- belong to the executed program, not the tool.
+    // Rspack and Rsbuild use cac, whose version flags are -v and --version and
+    // print the version only when no named command matches; with a command the
+    // flag is ignored and the command runs. Those two spellings are therefore
+    // resolved below instead of here. cac does not register -V and rejects it
+    // without running anything, so -V stays a plain query for every tool.
     for arg in args {
         if arg == "--" {
             break;
         }
-        if matches!(arg.as_str(), "--help" | "-h" | "--version" | "-V") {
+        let version = arg == "--version" && !frontend;
+        if matches!(arg.as_str(), "--help" | "-h" | "-V") || version {
             return pass(Reason::Query);
         }
     }
+    // A frontend version flag was seen before `--` (only meaningful without a
+    // named command, or with an unrecognized one).
+    let version_seen = frontend
+        && args
+            .iter()
+            .take_while(|a| a.as_str() != "--")
+            .any(|a| matches!(a.as_str(), "--version" | "-v"));
     let mut i = 0;
     if tool == Tool::Cargo && args.first().is_some_and(|a| a.starts_with('+')) {
         i += 1;
@@ -43,7 +57,8 @@ pub fn classify(tool: Tool, args: &[String], in_git: bool, bypass: &str) -> Clas
             // Frontend CLIs accept common options before the subcommand. Rspack
             // and Rsbuild also use a default command when only options occur.
             match a {
-                "--watch" | "-w" | "--hot" | "--no-hot" | "--open" | "--no-open" => i += 1,
+                "--watch" | "-w" | "--hot" | "--no-hot" | "--open" | "--no-open" | "--version"
+                | "-v" => i += 1,
                 "--config" | "-c" | "--mode" | "--env" | "--config-name" | "--entry"
                 | "--output-path" | "--port" | "--host" => {
                     if i + 1 >= args.len() {
@@ -97,8 +112,13 @@ pub fn classify(tool: Tool, args: &[String], in_git: bool, bypass: &str) -> Clas
     }
     if i == args.len() {
         // Rspack defaults to build and Rsbuild defaults to the dev server.
-        if matches!(tool, Tool::Rspack | Tool::Rsbuild) {
-            return managed();
+        // A version flag without a command prints the version instead.
+        if frontend {
+            return if version_seen {
+                pass(Reason::Query)
+            } else {
+                managed()
+            };
         }
         return pass(Reason::Query);
     }
@@ -145,6 +165,11 @@ pub fn classify(tool: Tool, args: &[String], in_git: bool, bypass: &str) -> Clas
             "p" if tool == Tool::Rspack => return pass(Reason::Query),
             "help" | "version" | "inspect" | "preview" => return pass(Reason::Query),
             _ => {}
+        }
+        // cac also prints the version for an unrecognized first word, so keep
+        // that case a query instead of showing the unrecognized-command notice.
+        if version_seen {
+            return pass(Reason::Query);
         }
     }
     pass(Reason::Unknown)
