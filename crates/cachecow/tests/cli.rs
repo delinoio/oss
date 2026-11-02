@@ -237,6 +237,21 @@ fn wait_file(path: &str) {
     panic!("timed out waiting for {path}");
 }
 
+/// Waits until `pid` no longer exists, so the whole fixture coalition is empty
+/// before a test relies on recovery, which tries each lease once per command.
+#[cfg(target_os = "macos")]
+fn wait_process_gone(pid: i32) {
+    let deadline = Instant::now() + Duration::from_secs(20);
+    while Instant::now() < deadline {
+        // SAFETY: signal 0 only checks for existence.
+        if unsafe { libc::kill(pid, 0) } != 0 {
+            return;
+        }
+        thread::sleep(Duration::from_millis(20));
+    }
+    panic!("timed out waiting for process {pid} to exit");
+}
+
 /// Kills a background child when dropped.
 struct Background(Child);
 
@@ -1662,4 +1677,57 @@ fn config_argument_and_record_errors_exit_2() {
         assert_eq!(config_json_error(&out)["code"], 2, "{out}");
         f.run(&f.work, 2, &["config", "unset", "source"]);
     }
+}
+
+/// After the macOS supervisor dies, a surviving descendant keeps the lease.
+/// Doctor must not report the dead owner as running.
+#[cfg(target_os = "macos")]
+#[test]
+fn doctor_reports_same_boot_after_supervisor_death() {
+    let f = Fixture::new();
+    write_file(
+        &join(&f.main, "scenario"),
+        // `exec` keeps the whole fixture in one process. A shell loop would
+        // leave an orphaned `sleep` in the coalition after the shell dies, and
+        // recovery tries each conflicting lease only once per acquisition.
+        "trap '' TERM\nprintf '%s' $$ > target/pid\ntouch target/ready\nexec sleep 600\n",
+        0o600,
+    );
+    let mut owner = spawn_quiet(f.cmd(&f.main, &["run", "--", "cargo", "build"]));
+    wait_file(&join(&f.main, "target/ready"));
+    let processes = join(&f.state_base(), "processes");
+    let scope: serde_json::Value = {
+        let entries: Vec<_> = fs::read_dir(&processes)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .collect();
+        assert_eq!(entries.len(), 1, "{entries:?}");
+        serde_json::from_slice(&fs::read(entries[0].join("scope.json")).unwrap()).unwrap()
+    };
+    let supervisor = scope["owner_pid"].as_i64().unwrap() as i32;
+    let child: i32 = fs::read_to_string(join(&f.main, "target/pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    // SAFETY: signalling the supervisor process owned by this test.
+    unsafe { libc::kill(supervisor, libc::SIGKILL) };
+    let status = owner.0.wait().unwrap();
+    assert_eq!(
+        status.code(),
+        Some(125),
+        "run did not report lost supervisor"
+    );
+    let (out, _) = f.run(&f.main, 0, &["doctor", "--json"]);
+    // SAFETY: cleanup of the surviving fixture descendant.
+    unsafe { libc::kill(child, libc::SIGKILL) };
+    wait_process_gone(child);
+    let json: serde_json::Value = serde_json::from_str(&out).unwrap();
+    assert_eq!(
+        json["result"]["retainedLeases"][0]["reason"], "same boot; descendants may survive",
+        "{out}"
+    );
+    // Once the descendant exits, recovery releases the lease.
+    write_file(&join(&f.main, "scenario"), "printf 'after'\n", 0o600);
+    f.run(&f.main, 0, &["run", "--", "cargo", "build"]);
 }
