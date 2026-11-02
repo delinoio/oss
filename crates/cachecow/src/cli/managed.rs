@@ -4,6 +4,7 @@
 
 use std::{
     collections::{BTreeMap, BTreeSet},
+    io::Write,
     time::Duration,
 };
 
@@ -424,8 +425,13 @@ impl App {
             record: transaction_path(&self.store.root, current),
             ..Plan::default()
         };
+        // A no-op command never launches, but the supervisor reads NO_COLOR
+        // from its environment to format the copy notice it prints.
         let mut c = process::Command {
             noop: true,
+            env: std::env::var_os("NO_COLOR")
+                .map(|v| vec![format!("NO_COLOR={}", v.to_string_lossy())])
+                .unwrap_or_default(),
             ..process::Command::default()
         };
         if action == "run" || action == "tool-clean" {
@@ -552,8 +558,9 @@ impl App {
         let noop = c.noop;
         let (run, prepared, result) =
             session::execute(&self.ctx, p, c, process::Streams::default());
+        // The supervisor already reported ordinary copying before the command
+        // started, so it is not reported again here.
         result?;
-        report_copy(&prepared);
         if noop && run.exit_code == 0 {
             self.output(&prepared)?;
             return Ok(0);
@@ -669,14 +676,11 @@ enum SourceBuild {
     Failed(i32),
 }
 
+/// Reports ordinary copying for a nested run. The top-level path reports it
+/// from the supervisor's start hook instead.
 fn report_copy(result: &LifecycleResult) {
-    for tree in &result.trees {
-        if tree.copied_files > 0 {
-            notice(&format!(
-                "Ordinary copying was used for {} files (--allow-copy).",
-                tree.copied_files
-            ));
-        }
+    for line in session::copy_notice_lines(result, std::env::var_os("NO_COLOR").is_none()) {
+        let _ = std::io::stderr().write_all(line.as_bytes());
     }
 }
 

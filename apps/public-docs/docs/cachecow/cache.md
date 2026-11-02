@@ -27,7 +27,7 @@ ccow prepare --preset cargo --source "../main-checkout" --replace
 
 Interactive replacement requires confirmation. Noninteractive replacement requires explicit `--replace`. CacheCow must finish preparing the new copy before replacing the old cache. A preparation failure must preserve the old cache and remove incomplete copies.
 
-If CoW is unavailable and you accept the storage cost of an ordinary copy, explicitly add `--allow-copy`. CacheCow must report ordinary-copy use. This option does not authorize ignoring permission errors, disk exhaustion, incompatible sources, or other preparation failures.
+If CoW is unavailable and you accept the storage cost of an ordinary copy, explicitly add `--allow-copy`. CacheCow must report ordinary-copy use on stderr before the managed command starts. This option does not authorize ignoring permission errors, disk exhaustion, incompatible sources, or other preparation failures.
 
 ## Unusable source
 
