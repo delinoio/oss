@@ -93,6 +93,12 @@ pub struct Snapshot {
     pub repository: Info,
     #[serde(rename = "Worktrees")]
     pub worktrees: Vec<Info>,
+    /// Registered worktree directories that were missing at capture and were
+    /// skipped. Verification requires them to stay missing, because a restored
+    /// or remounted directory brings sources that this snapshot never
+    /// inventoried.
+    #[serde(rename = "MissingWorktrees", default)]
+    pub missing_worktrees: Vec<String>,
     #[serde(rename = "IgnoredDirectories")]
     pub ignored_directories: Vec<String>,
     #[serde(rename = "Caches")]
@@ -128,6 +134,19 @@ pub(crate) fn path_error(op: &'static str, path: &str, source: std::io::Error) -
 /// Go `os.IsNotExist` for a raw I/O error.
 pub(crate) fn io_not_found(e: &std::io::Error) -> bool {
     e.kind() == std::io::ErrorKind::NotFound
+}
+
+/// Reports whether a registered worktree directory no longer exists. Git keeps
+/// the record of a deleted or unmounted worktree until `git worktree prune`,
+/// and a locked record or Git older than 2.31 carries no `prunable` marker, so
+/// the decision comes from the filesystem. Any error other than absence (for
+/// example permission denied) is returned so the caller still fails.
+pub(crate) fn worktree_missing(path: &str) -> Result<bool> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(false),
+        Err(e) if io_not_found(&e) => Ok(true),
+        Err(e) => Err(path_error("lstat", path, e)),
+    }
 }
 
 /// Runs `cmd` with null stdin and captured stdout/stderr, killing it when
@@ -417,6 +436,18 @@ impl Info {
                 if overlaps(&p, &protected_path) {
                     bail!("cache overlaps worktree metadata or settings");
                 }
+            }
+            if worktree_missing(&q)? {
+                // A missing directory has no files to protect, but a locked
+                // worktree can reappear, so its path stays reserved.
+                if overlaps(&p, &q) {
+                    bail!(
+                        "cache is inside a registered worktree that is missing; run `git worktree \
+                         prune` or select another cache directory"
+                    );
+                }
+                tracing::debug!(worktree = %q, "skipping missing registered worktree");
+                continue;
             }
             let files = git_string(
                 ctx,

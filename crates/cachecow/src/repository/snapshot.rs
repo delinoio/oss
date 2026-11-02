@@ -14,7 +14,7 @@ use sha2::Digest;
 
 use super::{
     FileStamp, Info, Kind, Snapshot, canonical, contains, discover, git_string, io_not_found,
-    path_error, verify, verify_cache_claim,
+    path_error, verify, verify_cache_claim, worktree_missing,
 };
 use crate::{Context, paths};
 
@@ -49,6 +49,21 @@ pub fn capture_snapshot(
         let Some(worktree) = field.strip_prefix("worktree ") else {
             continue;
         };
+        // A deleted or unmounted worktree has no index or sources to capture.
+        // The worktree registry in the inventory still changes when Git prunes
+        // or re-adds the record, and the cache validation below rejects a
+        // cache inside its reserved path. The snapshot records the skipped
+        // path because restoring the directory leaves the registry unchanged;
+        // verification then requires fresh discovery. The registration's
+        // `gitdir` backlink is stamped as well, because `git worktree repair`
+        // at a new location rewrites that file without renaming the
+        // registration, and the old path stays absent.
+        if worktree_missing(worktree)? {
+            tracing::debug!(worktree, "skipping missing registered worktree");
+            s.missing_worktrees.push(worktree.to_string());
+            files.extend(registration_backlinks(&r.common_dir, worktree)?);
+            continue;
+        }
         let w = discover(ctx, worktree)?;
         if w.kind == Kind::Bare {
             continue;
@@ -160,6 +175,46 @@ pub fn capture_snapshot(
     Ok(s)
 }
 
+/// Returns the `gitdir` backlink files of the registrations under
+/// `<common_dir>/worktrees` that point at `worktree`. Git keeps the worktree
+/// path in this file and `git worktree repair` rewrites it after a move
+/// without renaming the registration directory. The primary worktree has no
+/// registration, so it yields nothing.
+fn registration_backlinks(common_dir: &str, worktree: &str) -> Result<Vec<String>> {
+    let registry = paths::join2(common_dir, "worktrees");
+    let entries = match std::fs::read_dir(&registry) {
+        Ok(entries) => entries,
+        Err(e) if io_not_found(&e) => return Ok(Vec::new()),
+        Err(e) => return Err(path_error("open", &registry, e)),
+    };
+    let wanted = backlink_key(worktree);
+    let mut found = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|e| path_error("readdirent", &registry, e))?;
+        let backlink = paths::join2(&entry.path().to_string_lossy(), "gitdir");
+        let text = match std::fs::read_to_string(&backlink) {
+            Ok(text) => text,
+            Err(e) if io_not_found(&e) => continue,
+            Err(e) => return Err(path_error("open", &backlink, e)),
+        };
+        let target = text.trim_end_matches(['\n', '\r']);
+        let target = target
+            .strip_suffix("/.git")
+            .or_else(|| target.strip_suffix("\\.git"))
+            .unwrap_or(target);
+        if backlink_key(target) == wanted {
+            found.push(backlink);
+        }
+    }
+    found.sort();
+    Ok(found)
+}
+
+/// Compares Git worktree paths regardless of the separator style.
+fn backlink_key(path: &str) -> String {
+    path.replace('\\', "/")
+}
+
 impl Snapshot {
     /// Checks the captured claims using filesystem reads only. Run while
     /// holding all relevant cache/source leases. A mismatch requires fresh
@@ -182,6 +237,16 @@ impl Snapshot {
         }
         for p in &self.caches {
             verify_cache_claim(&self.repository, p, &self.protected)?;
+        }
+        // A skipped worktree that reappears (restore or remount) adds source
+        // paths that the captured inventory does not cover.
+        for p in &self.missing_worktrees {
+            if !worktree_missing(p)? {
+                bail!(
+                    "a registered worktree that was missing at discovery is available again; \
+                     repeat discovery"
+                );
+            }
         }
         for old in &self.files {
             if *old != file_stamp(&old.path)? {

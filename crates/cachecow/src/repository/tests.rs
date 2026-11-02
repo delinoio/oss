@@ -354,3 +354,156 @@ fn file_stamps_detect_changes_and_absence() {
     expected.extend_from_slice(b"b");
     assert_eq!(stamps[0].digest, crate::jsonx::sha256_hex(&expected));
 }
+
+/// Registers a linked worktree in `t2`, optionally locks it, then deletes its
+/// directory the way agent tools do, leaving the Git record behind.
+fn stale_worktree(p: &str, t2: &tempfile::TempDir, lock: bool) -> String {
+    let w = s(&t2.path().join("stale"));
+    run_git(p, &["worktree", "add", "-b", "stale", &w]);
+    if lock {
+        run_git(p, &["worktree", "lock", "--reason", "usb", &w]);
+    }
+    fs::remove_dir_all(&w).unwrap();
+    canonical(&w).unwrap()
+}
+
+#[test]
+fn missing_worktree_is_skipped() {
+    for lock in [false, true] {
+        let (_t, p) = fixture();
+        fs::write(paths::join2(&p, ".gitignore"), "/target/\n").unwrap();
+        let t2 = tempfile::tempdir().unwrap();
+        let _stale = stale_worktree(&p, &t2, lock);
+        let r = discover(&ctx(), &p).unwrap();
+        let cache = paths::join2(&r.root, "target");
+        r.validate_cache(&ctx(), &cache, &[])
+            .unwrap_or_else(|e| panic!("lock={lock}: validate_cache: {e:#}"));
+        let snap = capture_snapshot(&ctx(), &r, std::slice::from_ref(&cache), &[])
+            .unwrap_or_else(|e| panic!("lock={lock}: capture_snapshot: {e:#}"));
+        assert_eq!(snap.worktrees.len(), 1, "lock={lock}");
+        snap.verify().unwrap();
+        // Pruning the record changes the worktree registry, which must
+        // invalidate the snapshot.
+        if !lock {
+            run_git(&p, &["worktree", "prune"]);
+            assert!(snap.verify().is_err(), "accepted pruned registry");
+        }
+    }
+}
+
+#[test]
+fn restored_missing_worktree_invalidates_snapshot() {
+    for lock in [false, true] {
+        let (_t, p) = fixture();
+        fs::write(paths::join2(&p, ".gitignore"), "/target/\n").unwrap();
+        let t2 = tempfile::tempdir().unwrap();
+        let stale = stale_worktree(&p, &t2, lock);
+        let r = discover(&ctx(), &p).unwrap();
+        let cache = paths::join2(&r.root, "target");
+        let snap = capture_snapshot(&ctx(), &r, &[cache], &[]).unwrap();
+        assert_eq!(
+            snap.missing_worktrees.as_slice(),
+            std::slice::from_ref(&stale),
+            "lock={lock}"
+        );
+        snap.verify().unwrap();
+        // Restoring the directory (or remounting its volume) leaves the
+        // worktree registry unchanged, so only the skipped path can reveal it.
+        fs::create_dir(&stale).unwrap();
+        let e = snap.verify().unwrap_err();
+        assert!(
+            format!("{e:#}").contains("available again"),
+            "lock={lock}: {e:#}"
+        );
+        fs::remove_dir(&stale).unwrap();
+        snap.verify().unwrap();
+    }
+}
+
+#[test]
+fn repaired_missing_worktree_invalidates_snapshot() {
+    let (_t, p) = fixture();
+    fs::write(paths::join2(&p, ".gitignore"), "/target/\n").unwrap();
+    let t2 = tempfile::tempdir().unwrap();
+    let old = s(&t2.path().join("old"));
+    run_git(&p, &["worktree", "add", "-b", "moved", &old]);
+    // Move the worktree without telling Git: the registration keeps pointing
+    // at the absent old path.
+    let new = s(&t2.path().join("new"));
+    fs::rename(&old, &new).unwrap();
+    let new = canonical(&new).unwrap();
+    let r = discover(&ctx(), &p).unwrap();
+    let cache = paths::join2(&r.root, "target");
+    let snap = capture_snapshot(&ctx(), &r, &[cache], &[]).unwrap();
+    assert_eq!(snap.worktrees.len(), 1);
+    assert_eq!(snap.missing_worktrees.len(), 1);
+    snap.verify().unwrap();
+    // `git worktree repair` rewrites the registration's `gitdir` backlink to
+    // the new path without renaming the registration, and the old path stays
+    // absent, so only the stamped backlink can reveal the new source tree.
+    run_git(&p, &["worktree", "repair", &new]);
+    let e = snap.verify().unwrap_err();
+    assert!(
+        format!("{e:#}").contains("repository metadata changed"),
+        "{e:#}"
+    );
+}
+
+#[test]
+fn missing_worktree_is_skipped_from_linked_worktree() {
+    let (_t, p) = fixture();
+    let t2 = tempfile::tempdir().unwrap();
+    let healthy = s(&t2.path().join("healthy"));
+    run_git(&p, &["worktree", "add", "-b", "healthy", &healthy]);
+    let _stale = stale_worktree(&p, &t2, false);
+    fs::write(paths::join2(&healthy, ".gitignore"), "/target/\n").unwrap();
+    let r = discover(&ctx(), &healthy).unwrap();
+    let cache = paths::join2(&r.root, "target");
+    r.validate_cache(&ctx(), &cache, &[]).unwrap();
+    capture_snapshot(&ctx(), &r, &[cache], &[])
+        .unwrap()
+        .verify()
+        .unwrap();
+}
+
+#[test]
+fn missing_worktree_path_stays_reserved() {
+    let (_t, p) = fixture();
+    let t2 = tempfile::tempdir().unwrap();
+    let stale = stale_worktree(&p, &t2, true);
+    let r = discover(&ctx(), &p).unwrap();
+    let e = r
+        .validate_cache(&ctx(), &paths::join2(&stale, "target"), &[])
+        .unwrap_err();
+    assert!(
+        format!("{e:#}").contains("git worktree prune"),
+        "missing prune hint: {e:#}"
+    );
+    // The registered path itself is the cache: it is a cache that contains
+    // the worktree.
+    assert!(r.validate_cache(&ctx(), &stale, &[]).is_err());
+    let parent = paths::dir(&stale);
+    let e = r.validate_cache(&ctx(), &parent, &[]).unwrap_err();
+    assert!(
+        format!("{e:#}").contains("cache cannot contain a worktree"),
+        "{e:#}"
+    );
+}
+
+#[test]
+fn unreadable_worktree_directory_still_fails() {
+    use std::os::unix::fs::PermissionsExt;
+    let (_t, p) = fixture();
+    let t2 = tempfile::tempdir().unwrap();
+    let w = s(&t2.path().join("locked-down"));
+    run_git(&p, &["worktree", "add", "-b", "locked-down", &w]);
+    let r = discover(&ctx(), &p).unwrap();
+    fs::set_permissions(&w, fs::Permissions::from_mode(0o000)).unwrap();
+    // Root bypasses directory permissions, so the negative control is moot.
+    let bypassed = fs::read_dir(&w).is_ok();
+    let res = r.validate_cache(&ctx(), &paths::join2(&p, "target"), &[]);
+    fs::set_permissions(&w, fs::Permissions::from_mode(0o755)).unwrap();
+    if !bypassed {
+        assert!(res.is_err(), "accepted unreadable worktree directory");
+    }
+}

@@ -2062,3 +2062,41 @@ fn doctor_reports_same_boot_after_supervisor_death() {
     write_file(&join(&f.main, "scenario"), "printf 'after'\n", 0o600);
     f.run(&f.main, 0, &["run", "--", "cargo", "build"]);
 }
+
+/// A registered worktree whose directory was deleted (or is on unmounted
+/// media) must not block CacheCow in the other worktrees.
+#[test]
+fn stale_worktree_record_does_not_block_commands() {
+    for lock in [false, true] {
+        let f = Fixture::new();
+        let stale = join(&f.dir, "stale");
+        git(&f.main, &["worktree", "add", "-b", "stale", &stale]);
+        if lock {
+            git(&f.main, &["worktree", "lock", "--reason", "usb", &stale]);
+        }
+        fs::remove_dir_all(&stale).unwrap();
+        for cwd in [&f.main, &f.work] {
+            // Ordinary copying keeps the test independent of the host
+            // filesystem: a Linux CI runner has no copy-on-write support.
+            f.run(cwd, 0, &["run", "--allow-copy", "--", "cargo", "build"]);
+            f.run(cwd, 0, &["status"]);
+            f.run(cwd, 0, &["prepare", "--allow-copy", "--", "cargo", "build"]);
+        }
+    }
+}
+
+/// An existing but unreadable worktree directory is not a stale record and
+/// still fails.
+#[test]
+fn unreadable_worktree_directory_still_fails() {
+    let f = Fixture::new();
+    let denied = join(&f.dir, "denied");
+    git(&f.main, &["worktree", "add", "-b", "denied", &denied]);
+    fs::set_permissions(&denied, fs::Permissions::from_mode(0o000)).unwrap();
+    // Root bypasses directory permissions, so the negative control is moot.
+    let bypassed = fs::read_dir(&denied).is_ok();
+    if !bypassed {
+        f.run(&f.main, 125, &["run", "--", "cargo", "build"]);
+    }
+    fs::set_permissions(&denied, fs::Permissions::from_mode(0o755)).unwrap();
+}
