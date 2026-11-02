@@ -79,8 +79,20 @@ fn quote(s: &str) -> String {
     format!("'{}'", s.replace('\'', "'\"'\"'"))
 }
 
+/// Quotes `s` as a PowerShell single-quoted literal. PowerShell treats the
+/// ASCII apostrophe and the typographic quotes U+2018, U+2019, U+201A and
+/// U+201B as single-quote delimiters, so each of them must be doubled.
 fn psquote(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "''"))
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('\'');
+    for c in s.chars() {
+        out.push(c);
+        if matches!(c, '\'' | '\u{2018}' | '\u{2019}' | '\u{201A}' | '\u{201B}') {
+            out.push(c);
+        }
+    }
+    out.push('\'');
+    out
 }
 
 /// Returns activation code only. The caller sends notices separately to stderr.
@@ -922,7 +934,10 @@ mod tests {
     fn activation_in_powershell() {
         let Some(binary) = which("pwsh") else { return };
         let (_t, base) = temp();
-        let dir = paths::join2(&base, "한 글 ' $HOME `cmd` [*]");
+        let dir = paths::join2(
+            &base,
+            "한 글 ' ‘ ’ ‚ ‛ ’; Write-Output pwned; ’ $HOME `cmd` [*]",
+        );
         let code = init(Kind::PowerShell, &dir).unwrap();
         let initial = paths::join2(&base, "real");
         let out = std::process::Command::new(binary)
@@ -933,10 +948,37 @@ mod tests {
             .env("CCOW_TEST_INITIAL_PATH", &initial)
             .output()
             .unwrap();
+        let stdout = String::from_utf8(out.stdout).unwrap();
+        assert_eq!(stdout, format!("{dir}{}{initial}", paths::LIST_SEPARATOR));
+        assert!(!stdout.contains("pwned\n"), "{stdout}");
+    }
+
+    #[test]
+    fn powershell_quotes_typographic_single_quotes() {
+        for quote in ['\'', '\u{2018}', '\u{2019}', '\u{201A}', '\u{201B}'] {
+            let dir = format!("/x/O{quote}Neil");
+            let code = init(Kind::PowerShell, &dir).unwrap();
+            let doubled = format!("O{quote}{quote}Neil");
+            // The directory is embedded in two literals, each with a doubled
+            // quote.
+            assert_eq!(code.matches(&doubled).count(), 2, "{quote:?}: {code}");
+            // The ASCII apostrophe also delimits the literals, so only the
+            // typographic quotes have a fixed total count.
+            if quote != '\'' {
+                assert_eq!(code.matches(quote).count(), 4, "{quote:?}: {code}");
+            }
+        }
+        let injection = "/x/a\u{2019}; Write-Output pwned; \u{2019}b";
+        let code = init(Kind::PowerShell, injection).unwrap();
+        let literal = psquote(injection);
         assert_eq!(
-            String::from_utf8(out.stdout).unwrap(),
-            format!("{dir}{}{initial}", paths::LIST_SEPARATOR)
+            literal,
+            "'/x/a\u{2019}\u{2019}; Write-Output pwned; \u{2019}\u{2019}b'"
         );
+        assert_eq!(code.matches(&literal).count(), 2, "{code}");
+        // Other characters, including the double quote and the grave accent,
+        // stay as is.
+        assert_eq!(psquote("a\"b`c"), "'a\"b`c'");
     }
 
     fn which(name: &str) -> Option<String> {

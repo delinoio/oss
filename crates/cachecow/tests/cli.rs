@@ -879,6 +879,39 @@ fn require_block_lines(notice: &str, prefix: &str, code: &str) {
 }
 
 #[test]
+fn shell_setup_powershell_doubles_typographic_single_quotes() {
+    for quote in ['\u{2018}', '\u{2019}', '\u{201A}', '\u{201B}'] {
+        let mut f = Fixture::new();
+        let home = join(&f.dir, &format!("O{quote}Neil"));
+        fs::create_dir_all(&home).unwrap();
+        fs::set_permissions(&home, fs::Permissions::from_mode(0o700)).unwrap();
+        f.set_env("HOME", &home);
+        f.set_env("XDG_CONFIG_HOME", &join(&home, "config"));
+        f.set_env("CARGO_HOME", &join(&home, "cargo"));
+        let path = join(&home, "profile.ps1");
+        let doubled = format!("O{quote}{quote}Neil");
+        let args = ["shell", "setup", "powershell", "--file", &path, "--yes"];
+
+        let (init, _) = f.run(&f.main, 0, &["shell", "init", "powershell"]);
+        assert_eq!(init.matches(&doubled).count(), 2, "{quote:?}: {init}");
+        assert_eq!(init.matches(quote).count(), 4, "{quote:?}: {init}");
+
+        let (out, stderr) = f.run(&f.main, 0, &args);
+        assert!(
+            out.contains("\"changed\": true"),
+            "stdout {out:?}\n{stderr}"
+        );
+        let profile = fs::read_to_string(&path).unwrap();
+        assert_eq!(profile.matches(&doubled).count(), 2, "{quote:?}: {profile}");
+        assert_eq!(profile.matches(quote).count(), 4, "{quote:?}: {profile}");
+
+        let (out, _) = f.run(&f.main, 0, &args);
+        assert!(out.contains("\"changed\": false"), "stdout {out:?}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), profile);
+    }
+}
+
+#[test]
 fn shell_setup_remove_show_only_owned_block() {
     for (shell, file, flag) in [
         ("zsh", ".zshrc", false),
