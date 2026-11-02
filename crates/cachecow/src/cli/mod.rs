@@ -226,6 +226,85 @@ fn env_string(key: &str) -> String {
     std::env::var(key).unwrap_or_default()
 }
 
+/// The `PATH` used for tool lookup. Entries that are not valid UTF-8 cannot be
+/// represented by the string based resolution code, so they are dropped and the
+/// remaining entries stay searchable. A tool installed only below such a
+/// directory is therefore not found by CacheCow. The pass-through environment
+/// is never rewritten.
+fn env_path() -> String {
+    std::env::var_os("PATH")
+        .map(|value| utf8_path_entries(&value))
+        .unwrap_or_default()
+}
+
+/// The `PATHEXT` used for tool lookup, without entries that are not valid
+/// UTF-8.
+fn env_path_ext() -> String {
+    let Some(value) = std::env::var_os("PATHEXT") else {
+        return String::new();
+    };
+    match value.to_str() {
+        Some(text) => text.to_string(),
+        None => value
+            .to_string_lossy()
+            .split(';')
+            .filter(|entry| !entry.contains('\u{fffd}'))
+            .collect::<Vec<_>>()
+            .join(";"),
+    }
+}
+
+/// Re-joins the entries of a path list that are valid UTF-8, in order.
+fn utf8_path_entries(value: &std::ffi::OsStr) -> String {
+    if let Some(text) = value.to_str() {
+        return text.to_string();
+    }
+    let kept: Vec<_> = std::env::split_paths(value)
+        .filter(|entry| entry.to_str().is_some())
+        .collect();
+    match std::env::join_paths(kept) {
+        Ok(joined) => joined.to_str().map(str::to_string).unwrap_or_default(),
+        Err(e) => {
+            tracing::debug!(error = %e, "PATH entries could not be re-joined");
+            String::new()
+        }
+    }
+}
+
+/// Error for a managed command whose child argument is not valid UTF-8.
+/// `index` counts the child argv, where `ARG #0` is the command itself. The
+/// value is never printed.
+fn managed_arg_error(index: usize) -> anyhow::Error {
+    bad(format!(
+        "managed commands require UTF-8 arguments and environment; ARG #{index} is not valid UTF-8"
+    ))
+}
+
+/// Fails when a child argument is not valid UTF-8.
+/// `offset` is the child argv index of `args[0]`.
+pub(crate) fn check_managed_args(args: &[std::ffi::OsString], offset: usize) -> Result<()> {
+    match args.iter().position(|arg| arg.to_str().is_none()) {
+        Some(i) => Err(managed_arg_error(offset + i)),
+        None => Ok(()),
+    }
+}
+
+/// Fails when an environment entry is not valid UTF-8. Managed execution
+/// serializes the environment as text, so it must not change bytes silently.
+/// Only the variable name is reported, never its value.
+pub(crate) fn check_managed_environment() -> Result<()> {
+    for (key, value) in std::env::vars_os() {
+        if key.to_str().is_none() || value.to_str().is_none() {
+            return Err(bad(format!(
+                "managed commands require UTF-8 arguments and environment; variable {} is not \
+                 valid UTF-8",
+                key.to_string_lossy()
+            )));
+        }
+    }
+    Ok(())
+}
+
 pub(crate) struct App {
     pub store: state::Store,
     pub o: Options,
@@ -249,26 +328,22 @@ fn init_logging(verbose: bool) {
 
 /// Process entry point after supervisor dispatch. Returns the exit code.
 pub fn main(version: &str) -> i32 {
-    let mut args = Vec::new();
-    let mut non_utf8 = false;
-    for arg in std::env::args_os() {
-        match arg.into_string() {
-            Ok(a) => args.push(a),
-            Err(raw) => {
-                non_utf8 = true;
-                args.push(raw.to_string_lossy().into_owned());
-            }
-        }
-    }
+    // Shim pass-through must deliver the original bytes, so the raw values are
+    // kept. The lossy copy is only used to detect the shim, classify the call
+    // and parse CacheCow's own options.
+    let raw: Vec<std::ffi::OsString> = std::env::args_os().collect();
+    let args: Vec<String> = raw
+        .iter()
+        .map(|arg| arg.to_string_lossy().into_owned())
+        .collect();
+    let first_non_utf8 = raw
+        .iter()
+        .skip(1)
+        .position(|arg| arg.to_str().is_none())
+        .map(|i| i + 1);
     let argv0 = args.first().cloned().unwrap_or_default();
     // A shim never parses the real tool's arguments as CacheCow options.
     let shim_tool = shim::from_argv0(&argv0);
-    if non_utf8 {
-        // Argument errors still honor --json. A shim has no CacheCow options,
-        // so its arguments never request JSON.
-        let json = shim_tool.is_none() && requests_json(&args[1..]);
-        return fail_with(json, &bad("arguments must be valid UTF-8"));
-    }
     if shim_tool.is_none() && args.len() == 2 && args[1] == "--version" {
         stdout_write(&format!("ccow {version}\n"));
         return 0;
@@ -278,6 +353,23 @@ pub fn main(version: &str) -> i32 {
         match parse(&args[1..]) {
             Ok(v) => o = v,
             Err(e) => return fail_with(requests_json(&args[1..]), &e),
+        }
+        if let Some(index) = first_non_utf8 {
+            // The lossy copy parsed, so CacheCow's own options are valid. A
+            // managed child command must keep its bytes exactly, which the
+            // supervisor protocol cannot, so it is rejected explicitly. Other
+            // text arguments are plain parse input.
+            let managed = matches!(
+                o.args.first().map(String::as_str),
+                Some("run" | "prepare" | "status" | "clean" | "doctor")
+            );
+            let child_start = args.len() - o.command.len();
+            let error = if managed && index >= child_start {
+                managed_arg_error(index - child_start)
+            } else {
+                bad("arguments must be valid UTF-8")
+            };
+            return fail_with(o.json, &error);
         }
         // Usage is printed for --help and for a bare `ccow`. Any other input
         // without a subcommand (for example `ccow -- cargo build`) is an
@@ -311,7 +403,7 @@ pub fn main(version: &str) -> i32 {
         input: None,
     };
     if let Some(tool) = shim_tool {
-        return app.shim_run(tool, &args[1..]);
+        return app.shim_run(tool, &args[1..], &raw[1..]);
     }
     match app.run() {
         Ok(code) => code,
@@ -394,8 +486,8 @@ impl App {
     fn resolve_options(&self) -> Result<shim::ResolveOptions> {
         let exe = paths::path_string(&std::env::current_exe()?)?;
         Ok(shim::ResolveOptions {
-            path: env_string("PATH"),
-            path_ext: env_string("PATHEXT"),
+            path: env_path(),
+            path_ext: env_path_ext(),
             shim_dir: self.shim_dir(),
             ccow_executable: exe,
         })
@@ -633,7 +725,9 @@ impl App {
         self.output(&json!({"path": plan.path, "changed": plan.changed()}))
     }
 
-    fn shim_run(&mut self, tool: shim::Tool, args: &[String]) -> i32 {
+    /// Runs a shim invocation. `args` is the lossy text copy used for
+    /// classification; `raw` holds the original values for pass-through.
+    fn shim_run(&mut self, tool: shim::Tool, args: &[String], raw: &[std::ffi::OsString]) -> i32 {
         let resolution = match self.resolve(tool) {
             Ok(r) => r,
             Err(e) => return self.fail(&e),
@@ -660,21 +754,15 @@ impl App {
             }
             classification = shim::classify(tool, args, false, &bypass);
         }
-        let mut argv = vec![tool.as_str().to_string()];
-        argv.extend_from_slice(args);
         if classification.mode == shim::Mode::Passthrough {
             if classification.reason == shim::Reason::Unknown {
                 notice(
                     "Unrecognized command passes through. Use ccow run -- for cache management.",
                 );
             }
-            return match direct::direct(&process::Command {
-                noop: false,
-                path: resolution.path,
-                args: argv,
-                dir: cwd,
-                env: environ(),
-            }) {
+            // The real tool receives the original arguments and inherits the
+            // process environment unchanged.
+            return match direct::direct(&resolution.path, tool.as_str(), raw, &cwd) {
                 Ok(code) => code,
                 Err((code, e)) => self.fail(&anyhow::Error::new(Failure::new(
                     code,
@@ -683,6 +771,12 @@ impl App {
                 ))),
             };
         }
+        // Managed execution serializes the child argv as text.
+        if let Err(e) = check_managed_args(raw, 1) {
+            return self.fail(&e);
+        }
+        let mut argv = vec![tool.as_str().to_string()];
+        argv.extend_from_slice(args);
         self.o.preset = tool.as_str().to_string();
         let action = if classification.mode == shim::Mode::Clean {
             "tool-clean"
@@ -698,7 +792,7 @@ impl App {
 
 /// Go `exec.LookPath` against the current `PATH`.
 pub(crate) fn look_path(file: &str) -> Result<String> {
-    let path = env_string("PATH");
+    let path = env_path();
     #[cfg(windows)]
     let names: Vec<String> = {
         let ext = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());

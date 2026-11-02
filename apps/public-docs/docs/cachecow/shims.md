@@ -65,7 +65,7 @@ Persistent setup applies to new shells. For the current session, use the matchin
 
 Each invocation selects the first real executable in PATH after excluding CacheCow shims. Installation does not pin a tool path. Changing PATH or a version-manager selection must affect the next invocation. CacheCow must prevent recursion while preserving rustup toolchain selection, including explicit toolchain arguments.
 
-A shim preserves the tool's arguments, working directory, stdout, stderr, and exit code. Tool arguments must not become CacheCow options. Put CacheCow options before `--` in explicit `ccow run`, or use saved configuration. If no real executable exists, diagnostics must explain how to restore one and return command-not-found status 127.
+A shim preserves the tool's arguments, working directory, stdout, stderr, and exit code. On Unix, a pass-through call delivers non-UTF-8 argument and environment bytes to the real tool unchanged. CacheCow skips `PATH` entries that are not valid UTF-8 when it looks for the real tool, so a tool installed only under such a directory is not found. Tool arguments must not become CacheCow options. Put CacheCow options before `--` in explicit `ccow run`, or use saved configuration. If no real executable exists, diagnostics must explain how to restore one and return command-not-found status 127.
 
 ## Managed and pass-through commands
 
@@ -76,6 +76,8 @@ Version/help requests and cache-nonmutating queries pass through without prepara
 The managed built-in Cargo commands are `build`, `check`, `test`, `bench`, `run`, `doc`, `rustc`, `rustdoc`, `clippy`, `fix`, `package`, and `publish`, including their short aliases such as `b`, `c`, `t`, `r`, and `d`. `cargo package` and `cargo publish` write the `.crate` file into `<target-dir>/package` and, unless `--no-verify` is set, run a verification build into the target and build directories. Both stay managed with `--no-verify`, and `cargo publish --dry-run` stays managed too. `cargo publish` holds the cache lease until the upload finishes. `cargo package --list` (or `-l`) only prints the file list, so it is a query and passes through.
 
 `cargo install` is not managed automatically. A `cargo install --path` build writes that workspace's `target` directory without protection, so do not run it concurrently with managed sessions. Use `CCOW_BYPASS=1` only when no managed access to the same cache is running.
+
+Managed commands need UTF-8 arguments and environment. If a managed call receives an argument or environment value that is not valid UTF-8, CacheCow exits with status 2 and names the argument position (`ARG #n`, where `ARG #0` is the command) or the variable, without printing the value, and it does not start the tool. Use `CCOW_BYPASS=1` to pass such a call through when no managed access to the same cache is running.
 
 Shim-dispatched `cargo clean` waits for the relevant lock without preparing or cloning a cache. It preserves Cargo's original arguments and deletion behavior. `ccow clean` instead refuses an in-use cache immediately.
 

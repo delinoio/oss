@@ -11,7 +11,7 @@ use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
-use super::{App, Failure, bad, environ, notice};
+use super::{App, Failure, bad, check_managed_environment, environ, notice};
 use crate::{
     Context, clone, error,
     lease::{Record, Registry},
@@ -267,6 +267,9 @@ impl App {
     }
 
     pub(super) fn managed(&mut self, action: &str, argv: &[String]) -> Result<i32> {
+        // The child environment is serialized as text for discovery and the
+        // supervisor, so non-UTF-8 values fail before anything is started.
+        check_managed_environment()?;
         let cwd = paths::current_dir()?;
         if (action == "run" || action == "tool-clean") && argv.is_empty() {
             return Err(bad("run requires -- COMMAND [ARGS...]"));
