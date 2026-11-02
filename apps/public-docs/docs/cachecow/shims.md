@@ -49,7 +49,7 @@ ccow shell setup zsh
 
 For PowerShell 7, use `ccow shell setup powershell --file "$PROFILE"`. Use `--yes` for a noninteractive update after reviewing the target and proposed change.
 
-Setup must show the target file and proposed change and request confirmation. The proposed change is only the CacheCow-owned block: added lines start with `+ `, and the lines of a replaced block start with `- `. CacheCow also notes when it adds a separator line break to a file without a final newline. It never prints other lines of your shell configuration, even with `--yes` or `--json`. If nothing changes, it shows the target and a no-change notice. Setup adds only a CacheCow-owned block and preserves unrelated content. Repeated setup is idempotent. If automatic file selection is ambiguous, choose the intended shell configuration file with `--file`.
+Setup must show the target file and proposed change and request confirmation when the file would change. The proposed change is only the CacheCow-owned block: added lines start with `+ `, and the lines of a replaced block start with `- `. CacheCow also notes when it adds a separator line break to a file without a final newline. It never prints other lines of your shell configuration, even with `--yes` or `--json`. If nothing changes, it shows the target and a no-change notice, asks for no confirmation, and does not require `--yes`. Setup adds only a CacheCow-owned block and preserves unrelated content. Repeated setup is idempotent. If automatic file selection is ambiguous, choose the intended shell configuration file with `--file`.
 
 For example, after choosing a Bash configuration file yourself:
 
@@ -57,7 +57,7 @@ For example, after choosing a Bash configuration file yourself:
 ccow shell setup bash --file "./chosen-shell-config" --yes
 ```
 
-The path is a placeholder, not a recommendation for a startup filename. Noninteractive setup requires `--yes`; it authorizes the displayed class of shell-file update, not cache replacement or deletion. Failed writes must preserve the original file.
+The path is a placeholder, not a recommendation for a startup filename. Noninteractive setup requires `--yes` when it would change the file; it authorizes the displayed class of shell-file update, not cache replacement or deletion. Failed writes must preserve the original file.
 
 Persistent setup applies to new shells. For the current session, use the matching `shell init` command above, or open a new shell. Confirm PATH order with `ccow shim doctor`.
 
@@ -102,7 +102,7 @@ ccow shell remove bash
 ccow shell remove zsh
 ```
 
-Use only the shell you configured. For PowerShell 7, use `ccow shell remove powershell --file "$PROFILE"`. If setup used `--file`, select that same file for removal. Removal shows the target and the removed CacheCow-owned block (lines start with `- `, plus a note when a separator line break is removed) without any other shell configuration content, requires interactive confirmation or noninteractive `--yes`, removes only the owned block, and preserves unrelated text. Repeated removal is idempotent; failed writes preserve the original file.
+Use only the shell you configured. For PowerShell 7, use `ccow shell remove powershell --file "$PROFILE"`. If setup used `--file`, select that same file for removal. Removal shows the target and the removed CacheCow-owned block (lines start with `- `, plus a note when a separator line break is removed) without any other shell configuration content, requires interactive confirmation or noninteractive `--yes` when it removes a block (a removal that finds no block needs neither), removes only the owned block, and preserves unrelated text. Repeated removal is idempotent; failed writes preserve the original file.
 
 Removal affects new shells. In the current session, remove the CacheCow shim directory from PATH and refresh shell command lookup, or open a new shell after persistent removal. Do not erase unrelated PATH entries.
 

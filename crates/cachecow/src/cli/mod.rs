@@ -556,7 +556,9 @@ impl App {
                 confirm: Some(&mut confirm),
             })?;
         }
-        notice(&plan.current_session_instruction());
+        if plan.changed() {
+            notice(&plan.current_session_instruction());
+        }
         self.output(&json!({"path": plan.path, "changed": plan.changed()}))
     }
 
