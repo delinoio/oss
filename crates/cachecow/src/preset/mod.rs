@@ -244,11 +244,28 @@ pub(crate) struct Resolved<'a> {
     pub runner: &'a dyn Runner,
 }
 
+/// Windows stores and compares environment variable names case-insensitively
+/// (`Path` and `PATH` are the same variable); Unix keeps them case-sensitive.
+const ENV_NAMES_IGNORE_CASE: bool = cfg!(windows);
+
+fn env_name_matches(name: &str, key: &str, ignore_case: bool) -> bool {
+    if ignore_case {
+        name.eq_ignore_ascii_case(key)
+    } else {
+        name == key
+    }
+}
+
 /// Last value of `key` in `KEY=value` entries, like the child would see.
+/// Names match case-insensitively on Windows and exactly elsewhere.
 pub(crate) fn env_value<'a>(env: &'a [String], key: &str) -> &'a str {
+    env_value_with(env, key, ENV_NAMES_IGNORE_CASE)
+}
+
+fn env_value_with<'a>(env: &'a [String], key: &str, ignore_case: bool) -> &'a str {
     for entry in env.iter().rev() {
         if let Some((k, v)) = entry.split_once('=')
-            && k == key
+            && env_name_matches(k, key, ignore_case)
         {
             return v;
         }
@@ -256,11 +273,20 @@ pub(crate) fn env_value<'a>(env: &'a [String], key: &str) -> &'a str {
     ""
 }
 
+/// Replaces every entry for `key` with a single `key=value` entry. Existing
+/// entries whose names differ only by case are replaced on Windows.
 pub(crate) fn set_env(env: &[String], key: &str, value: &str) -> Vec<String> {
-    let prefix = format!("{key}=");
+    set_env_with(env, key, value, ENV_NAMES_IGNORE_CASE)
+}
+
+fn set_env_with(env: &[String], key: &str, value: &str, ignore_case: bool) -> Vec<String> {
     let mut out: Vec<String> = env
         .iter()
-        .filter(|v| !v.starts_with(&prefix))
+        .filter(|entry| {
+            entry
+                .split_once('=')
+                .is_none_or(|(name, _)| !env_name_matches(name, key, ignore_case))
+        })
         .cloned()
         .collect();
     out.push(format!("{key}={value}"));
@@ -535,5 +561,7 @@ pub const fn architecture() -> &'static str {
     }
 }
 
+#[cfg(test)]
+mod env_tests;
 #[cfg(test)]
 mod tests;
