@@ -1103,6 +1103,78 @@ fn shell_setup_without_confirmation_shows_only_owned_block() {
 }
 
 #[test]
+fn shell_noop_needs_no_confirmation() {
+    let f = Fixture::new();
+    let path = join(&f.home, ".zshrc");
+    write_file(&path, SHELL_SENTINEL_PROFILE, 0o600);
+    f.run(&f.main, 0, &["shell", "setup", "zsh", "--yes"]);
+    let installed = fs::read_to_string(&path).unwrap();
+    let (out, stderr) = f.run(&f.main, 0, &["shell", "setup", "zsh"]);
+    require_no_profile_leak("no-op setup", &[&out, &stderr]);
+    assert!(
+        out.contains("\"changed\": false")
+            && stderr.contains(&format!("Shell configuration target: {path}"))
+            && stderr.contains("No change: CacheCow block already up to date.")
+            && !stderr.contains("requires confirmation")
+            && !stderr.contains("applies to new shells"),
+        "out={out:?} stderr={stderr:?}"
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap(), installed);
+    let (out, _) = f.run(&f.main, 0, &["shell", "setup", "zsh", "--json"]);
+    let value: serde_json::Value = serde_json::from_str(out.trim()).unwrap();
+    assert_eq!(
+        value,
+        serde_json::json!({
+            "result": {"changed": false, "path": path},
+            "schemaVersion": 1,
+            "success": true
+        })
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap(), installed);
+
+    // Removal with no block and with no profile at all.
+    let plain = join(&f.home, ".bashrc");
+    write_file(&plain, SHELL_SENTINEL_PROFILE, 0o600);
+    let (out, stderr) = f.run(&f.main, 0, &["shell", "remove", "bash"]);
+    require_no_profile_leak("no-op remove", &[&out, &stderr]);
+    assert!(
+        out.contains("\"changed\": false")
+            && stderr.contains("No change: no CacheCow block to remove.")
+            && !stderr.contains("requires confirmation"),
+        "out={out:?} stderr={stderr:?}"
+    );
+    assert_eq!(fs::read_to_string(&plain).unwrap(), SHELL_SENTINEL_PROFILE);
+    fs::remove_file(&plain).unwrap();
+    let (out, stderr) = f.run(&f.main, 0, &["shell", "remove", "bash"]);
+    assert!(
+        out.contains("\"changed\": false") && !stderr.contains("requires confirmation"),
+        "out={out:?} stderr={stderr:?}"
+    );
+    assert!(
+        fs::symlink_metadata(&plain).is_err(),
+        "absent profile created"
+    );
+}
+
+#[test]
+fn shell_interactive_noop_does_not_prompt() {
+    let f = Fixture::new();
+    let path = join(&f.home, ".zshrc");
+    write_file(&path, SHELL_SENTINEL_PROFILE, 0o600);
+    f.run(&f.main, 0, &["shell", "setup", "zsh", "--yes"]);
+    let installed = fs::read_to_string(&path).unwrap();
+    let (code, out, stderr) = interactive(&f, &f.main, &["shell", "setup", "zsh"], "n\n");
+    require_no_profile_leak("interactive no-op", &[&out, &stderr]);
+    assert_eq!(code, 0, "{stderr}");
+    assert!(
+        !stderr.contains("Apply this shell configuration change?")
+            && stderr.contains("No change: CacheCow block already up to date."),
+        "{stderr}"
+    );
+    assert_eq!(fs::read_to_string(&path).unwrap(), installed);
+}
+
+#[test]
 fn shell_json_reports_separator_without_profile_content() {
     let f = Fixture::new();
     let path = join(&f.home, ".bashrc");

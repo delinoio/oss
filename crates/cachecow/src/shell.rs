@@ -257,7 +257,9 @@ impl Plan {
     }
 
     pub fn apply(&self, approval: Approval<'_>) -> Result<()> {
-        if !approval.yes {
+        // A plan that changes nothing needs no approval. `apply_with` still
+        // verifies that the profile did not change after review.
+        if self.changed() && !approval.yes {
             let Some(confirm) = approval.confirm.filter(|_| approval.interactive) else {
                 return Err(ShellError::ConfirmationRequired.into());
             };
@@ -570,6 +572,90 @@ mod tests {
 
     fn is_shell_error(e: &anyhow::Error, expected: ShellError) -> bool {
         crate::error::is(e, &expected)
+    }
+
+    #[test]
+    fn noop_apply_needs_no_approval() {
+        for kind in [Kind::Bash, Kind::Zsh, Kind::PowerShell] {
+            let (_t, base) = temp();
+            let path = paths::join2(&base, "profile");
+            write_mode(&path, b"# keep\n", 0o640);
+            let (_d, dir_base) = temp();
+            let mut dir = paths::join2(&dir_base, "shims");
+            if kind != Kind::PowerShell {
+                dir = posix_shims(&dir);
+            }
+            prepare(kind, Action::Setup, &path, &dir)
+                .unwrap()
+                .apply(Approval {
+                    yes: true,
+                    interactive: false,
+                    confirm: None,
+                })
+                .unwrap();
+            let installed = fs::read(&path).unwrap();
+            let mut noops = vec![(
+                prepare(kind, Action::Setup, &path, &dir).unwrap(),
+                path.clone(),
+            )];
+            let (_u, unmanaged_base) = temp();
+            let unmanaged = paths::join2(&unmanaged_base, "unmanaged");
+            write_mode(&unmanaged, b"# no block\n", 0o640);
+            noops.push((
+                prepare(kind, Action::Remove, &unmanaged, "").unwrap(),
+                unmanaged.clone(),
+            ));
+            let absent = paths::join2(&unmanaged_base, "absent");
+            noops.push((
+                prepare(kind, Action::Remove, &absent, "").unwrap(),
+                absent.clone(),
+            ));
+            for (plan, target) in &noops {
+                assert!(!plan.changed(), "{target}");
+                plan.apply(Approval {
+                    yes: false,
+                    interactive: false,
+                    confirm: None,
+                })
+                .unwrap();
+                let mut called = false;
+                let mut confirm = |_: &Plan| -> Result<bool> {
+                    called = true;
+                    Ok(false)
+                };
+                plan.apply(Approval {
+                    yes: false,
+                    interactive: true,
+                    confirm: Some(&mut confirm),
+                })
+                .unwrap();
+                assert!(!called, "no-op plan asked for confirmation: {target}");
+            }
+            assert_eq!(fs::read(&path).unwrap(), installed);
+            assert_eq!(fs::read(&unmanaged).unwrap(), b"# no block\n");
+            assert!(
+                fs::symlink_metadata(&absent).is_err(),
+                "absent file created"
+            );
+        }
+    }
+
+    #[test]
+    fn noop_apply_still_detects_profile_change() {
+        let (_t, base) = temp();
+        let path = paths::join2(&base, "profile");
+        write_mode(&path, b"# keep\n", 0o640);
+        let plan = prepare(Kind::Bash, Action::Remove, &path, "").unwrap();
+        assert!(!plan.changed());
+        write_mode(&path, b"# edited after review\n", 0o640);
+        let e = plan
+            .apply(Approval {
+                yes: false,
+                interactive: false,
+                confirm: None,
+            })
+            .unwrap_err();
+        assert!(e.to_string().contains("changed after review"), "{e}");
     }
 
     #[test]
