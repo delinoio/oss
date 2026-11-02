@@ -543,7 +543,7 @@ impl App {
                     "shell init emits shell code and does not support --json"
                 ));
             }
-            let kind = shell::Kind::parse(&name)?;
+            let kind = shell::Kind::parse(&name).map_err(|e| bad(error_text(&e)))?;
             let code = shell::init(kind, &dir)?;
             stdout_write(&code);
             return Ok(());
@@ -551,8 +551,10 @@ impl App {
         let Some(action) = shell::Action::parse(&self.o.args[1]) else {
             return Err(bad("unknown shell operation"));
         };
+        // Parse the shell name before the home lookup so an unsupported name is
+        // an argument error (exit 2) even when the home directory is unknown.
+        let kind = shell::Kind::parse(&name).map_err(|e| bad(error_text(&e)))?;
         let home = paths::user_home_dir()?;
-        let kind = shell::Kind::parse(&name).map_err(|_| anyhow!("unsupported shell {name:?}"))?;
         let path = shell::select_file(
             kind,
             &shell::Selection {
