@@ -2,6 +2,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
@@ -20,6 +22,7 @@ import {
   snapshot,
 } from "./ccow-native-driver.mjs";
 import {
+  ObservedBlockerReason,
   checks,
   projectProgress,
   validateMeasurements,
@@ -153,6 +156,153 @@ test("blocked evidence projects only fixed checks and source-owned reasons", () 
     result.blockers.some(
       (item) => item.id === "rollback" && item.reason === blockers.rollback,
     ),
+  );
+});
+
+test("observed blocker reasons are projected only from the fixed allowlist", () => {
+  const observation = {
+    checks: {},
+    blockers: [
+      {
+        id: "replacement-recovery",
+        reason: ObservedBlockerReason.LinuxDiskFullMountPrivilegeRequired,
+      },
+      { id: "privacy", reason: "secret-value" },
+    ],
+  };
+  const result = projectProgress(observation, blockers);
+  const reasonOf = (id) =>
+    result.blockers.find((item) => item.id === id).reason;
+  assert.equal(
+    reasonOf("replacement-recovery"),
+    "linux-disk-full-mount-privilege-required",
+  );
+  assert.equal(reasonOf("privacy"), blockers.privacy);
+  assert(!JSON.stringify(result).includes("secret-value"));
+  // Without an observed reason the static source constant stays in place.
+  assert.equal(
+    projectProgress({ checks: {} }, blockers).blockers.find(
+      (item) => item.id === "replacement-recovery",
+    ).reason,
+    blockers["replacement-recovery"],
+  );
+});
+
+test("Linux disk-full volume uses fixed paths and exact sudo mount commands", async (t) => {
+  const {
+    linuxDiskFullPaths,
+    mountLinuxDiskFullVolume,
+    requireLinuxMountPrivilege,
+    unmountLinuxDiskFullVolume,
+  } = await import("./ccow-native-scenarios.mjs");
+  const workspace = temporary(t);
+  const paths = linuxDiskFullPaths(workspace);
+  assert.equal(
+    paths.directory,
+    path.join(workspace, ".ccow-acceptance", "diskfull"),
+  );
+  assert.equal(paths.image, path.join(paths.directory, "failure-volume.img"));
+  assert.equal(paths.mount, path.join(paths.directory, "failure-volume"));
+  mkdirSync(paths.directory, { recursive: true });
+  const calls = [];
+  const stub = (name, args) => {
+    calls.push([name, ...args]);
+    return { stdout: "" };
+  };
+  const mountArgs = [
+    "sudo",
+    "-n",
+    "/usr/bin/mount",
+    "-o",
+    "loop,nosuid,nodev",
+    paths.image,
+    paths.mount,
+  ];
+  const unmountArgs = ["sudo", "-n", "/usr/bin/umount", paths.mount];
+  requireLinuxMountPrivilege({
+    paths,
+    root: workspace,
+    env: {},
+    command: stub,
+  });
+  assert.deepEqual(calls, [
+    ["sudo", "-n", "-l", ...mountArgs.slice(2)],
+    ["sudo", "-n", "-l", ...unmountArgs.slice(2)],
+  ]);
+  calls.length = 0;
+  mountLinuxDiskFullVolume({
+    paths,
+    root: workspace,
+    env: {},
+    command: stub,
+    uid: 1001,
+    gid: 1002,
+  });
+  assert.deepEqual(calls, [
+    ["mkfs.ext4", "-F", "-E", "root_owner=1001:1002", paths.image],
+    mountArgs,
+  ]);
+  calls.length = 0;
+  unmountLinuxDiskFullVolume({
+    paths,
+    root: workspace,
+    env: {},
+    command: stub,
+  });
+  assert.deepEqual(calls, [unmountArgs]);
+});
+
+test("missing sudo privilege records the typed Linux disk-full blocker", async (t) => {
+  const { diskFullScenario, linuxDiskFullPaths, mountLinuxDiskFullVolume } =
+    await import("./ccow-native-scenarios.mjs");
+  const root = temporary(t);
+  const source = path.join(root, "source");
+  mkdirSync(source);
+  const calls = [];
+  const denied = (name, args) => {
+    calls.push(name);
+    if (name === "sudo") throw new Error("Native command failed");
+    return { stdout: "" };
+  };
+  const paths = linuxDiskFullPaths(root);
+  assert.throws(
+    () =>
+      diskFullScenario({
+        binary: "ccow",
+        source,
+        fixture: { cache: ".cache", argv: ["cargo", "build"] },
+        root,
+        env: {},
+        command: denied,
+        snapshot,
+        volumeDirectory: paths.directory,
+        platform: "linux",
+      }),
+    (error) =>
+      error.observedBlocker?.id === "replacement-recovery" &&
+      error.observedBlocker.reason ===
+        "linux-disk-full-mount-privilege-required" &&
+      !error.processOwnershipUnverified,
+  );
+  // The privilege check runs first: no image, mount, build or git side effects.
+  assert.deepEqual(calls, ["sudo"]);
+  assert.deepEqual(readFileSyncNames(root), []);
+  assert(!existsSync(paths.directory));
+  // A mount failure after the privilege check is a plain scenario failure.
+  mkdirSync(paths.directory, { recursive: true });
+  assert.throws(
+    () =>
+      mountLinuxDiskFullVolume({
+        paths,
+        root,
+        env: {},
+        command: (name) => {
+          if (name === "sudo") throw new Error("Native command failed");
+        },
+        uid: 1,
+        gid: 1,
+      }),
+    (error) => error.observedBlocker === undefined,
   );
 });
 
@@ -561,6 +711,9 @@ test(
         env,
         command,
         snapshot,
+        // Linux needs the fixed directory that the host sudoers rule names.
+        volumeDirectory:
+          process.env.CCOW_NATIVE_TEST_DISK_FULL_DIRECTORY || root,
       });
     } catch (error) {
       retain = Boolean(error.processOwnershipUnverified);

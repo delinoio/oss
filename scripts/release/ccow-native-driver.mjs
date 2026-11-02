@@ -38,6 +38,7 @@ import {
   crossVolumeScenario,
   unsupportedVolumeScenario,
   diskFullScenario,
+  linuxDiskFullPaths,
 } from "./ccow-native-scenarios.mjs";
 import { checks, phases, probeHost } from "./ccow-acceptance.mjs";
 
@@ -296,6 +297,10 @@ export async function execute({ lane, artifacts, workspace, revision }) {
       retainWorkspace ||= Boolean(error.processOwnershipUnverified);
       result.scenarios.push({ id, status: "blocked" });
       block(id, "scenario-assertion-or-prerequisite-failed");
+      // Typed blockers come from repository-owned errors; projectProgress
+      // filters them again against the fixed reason allowlist.
+      if (error.observedBlocker)
+        block(error.observedBlocker.id, error.observedBlocker.reason);
       return false;
     }
   };
@@ -308,6 +313,10 @@ export async function execute({ lane, artifacts, workspace, revision }) {
       retainWorkspace ||= Boolean(error.processOwnershipUnverified);
       result.scenarios.push({ id, status: "blocked" });
       block(id, "scenario-assertion-or-prerequisite-failed");
+      // Typed blockers come from repository-owned errors; projectProgress
+      // filters them again against the fixed reason allowlist.
+      if (error.observedBlocker)
+        block(error.observedBlocker.id, error.observedBlocker.reason);
       return false;
     }
   };
@@ -882,6 +891,10 @@ export async function execute({ lane, artifacts, workspace, revision }) {
               env,
               command,
               snapshot,
+              volumeDirectory:
+                process.platform === "linux"
+                  ? linuxDiskFullPaths(realpathSync(workspace)).directory
+                  : root,
             }),
           );
           result.checks["replacement-recovery"] = preservation && exhaustion;

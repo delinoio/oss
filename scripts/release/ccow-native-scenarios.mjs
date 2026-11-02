@@ -13,6 +13,7 @@ import {
   lstatSync,
   readdirSync,
   readFileSync,
+  rmdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -20,7 +21,7 @@ import path from "node:path";
 import os from "node:os";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import { darwinFilesystem } from "./ccow-acceptance.mjs";
+import { ObservedBlockerReason, darwinFilesystem } from "./ccow-acceptance.mjs";
 
 // This is real build code compiled by the selected native Cargo toolchain. It
 // exercises the installed supervisor, not a replacement cargo or clone API.
@@ -1093,6 +1094,88 @@ export function unsupportedVolumeScenario({
   }
 }
 
+// Linux cannot loop-mount without privilege, but the runner must stay non-root
+// for the permission-denial scenarios. The scenario therefore mounts and
+// unmounts through two exact `sudo -n` commands that a host sudoers rule names
+// with absolute paths. The image and mount point live in one fixed
+// driver-owned directory so that rule can match them literally.
+export const linuxDiskFullVolume = Object.freeze({
+  mountExecutable: "/usr/bin/mount",
+  unmountExecutable: "/usr/bin/umount",
+  mountOptions: "loop,nosuid,nodev",
+  directoryName: path.join(".ccow-acceptance", "diskfull"),
+  imageName: "failure-volume.img",
+  mountName: "failure-volume",
+});
+
+export function linuxDiskFullPaths(workspace) {
+  const directory = path.join(workspace, linuxDiskFullVolume.directoryName);
+  return {
+    directory,
+    image: path.join(directory, linuxDiskFullVolume.imageName),
+    mount: path.join(directory, linuxDiskFullVolume.mountName),
+  };
+}
+
+function linuxMountArguments({ image, mount }) {
+  return [
+    "-n",
+    linuxDiskFullVolume.mountExecutable,
+    "-o",
+    linuxDiskFullVolume.mountOptions,
+    image,
+    mount,
+  ];
+}
+const linuxUnmountArguments = ({ mount }) => [
+  "-n",
+  linuxDiskFullVolume.unmountExecutable,
+  mount,
+];
+
+// `sudo -n -l <command>` exits zero only when the exact command line is allowed
+// without a password. The check keeps a missing privilege distinguishable from
+// a genuine mount failure without parsing child diagnostics.
+export function requireLinuxMountPrivilege({ paths, root, env, command }) {
+  try {
+    for (const args of [
+      linuxMountArguments(paths),
+      linuxUnmountArguments(paths),
+    ])
+      command("sudo", ["-n", "-l", ...args.slice(1)], { cwd: root, env });
+  } catch {
+    const error = new Error("Linux disk-full mount privilege is unavailable");
+    error.observedBlocker = {
+      id: "replacement-recovery",
+      reason: ObservedBlockerReason.LinuxDiskFullMountPrivilegeRequired,
+    };
+    throw error;
+  }
+}
+
+export function mountLinuxDiskFullVolume({
+  paths,
+  root,
+  env,
+  command,
+  uid = process.getuid(),
+  gid = process.getgid(),
+}) {
+  writeFileSync(paths.image, "");
+  truncateSync(paths.image, 64 * 1024 * 1024);
+  // ext4 gives the new root directory to root; the runner must own it to create
+  // the destination worktree, and ccow validates same-user ownership.
+  command("mkfs.ext4", ["-F", "-E", `root_owner=${uid}:${gid}`, paths.image], {
+    cwd: root,
+    env,
+  });
+  command("sudo", linuxMountArguments(paths), { cwd: root, env });
+}
+
+export function unmountLinuxDiskFullVolume({ paths, root, env, command }) {
+  command("sudo", linuxUnmountArguments(paths), { cwd: root, env });
+}
+
 export function diskFullScenario({
   binary,
   source,
@@ -1101,16 +1184,34 @@ export function diskFullScenario({
   env,
   command,
   snapshot,
+  // Directory that holds the failure image and mount point. Linux requires the
+  // fixed driver-owned path from linuxDiskFullPaths; other platforms use root.
+  volumeDirectory = root,
+  platform = process.platform,
 }) {
   // Mount only a new driver-owned image. Never fill a runner's existing volume.
   assert.notEqual(
-    process.platform,
+    platform,
     "win32",
     "Windows VHD failure injection unavailable",
   );
-  const image = path.join(root, "failure-volume.dmg"),
-    mount = path.join(root, "failure-volume");
-  mkdirSync(mount, { mode: 0o700 });
+  const linuxPaths =
+    platform === "linux"
+      ? {
+          directory: volumeDirectory,
+          image: path.join(volumeDirectory, linuxDiskFullVolume.imageName),
+          mount: path.join(volumeDirectory, linuxDiskFullVolume.mountName),
+        }
+      : undefined;
+  if (linuxPaths)
+    requireLinuxMountPrivilege({ paths: linuxPaths, root, env, command });
+  const image = linuxPaths
+      ? linuxPaths.image
+      : path.join(root, "failure-volume.dmg"),
+    mount = linuxPaths ? linuxPaths.mount : path.join(root, "failure-volume");
+  if (linuxPaths)
+    mkdirSync(linuxPaths.directory, { recursive: true, mode: 0o700 });
+  mkdirSync(mount, { recursive: true, mode: 0o700 });
   let mounted = false,
     registered = false;
   const destination = path.join(mount, "worktree");
@@ -1137,7 +1238,7 @@ export function diskFullScenario({
       cwd: source,
       env,
     });
-    if (process.platform === "darwin") {
+    if (platform === "darwin") {
       command(
         "hdiutil",
         [
@@ -1159,10 +1260,7 @@ export function diskFullScenario({
         env,
       });
     } else {
-      writeFileSync(image, "");
-      truncateSync(image, 64 * 1024 * 1024);
-      command("mkfs.ext4", ["-F", image], { cwd: root, env });
-      command("mount", ["-o", "loop", image, mount], { cwd: root, env });
+      mountLinuxDiskFullVolume({ paths: linuxPaths, root, env, command });
     }
     mounted = true;
     command("git", ["worktree", "add", "--detach", destination], {
@@ -1227,11 +1325,10 @@ export function diskFullScenario({
       });
     if (mounted) {
       try {
-        command(
-          process.platform === "darwin" ? "hdiutil" : "umount",
-          process.platform === "darwin" ? ["detach", mount] : [mount],
-          { cwd: root, env },
-        );
+        if (platform === "darwin")
+          command("hdiutil", ["detach", mount], { cwd: root, env });
+        else
+          unmountLinuxDiskFullVolume({ paths: linuxPaths, root, env, command });
       } catch {
         const error = new Error("Native volume cleanup unverified");
         error.processOwnershipUnverified = true;
@@ -1239,5 +1336,12 @@ export function diskFullScenario({
       }
     }
     rmSync(image, { force: true });
+    if (linuxPaths)
+      // Non-recursive and best effort: only empty, unmounted directories go, so
+      // cleanup can never delete the contents of a volume that is still mounted.
+      for (const directory of [linuxPaths.mount, linuxPaths.directory])
+        try {
+          rmdirSync(directory);
+        } catch {}
   }
 }

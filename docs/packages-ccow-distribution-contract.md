@@ -93,6 +93,41 @@ type. The Cargo probe runs with `RUSTUP_TOOLCHAIN=1.99.1` and
 probed version and a missing 1.99.1 toolchain fails the probe without being
 downloaded onto the runner.
 
+The Linux disk-full scenario runs on a non-root runner, because the permission
+denial scenarios require a normal user, and a loop mount needs privilege. The
+scenario therefore uses two exact commands through `sudo -n`, and no other
+privileged operation:
+
+```
+sudo -n /usr/bin/mount -o loop,nosuid,nodev <image> <mount>
+sudo -n /usr/bin/umount <mount>
+```
+
+`<image>` and `<mount>` are fixed driver-owned paths under the realpath of the
+workspace argument: `<workspace>/.ccow-acceptance/diskfull/failure-volume.img`
+and `<workspace>/.ccow-acceptance/diskfull/failure-volume`. The driver creates
+the image with `mkfs.ext4 -E root_owner=<uid>:<gid>`, so the runner user owns the
+volume root and needs no further privilege. Before it creates anything, the
+scenario checks both commands with `sudo -n -l <command>`, which succeeds only
+for an exact, password-less match. If either check fails, the evidence record
+reports `replacement-recovery` with the fixed reason
+`linux-disk-full-mount-privilege-required`; the driver never copies command
+output into evidence. Host operators provision one rule per Linux lane, with the
+absolute workspace path substituted. Sudoers requires `\,` for commas in
+arguments and `\ ` for spaces, so use a workspace path without whitespace:
+
+```
+<runner-user> ALL=(root) NOPASSWD: \
+  /usr/bin/mount -o loop\,nosuid\,nodev <workspace>/.ccow-acceptance/diskfull/failure-volume.img <workspace>/.ccow-acceptance/diskfull/failure-volume, \
+  /usr/bin/umount <workspace>/.ccow-acceptance/diskfull/failure-volume
+```
+
+The `nosuid,nodev` options stop an image that the runner user controls from
+introducing setuid binaries or device nodes through the privileged mount. The
+mount point is also user-controlled, so grant the rule only on dedicated,
+disposable runners. Hosts also supply `e2fsprogs` (`mkfs.ext4`) and the `sudo`
+package. macOS and Windows disk-full paths use no sudo.
+
 `scripts/release/ccow-acceptance.mjs native` takes lane, candidate directory,
 workspace, evidence output and exact source revision. It verifies non-fixture
 artifacts and probes the host before invoking the repository-owned
