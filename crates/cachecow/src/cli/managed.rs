@@ -228,10 +228,6 @@ impl App {
         detect_preset(&info)
     }
 
-    fn discover(&self, cwd: &str, argv: &[String]) -> Result<PresetResult> {
-        self.discover_with(cwd, argv, environ())
-    }
-
     /// Discovers with an explicit child environment.
     fn discover_with(&self, cwd: &str, argv: &[String], env: Vec<String>) -> Result<PresetResult> {
         let mut id = self.o.preset.clone();
@@ -246,12 +242,13 @@ impl App {
         let tool = shim::Tool::parse(&id).ok_or_else(|| bad(format!("unknown preset {id}")))?;
         let mut discovery = argv.to_vec();
         if discovery.is_empty() {
-            discovery = vec![self.resolve(tool)?.path];
+            discovery = vec![self.resolve_in(tool, &env)?.path];
         } else {
             // Discovery and execution must resolve the same executable. An
             // explicit path must never certify the unrelated tool
-            // found on PATH.
-            discovery[0] = self.command(&discovery, cwd)?.path;
+            // found on PATH. The lookup uses the environment the tool runs
+            // with, which is the translated one for a source worktree.
+            discovery[0] = self.command_in(&discovery, cwd, &env)?.path;
         }
         preset::discover(
             &self.ctx,
@@ -274,7 +271,8 @@ impl App {
         if (action == "run" || action == "tool-clean") && argv.is_empty() {
             return Err(bad("run requires -- COMMAND [ARGS...]"));
         }
-        let current = self.discover(&cwd, argv)?;
+        let env = environ();
+        let current = self.discover_with(&cwd, argv, env.clone())?;
         if action == "status" || action == "doctor" {
             self.inspect(&current, action == "doctor")?;
             return Ok(0);
@@ -288,7 +286,7 @@ impl App {
         for name in ["processes", "leases"] {
             self.store.directory(name)?;
         }
-        let mut planned = self.plan(action, &current, argv, false);
+        let mut planned = self.plan(action, &current, argv, &env, false);
         loop {
             let failure = match planned {
                 Ok((p, c)) => match self.execute(&p, c) {
@@ -323,15 +321,15 @@ impl App {
             };
             let choice = self.answer(prompt)?;
             planned = match choice.as_str() {
-                "1" if action == "run" => self.plan(action, &current, argv, true),
+                "1" if action == "run" => self.plan(action, &current, argv, &env, true),
                 "2" => {
                     let selected = self.answer("Source worktree: ")?;
                     self.o.source = selected;
-                    self.plan(action, &current, argv, false)
+                    self.plan(action, &current, argv, &env, false)
                 }
                 "3" if action == "run" => match self.build_source_first(&current, argv)? {
                     SourceBuild::Failed(code) => return Ok(code),
-                    SourceBuild::Built => self.plan(action, &current, argv, false),
+                    SourceBuild::Built => self.plan(action, &current, argv, &env, false),
                     SourceBuild::Skipped => Err(failure),
                 },
                 "4" => return Err(anyhow!("operation cancelled")),
@@ -393,8 +391,7 @@ impl App {
                 return Ok(SourceBuild::Skipped);
             }
         };
-        let (sp, mut sc) = self.plan("run", &source_result, &source_argv, true)?;
-        sc.env = source_env;
+        let (sp, sc) = self.plan("run", &source_result, &source_argv, &source_env, true)?;
         let code = self.execute(&sp, sc)?;
         if code != 0 {
             return Ok(SourceBuild::Failed(code));
@@ -408,6 +405,7 @@ impl App {
         action: &str,
         current: &PresetResult,
         argv: &[String],
+        env: &[String],
         without_source: bool,
     ) -> Result<(Plan, process::Command)> {
         let session_action = match action {
@@ -431,7 +429,7 @@ impl App {
             ..process::Command::default()
         };
         if action == "run" || action == "tool-clean" {
-            c = self.command(argv, &current.repository.cwd)?;
+            c = self.command_in(argv, &current.repository.cwd, env)?;
         }
         p.resources.destinations = paths_of(current);
         let mut claims = Claims {

@@ -896,6 +896,158 @@ fn interactive(f: &Fixture, cwd: &str, args: &[&str], answers: &str) -> (i32, St
     (code, out, err)
 }
 
+/// Gives `main` and `work` their own ignored `bin/cargo` wrapper. A wrapper
+/// appends `<name> pwd=$PWD args=$*` to a shared log and then runs the fixture
+/// Cargo, optionally reporting another version. Returns the log path.
+fn install_local_cargo_wrappers(f: &Fixture, work_version: &str) -> String {
+    let log = join(&f.dir, "wrappers.log");
+    // The worktrees share this exclude file, so both keep an ignored `bin/`.
+    let exclude = join(&f.main, ".git/info/exclude");
+    let mut text = fs::read_to_string(&exclude).unwrap_or_default();
+    text.push_str("bin/\n");
+    fs::write(&exclude, text).unwrap();
+    for (name, dir, version) in [("main", &f.main, "1.99.1"), ("work", &f.work, work_version)] {
+        write_file(
+            &join(dir, "bin/cargo"),
+            &format!(
+                "#!/bin/sh\necho \"{name} pwd=$PWD args=$*\" >> \"{log}\"\nif [ \"$1\" = \
+                 --version ]; then echo 'cargo {version} (fixture)'; exit 0; fi\nexec \
+                 \"{fixture}\" \"$@\"\n",
+                fixture = join(&f.bin, "cargo"),
+            ),
+            0o700,
+        );
+    }
+    log
+}
+
+/// A `PATH` that starts with the worktree-local `bin/` directory.
+fn local_path(f: &Fixture, dir: &str) -> String {
+    format!(
+        "{}:{}:{}",
+        join(dir, "bin"),
+        f.bin,
+        std::env::var("PATH").unwrap_or_default()
+    )
+}
+
+fn run_with_path(f: &Fixture, cwd: &str, path: &str, args: &[&str]) -> Output {
+    let mut c = f.cmd(cwd, args);
+    c.env("PATH", path);
+    output(c)
+}
+
+fn wrapper_lines(log: &str) -> Vec<String> {
+    fs::read_to_string(log)
+        .unwrap_or_default()
+        .lines()
+        .map(str::to_string)
+        .collect()
+}
+
+#[test]
+fn source_discovery_uses_the_source_worktree_tool() {
+    let f = Fixture::new();
+    let log = install_local_cargo_wrappers(&f, "1.99.1");
+    let built = run_with_path(
+        &f,
+        &f.main,
+        &local_path(&f, &f.main),
+        &["run", "--", "cargo", "build"],
+    );
+    assert_eq!(built.status.code(), Some(0), "{built:?}");
+    fs::remove_file(&log).unwrap();
+    let out = run_with_path(
+        &f,
+        &f.work,
+        &local_path(&f, &f.work),
+        &["run", "--allow-copy", "--", "cargo", "build"],
+    );
+    assert_eq!(
+        out.status.code(),
+        Some(0),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let lines = wrapper_lines(&log);
+    let in_source: Vec<_> = lines
+        .iter()
+        .filter(|l| l.contains(&format!("pwd={} ", f.main)))
+        .collect();
+    assert!(!in_source.is_empty(), "no source discovery ran: {lines:?}");
+    for line in &in_source {
+        assert!(
+            line.starts_with("main "),
+            "source context ran the derived tool: {line}"
+        );
+    }
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("work ") && l.contains(&format!("pwd={} ", f.work))),
+        "derived discovery must keep using its own tool: {lines:?}"
+    );
+}
+
+#[test]
+fn source_tool_version_difference_reports_incompatibility() {
+    let f = Fixture::new();
+    let _log = install_local_cargo_wrappers(&f, "1.99.2");
+    let built = run_with_path(
+        &f,
+        &f.main,
+        &local_path(&f, &f.main),
+        &["run", "--", "cargo", "build"],
+    );
+    assert_eq!(built.status.code(), Some(0), "{built:?}");
+    let out = run_with_path(
+        &f,
+        &f.work,
+        &local_path(&f, &f.work),
+        &["run", "--allow-copy", "--", "cargo", "build"],
+    );
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(out.status.code(), Some(125), "{stderr}");
+    assert!(
+        stderr.contains("incompatible"),
+        "missing incompatibility error: {stderr}"
+    );
+    assert!(
+        !stderr.contains("source provenance does not match"),
+        "misleading provenance error: {stderr}"
+    );
+}
+
+#[test]
+fn interactive_source_build_uses_the_source_worktree_tool() {
+    let mut f = Fixture::new();
+    let log = install_local_cargo_wrappers(&f, "1.99.1");
+    f.set_env("PATH", &local_path(&f, &f.work));
+    let (code, _, stderr) = interactive(
+        &f,
+        &f.work,
+        &["run", "--allow-copy", "--", "cargo", "build"],
+        "3\ny\n",
+    );
+    assert_eq!(code, 0, "{stderr}");
+    let lines = wrapper_lines(&log);
+    assert!(
+        lines
+            .iter()
+            .any(|l| l.starts_with("main ") && l.ends_with(&format!("pwd={} args=build", f.main))),
+        "the source build must run the source tool: {lines:?}"
+    );
+    for line in lines
+        .iter()
+        .filter(|l| l.contains(&format!("pwd={} ", f.main)))
+    {
+        assert!(
+            line.starts_with("main "),
+            "source context ran the derived tool: {line}"
+        );
+    }
+}
+
 #[test]
 fn interactive_source_choices() {
     for choice in ["current", "source", "select", "cancel", "prepare"] {

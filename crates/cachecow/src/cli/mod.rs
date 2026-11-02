@@ -254,6 +254,45 @@ fn env_path_ext() -> String {
     }
 }
 
+/// The variables that decide where a tool is looked up.
+pub(crate) struct LookupEnv {
+    path: String,
+    path_ext: String,
+}
+
+impl LookupEnv {
+    /// The lookup variables of the current process.
+    fn ambient() -> Self {
+        Self {
+            path: env_path(),
+            path_ext: env_path_ext(),
+        }
+    }
+
+    /// The lookup variables of a `KEY=value` environment list, such as the
+    /// environment translated for a source worktree. Entries that are not valid
+    /// UTF-8 were already replaced by U+FFFD when the list was built, so they
+    /// are dropped like in the ambient lookup.
+    fn from_env(env: &[String]) -> Self {
+        let path = crate::preset::env_value(env, "PATH");
+        let path_ext = crate::preset::env_value(env, "PATHEXT");
+        let kept: Vec<_> = std::env::split_paths(path)
+            .filter(|entry| !entry.to_string_lossy().contains('\u{fffd}'))
+            .collect();
+        Self {
+            path: std::env::join_paths(kept)
+                .ok()
+                .and_then(|joined| joined.to_str().map(str::to_string))
+                .unwrap_or_default(),
+            path_ext: path_ext
+                .split(';')
+                .filter(|entry| !entry.contains('\u{fffd}'))
+                .collect::<Vec<_>>()
+                .join(";"),
+        }
+    }
+}
+
 /// Re-joins the entries of a path list that are valid UTF-8, in order.
 fn utf8_path_entries(value: &std::ffi::OsStr) -> String {
     if let Some(text) = value.to_str() {
@@ -484,10 +523,14 @@ impl App {
     }
 
     fn resolve_options(&self) -> Result<shim::ResolveOptions> {
+        self.resolve_options_in(&LookupEnv::ambient())
+    }
+
+    fn resolve_options_in(&self, lookup: &LookupEnv) -> Result<shim::ResolveOptions> {
         let exe = paths::path_string(&std::env::current_exe()?)?;
         Ok(shim::ResolveOptions {
-            path: env_path(),
-            path_ext: env_path_ext(),
+            path: lookup.path.clone(),
+            path_ext: lookup.path_ext.clone(),
             shim_dir: self.shim_dir(),
             ccow_executable: exe,
         })
@@ -497,17 +540,31 @@ impl App {
         shim::resolve(tool, &self.resolve_options()?).map_err(|f| f.error)
     }
 
-    /// Resolves the exact executable that discovery and execution share.
-    pub(crate) fn command(&self, argv: &[String], cwd: &str) -> Result<process::Command> {
+    /// Resolves a tool through the `PATH` and `PATHEXT` of `env`.
+    pub(crate) fn resolve_in(&self, tool: shim::Tool, env: &[String]) -> Result<shim::Resolution> {
+        let options = self.resolve_options_in(&LookupEnv::from_env(env))?;
+        shim::resolve(tool, &options).map_err(|f| f.error)
+    }
+
+    /// Resolves the exact executable that discovery and execution share. The
+    /// executable is looked up through the `PATH` of `env`, the same
+    /// environment the child receives, so a command translated for another
+    /// worktree never runs a tool from the original worktree.
+    pub(crate) fn command_in(
+        &self,
+        argv: &[String],
+        cwd: &str,
+        env: &[String],
+    ) -> Result<process::Command> {
         let Some(first) = argv.first() else {
             return Err(bad("run requires -- COMMAND [ARGS...]"));
         };
         let mut path = first.clone();
         if !path.contains(['/', '\\']) {
             if let Some(tool) = shim::from_argv0(&path) {
-                path = self.resolve(tool)?.path;
+                path = self.resolve_in(tool, env)?.path;
             } else {
-                path = look_path(&path).map_err(|e| {
+                path = look_path(&path, &LookupEnv::from_env(env)).map_err(|e| {
                     anyhow::Error::new(Failure::new(
                         process::execution_code(&e),
                         error_text(&e),
@@ -525,7 +582,7 @@ impl App {
             path,
             args: argv.to_vec(),
             dir: cwd.to_string(),
-            env: environ(),
+            env: env.to_vec(),
         })
     }
 
@@ -790,12 +847,16 @@ impl App {
     }
 }
 
-/// Go `exec.LookPath` against the current `PATH`.
-pub(crate) fn look_path(file: &str) -> Result<String> {
-    let path = env_path();
+/// Go `exec.LookPath` against the `PATH` and `PATHEXT` of `lookup`.
+fn look_path(file: &str, lookup: &LookupEnv) -> Result<String> {
+    let path = &lookup.path;
     #[cfg(windows)]
     let names: Vec<String> = {
-        let ext = std::env::var("PATHEXT").unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into());
+        let ext = if lookup.path_ext.is_empty() {
+            ".COM;.EXE;.BAT;.CMD"
+        } else {
+            lookup.path_ext.as_str()
+        };
         if !paths::ext(file).is_empty() {
             vec![file.to_string()]
         } else {
@@ -807,7 +868,7 @@ pub(crate) fn look_path(file: &str) -> Result<String> {
     };
     #[cfg(not(windows))]
     let names = vec![file.to_string()];
-    for dir in paths::split_list(&path) {
+    for dir in paths::split_list(path) {
         let dir = if dir.is_empty() { ".".to_string() } else { dir };
         for name in &names {
             let candidate = paths::join2(&dir, name);
