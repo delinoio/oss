@@ -5,6 +5,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   rmSync,
@@ -304,6 +305,60 @@ test("missing sudo privilege records the typed Linux disk-full blocker", async (
       }),
     (error) => error.observedBlocker === undefined,
   );
+});
+
+test("Linux disk-full scenario refuses to reuse a retained image or mount point", async (t) => {
+  const { diskFullScenario, linuxDiskFullPaths } =
+    await import("./ccow-native-scenarios.mjs");
+  const run = (root, source, paths, calls) =>
+    diskFullScenario({
+      binary: "ccow",
+      source,
+      fixture: { cache: ".cache", argv: ["cargo", "build"] },
+      root,
+      env: {},
+      command: (name) => {
+        calls.push(name);
+        return { stdout: "" };
+      },
+      snapshot,
+      volumeDirectory: paths.directory,
+      platform: "linux",
+    });
+  const refused = (error) =>
+    error.observedBlocker?.id === "replacement-recovery" &&
+    error.observedBlocker.reason === "linux-disk-full-retained-volume" &&
+    !error.processOwnershipUnverified;
+  // Each case retains a different part of an earlier failed cleanup. A dangling
+  // symlink still counts, because lstat does not follow it.
+  for (const [name, retain] of [
+    ["image", (paths) => writeFileSync(paths.image, "retained")],
+    ["mount point", (paths) => mkdirSync(paths.mount)],
+    [
+      "dangling image link",
+      (paths) =>
+        symlinkSync(path.join(paths.directory, "missing"), paths.image),
+    ],
+  ]) {
+    await t.test(name, () => {
+      const root = temporary(t);
+      const source = path.join(root, "source");
+      mkdirSync(source);
+      const paths = linuxDiskFullPaths(root);
+      mkdirSync(paths.directory, { recursive: true });
+      retain(paths);
+      const before = readdirSync(paths.directory).sort();
+      const calls = [];
+      assert.throws(() => run(root, source, paths, calls), refused);
+      // No sudo, mkfs, mount, git or build command ran, and nothing was
+      // written, truncated or removed.
+      assert.deepEqual(calls, []);
+      assert.deepEqual(readdirSync(paths.directory).sort(), before);
+      if (name === "image")
+        assert.equal(readFileSync(paths.image, "utf8"), "retained");
+      assert(!existsSync(path.join(source, "src")));
+    });
+  }
 });
 
 test("frontend discovery shares configuration without writing or logging", async (t) => {

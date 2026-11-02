@@ -233,6 +233,7 @@ export function validateMeasurements(result) {
 export const ObservedBlockerReason = Object.freeze({
   LinuxDiskFullMountPrivilegeRequired:
     "linux-disk-full-mount-privilege-required",
+  LinuxDiskFullRetainedVolume: "linux-disk-full-retained-volume",
 });
 const observedBlockerReasons = new Set(Object.values(ObservedBlockerReason));
 

@@ -128,6 +128,16 @@ mount point is also user-controlled, so grant the rule only on dedicated,
 disposable runners. Hosts also supply `e2fsprogs` (`mkfs.ext4`) and the `sudo`
 package. macOS and Windows disk-full paths use no sudo.
 
+The image and mount point paths are fixed, so a run can find leftovers of an
+earlier run. When the unmount cannot be verified, the scenario keeps the image and
+mount point for operator recovery. Before it checks sudo, writes the image or
+runs any command, the next Linux run checks both fixed paths without following
+symbolic links. If either path exists, or its state cannot be read, the scenario
+stops and the evidence record reports `replacement-recovery` with the fixed
+reason `linux-disk-full-retained-volume`. The scenario never truncates, unmounts
+or removes the retained paths; an operator verifies that the volume is unmounted
+and removes the retained image and mount point before the lane runs again.
+
 `scripts/release/ccow-acceptance.mjs native` takes lane, candidate directory,
 workspace, evidence output and exact source revision. It verifies non-fixture
 artifacts and probes the host before invoking the repository-owned

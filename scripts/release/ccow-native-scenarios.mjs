@@ -1153,6 +1153,32 @@ export function requireLinuxMountPrivilege({ paths, root, env, command }) {
   }
 }
 
+// The cleanup handler keeps the image and mount point when the unmount cannot
+// be verified, so the next run finds them at the same fixed paths. Writing the
+// image then would truncate a possibly still-mounted filesystem. Refuse before
+// any write or command, and leave the retained state untouched for the
+// operator. Only a definite ENOENT counts as absent; any other lstat failure is
+// treated as present, because the state is then unknown.
+export function requireNoRetainedLinuxDiskFullVolume({ paths }) {
+  const present = (target) => {
+    try {
+      lstatSync(target);
+      return true;
+    } catch (error) {
+      return error?.code !== "ENOENT";
+    }
+  };
+  if (!present(paths.image) && !present(paths.mount)) return;
+  const error = new Error(
+    "Linux disk-full volume from an earlier run is still present",
+  );
+  error.observedBlocker = {
+    id: "replacement-recovery",
+    reason: ObservedBlockerReason.LinuxDiskFullRetainedVolume,
+  };
+  throw error;
+}
+
 export function mountLinuxDiskFullVolume({
   paths,
   root,
@@ -1203,6 +1229,8 @@ export function diskFullScenario({
           mount: path.join(volumeDirectory, linuxDiskFullVolume.mountName),
         }
       : undefined;
+  // Check retained state before anything else, so a refusal has no side effect.
+  if (linuxPaths) requireNoRetainedLinuxDiskFullVolume({ paths: linuxPaths });
   if (linuxPaths)
     requireLinuxMountPrivilege({ paths: linuxPaths, root, env, command });
   const image = linuxPaths
