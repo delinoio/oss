@@ -60,6 +60,8 @@ ccow clean --preset cargo
 
 Only preset-verified cache paths may be deleted. Sources, Git metadata, CacheCow settings, external link targets, and unrelated files must remain intact. Normal cache subdirectories within a worktree are allowed; the entire worktree is never a cache.
 
+A source cache may contain relative symbolic links that stay inside the cache, such as the `.dSYM` link Cargo creates with packed debug information. CacheCow copies them as links with the same target and never follows them, so writing through a copied link changes only the new cache. Absolute links, links that leave the cache, Windows junctions, and special files make preparation fail with an actionable error; remove them or select another source. On Windows, copying a symbolic link requires Developer Mode or the symbolic link privilege.
+
 There is no age-based or capacity-based eviction. Retention is manual. Removing incomplete preparation after a failure is recovery, not eviction.
 
 An activated Cargo shim handles `cargo clean` differently: it waits for the cache lock, performs no preparation or cloning, then preserves Cargo's own arguments and deletion semantics. See [shims](/cachecow/shims#managed-and-pass-through-commands).

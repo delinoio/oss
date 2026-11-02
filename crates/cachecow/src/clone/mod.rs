@@ -79,7 +79,9 @@ pub(crate) fn unsupported(cause: io::Error) -> anyhow::Error {
 
 /// Creates `destination` (which must not exist) as a clone of `source`, and
 /// removes it on any error. Preserves permission bits and modification times;
-/// rejects symlinks and special files; never creates hard links. The caller
+/// copies relative symlinks that stay inside the source as symlinks (they are
+/// never followed) and rejects every other symlink and special file; never
+/// creates hard links. The caller
 /// owns publication of this staging tree and must prevent concurrent writes.
 pub fn tree(
     ctx: &Context,
@@ -234,7 +236,85 @@ pub(crate) struct Meta {
 pub(crate) enum Kind {
     Directory,
     Regular,
+    /// A symbolic link whose target was not followed. Only links accepted by
+    /// [`link_target_is_internal`] are copied; the walkers reject the rest.
+    Symlink,
     Other,
+}
+
+/// Returns whether a link target stays inside the cache for a link located at
+/// root-relative `name`. `depth` is the number of directories between the
+/// cache root and the link (a top-level link has depth 0).
+///
+/// Accepted targets are relative and consist of zero or more leading `..`
+/// components followed only by normal components. Walkers never descend into
+/// links, so every link location is a real directory; N leading `..`
+/// components with N <= depth therefore reach a real in-cache directory, and
+/// the normal components that follow can only pass through links that were
+/// validated at their own location. A `..` after a normal component is
+/// rejected because it would be applied after that component resolves, which
+/// may be a link to another directory (`x/l1/../outside`). A lexical check
+/// alone is not enough.
+pub(crate) fn link_target_is_internal(depth: usize, target: &str) -> bool {
+    if target.is_empty() || target.contains('\0') {
+        return false;
+    }
+    // Windows accepts both separators in symbolic link targets and treats `:`
+    // as a drive or stream marker, so those forms are never internal.
+    let is_separator = |c: char| c == '/' || (cfg!(windows) && c == '\\');
+    if cfg!(windows) && target.contains(':') {
+        return false;
+    }
+    let mut parents = 0_usize;
+    let mut normal = false;
+    for component in target.split(is_separator) {
+        match component {
+            "" | "." => return false,
+            ".." if normal => return false,
+            ".." => parents += 1,
+            _ => normal = true,
+        }
+    }
+    parents <= depth
+}
+
+/// Number of directories between the cache root and the entry at
+/// root-relative `name`.
+pub(crate) fn link_depth(name: &str) -> usize {
+    name.split(paths::is_separator)
+        .filter(|c| !c.is_empty() && *c != ".")
+        .count()
+        .saturating_sub(1)
+}
+
+/// Checks a link read at root-relative `name`; rejects it like any other
+/// special file when its target could leave the cache.
+pub(crate) fn check_link(name: &str, target: Option<&str>) -> Result<()> {
+    match target {
+        Some(target) if link_target_is_internal(link_depth(name), target) => Ok(()),
+        _ => Err(link_or_special(name)),
+    }
+}
+
+/// Source pre-check for one link below the cache `root`: true only when the
+/// link is an accepted symbolic link with an internal relative target.
+pub(crate) fn source_link_is_internal(root: &str, path: &str) -> bool {
+    let Some(name) = paths::rel(root, path).filter(|name| name != ".") else {
+        return false;
+    };
+    walk::read_link_target(path)
+        .is_some_and(|target| link_target_is_internal(link_depth(&name), &target))
+}
+
+#[cfg(test)]
+pub(crate) type LinkHook = Box<dyn Fn(&str)>;
+
+#[cfg(test)]
+thread_local! {
+    /// Test hook run after a link target is read and before its identity is
+    /// checked again, to simulate a concurrent source writer.
+    pub(crate) static AFTER_LINK_READ: std::cell::RefCell<Option<LinkHook>> =
+        const { std::cell::RefCell::new(None) };
 }
 
 pub(crate) fn link_or_special(name: &str) -> anyhow::Error {

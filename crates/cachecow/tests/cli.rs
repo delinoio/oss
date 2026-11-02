@@ -337,6 +337,66 @@ fn executable_preparation_replacement_and_failure() {
 }
 
 #[test]
+fn prepare_copies_internal_relative_links_and_rejects_escaping_links() {
+    let f = Fixture::new();
+    f.run(&f.main, 0, &["run", "--", "cargo", "build"]);
+    let source_target = join(&f.main, "target");
+    fs::create_dir_all(join(&source_target, "debug/deps")).unwrap();
+    write_file(&join(&source_target, "debug/deps/x.dSYM"), "symbols", 0o600);
+    std::os::unix::fs::symlink("deps/x.dSYM", join(&source_target, "debug/x.dSYM")).unwrap();
+    std::os::unix::fs::symlink("absent-inside", join(&source_target, "dangling")).unwrap();
+    f.run(
+        &f.work,
+        0,
+        &["prepare", "--allow-copy", "--", "cargo", "build"],
+    );
+    let copied = join(&f.work, "target/debug/x.dSYM");
+    assert!(
+        fs::symlink_metadata(&copied)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(
+        fs::read_link(&copied).unwrap().to_str().unwrap(),
+        "deps/x.dSYM"
+    );
+    assert_eq!(fs::read_to_string(&copied).unwrap(), "symbols");
+    assert!(
+        fs::symlink_metadata(join(&f.work, "target/dangling"))
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    // Writing through the destination link leaves the source untouched.
+    fs::write(&copied, "changed").unwrap();
+    assert_eq!(
+        fs::read_to_string(join(&source_target, "debug/deps/x.dSYM")).unwrap(),
+        "symbols"
+    );
+    // A relative link that leaves the cache is rejected and keeps the old
+    // cache.
+    std::os::unix::fs::symlink("../../../outside", join(&source_target, "debug/escape")).unwrap();
+    f.run(
+        &f.work,
+        125,
+        &[
+            "prepare",
+            "--replace",
+            "--allow-copy",
+            "--",
+            "cargo",
+            "build",
+        ],
+    );
+    assert_eq!(fs::read_to_string(&copied).unwrap(), "changed");
+    for entry in fs::read_dir(&f.work).unwrap() {
+        let name = entry.unwrap().file_name().into_string().unwrap();
+        assert!(!name.contains(".ccow-"), "staging leaked {name}");
+    }
+}
+
+#[test]
 fn executable_noninteractive_missing_and_settings() {
     let f = Fixture::new();
     let (out, _) = f.run(&f.work, 125, &["prepare", "--json"]);

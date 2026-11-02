@@ -1,19 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Windows source traversal. Every entry is inspected without following
-//! reparse points and opened with `FILE_FLAG_OPEN_REPARSE_POINT`; any reparse
-//! point (symbolic link or junction) is rejected, so the walk cannot leave the
-//! verified source root.
+//! reparse points and opened with `FILE_FLAG_OPEN_REPARSE_POINT`. The reparse
+//! tag is read explicitly: only `IO_REPARSE_TAG_SYMLINK` entries with an
+//! internal relative target are recreated as links, while junctions and every
+//! other reparse point are rejected, so the walk cannot leave the verified
+//! source root.
 
 use std::{
     fs::{self, File, FileTimes, OpenOptions},
-    os::windows::fs::{MetadataExt, OpenOptionsExt},
+    os::windows::{
+        fs::{FileTypeExt, MetadataExt, OpenOptionsExt},
+        io::AsRawHandle,
+    },
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{Result, anyhow};
-use windows_sys::Win32::Storage::FileSystem::{
-    FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
-    FILE_WRITE_ATTRIBUTES,
+use windows_sys::Win32::{
+    Foundation::{ERROR_PRIVILEGE_NOT_HELD, HANDLE},
+    Storage::FileSystem::{
+        FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+        FILE_WRITE_ATTRIBUTES,
+    },
+    System::{
+        IO::DeviceIoControl, Ioctl::FSCTL_GET_REPARSE_POINT, SystemServices::IO_REPARSE_TAG_SYMLINK,
+    },
 };
 
 use super::{CloneFile, CloneResult, Kind, Meta};
@@ -29,6 +40,54 @@ fn open_entry(path: &str) -> std::io::Result<File> {
         .read(true)
         .custom_flags(FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT)
         .open(path)
+}
+
+/// Reparse tag of the entry behind `file`, which must have been opened with
+/// `FILE_FLAG_OPEN_REPARSE_POINT`. `REPARSE_DATA_BUFFER` starts with the tag.
+fn reparse_tag(file: &File) -> std::io::Result<u32> {
+    let mut buffer = [0_u8; 16 * 1024];
+    let mut returned = 0_u32;
+    // SAFETY: the handle is live for this call and `buffer` provides
+    // `buffer.len()` writable bytes for the output.
+    let ok = unsafe {
+        DeviceIoControl(
+            file.as_raw_handle() as HANDLE,
+            FSCTL_GET_REPARSE_POINT,
+            std::ptr::null(),
+            0,
+            buffer.as_mut_ptr().cast(),
+            u32::try_from(buffer.len()).unwrap_or(0),
+            &raw mut returned,
+            std::ptr::null_mut(),
+        )
+    };
+    if ok == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    let tag: [u8; 4] = buffer[..4].try_into().expect("slice has four bytes");
+    Ok(u32::from_le_bytes(tag))
+}
+
+/// Reparse tag for `path`, or 0 when its attributes show no reparse point.
+fn path_reparse_tag(path: &str, m: &fs::Metadata) -> std::io::Result<u32> {
+    if m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT == 0 {
+        return Ok(0);
+    }
+    reparse_tag(&open_entry(path)?)
+}
+
+/// Target text of the symbolic link at `path` (not a junction or another
+/// reparse point), or `None`.
+pub(super) fn read_link_target(path: &str) -> Option<String> {
+    let m = fs::symlink_metadata(path).ok()?;
+    if path_reparse_tag(path, &m).ok()? != IO_REPARSE_TAG_SYMLINK {
+        return None;
+    }
+    fs::read_link(path)
+        .ok()?
+        .into_os_string()
+        .into_string()
+        .ok()
 }
 
 fn split_time(time: SystemTime) -> (i64, i64) {
@@ -59,9 +118,14 @@ fn join_time(sec: i64, nsec: i64) -> SystemTime {
     }
 }
 
-fn meta(m: &fs::Metadata, id: paths::FileId) -> Result<Meta> {
+/// `tag` is the entry's reparse tag, or 0 for an ordinary entry.
+fn meta(m: &fs::Metadata, id: paths::FileId, tag: u32) -> Result<Meta> {
     let kind = if m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-        Kind::Other
+        if tag == IO_REPARSE_TAG_SYMLINK {
+            Kind::Symlink
+        } else {
+            Kind::Other
+        }
     } else if m.is_dir() {
         Kind::Directory
     } else if m.is_file() {
@@ -140,7 +204,14 @@ impl Walker<'_, '_> {
     ) -> Result<()> {
         self.ctx.err()?;
         let listed = fs::symlink_metadata(path)?;
-        let info = meta(&listed, paths::file_id(path, false)?)?;
+        let info = meta(
+            &listed,
+            paths::file_id(path, false)?,
+            path_reparse_tag(path, &listed)?,
+        )?;
+        if info.kind == Kind::Symlink {
+            return self.link(path, name, dst, &listed, &info);
+        }
         if info.kind == Kind::Other {
             return Err(super::link_or_special(name));
         }
@@ -149,7 +220,7 @@ impl Walker<'_, '_> {
         }
         let file =
             open_entry(path).map_err(|e| super::wrap(e, &format!("open cache entry {name:?}")))?;
-        let opened = meta(&file.metadata()?, paths::file_id_of(&file)?)?;
+        let opened = meta(&file.metadata()?, paths::file_id_of(&file)?, 0)?;
         super::check_identity(name, &info, &opened)?;
         if info.kind == Kind::Directory {
             if root.is_none() {
@@ -181,14 +252,66 @@ impl Walker<'_, '_> {
                 self.result,
             )?;
         }
-        let after = meta(&file.metadata()?, paths::file_id_of(&file)?)?;
+        let after = meta(&file.metadata()?, paths::file_id_of(&file)?, 0)?;
         super::finish_entry(self.ctx, name, &info, &after, dst)
+    }
+
+    /// Recreates the internal relative symbolic link `name` at `dst`, in the
+    /// file or directory form of the source link. The link is not followed
+    /// and is not counted as a cloned or copied file.
+    fn link(
+        &mut self,
+        path: &str,
+        name: &str,
+        dst: &str,
+        listed: &fs::Metadata,
+        info: &Meta,
+    ) -> Result<()> {
+        let target = fs::read_link(path)
+            .map_err(|e| super::wrap(e, &format!("read cache link {name:?}")))?;
+        let target = target.into_os_string().into_string().ok();
+        super::check_link(name, target.as_deref())?;
+        let target = target.unwrap_or_default();
+        #[cfg(test)]
+        super::AFTER_LINK_READ.with(|hook| {
+            if let Some(hook) = hook.borrow().as_ref() {
+                hook(name);
+            }
+        });
+        // A concurrent writer may have replaced the link after it was read.
+        let again_listed = fs::symlink_metadata(path)?;
+        let again = meta(
+            &again_listed,
+            paths::file_id(path, false)?,
+            path_reparse_tag(path, &again_listed)?,
+        )?;
+        super::check_identity(name, info, &again)?;
+        let created = if listed.file_type().is_symlink_dir() {
+            std::os::windows::fs::symlink_dir(&target, dst)
+        } else {
+            std::os::windows::fs::symlink_file(&target, dst)
+        };
+        created.map_err(|e| {
+            let hint = if e.raw_os_error() == i32::try_from(ERROR_PRIVILEGE_NOT_HELD).ok() {
+                "; enable Windows Developer Mode or grant the symbolic link privilege to this \
+                 user, or remove the link from the source cache"
+            } else {
+                ""
+            };
+            super::wrap(e, &format!("create cache link {name:?}{hint}"))
+        })?;
+        super::finish_entry(self.ctx, name, info, &again, dst)
     }
 }
 
 /// Restores the modification time (access time set to the same value), then
 /// the read-only attribute, which is the only permission Windows records.
+/// Links keep the attributes of their new inode.
 pub(super) fn restore_metadata(destination: &str, before: &Meta) -> Result<()> {
+    // Opening the destination would follow the new link and change its target.
+    if before.kind == Kind::Symlink {
+        return Ok(());
+    }
     let time = join_time(before.mtime_sec, before.mtime_nsec);
     let handle = OpenOptions::new()
         .access_mode(FILE_WRITE_ATTRIBUTES)

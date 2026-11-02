@@ -269,10 +269,259 @@ fn existing_destination_and_overlap() {
 }
 
 #[cfg(unix)]
+fn symlink(target: &str, link: &str) {
+    std::os::unix::fs::symlink(target, link).unwrap();
+}
+
+#[cfg(unix)]
 #[test]
-fn reject_symlinks() {
+fn copies_internal_relative_symlinks() {
     let f = fixture();
-    std::os::unix::fs::symlink("a", join(&f.src, "link")).unwrap();
+    symlink("a", &join(&f.src, "link"));
+    symlink("../a", &join(&f.src, "nested/up"));
+    symlink("nested", &join(&f.src, "dl"));
+    // The link sorts before its target and another link points through a link.
+    symlink("zz-target", &join(&f.src, "aa-first"));
+    fs::write(join(&f.src, "zz-target"), b"original cache data").unwrap();
+    symlink("../dl/b", &join(&f.src, "nested/through"));
+    // A dangling target that would be inside the cache.
+    symlink("absent-inside", &join(&f.src, "dangling"));
+    let result = tree_with(&bg(), &f.src, &f.dst, false, &mut |ctx, file, path| {
+        copy_file(ctx, file, path)
+    })
+    .unwrap();
+    // Links are not counted as cloned or copied files.
+    assert_eq!(result.cloned_files, 4, "{result:?}");
+    for (link, target) in [
+        ("link", "a"),
+        ("nested/up", "../a"),
+        ("dl", "nested"),
+        ("aa-first", "zz-target"),
+        ("nested/through", "../dl/b"),
+        ("dangling", "absent-inside"),
+    ] {
+        let path = join(&f.dst, link);
+        assert!(
+            fs::symlink_metadata(&path)
+                .unwrap()
+                .file_type()
+                .is_symlink()
+        );
+        assert_eq!(fs::read_link(&path).unwrap().to_str().unwrap(), target);
+    }
+    assert_eq!(
+        fs::read(join(&f.dst, "nested/up")).unwrap(),
+        b"original cache data"
+    );
+    assert_eq!(
+        fs::read(join(&f.dst, "dl/b")).unwrap(),
+        b"original cache data"
+    );
+    assert_eq!(
+        fs::read(join(&f.dst, "nested/through")).unwrap(),
+        b"original cache data"
+    );
+    // A write through a destination link changes only the destination copy.
+    fs::write(join(&f.dst, "link"), b"through the link").unwrap();
+    assert_eq!(fs::read(join(&f.dst, "a")).unwrap(), b"through the link");
+    assert_eq!(fs::read(join(&f.src, "a")).unwrap(), b"original cache data");
+    assert_ne!(
+        paths::file_id(&join(&f.src, "a"), true).unwrap(),
+        paths::file_id(&join(&f.dst, "a"), true).unwrap()
+    );
+    remove_all(&f.dst);
+    assert_eq!(
+        fs::read(join(&f.src, "nested/b")).unwrap(),
+        b"original cache data"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn link_never_changes_target_mode() {
+    let f = fixture();
+    set_mode(&join(&f.src, "a"), 0o600);
+    symlink("a", &join(&f.src, "link"));
+    tree_with(&bg(), &f.src, &f.dst, false, &mut |ctx, file, path| {
+        copy_file(ctx, file, path)
+    })
+    .unwrap();
+    assert_eq!(perm(&join(&f.dst, "a")), 0o600);
+    assert_eq!(perm(&join(&f.dst, "link")), 0o600);
+    assert_eq!(perm(&join(&f.src, "a")), 0o600);
+}
+
+#[cfg(unix)]
+#[test]
+fn reject_escaping_symlinks() {
+    let escaping: [(&str, &str); 6] = [
+        ("absolute", "/etc/hosts"),
+        ("outside", "../outside"),
+        ("deep", "nested/../../x"),
+        ("dotted", "./a"),
+        ("empty-component", "nested//b"),
+        ("trailing", "nested/"),
+    ];
+    for (name, target) in escaping {
+        let f = fixture();
+        symlink(target, &join(&f.src, name));
+        let err = tree_with(&bg(), &f.src, &f.dst, true, &mut unsupported_clone).unwrap_err();
+        assert!(
+            err.to_string().contains("link or special file"),
+            "{target}: {err}"
+        );
+        assert!(err.to_string().contains(name), "{err}");
+        absent(&f.dst);
+    }
+    // `..` after a normal component is applied after that component resolves.
+    let f = fixture();
+    fs::create_dir(join(&f.src, "x")).unwrap();
+    symlink("..", &join(&f.src, "x/l1"));
+    symlink("x/l1/../out", &join(&f.src, "m"));
+    assert!(tree_with(&bg(), &f.src, &f.dst, true, &mut unsupported_clone).is_err());
+    absent(&f.dst);
+    // The depth of the link limits its leading `..` components.
+    let f = fixture();
+    symlink("../a", &join(&f.src, "nested/ok"));
+    symlink("../../a", &join(&f.src, "nested/too-deep"));
+    assert!(tree_with(&bg(), &f.src, &f.dst, true, &mut unsupported_clone).is_err());
+    absent(&f.dst);
+    let parent = paths::dir(&f.dst);
+    for entry in fs::read_dir(parent).unwrap() {
+        let name = entry.unwrap().file_name().into_string().unwrap();
+        assert!(!name.contains(".ccow-"), "staging leaked {name}");
+    }
+}
+
+#[cfg(unix)]
+#[test]
+fn reject_non_utf8_symlink_target() {
+    let f = fixture();
+    let link = std::ffi::CString::new(join(&f.src, "bad")).unwrap();
+    let target = std::ffi::CString::new(&b"\xff\xfe"[..]).unwrap();
+    // SAFETY: both arguments are NUL-terminated.
+    assert_eq!(unsafe { libc::symlink(target.as_ptr(), link.as_ptr()) }, 0);
+    assert!(tree_with(&bg(), &f.src, &f.dst, true, &mut unsupported_clone).is_err());
+    absent(&f.dst);
+}
+
+#[cfg(unix)]
+#[test]
+fn link_replaced_during_walk_fails() {
+    let f = fixture();
+    symlink("a", &join(&f.src, "link"));
+    let victim = join(&f.src, "link");
+    AFTER_LINK_READ.with(|hook| {
+        *hook.borrow_mut() = Some(Box::new(move |name| {
+            assert_eq!(name, "link");
+            fs::remove_file(&victim).unwrap();
+            fs::create_dir(&victim).unwrap();
+        }));
+    });
+    let result = tree_with(&bg(), &f.src, &f.dst, true, &mut unsupported_clone);
+    AFTER_LINK_READ.with(|hook| *hook.borrow_mut() = None);
+    let err = result.unwrap_err();
+    assert!(
+        err.to_string().contains("changed during preparation"),
+        "{err}"
+    );
+    absent(&f.dst);
+}
+
+#[test]
+fn link_target_rule() {
+    for (depth, target, want) in [
+        (0, "a", true),
+        (0, "a/b", true),
+        (1, "../a", true),
+        (2, "../../a/b", true),
+        (2, "..", true),
+        (0, "..", false),
+        (1, "../../a", false),
+        (0, "", false),
+        (0, ".", false),
+        (0, "./a", false),
+        (1, "a/../b", false),
+        (1, "x/l1/../out", false),
+        (0, "/abs", false),
+        (0, "a//b", false),
+        (0, "a/", false),
+        (0, "a\0b", false),
+    ] {
+        assert_eq!(link_target_is_internal(depth, target), want, "{target}");
+    }
+    // `C:x` and `a\\b` are ordinary names on Unix but drive-relative or
+    // separator forms on Windows.
+    assert_eq!(link_target_is_internal(0, "C:x"), cfg!(unix));
+    assert_eq!(link_target_is_internal(0, "a\\..\\b"), cfg!(unix));
+    assert_eq!(link_depth("a"), 0);
+    assert_eq!(link_depth("nested/b"), 1);
+}
+
+/// Creates a file symbolic link, or returns false (reported on stderr) when
+/// the account may not create symbolic links, as on Windows without
+/// Developer Mode.
+#[cfg(windows)]
+fn try_file_symlink(target: &str, link: &str) -> bool {
+    match std::os::windows::fs::symlink_file(target, link) {
+        Ok(()) => true,
+        Err(e) => {
+            eprintln!("skipping: symbolic links cannot be created here: {e}");
+            false
+        }
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_copies_relative_file_symlink() {
+    let f = fixture();
+    if !try_file_symlink("a", &join(&f.src, "link")) {
+        return;
+    }
+    tree_with(&bg(), &f.src, &f.dst, false, &mut |ctx, file, path| {
+        copy_file(ctx, file, path)
+    })
+    .unwrap();
+    let link = join(&f.dst, "link");
+    assert!(
+        fs::symlink_metadata(&link)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert_eq!(fs::read_link(&link).unwrap().to_str().unwrap(), "a");
+    assert_eq!(fs::read(&link).unwrap(), b"original cache data");
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_rejects_absolute_and_drive_relative_symlinks() {
+    for target in [
+        join(&fixture().src, "a"),
+        "C:a".to_string(),
+        "\\a".to_string(),
+    ] {
+        let f = fixture();
+        if !try_file_symlink(&target, &join(&f.src, "link")) {
+            return;
+        }
+        let err = tree_with(&bg(), &f.src, &f.dst, true, &mut unsupported_clone).unwrap_err();
+        assert!(err.to_string().contains("link or special file"), "{err}");
+        absent(&f.dst);
+    }
+}
+
+#[cfg(windows)]
+#[test]
+fn windows_rejects_junctions() {
+    let f = fixture();
+    let link = join(&f.src, "junction");
+    let status = std::process::Command::new("cmd")
+        .args(["/C", "mklink", "/J", &link, &join(&f.src, "nested")])
+        .output()
+        .unwrap();
+    assert!(status.status.success(), "mklink /J failed: {status:?}");
     let err = tree_with(&bg(), &f.src, &f.dst, true, &mut unsupported_clone).unwrap_err();
     assert!(err.to_string().contains("link or special file"), "{err}");
     absent(&f.dst);

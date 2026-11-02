@@ -3,7 +3,8 @@
 //! inspected with `fstatat(AT_SYMLINK_NOFOLLOW)` and opened with
 //! `openat(O_NOFOLLOW | O_NONBLOCK)` relative to its already verified parent,
 //! so a replaced symlink can never redirect the walk outside the source root
-//! (Go `os.OpenRoot`).
+//! (Go `os.OpenRoot`). Symbolic links are never opened: internal relative
+//! links are read with `readlinkat` and recreated with the same target text.
 
 use std::{
     ffi::{CStr, CString},
@@ -33,6 +34,7 @@ fn meta(st: &libc::stat) -> Meta {
     let kind = match st.st_mode & libc::S_IFMT {
         libc::S_IFDIR => Kind::Directory,
         libc::S_IFREG => Kind::Regular,
+        libc::S_IFLNK => Kind::Symlink,
         _ => Kind::Other,
     };
     Meta {
@@ -80,6 +82,40 @@ fn lstat_at(parent: RawFd, name: &CStr) -> io::Result<Meta> {
         return Err(io::Error::last_os_error());
     }
     Ok(meta(&st))
+}
+
+/// Reads the target text of the link `name` without following it.
+fn read_link_at(parent: RawFd, name: &CStr) -> io::Result<Vec<u8>> {
+    let mut buf = vec![0_u8; 256];
+    loop {
+        // SAFETY: `parent` is a live directory descriptor, `name` is
+        // NUL-terminated and `buf` provides `buf.len()` writable bytes.
+        let n = unsafe {
+            libc::readlinkat(
+                parent,
+                name.as_ptr(),
+                buf.as_mut_ptr().cast::<libc::c_char>(),
+                buf.len(),
+            )
+        };
+        if n < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        let n = usize::try_from(n).unwrap_or(0);
+        // A full buffer may be truncated; retry with a larger one.
+        if n < buf.len() {
+            buf.truncate(n);
+            return Ok(buf);
+        }
+        buf = vec![0_u8; buf.len() * 2];
+    }
+}
+
+/// Target text of the link at `path`, or `None` when `path` is not a readable
+/// symbolic link with a UTF-8 target.
+pub(super) fn read_link_target(path: &str) -> Option<String> {
+    let target = std::fs::read_link(path).ok()?;
+    target.into_os_string().into_string().ok()
 }
 
 fn open_at(parent: RawFd, name: &CStr) -> io::Result<File> {
@@ -209,6 +245,9 @@ impl Walker<'_, '_> {
             }
             Some(c) => {
                 let info = lstat_at(parent, c)?;
+                if info.kind == Kind::Symlink {
+                    return self.link(parent, c, name, dst, &info);
+                }
                 if info.kind == Kind::Other {
                     return Err(super::link_or_special(name));
                 }
@@ -254,16 +293,50 @@ impl Walker<'_, '_> {
         let after = fstat(file.as_raw_fd())?;
         super::finish_entry(self.ctx, name, &info, &after, dst)
     }
+
+    /// Recreates the internal relative link `name` at `dst` with the same
+    /// target text. The link is never opened or followed, and it is not
+    /// counted as a cloned or copied file.
+    fn link(
+        &mut self,
+        parent: RawFd,
+        entry: &CStr,
+        name: &str,
+        dst: &str,
+        info: &Meta,
+    ) -> Result<()> {
+        let target = read_link_at(parent, entry)
+            .map_err(|e| super::wrap(e, &format!("read cache link {name:?}")))?;
+        let target = std::str::from_utf8(&target).ok();
+        super::check_link(name, target)?;
+        let target = target.unwrap_or_default();
+        #[cfg(test)]
+        super::AFTER_LINK_READ.with(|hook| {
+            if let Some(hook) = hook.borrow().as_ref() {
+                hook(name);
+            }
+        });
+        // A concurrent writer may have replaced the link after it was read.
+        let again = lstat_at(parent, entry)?;
+        super::check_identity(name, info, &again)?;
+        std::os::unix::fs::symlink(target, dst)
+            .map_err(|e| super::wrap(e, &format!("create cache link {name:?}")))?;
+        super::finish_entry(self.ctx, name, info, &again, dst)
+    }
 }
 
 /// Restores permission bits, then the modification time (access time is set
-/// to the same value, as Go's `os.Chtimes(dst, mtime, mtime)` did).
+/// to the same value, as Go's `os.Chtimes(dst, mtime, mtime)` did). A link
+/// keeps the default permissions of its own inode: `set_permissions` follows
+/// links and would change the target, so only the link's timestamps are set.
 pub(super) fn restore_metadata(destination: &str, before: &Meta) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    std::fs::set_permissions(
-        destination,
-        std::fs::Permissions::from_mode(before.mode & 0o777),
-    )?;
+    if before.kind != Kind::Symlink {
+        std::fs::set_permissions(
+            destination,
+            std::fs::Permissions::from_mode(before.mode & 0o777),
+        )?;
+    }
     let c = cstring(std::ffi::OsStr::new(destination).as_bytes())?;
     let time = libc::timespec {
         tv_sec: before.mtime_sec as libc::time_t,

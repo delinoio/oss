@@ -200,7 +200,7 @@ Disk exhaustion, permission errors, and other actual preparation failures stop b
 - The local-only requirement is an explicit project-specific storage choice instead of the repository's default remote object-storage approach.
 - Only copy, replace, or delete preset-verified cache paths.
 - Refuse paths that overlap source storage, Git metadata, or CacheCow settings storage. Normal cache subdirectories within a worktree are allowed; never interpret the whole source tree as the cache.
-- Resolve symlinks and aliases for validation and locking. Do not follow links into external content during copying or escape the selected cache during deletion.
+- Resolve symlinks and aliases for validation and locking. Do not follow links into external content during copying or escape the selected cache during deletion. Copy a relative symbolic link as a link with the same target text when it stays inside the cache: the target is relative, has zero or more leading `..` components followed only by normal components, and has no more leading `..` components than the link's directory depth below the cache root. A link target is never followed or opened, so dangling internal links are valid, and metadata restoration never changes a link's target. Reject absolute, rooted, drive-relative, empty and escaping targets, `.` or `..` after a normal component, non-UTF-8 targets, Windows junctions and other reparse points, and special files. Links are not counted as cloned or copied files. Windows reports an actionable error when the account may not create symbolic links.
 - Preserve unrelated files and the source cache. Ordinary hard links are not a substitute for CoW isolation.
 - CacheCow does not sandbox the user's build code. No service accounts, tenant service, billing, or network authorization surface is introduced.
 
@@ -278,7 +278,7 @@ Disk exhaustion, permission errors, and other actual preparation failures stop b
 - Test graceful termination, five-second escalation, surviving descendants, abrupt parent termination, restart/recovery, and retained partial build caches.
 - Inject disk-full, permission, partial-copy, and replacement failures. Verify old-cache preservation, no premature build launch, and cleanup.
 - Verify unsupported filesystem/cross-volume errors, explicit ordinary-copy fallback, and accurate user-visible copy-mode reporting.
-- Verify spaces, Korean/non-ASCII paths, symlinks, aliases, external links, protected-path overlap, and same-user/same-repository boundaries.
+- Verify spaces, Korean/non-ASCII paths, symlinks, internal relative links (including dangling ones and write isolation through copied links), aliases, external and escaping links, junctions, protected-path overlap, and same-user/same-repository boundaries.
 - Verify JSON success/errors, exit-code propagation, unchanged child output, stderr notices, logs without sensitive content, and unsupported record-version handling.
 - Install the native archives and npm package on each supported platform. Verify native Cargo use without Node.js, Node.js 24+ npm/frontend use, and reinstall-based rollback.
 - Preserve source revisions, commands, results, host/filesystem details, and unperformed checks in PR/CI records. Keep runtime acceptance distinct from fixtures and packaging.
