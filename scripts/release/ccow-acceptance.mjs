@@ -106,8 +106,9 @@ export function releaseIdentity(requested, revision, ref) {
   return { version, revision, tag: `ccow@v${version}` };
 }
 
-// Probe the volume that owns the disposable acceptance workspace. Labels alone
-// cannot establish OS or filesystem acceptance. Never format a runner volume.
+// Probe the volume that owns the disposable acceptance workspace. Runner names
+// alone cannot establish OS or filesystem acceptance. Never format a runner
+// volume; the workflow formats only new disposable image files.
 export function probeHost(workspace, lane) {
   const expected = lanes[lane];
   assert(expected, "Unknown acceptance lane");
@@ -153,17 +154,19 @@ export function probeHost(workspace, lane) {
         },
       ),
     );
+    // GitHub-hosted runners provide no Windows 11 x64 image. Windows Server
+    // 2025 is the 24H2 release on the same build 26100 as Windows 11 24H2.
     assert.match(
       info.caption,
-      /Windows 11/u,
-      "Windows Server is not Windows 11 acceptance",
+      /Windows Server 2025/u,
+      "Windows acceptance requires the Windows Server 2025 image",
     );
     assert.equal(
       info.build,
       "26100",
-      "Minimum Windows 11 24H2 acceptance requires build 26100",
+      "Windows 24H2 acceptance requires build 26100",
     );
-    osVersion = "Windows 11 24H2 (26100)";
+    osVersion = "Windows Server 2025 (26100)";
     filesystem = info.fs.toLowerCase();
   }
   assert.equal(filesystem, expected.filesystem);
@@ -353,7 +356,7 @@ export function gate(directory, artifacts, revision) {
       "macos15-apfs": /^15\.\d+(?:\.\d+)?$/u,
       "ubuntu22-btrfs": /^Ubuntu 22\.04$/u,
       "ubuntu22-xfs": /^Ubuntu 22\.04$/u,
-      "windows24h2-refs": /^Windows 11 24H2 \(26100\)$/u,
+      "windows24h2-refs": /^Windows Server 2025 \(26100\)$/u,
     };
     assert.match(record.environment.osVersion, osVersions[lane]);
     accepted.push({

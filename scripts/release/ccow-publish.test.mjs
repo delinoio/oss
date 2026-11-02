@@ -302,7 +302,7 @@ function acceptedFixture(directory) {
         ? "15.0"
         : lane.startsWith("ubuntu")
           ? "Ubuntu 22.04"
-          : "Windows 11 24H2 (26100)",
+          : "Windows Server 2025 (26100)",
     },
     checks: Object.fromEntries(checks.map((c) => [c, true])),
     tools: { cargo: "1.99.1", rspack: "2.3.0", rsbuild: "2.3.0" },

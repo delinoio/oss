@@ -88,7 +88,7 @@ CoW is not a compiler cache key algorithm, a shared process heap, or automatic s
 - Native support and actual acceptance floors:
   - macOS 15+, arm64, APFS.
   - Linux x64 with Ubuntu 22.04-equivalent environment, Btrfs and reflink-enabled XFS.
-  - Windows 11 24H2+, x64, ReFS.
+  - Windows 11 24H2+, x64, ReFS. Release acceptance runs on GitHub-hosted Windows Server 2025 (24H2, build 26100, the same build as Windows 11 24H2), because GitHub provides no Windows 11 x64 runner image and the project uses no self-hosted runners.
 - Tool support: Cargo 1.99.1 or later within 1.x; Rspack and Rsbuild 2.3.0 or later within 2.x. Older versions and nightly toolchains are outside the first-release support guarantee.
 - npm package: `@delino/ccow`, exposing `ccow`. npm launcher and Rspack/Rsbuild integration require Node.js 24+. Native Cargo usage must not require Node.js.
 - Other filesystems, or cross-volume operations where CoW cannot work, fail by default. Only an explicit `--allow-copy` permits ordinary copying. Report that ordinary copying was used. For a managed command, report it before the command starts, once per run, even if the command later fails or the supervisor ends with an error.
@@ -322,6 +322,8 @@ The shim extension was decided by the owner after the original PRD: three PATH s
 | Testing and acceptance        | Answered                       | Owner approved all native, failure, isolation, installation, and measurement gates                                            |
 | Language/license/identifiers  | Answered                       | Rust (owner decision to port the Go CLI), Apache-2.0, default UUID v7 for new persisted entities under repository rules       |
 | Filing                        | Contract-determined            | Current remote is delinoio/oss; repository issue style; no duplicate found; PRD label absent, so no labels added              |
+
+Runner decision: the owner decided that native acceptance runs only on GitHub-hosted runners, with no self-hosted runners. The workflow formats disposable image files to provide Btrfs, reflink XFS, a second APFS volume and ReFS volumes. Windows acceptance moves from Windows 11 24H2 to Windows Server 2025 on the same build 26100.
 
 Language decision: the first implementation was Go under the repository default-language rule. The owner then decided to port the CLI completely to Rust (`crates/cachecow`, binary `ccow`). This supersedes the original "Implement the CLI in Go" scope item. Persisted record formats, commands, output, exit codes and every acceptance gate remain unchanged by the port.
 

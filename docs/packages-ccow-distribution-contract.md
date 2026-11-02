@@ -16,7 +16,7 @@ Native CLI and npm users; release maintainers.
 
 Publish versioned native archives and checksums through GitHub Releases and installation through `@delino/ccow`. Package dispatch must preserve the native CLI argument, working-directory, stream, and exit-code contracts.
 
-Native targets are macOS 15+ arm64/APFS, Linux x64 with an Ubuntu 22.04-equivalent environment on Btrfs and reflink-enabled XFS, and Windows 11 24H2+ x64/ReFS. These are acceptance requirements, not claims of existing release artifacts. Cargo supports 1.99.1+ within 1.x; Rspack/Rsbuild support 2.3.0+ within 2.x.
+Native targets are macOS 15+ arm64/APFS, Linux x64 with an Ubuntu 22.04-equivalent environment on Btrfs and reflink-enabled XFS, and Windows 11 24H2+ x64/ReFS. These are support targets, not claims of existing release artifacts. Windows acceptance runs on Windows Server 2025 build 26100 (see the native acceptance workflow below). Cargo supports 1.99.1+ within 1.x; Rspack/Rsbuild support 2.3.0+ within 2.x.
 
 Installation exposes the CLI. Shim installation and activation remain explicit user choices. No feature flag or rollout cohorts. Rollback reinstalls an earlier version; incompatible settings/records receive recovery guidance without rewriting. No automatic updater, standalone installer script, or Homebrew in the first release.
 
@@ -76,22 +76,39 @@ selector is unchanged. Publication requires successful candidate, native and
 gate jobs, plus `dry_run: false`. No build or fixture result substitutes for a
 native gate.
 
-The `native` job owns the release platform exception. It uses the protected
-`ccow-native-acceptance` environment and four dedicated self-hosted labels:
-`ccow-macos15-apfs`, `ccow-ubuntu22-btrfs`, `ccow-ubuntu22-xfs`, and
-`ccow-windows24h2-refs`. Runner labels do not prove acceptance. The entrypoint
-probes the OS, architecture and filesystem of the disposable checkout volume.
-Minimum-version runs require macOS 15 arm64, Ubuntu 22.04 x64, or Windows 11
-24H2 build 26100 x64. Windows Server and generic hosted runners do not satisfy
-these gates. Linux runs cover Btrfs and XFS separately; actual physical-sharing
-checks must prove XFS reflink capability. Hosts supply Cargo 1.99.1, Node.js 24,
-Bash (including Windows), PowerShell 7 where required, and disposable native
-storage. The workflow never formats a runner volume. On macOS the probe resolves
-the checkout directory to its mount point before reading the volume filesystem
-type. The Cargo probe runs with `RUSTUP_TOOLCHAIN=1.99.1` and
-`RUSTUP_AUTO_INSTALL=0`, so the checkout's toolchain override cannot change the
-probed version and a missing 1.99.1 toolchain fails the probe without being
-downloaded onto the runner.
+The `native` job runs on GitHub-hosted runners. The project uses no
+self-hosted runners and no deployment environment for acceptance. The four
+lanes and their runners are `macos15-apfs` on `macos-15`, `ubuntu22-btrfs` and
+`ubuntu22-xfs` on `ubuntu-22.04`, and `windows24h2-refs` on `windows-2025`.
+Runner names do not prove acceptance. The entrypoint probes the OS,
+architecture and filesystem of the acceptance workspace volume. Minimum-version
+runs require macOS 15 arm64, Ubuntu 22.04 x64, or Windows Server 2025 build
+26100 x64. GitHub-hosted runners provide no Windows 11 x64 image; Windows
+Server 2025 is the 24H2 release on build 26100, the same build as Windows 11
+24H2. The Windows lane therefore does not exercise the Windows 11 client
+edition. Linux runs cover Btrfs and XFS separately; actual physical-sharing
+checks must prove XFS reflink capability.
+
+Before acceptance, each lane installs Cargo 1.99.1 with
+`rustup toolchain install 1.99.1 --profile minimal`. Node.js 24 comes from
+`.nvmrc`. Bash (including Git Bash on Windows) and PowerShell 7 come from the
+runner image. Linux lanes install `btrfs-progs`, `xfsprogs`, `e2fsprogs`,
+`time` and `zsh`. The workflow never formats a runner volume. It formats only
+new disposable image files under `RUNNER_TEMP` and passes three paths to the
+acceptance step:
+
+| Lane               | Workspace (`CCOW_NATIVE_WORKSPACE`)                | Second volume (`CCOW_ACCEPTANCE_COPY_WORKSPACE`) | Unsupported path (`CCOW_ACCEPTANCE_UNSUPPORTED_WORKSPACE`) |
+| ------------------ | -------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------------------- |
+| `macos15-apfs`     | Directory on the runner's APFS disk                | Attached APFS sparse image                       | Attached HFS+ sparse image                                 |
+| `ubuntu22-btrfs`   | Loop-mounted Btrfs image                           | Second loop-mounted Btrfs image                  | Directory on the runner's ext4 disk                        |
+| `ubuntu22-xfs`     | Loop-mounted XFS image created with `-m reflink=1` | Second loop-mounted reflink XFS image            | Directory on the runner's ext4 disk                        |
+| `windows24h2-refs` | ReFS-formatted VHDX attached as `R:`               | ReFS-formatted VHDX attached as `S:`             | Directory on the runner's NTFS disk                        |
+
+On macOS the probe resolves the workspace directory to its mount point before
+reading the volume filesystem type. The Cargo probe runs with
+`RUSTUP_TOOLCHAIN=1.99.1` and `RUSTUP_AUTO_INSTALL=0`, so the checkout's
+toolchain override cannot change the probed version and a missing 1.99.1
+toolchain fails the probe without being downloaded by the probe.
 
 The Linux disk-full scenario runs on a non-root runner, because the permission
 denial scenarios require a normal user, and a loop mount needs privilege. The
@@ -112,21 +129,12 @@ scenario checks both commands with `sudo -n -l <command>`, which succeeds only
 for an exact, password-less match. If either check fails, the evidence record
 reports `replacement-recovery` with the fixed reason
 `linux-disk-full-mount-privilege-required`; the driver never copies command
-output into evidence. Host operators provision one rule per Linux lane, with the
-absolute workspace path substituted. Sudoers requires `\,` for commas in
-arguments and `\ ` for spaces, so use a workspace path without whitespace:
-
-```
-<runner-user> ALL=(root) NOPASSWD: \
-  /usr/bin/mount -o loop\,nosuid\,nodev <workspace>/.ccow-acceptance/diskfull/failure-volume.img <workspace>/.ccow-acceptance/diskfull/failure-volume, \
-  /usr/bin/umount <workspace>/.ccow-acceptance/diskfull/failure-volume
-```
-
-The `nosuid,nodev` options stop an image that the runner user controls from
-introducing setuid binaries or device nodes through the privileged mount. The
-mount point is also user-controlled, so grant the rule only on dedicated,
-disposable runners. Hosts also supply `e2fsprogs` (`mkfs.ext4`) and the `sudo`
-package. macOS and Windows disk-full paths use no sudo.
+output into evidence. GitHub-hosted Ubuntu runners allow password-less `sudo`
+for the runner user, so both checks pass there; the driver still runs only the
+two commands above with privilege. The `nosuid,nodev` options stop an image that
+the runner user controls from introducing setuid binaries or device nodes
+through the privileged mount. The workflow installs `e2fsprogs` (`mkfs.ext4`).
+macOS and Windows disk-full paths use no sudo.
 
 The image and mount point paths are fixed, so a run can find leftovers of an
 earlier run. When the unmount cannot be verified, the scenario keeps the image and
@@ -135,8 +143,8 @@ runs any command, the next Linux run checks both fixed paths without following
 symbolic links. If either path exists, or its state cannot be read, the scenario
 stops and the evidence record reports `replacement-recovery` with the fixed
 reason `linux-disk-full-retained-volume`. The scenario never truncates, unmounts
-or removes the retained paths; an operator verifies that the volume is unmounted
-and removes the retained image and mount point before the lane runs again.
+or removes the retained paths. Each GitHub-hosted job starts on a fresh runner,
+so retained paths can only come from an earlier step of the same job.
 
 `scripts/release/ccow-acceptance.mjs native` takes lane, candidate directory,
 workspace, evidence output and exact source revision. It verifies non-fixture
