@@ -504,6 +504,61 @@ fn executable_empty_state_record_names_the_file() {
 }
 
 #[test]
+fn missing_subcommand_is_an_argument_error() {
+    let f = Fixture::new();
+    // The fixture cargo creates `target/` and the marker when it runs.
+    write_file(
+        &join(&f.main, "scenario"),
+        "touch \"$PWD/ran-marker\"\n",
+        0o600,
+    );
+    for args in [
+        &["--", "cargo", "build"][..],
+        &["--preset", "cargo", "--", "cargo", "build"],
+        &["--replace"],
+        &["--verbose"],
+        &["--source", "/nonexistent"],
+    ] {
+        let (out, err) = f.run(&f.work, 2, args);
+        assert!(
+            !out.contains("ccow run"),
+            "{args:?}: usage printed on stdout: {out:?}"
+        );
+        assert!(
+            err.contains("use ccow run -- COMMAND"),
+            "{args:?}: stderr={err:?}"
+        );
+        assert!(
+            !exists(&join(&f.work, "target")) && !exists(&join(&f.main, "target")),
+            "{args:?}: a build ran"
+        );
+        assert!(!exists(&join(&f.main, "ran-marker")), "{args:?}: tool ran");
+    }
+}
+
+#[test]
+fn missing_subcommand_with_json_option_uses_envelope() {
+    let f = Fixture::new();
+    for args in [&["--json"][..], &["--json", "--", "cargo", "build"]] {
+        let (out, _) = f.run(&f.work, 2, args);
+        require_usage_envelope(&out, &format!("{args:?}"));
+        assert!(
+            out.contains("use ccow run -- COMMAND"),
+            "{args:?}: stdout={out:?}"
+        );
+    }
+}
+
+#[test]
+fn bare_invocation_and_help_print_usage() {
+    let f = Fixture::new();
+    for args in [&[][..], &["--help"], &["-h"], &["-h", "--json"]] {
+        let (out, _) = f.run(&f.work, 0, args);
+        assert!(out.contains("ccow run"), "{args:?}: stdout={out:?}");
+    }
+}
+
+#[test]
 fn executable_contention_and_parent_death() {
     let f = Fixture::new();
     write_file(

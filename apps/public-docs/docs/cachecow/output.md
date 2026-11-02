@@ -24,6 +24,8 @@ The envelope uses `schemaVersion: 1`, `success`, and either `result` or `error`.
 
 Argument errors, such as an unknown option or preset, also use the envelope with error code 2 when `--json` is given as a CacheCow option. Arguments after `--` belong to the child command and never request JSON.
 
+A missing subcommand is also an argument error. For example, `ccow -- cargo build` exits with code 2 and runs nothing; use `ccow run -- COMMAND`. Running `ccow` with no arguments or with `--help` prints the usage text and exits with code 0.
+
 A text or JSON error must provide actionable remediation for noninteractive decisions, unsupported CoW, permissions, source selection, and lock contention. `run` preserves child output and is not a JSON wrapper around the build command.
 
 ## Exit codes
