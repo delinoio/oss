@@ -297,6 +297,53 @@ mod unix_tests {
         assert!(!alive(pid), "descendant {pid} survived completed scope");
     }
 
+    /// Shell snippet that sets `zombies` to the number of zombie children of
+    /// the root's parent (the supervisor).
+    #[cfg(target_os = "linux")]
+    const ZOMBIE_COUNT: &str = r#"
+        zombies=0
+        for stat in /proc/[0-9]*/stat; do
+            { read -r _ _ state ppid _ < "$stat"; } 2>/dev/null || continue
+            if [ "$state" = Z ] && [ "$ppid" = "$PPID" ]; then
+                zombies=$((zombies + 1))
+            fi
+        done
+    "#;
+
+    /// Orphans that exit while the root is still running must be reaped
+    /// without waiting for the root, and without disturbing its status.
+    #[cfg(target_os = "linux")]
+    pub fn reaps_orphans_while_root_runs() {
+        let (_guard, dir) = state_root();
+        let out = paths::join2(&dir, "zombies");
+        let script = format!(
+            "i=0; while [ $i -lt 20 ]; do (sleep 0.01 &); i=$((i + 1)); done; sleep 1; \
+             {ZOMBIE_COUNT} printf '%s' \"$zombies\" > '{out}'; exit 7"
+        );
+        let (r, e) = run_plain(&Context::background(), &dir, shell(&dir, &script));
+        e.unwrap();
+        assert_eq!(r.exit_code, 7, "root exit code");
+        assert_eq!(
+            fs::read_to_string(&out).unwrap(),
+            "0",
+            "exited orphans stayed zombies while the root ran"
+        );
+    }
+
+    /// Orphans that exit at the same moment as the root must never take the
+    /// root's exit status.
+    #[cfg(target_os = "linux")]
+    pub fn orphan_reaping_preserves_root_status() {
+        for round in 0..20 {
+            let (_guard, dir) = state_root();
+            let script = "i=0; while [ $i -lt 20 ]; do (sleep 0.05 &); i=$((i + 1)); done; sleep \
+                          0.05; exit 3";
+            let (r, e) = run_plain(&Context::background(), &dir, shell(&dir, script));
+            e.unwrap();
+            assert_eq!(r.exit_code, 3, "root exit code in round {round}");
+        }
+    }
+
     pub fn tree_helper(mode: &str) -> ! {
         let dir = std::env::var("CCOW_TEST_DIR").unwrap_or_default();
         match mode {
@@ -1054,6 +1101,17 @@ fn cases() -> Vec<Case> {
         (
             "termination_request_drains_session",
             unix_tests::termination_request_drains_session,
+        ),
+    ]);
+    #[cfg(target_os = "linux")]
+    cases.extend([
+        (
+            "reaps_orphans_while_root_runs",
+            unix_tests::reaps_orphans_while_root_runs as fn(),
+        ),
+        (
+            "orphan_reaping_preserves_root_status",
+            unix_tests::orphan_reaping_preserves_root_status,
         ),
     ]);
     #[cfg(windows)]

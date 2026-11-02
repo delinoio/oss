@@ -48,6 +48,8 @@ fn close(fd: i32) {
 
 struct LinuxBackend {
     signalled: HashSet<String>,
+    /// PID of the root command. Only its `ccow-root-wait` thread may reap it.
+    root_pid: Option<libc::pid_t>,
 }
 
 pub fn new_backend(scope: &mut Scope) -> Result<Box<dyn Backend>> {
@@ -63,6 +65,7 @@ pub fn new_backend(scope: &mut Scope) -> Result<Box<dyn Backend>> {
     scope.boot_id = boot;
     Ok(Box::new(LinuxBackend {
         signalled: HashSet::new(),
+        root_pid: None,
     }))
 }
 
@@ -122,7 +125,50 @@ fn proc_row(pid: i64) -> Result<ProcRow> {
 
 impl Backend for LinuxBackend {
     fn start(&mut self, command: std::process::Command) -> Result<mpsc::Receiver<i32>> {
-        unix::start(command)
+        let (pid, rx) = unix::start(command)?;
+        self.root_pid = libc::pid_t::try_from(pid).ok();
+        Ok(rx)
+    }
+
+    fn reap(&mut self) -> usize {
+        let mut reaped = 0;
+        loop {
+            // SAFETY: an all-zero siginfo_t is a valid value for waitid to
+            // fill.
+            let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+            // Peek without consuming: a global wait4(-1) would steal the
+            // root's status from its waiter thread (ECHILD, exit code 125).
+            // SAFETY: waitid writes only to `info`.
+            let rc = unsafe {
+                libc::waitid(
+                    libc::P_ALL,
+                    0,
+                    &mut info,
+                    libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+                )
+            };
+            if rc != 0 {
+                if io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
+                    continue;
+                }
+                return reaped;
+            }
+            // SAFETY: a successful waitid with WEXITED fills `si_pid`.
+            let pid = unsafe { info.si_pid() };
+            // pid 0: no exited child. The unreaped root is left to its
+            // waiter thread; it is reaped within moments, so orphans queued
+            // behind it are reaped on a later tick.
+            if pid <= 0 || Some(pid) == self.root_pid {
+                return reaped;
+            }
+            let mut status = 0;
+            // SAFETY: waitpid writes only to `status` and targets one child.
+            let done = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
+            if done != pid {
+                return reaped;
+            }
+            reaped += 1;
+        }
     }
 
     fn signal(&mut self, force: bool) -> Result<()> {

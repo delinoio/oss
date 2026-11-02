@@ -293,7 +293,7 @@ fn all_pids() -> Result<Vec<i32>> {
 
 impl Backend for DarwinBackend {
     fn start(&mut self, command: std::process::Command) -> Result<mpsc::Receiver<i32>> {
-        unix::start(command)
+        unix::start(command).map(|(_, rx)| rx)
     }
 
     fn signal(&mut self, force: bool) -> Result<()> {
