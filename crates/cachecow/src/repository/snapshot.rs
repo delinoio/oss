@@ -14,7 +14,7 @@ use sha2::Digest;
 
 use super::{
     FileStamp, Info, Kind, Snapshot, canonical, contains, discover, git_string, io_not_found,
-    path_error, verify, verify_cache_claim,
+    path_error, verify, verify_cache_claim, worktree_missing,
 };
 use crate::{Context, paths};
 
@@ -49,6 +49,14 @@ pub fn capture_snapshot(
         let Some(worktree) = field.strip_prefix("worktree ") else {
             continue;
         };
+        // A deleted or unmounted worktree has no index or sources to capture.
+        // The worktree registry in the inventory still changes when Git prunes
+        // or re-adds the record, and the cache validation below rejects a
+        // cache inside its reserved path.
+        if worktree_missing(worktree)? {
+            tracing::debug!(worktree, "skipping missing registered worktree");
+            continue;
+        }
         let w = discover(ctx, worktree)?;
         if w.kind == Kind::Bare {
             continue;
