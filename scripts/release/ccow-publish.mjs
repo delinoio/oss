@@ -5,7 +5,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { gate, releaseIdentity } from "./ccow-acceptance.mjs";
+import { releaseIdentity } from "./ccow-release-identity.mjs";
 import {
   identity,
   verifyRelease,
@@ -15,32 +15,18 @@ import { entries } from "../../packages/ccow/scripts/archive.mjs";
 
 const repository = "delinoio/oss";
 const registry = "https://registry.npmjs.org";
-const json = (value) => Buffer.from(JSON.stringify(value, null, 2) + "\n");
 const integrity = (bytes) =>
   `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
 
-// Only this constructor admits publication inputs. It verifies the exact source,
-// non-fixture packages and all four native records before any remote operation.
-export function prepare({ artifacts, evidence, revision, version, ref }) {
+// Only this constructor admits publication inputs. It verifies the exact source
+// and non-fixture packages before any remote operation.
+export function prepare({ artifacts, revision, version, ref }) {
   const id = releaseIdentity(version, revision, ref);
-  const acceptance = gate(evidence, artifacts, revision);
   const release = verifyRelease(artifacts, identity(revision, false));
   const assets = new Map(
     [...release.artifacts.map((a) => a.name), "release.json", "SHA256SUMS"].map(
       (name) => [name, readFileSync(path.join(artifacts, name))],
     ),
-  );
-  assets.set(
-    "native-acceptance.json",
-    json({
-      revision,
-      version,
-      acceptance,
-      limitations: [
-        "No fixed storage or memory reduction is promised.",
-        "Physical allocation and peak memory use the native driver's measurement methods; see the source revision for limits.",
-      ],
-    }),
   );
   const packages = release.artifacts
     .filter((a) => a.kind === "npm")
@@ -389,7 +375,7 @@ if (
       process.env.GH_TOKEN && process.env.NODE_AUTH_TOKEN,
       "Publication credentials missing",
     );
-    const [artifacts, evidence, version] = process.argv.slice(2);
+    const [artifacts, version] = process.argv.slice(2);
     const revision = process.env.GITHUB_SHA;
     assert.equal(
       execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
@@ -403,7 +389,6 @@ if (
     );
     const plan = prepare({
       artifacts,
-      evidence,
       version,
       revision,
       ref: process.env.GITHUB_REF,

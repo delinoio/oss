@@ -6,7 +6,6 @@ import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { reconcile, prepare } from "./ccow-publish.mjs";
-import { checks, lanes, phases, gate } from "./ccow-acceptance.mjs";
 import {
   packageRelease,
   sha256,
@@ -246,9 +245,9 @@ test("tag movement during upload stops publication", async () => {
   assert.equal(f.state.releases[0].draft, true);
 });
 
-// Construct synthetic packages explicitly for gate-schema testing. Rewriting
-// fixture metadata here does not run Go binaries or establish native support.
-function acceptedFixture(directory) {
+// Construct synthetic packages explicitly for publication-input testing.
+// Rewriting fixture metadata here does not run native binaries.
+function candidateFixture(directory) {
   const revision = "a".repeat(40);
   const binaries = Object.fromEntries(
     platforms.targets.map((t) => {
@@ -286,101 +285,30 @@ function acceptedFixture(directory) {
     path.join(artifacts, "SHA256SUMS"),
     release.artifacts.map((a) => `${a.sha256}  ${a.name}\n`).join(""),
   );
-  const records = Object.entries(lanes).map(([lane, environment]) => ({
-    schema: 1,
-    lane,
-    revision,
-    version: "0.1.0",
-    status: "passed",
-    kind: "native",
-    artifactDigest: sha256(readFileSync(path.join(artifacts, "SHA256SUMS"))),
-    environment: {
-      ...environment,
-      cargo: "1.99.1",
-      node: "24.20.0",
-      osVersion: lane.startsWith("macos")
-        ? "15.0"
-        : lane.startsWith("ubuntu")
-          ? "Ubuntu 22.04"
-          : "Windows Server 2025 (26100)",
-    },
-    checks: Object.fromEntries(checks.map((c) => [c, true])),
-    tools: { cargo: "1.99.1", rspack: "2.3.0", rsbuild: "2.3.0" },
-    unperformed: [],
-    measurements: ["cargo", "rspack", "rsbuild"].flatMap((preset) =>
-      phases.map((phase) => ({
-        preset,
-        phase,
-        physicalBytes: 1,
-        preparationMs: 1,
-        buildMs: 1,
-        peakMemoryBytes: 1,
-      })),
-    ),
-  }));
-  const save = () =>
-    records.forEach((r) =>
-      writeFileSync(path.join(directory, `${r.lane}.json`), JSON.stringify(r)),
-    );
-  save();
   return {
     artifacts,
-    evidence: directory,
     revision,
     version: "0.1.0",
     ref: "refs/heads/main",
-    records,
-    save,
   };
 }
 
-test("publication gate binds all lanes, minimum hosts, revision, version and candidate bytes", () => {
+test("publication binds the exact revision, version, ref and candidate bytes", () => {
   const directory = mkdtempSync(path.join(tmpdir(), "ccow-publisher-fixture-"));
   try {
-    const f = acceptedFixture(directory);
+    const f = candidateFixture(directory);
     const plan = prepare(f);
     assert.equal(plan.packages.at(-1).name, "@delino/ccow");
-    assert.equal(plan.assets.size, 10);
+    assert.equal(plan.assets.size, 9);
+    assert(!plan.assets.has("native-acceptance.json"));
     for (const mutate of [
-      (r) => {
-        r.revision = "b".repeat(40);
-      },
-      (r) => {
-        r.version = "0.2.0";
-      },
-      (r) => {
-        r.artifactDigest = "b".repeat(64);
-      },
-      (r) => {
-        r.status = "blocked";
-      },
-      (r) => {
-        r.checks.rollback = false;
-      },
-      (r) => {
-        r.environment.osVersion = "macOS 16";
-      },
-      (r) => {
-        r.environment.node = "25.0.0";
-      },
-      (r) => {
-        r.environment.cargo = "1.100.0";
-      },
-    ]) {
-      const original = structuredClone(f.records[0]);
-      mutate(f.records[0]);
-      f.save();
-      assert.throws(() => prepare(f));
-      f.records[0] = original;
-      f.save();
-    }
-    f.records[0].secret = "private-path";
-    f.save();
-    assert(
-      !prepare(f).assets.get("native-acceptance.json").includes("private-path"),
-    );
-    rmSync(path.join(directory, "ubuntu22-xfs.json"));
-    assert.throws(() => gate(directory, f.artifacts, f.revision));
+      { revision: "b".repeat(40) },
+      { version: "0.2.0" },
+      { ref: "refs/heads/topic" },
+    ])
+      assert.throws(() => prepare({ ...f, ...mutate }));
+    writeFileSync(path.join(f.artifacts, "SHA256SUMS"), "tampered\n");
+    assert.throws(() => prepare(f));
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

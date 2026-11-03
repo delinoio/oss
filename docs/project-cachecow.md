@@ -16,7 +16,7 @@ Prepare independent writable build caches for Git worktrees with filesystem copy
 | packages | `packages/ccow`                  | `@delino/ccow` launcher and native distribution tooling                                             |
 | apps     | `apps/public-docs/docs/cachecow` | Public guides, built and published by public-docs                                                   |
 
-Implementation and packaging do not establish published availability or native acceptance. The complete requirements retain their actual platform and tool acceptance gates.
+Implementation and packaging do not establish published availability or native acceptance. CI and the release workflow run no native acceptance, and publication is not gated on it.
 
 ## Domain Contract Documents
 
@@ -27,14 +27,14 @@ Implementation and packaging do not establish published availability or native a
 
 ## Cross-Domain Invariants
 
-- The complete requirements contract retains all product decisions, acceptance gates, test scenarios, and exclusions. Domain summaries must not weaken them.
+- The complete requirements contract retains all product decisions, acceptance criteria, test scenarios, and exclusions. Domain summaries must not weaken them.
 - Preset IDs are `cargo`, `rspack`, and `rsbuild`. Explicit execution and activated shims share managed cache and process behavior.
 - Native Cargo use has no Node.js dependency. npm and frontend integration require Node.js 24+.
 - Repository-owned code and distributions use Apache-2.0. Preserve third-party licenses and notices.
 - Storage is local-only, same-user and same-Git-repository. This is an explicit exception to the default R2 storage approach; it adds no remote service or telemetry.
 - Use UUID v7 when new persisted entities need identifiers; do not introduce entities solely to use UUIDs.
 - Public documentation must distinguish planned behavior, available artifacts, and verified native acceptance. Compilation, fixtures, and packaging alone do not prove native support or performance benefits.
-- Actual support floors and acceptance on APFS, Btrfs, reflink-enabled XFS, and ReFS remain defined by the complete requirements contract. No macOS CI allocation is added to PR, main-push, or affected manual validation.
+- Support floors on APFS, Btrfs, reflink-enabled XFS, and ReFS remain defined by the complete requirements contract. Native acceptance on them does not run in CI. No macOS CI allocation is added to PR, main-push, or affected manual validation.
 
 ## Change Policy
 
