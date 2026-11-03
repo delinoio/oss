@@ -23,7 +23,7 @@ concurrency:
 jobs:
   # The Rust CLI builds each native target on a matching GitHub-hosted host with
   # the pinned toolchain. Ubuntu 22.04 keeps the Linux glibc floor. Compilation
-  # here is not native acceptance; the self-hosted gate below still owns it.
+  # here is not native acceptance; the native job below still owns it.
   build:
     if: github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main'
     name: Build native binary (${{ matrix.target }})
@@ -106,23 +106,27 @@ jobs:
           path: ${{ runner.temp }}/ccow-candidate/*
           if-no-files-found: error
 
+  # Native acceptance runs on GitHub-hosted runners. Each lane formats only new
+  # disposable image files under RUNNER_TEMP, never a runner volume, to supply
+  # the CoW workspace, a second CoW volume and an unsupported-filesystem path.
   native:
     needs: candidate
-    environment: ccow-native-acceptance
     strategy:
       fail-fast: false
       matrix:
         include:
           - lane: macos15-apfs
-            labels: [self-hosted, macOS, ARM64, ccow-macos15-apfs]
+            runner: macos-15
           - lane: ubuntu22-btrfs
-            labels: [self-hosted, Linux, X64, ccow-ubuntu22-btrfs]
+            runner: ubuntu-22.04
+            filesystem: btrfs
           - lane: ubuntu22-xfs
-            labels: [self-hosted, Linux, X64, ccow-ubuntu22-xfs]
+            runner: ubuntu-22.04
+            filesystem: xfs
           - lane: windows24h2-refs
-            labels: [self-hosted, Windows, X64, ccow-windows24h2-refs]
-    runs-on: ${{ matrix.labels }}
-    timeout-minutes: 60
+            runner: windows-2025
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
@@ -132,6 +136,88 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
+      - name: Install the minimum Cargo toolchain
+        shell: bash
+        run: rustup toolchain install 1.99.1 --profile minimal --no-self-update
+      - name: Provision Linux acceptance volumes
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          CCOW_FILESYSTEM: ${{ matrix.filesystem }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends btrfs-progs xfsprogs e2fsprogs time zsh
+          volumes="$RUNNER_TEMP/ccow-volumes"
+          # The unsupported path stays on the runner's ext4 disk.
+          mkdir -p "$volumes/unsupported"
+          for name in workspace copy; do
+            image="$volumes/$name.img"
+            truncate --size 8G "$image"
+            case "$CCOW_FILESYSTEM" in
+              btrfs) mkfs.btrfs --quiet "$image" ;;
+              xfs) mkfs.xfs -q -m reflink=1 "$image" ;;
+              *) echo "Unknown acceptance filesystem" >&2; exit 1 ;;
+            esac
+            mkdir "$volumes/$name"
+            sudo mount -o loop,nosuid,nodev "$image" "$volumes/$name"
+            sudo chown "$(id -u):$(id -g)" "$volumes/$name"
+          done
+          {
+            echo "CCOW_NATIVE_WORKSPACE=$volumes/workspace"
+            echo "CCOW_ACCEPTANCE_COPY_WORKSPACE=$volumes/copy"
+            echo "CCOW_ACCEPTANCE_UNSUPPORTED_WORKSPACE=$volumes/unsupported"
+          } >> "$GITHUB_ENV"
+      - name: Provision macOS acceptance volumes
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          set -euo pipefail
+          volumes="$RUNNER_TEMP/ccow-volumes"
+          # The workspace stays on the runner's APFS disk. The copy volume is a
+          # second APFS volume and the unsupported volume uses HFS+.
+          mkdir -p "$volumes/workspace" "$volumes/copy" "$volumes/unsupported"
+          hdiutil create -size 8g -fs APFS -volname ccow-copy -type SPARSE "$volumes/copy.sparseimage"
+          hdiutil create -size 2g -fs HFS+ -volname ccow-unsupported -type SPARSE "$volumes/unsupported.sparseimage"
+          for name in copy unsupported; do
+            hdiutil attach -nobrowse -owners on -mountpoint "$volumes/$name" "$volumes/$name.sparseimage"
+            sudo chown "$(id -u):$(id -g)" "$volumes/$name"
+          done
+          {
+            echo "CCOW_NATIVE_WORKSPACE=$volumes/workspace"
+            echo "CCOW_ACCEPTANCE_COPY_WORKSPACE=$volumes/copy"
+            echo "CCOW_ACCEPTANCE_UNSUPPORTED_WORKSPACE=$volumes/unsupported"
+          } >> "$GITHUB_ENV"
+      - name: Provision Windows acceptance volumes
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $volumes = Join-Path $env:RUNNER_TEMP 'ccow-volumes'
+          # The unsupported path stays on the runner's NTFS disk.
+          New-Item -ItemType Directory -Force -Path (Join-Path $volumes 'unsupported') | Out-Null
+          $letters = [ordered]@{ workspace = 'R'; copy = 'S' }
+          foreach ($name in $letters.Keys) {
+            $letter = $letters[$name]
+            $vhd = Join-Path $volumes "$name.vhdx"
+            $script = Join-Path $volumes "$name.diskpart"
+            Set-Content -Path $script -Encoding ascii -Value @(
+              "create vdisk file=`"$vhd`" maximum=16384 type=expandable",
+              "select vdisk file=`"$vhd`"",
+              'attach vdisk',
+              'create partition primary',
+              "assign letter=$letter"
+            )
+            diskpart /s $script
+            if ($LASTEXITCODE -ne 0) { throw "diskpart failed for the $name volume" }
+            Format-Volume -DriveLetter $letter -FileSystem ReFS -NewFileSystemLabel "ccow-$name" -Confirm:$false -Force | Out-Null
+            New-Item -ItemType Directory -Force -Path "${letter}:\ccow" | Out-Null
+          }
+          Add-Content -Path $env:GITHUB_ENV -Value @(
+            'CCOW_NATIVE_WORKSPACE=R:\ccow',
+            'CCOW_ACCEPTANCE_COPY_WORKSPACE=S:\ccow',
+            "CCOW_ACCEPTANCE_UNSUPPORTED_WORKSPACE=$(Join-Path $volumes 'unsupported')"
+          )
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: ccow-candidate-${{ github.sha }}
@@ -141,7 +227,7 @@ jobs:
         env:
           CCOW_LANE: ${{ matrix.lane }}
         run: |
-          node scripts/release/ccow-acceptance.mjs native "$CCOW_LANE" "$RUNNER_TEMP/ccow-candidate" "$GITHUB_WORKSPACE" "$RUNNER_TEMP/$CCOW_LANE.json" "$GITHUB_SHA"
+          node scripts/release/ccow-acceptance.mjs native "$CCOW_LANE" "$RUNNER_TEMP/ccow-candidate" "$CCOW_NATIVE_WORKSPACE" "$RUNNER_TEMP/$CCOW_LANE.json" "$GITHUB_SHA"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         if: always()
         with:

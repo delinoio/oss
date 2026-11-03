@@ -8,20 +8,56 @@ import { Event, planJobs } from "./plan.mjs";
 const workflow = yaml.load(
   readFileSync(".github/workflows/release-ccow.yml", "utf8"),
 );
-test("CacheCow native gate is manual, main-only and owns four real environments", () => {
+test("CacheCow native gate is manual, main-only and runs four GitHub-hosted lanes", () => {
   assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
   assert.deepEqual(workflow.permissions, { contents: "read" });
   assert.equal(
     workflow.jobs.candidate.if,
     "github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main'",
   );
-  assert.equal(workflow.jobs.native.environment, "ccow-native-acceptance");
-  const matrix = workflow.jobs.native.strategy.matrix.include;
+  const native = workflow.jobs.native;
+  assert.equal(native.environment, undefined);
+  assert.equal(native["runs-on"], "${{ matrix.runner }}");
+  const matrix = native.strategy.matrix.include;
   assert.deepEqual(
-    matrix.map((m) => m.lane),
-    ["macos15-apfs", "ubuntu22-btrfs", "ubuntu22-xfs", "windows24h2-refs"],
+    matrix.map(({ lane, runner, filesystem }) => ({
+      lane,
+      runner,
+      filesystem,
+    })),
+    [
+      { lane: "macos15-apfs", runner: "macos-15", filesystem: undefined },
+      { lane: "ubuntu22-btrfs", runner: "ubuntu-22.04", filesystem: "btrfs" },
+      { lane: "ubuntu22-xfs", runner: "ubuntu-22.04", filesystem: "xfs" },
+      {
+        lane: "windows24h2-refs",
+        runner: "windows-2025",
+        filesystem: undefined,
+      },
+    ],
   );
-  for (const entry of matrix) assert(entry.labels.includes("self-hosted"));
+  // Each lane provisions disposable image volumes and runs acceptance on them,
+  // never on the runner's own checkout volume.
+  for (const os of ["Linux", "macOS", "Windows"]) {
+    const step = native.steps.find((s) => s.if === `runner.os == '${os}'`);
+    assert(step, `Missing ${os} volume provisioning`);
+    for (const name of [
+      "CCOW_NATIVE_WORKSPACE",
+      "CCOW_ACCEPTANCE_COPY_WORKSPACE",
+      "CCOW_ACCEPTANCE_UNSUPPORTED_WORKSPACE",
+    ])
+      assert.match(step.run, new RegExp(name, "u"));
+  }
+  assert.match(
+    native.steps.find((s) => s.name === "Install the minimum Cargo toolchain")
+      .run,
+    /rustup toolchain install 1\.99\.1 /u,
+  );
+  const accept = native.steps.find((s) =>
+    s.run?.includes("ccow-acceptance.mjs native"),
+  );
+  assert.match(accept.run, /"\$CCOW_NATIVE_WORKSPACE"/u);
+  assert.doesNotMatch(accept.run, /GITHUB_WORKSPACE/u);
   assert.deepEqual(workflow.jobs.gate.needs, ["candidate", "native"]);
   assert.equal(workflow.jobs.gate.if, undefined);
   assert.equal(workflow.on.workflow_dispatch.inputs.dry_run.default, true);
