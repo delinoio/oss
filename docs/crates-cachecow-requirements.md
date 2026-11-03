@@ -30,7 +30,7 @@ English diagnostics, structured Rust `tracing` logging, unchanged child streams,
 
 ## Build and Test
 
-The complete acceptance criteria and test scenarios below remain required. Fixtures, compilation, cross-builds, and package creation do not establish native filesystem, process-lifecycle, installation, or performance acceptance. Record exact revisions, commands, results, unperformed checks, and limits in PRs and CI artifacts. Preserve repository CI platform gates.
+The complete acceptance criteria and test scenarios below remain product requirements. CI and the release workflow do not run native acceptance, and native acceptance does not gate publication. Fixtures, compilation, cross-builds, and package creation do not establish native filesystem, process-lifecycle, installation, or performance acceptance. Record exact revisions, commands, results, unperformed checks, and limits in PRs and CI artifacts. Preserve repository CI platform gates.
 
 ## Dependencies and Integrations
 
@@ -85,10 +85,10 @@ CoW is not a compiler cache key algorithm, a shared process heap, or automatic s
 - Product: CacheCow. CLI: `ccow`. Use the lowercase project identifier `cachecow` for project onboarding.
 - Implement the CLI in Rust as the `crates/cachecow` crate with the `ccow` binary; license repository-owned code and distributions under Apache-2.0. The owner later decided to port the original Go implementation to Rust; see the decision ledger below.
 - First-release presets: `cargo`, `rspack`, `rsbuild`.
-- Native support and actual acceptance floors:
+- Native support floors:
   - macOS 15+, arm64, APFS.
   - Linux x64 with Ubuntu 22.04-equivalent environment, Btrfs and reflink-enabled XFS.
-  - Windows 11 24H2+, x64, ReFS. Release acceptance runs on GitHub-hosted Windows Server 2025 (24H2, build 26100, the same build as Windows 11 24H2), because GitHub provides no Windows 11 x64 runner image and the project uses no self-hosted runners.
+  - Windows 11 24H2+, x64, ReFS.
 - Tool support: Cargo 1.99.1 or later within 1.x; Rspack and Rsbuild 2.3.0 or later within 2.x. Older versions and nightly toolchains are outside the first-release support guarantee.
 - npm package: `@delino/ccow`, exposing `ccow`. npm launcher and Rspack/Rsbuild integration require Node.js 24+. Native Cargo usage must not require Node.js.
 - Other filesystems, or cross-volume operations where CoW cannot work, fail by default. Only an explicit `--allow-copy` permits ordinary copying. Report that ordinary copying was used. For a managed command, report it before the command starts, once per run, even if the command later fails or the supervisor ends with an error.
@@ -229,7 +229,7 @@ Disk exhaustion, permission errors, and other actual preparation failures stop b
 - Before runtime implementation, onboard the project with a project index and owning domain contracts under `docs/`, update the catalog, and establish canonical implementation/package paths. Use the project/domain templates. Update AGENTS only for ownership or development-rule changes.
 - Add a CacheCow section to `apps/public-docs` covering installation, preset configuration, source selection, concurrency, cleaning, troubleshooting, and performance limitations. Keep internal contracts and implementation details in `docs/`.
 - Keep source revision, test commands, results, unperformed checks, and unresolved constraints in PRs and CI artifacts.
-- Preserve repository CI rules, including no macOS runners on PRs, main pushes, or affected manual validation. Actual macOS acceptance belongs in the appropriate release-platform gate.
+- Preserve repository CI rules, including no macOS runners on PRs, main pushes, or affected manual validation. Native macOS acceptance does not run in CI.
 
 ## Acceptance Criteria
 
@@ -252,7 +252,7 @@ Disk exhaustion, permission errors, and other actual preparation failures stop b
 - [ ] Watch servers, cancellation, and abnormal parent termination preserve process-tree ownership and cache locking.
 - [ ] `clean` deletes only the selected verified cache without confirmation and rejects an in-use cache.
 - [ ] Settings precedence, English output, JSON, exit codes, stderr separation, diagnostics, and sensitive-log exclusions match the contract.
-- [ ] The exact minimum supported tool/OS environments pass native execution and packaged installation acceptance; mocks, compilation, or cross-builds alone do not satisfy these gates.
+- [ ] The exact minimum supported tool/OS environments pass native execution and packaged installation testing outside CI; mocks, compilation, or cross-builds alone do not satisfy this criterion. This criterion does not gate release publication.
 - [ ] Publish measured physical storage use, cache preparation time, build time, and memory use, with source/environment details and limitations. No fixed reduction percentage is required.
 - [ ] Documentation, rollback guidance, and GitHub issue support are available. No fixed deadline or response SLA applies.
 
@@ -306,24 +306,24 @@ Decision ledger closure:
 
 The shim extension was decided by the owner after the original PRD: three PATH shims; Bash/Zsh/PowerShell 7 session and persistent activation; owned-file installation/removal; confirmed shell block updates; dynamic real-tool lookup; explicit passthrough/bypass rules; nested lock reuse; lock-aware cargo clean; and documentation/native verification. Existing cache, platform, privacy, distribution, and release requirements remain in force.
 
-| Category                      | Status                         | Basis                                                                                                                         |
-| ----------------------------- | ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| Product intent and evidence   | Answered                       | Owner's multi-worktree problem; observable isolation, recovery, and measured results; no deadline or fixed performance target |
-| Scope and preserved behavior  | Answered                       | Explicit presets, commands, cache boundaries, source semantics, and exclusions above                                          |
-| CLI experience and interfaces | Answered                       | Owner-approved command/options, prompts, English output, JSON, exit codes, and settings precedence                            |
-| Data and state                | Answered                       | Existing tool cache locations, worktree retention, current-user records, manual cleanup, no central snapshots                 |
-| Security and privacy          | Answered                       | Same-user/same-repository local boundary, path protection, sensitive-log exclusions, no sandbox or telemetry                  |
-| Integrations                  | Answered                       | Cargo/Rspack/Rsbuild, Git, OS CoW, npm/native distribution, selected versions and fallback rules                              |
-| Feature flag and rollout      | Not applicable                 | Owner explicitly selected no flag; use is opt-in through CLI invocation or shim installation and activation                   |
-| Operations and rollback       | Answered                       | Process-tree ownership, five-second shutdown, manual version rollback, no automatic updater or support SLA                    |
-| Observability                 | Answered / contract-determined | Approved doctor/verbose and local errors; structured logs and ANSI opt-out from repository rules                              |
-| Failure modes                 | Answered                       | Source errors, preparation failure, cancellation, concurrent use, and replacement contracts above                             |
-| Documentation and support     | Answered / contract-determined | Approved public guides and GitHub Issues; documentation-first repository onboarding                                           |
-| Testing and acceptance        | Answered                       | Owner approved all native, failure, isolation, installation, and measurement gates                                            |
-| Language/license/identifiers  | Answered                       | Rust (owner decision to port the Go CLI), Apache-2.0, default UUID v7 for new persisted entities under repository rules       |
-| Filing                        | Contract-determined            | Current remote is delinoio/oss; repository issue style; no duplicate found; PRD label absent, so no labels added              |
+| Category                      | Status                         | Basis                                                                                                                                        |
+| ----------------------------- | ------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| Product intent and evidence   | Answered                       | Owner's multi-worktree problem; observable isolation, recovery, and measured results; no deadline or fixed performance target                |
+| Scope and preserved behavior  | Answered                       | Explicit presets, commands, cache boundaries, source semantics, and exclusions above                                                         |
+| CLI experience and interfaces | Answered                       | Owner-approved command/options, prompts, English output, JSON, exit codes, and settings precedence                                           |
+| Data and state                | Answered                       | Existing tool cache locations, worktree retention, current-user records, manual cleanup, no central snapshots                                |
+| Security and privacy          | Answered                       | Same-user/same-repository local boundary, path protection, sensitive-log exclusions, no sandbox or telemetry                                 |
+| Integrations                  | Answered                       | Cargo/Rspack/Rsbuild, Git, OS CoW, npm/native distribution, selected versions and fallback rules                                             |
+| Feature flag and rollout      | Not applicable                 | Owner explicitly selected no flag; use is opt-in through CLI invocation or shim installation and activation                                  |
+| Operations and rollback       | Answered                       | Process-tree ownership, five-second shutdown, manual version rollback, no automatic updater or support SLA                                   |
+| Observability                 | Answered / contract-determined | Approved doctor/verbose and local errors; structured logs and ANSI opt-out from repository rules                                             |
+| Failure modes                 | Answered                       | Source errors, preparation failure, cancellation, concurrent use, and replacement contracts above                                            |
+| Documentation and support     | Answered / contract-determined | Approved public guides and GitHub Issues; documentation-first repository onboarding                                                          |
+| Testing and acceptance        | Answered                       | Owner approved all native, failure, isolation, installation, and measurement scenarios; native acceptance does not run in CI or gate release |
+| Language/license/identifiers  | Answered                       | Rust (owner decision to port the Go CLI), Apache-2.0, default UUID v7 for new persisted entities under repository rules                      |
+| Filing                        | Contract-determined            | Current remote is delinoio/oss; repository issue style; no duplicate found; PRD label absent, so no labels added                             |
 
-Runner decision: the owner decided that native acceptance runs only on GitHub-hosted runners, with no self-hosted runners. The workflow formats disposable image files to provide Btrfs, reflink XFS, a second APFS volume and ReFS volumes. Windows acceptance moves from Windows 11 24H2 to Windows Server 2025 on the same build 26100.
+Acceptance decision: the owner decided not to run native acceptance in CI. The release workflow has no native acceptance job, acceptance gate or acceptance evidence, and the repository has no native acceptance driver. Publication requires only the verified candidate. This supersedes the earlier native release gate.
 
 Language decision: the first implementation was Go under the repository default-language rule. The owner then decided to port the CLI completely to Rust (`crates/cachecow`, binary `ccow`). This supersedes the original "Implement the CLI in Go" scope item. Persisted record formats, commands, output, exit codes and every acceptance gate remain unchanged by the port.
 

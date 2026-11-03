@@ -11,7 +11,7 @@ Version 0.1.0 is not yet released. Do not assume an npm version, native archive,
 Native Cargo use does not require Node.js. When a release is available:
 
 1. Open [GitHub Releases](https://github.com/delinoio/oss/releases) and select the `ccow@v<version>` release.
-2. Select the native archive for your OS and architecture. Read its `native-acceptance.json` report for the tested environments, measurements, and limitations.
+2. Select the native archive for your OS and architecture.
 3. Verify the archive against the checksums supplied with that release before extracting it.
 4. Put the extracted `ccow` executable in a directory on your PATH. On Windows, use `ccow.exe`.
 5. Run `ccow doctor` in your project to inspect the environment before preparing a cache.
@@ -31,7 +31,7 @@ This is a future installation example, not evidence that npm currently serves th
 
 ## Target environments
 
-These are first-release acceptance targets, not a list of platforms that have passed native tests.
+These are first-release support targets, not a list of platforms that have passed native tests.
 
 | OS and architecture                            | CoW filesystem               |
 | ---------------------------------------------- | ---------------------------- |

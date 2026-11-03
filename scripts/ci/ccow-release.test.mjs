@@ -8,64 +8,24 @@ import { Event, planJobs } from "./plan.mjs";
 const workflow = yaml.load(
   readFileSync(".github/workflows/release-ccow.yml", "utf8"),
 );
-test("CacheCow native gate is manual, main-only and runs four GitHub-hosted lanes", () => {
+test("CacheCow release is manual, main-only and runs no native acceptance", () => {
   assert.deepEqual(Object.keys(workflow.on), ["workflow_dispatch"]);
   assert.deepEqual(workflow.permissions, { contents: "read" });
   assert.equal(
     workflow.jobs.candidate.if,
     "github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main'",
   );
-  const native = workflow.jobs.native;
-  assert.equal(native.environment, undefined);
-  assert.equal(native["runs-on"], "${{ matrix.runner }}");
-  const matrix = native.strategy.matrix.include;
-  assert.deepEqual(
-    matrix.map(({ lane, runner, filesystem }) => ({
-      lane,
-      runner,
-      filesystem,
-    })),
-    [
-      { lane: "macos15-apfs", runner: "macos-15", filesystem: undefined },
-      { lane: "ubuntu22-btrfs", runner: "ubuntu-22.04", filesystem: "btrfs" },
-      { lane: "ubuntu22-xfs", runner: "ubuntu-22.04", filesystem: "xfs" },
-      {
-        lane: "windows24h2-refs",
-        runner: "windows-2025",
-        filesystem: undefined,
-      },
-    ],
-  );
-  // Each lane provisions disposable image volumes and runs acceptance on them,
-  // never on the runner's own checkout volume.
-  for (const os of ["Linux", "macOS", "Windows"]) {
-    const step = native.steps.find((s) => s.if === `runner.os == '${os}'`);
-    assert(step, `Missing ${os} volume provisioning`);
-    for (const name of [
-      "CCOW_NATIVE_WORKSPACE",
-      "CCOW_ACCEPTANCE_COPY_WORKSPACE",
-      "CCOW_ACCEPTANCE_UNSUPPORTED_WORKSPACE",
-    ])
-      assert.match(step.run, new RegExp(name, "u"));
-  }
-  assert.match(
-    native.steps.find((s) => s.name === "Install the minimum Cargo toolchain")
-      .run,
-    /rustup toolchain install 1\.99\.1 /u,
-  );
-  const accept = native.steps.find((s) =>
-    s.run?.includes("ccow-acceptance.mjs native"),
-  );
-  assert.match(accept.run, /"\$CCOW_NATIVE_WORKSPACE"/u);
-  assert.doesNotMatch(accept.run, /GITHUB_WORKSPACE/u);
-  assert.deepEqual(workflow.jobs.gate.needs, ["candidate", "native"]);
-  assert.equal(workflow.jobs.gate.if, undefined);
-  assert.equal(workflow.on.workflow_dispatch.inputs.dry_run.default, true);
-  assert.deepEqual(workflow.jobs.publish.needs, [
+  assert.deepEqual(Object.keys(workflow.jobs), [
+    "build",
     "candidate",
-    "native",
-    "gate",
+    "publish",
   ]);
+  assert.doesNotMatch(
+    JSON.stringify(workflow),
+    /ccow-acceptance|ccow-evidence|native-acceptance/u,
+  );
+  assert.equal(workflow.on.workflow_dispatch.inputs.dry_run.default, true);
+  assert.equal(workflow.jobs.publish.needs, "candidate");
   assert.equal(workflow.jobs.publish.environment, "ccow-release");
   assert.match(workflow.jobs.publish.if, /!inputs.dry_run/u);
   assert.match(
@@ -74,11 +34,11 @@ test("CacheCow native gate is manual, main-only and runs four GitHub-hosted lane
   );
   assert.match(workflow.jobs.publish.if, /github.ref == 'refs\/heads\/main'/u);
   const steps = workflow.jobs.publish.steps;
-  const revalidate = steps.findIndex(
-    (s) => s.name === "Revalidate native acceptance before credentials",
+  const verify = steps.findIndex(
+    (s) => s.name === "Verify the exact candidate before credentials",
   );
   const credentials = steps.findIndex((s) => s.id === "release-bot");
-  assert(revalidate >= 0 && credentials > revalidate);
+  assert(verify >= 0 && credentials > verify);
   assert.equal(steps[credentials].with.repositories, "oss");
   assert.equal(steps[credentials].with.owner, "delinoio");
   assert.equal(steps[credentials].with["permission-contents"], "write");
@@ -134,7 +94,7 @@ test("normal affected CI runs CacheCow distribution tests without native allocat
     for (const file of [
       "packages/ccow/src/launcher.cjs",
       "crates/cachecow/src/main.rs",
-      "scripts/release/ccow-acceptance.mjs",
+      "scripts/release/ccow-release-identity.mjs",
       "scripts/release/ccow-publish.mjs",
       "scripts/release/ccow-publish.test.mjs",
       ".github/workflows/release-ccow.yml",
