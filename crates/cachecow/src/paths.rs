@@ -305,27 +305,45 @@ pub fn lexically_within(parent: &str, child: &str) -> bool {
 
 /// Go `filepath.SplitList`.
 pub fn split_list(list: &str) -> Vec<String> {
+    split_list_raw(list)
+        .into_iter()
+        .map(|(_, dir)| dir)
+        .collect()
+}
+
+/// Go `filepath.SplitList` that also returns each entry's original spelling
+/// as `(raw, dir)`. They differ only on Windows, where `dir` has the quotes
+/// removed and `raw` keeps them.
+pub fn split_list_raw(list: &str) -> Vec<(String, String)> {
     if list.is_empty() {
         return Vec::new();
     }
     #[cfg(windows)]
     {
         let mut out = Vec::new();
-        let mut current = String::new();
+        let (mut raw, mut dir) = (String::new(), String::new());
         let mut quoted = false;
         for c in list.chars() {
             match c {
-                '"' => quoted = !quoted,
-                ';' if !quoted => out.push(std::mem::take(&mut current)),
-                c => current.push(c),
+                ';' if !quoted => out.push((std::mem::take(&mut raw), std::mem::take(&mut dir))),
+                c => {
+                    if c == '"' {
+                        quoted = !quoted;
+                    } else {
+                        dir.push(c);
+                    }
+                    raw.push(c);
+                }
             }
         }
-        out.push(current);
+        out.push((raw, dir));
         out
     }
     #[cfg(not(windows))]
     {
-        list.split(':').map(str::to_string).collect()
+        list.split(':')
+            .map(|dir| (dir.to_string(), dir.to_string()))
+            .collect()
     }
 }
 

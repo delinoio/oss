@@ -411,23 +411,17 @@ fn without_shim_dir(env: &[String], shim_dir: &str, ignore_case: bool) -> Vec<St
             if !env_name_matches(name, "PATH", ignore_case) {
                 return entry.clone();
             }
-            let dirs = paths::split_list(value);
-            if !dirs.iter().any(|dir| is_shim(dir)) {
+            let dirs = paths::split_list_raw(value);
+            if !dirs.iter().any(|(_, dir)| is_shim(dir)) {
                 return entry.clone();
             }
             tracing::debug!("ignoring the CacheCow shim directory in PATH for the settings digest");
+            // Keep each retained entry's original spelling, including any
+            // Windows quotes, so removing the shim restores the original value.
             let kept: Vec<String> = dirs
                 .into_iter()
-                .filter(|dir| !is_shim(dir))
-                .map(|dir| {
-                    // Windows list entries that contain the separator were
-                    // quoted.
-                    if cfg!(windows) && dir.contains(paths::LIST_SEPARATOR) {
-                        format!("\"{dir}\"")
-                    } else {
-                        dir
-                    }
-                })
+                .filter(|(_, dir)| !is_shim(dir))
+                .map(|(raw, _)| raw)
                 .collect();
             format!("{name}={}", kept.join(&paths::LIST_SEPARATOR.to_string()))
         })

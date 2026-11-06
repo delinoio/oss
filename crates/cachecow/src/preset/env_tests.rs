@@ -192,3 +192,19 @@ fn without_shim_dir_matches_a_symlinked_alias_of_the_shim_directory() {
         strings(&["PATH=/a:/b"])
     );
 }
+
+#[cfg(windows)]
+#[test]
+fn without_shim_dir_preserves_the_spelling_of_quoted_windows_entries() {
+    let shim = "C:\\State\\shims";
+    let env = strings(&["PATH=\"C:\\Tools;x\";C:\\State\\shims;\"C:\\Tools\";C:\\Windows"]);
+    assert_eq!(
+        without_shim_dir(&env, shim, true),
+        strings(&["PATH=\"C:\\Tools;x\";\"C:\\Tools\";C:\\Windows"])
+    );
+    let quoted_shim = strings(&["PATH=\"C:\\State\\shims\";\"C:\\Tools\""]);
+    assert_eq!(
+        without_shim_dir(&quoted_shim, shim, true),
+        strings(&["PATH=\"C:\\Tools\""])
+    );
+}
