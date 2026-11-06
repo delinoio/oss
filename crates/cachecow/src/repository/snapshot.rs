@@ -16,7 +16,7 @@ use super::{
     FileStamp, Info, Kind, Snapshot, canonical, contains, discover, git_string, io_not_found,
     path_error, verify, verify_cache_claim, worktree_missing,
 };
-use crate::{Context, paths};
+use crate::{Context, error, paths};
 
 /// Runs Git, validates every cache, and captures the index, ignore rules, Git
 /// configuration and source namespace. Verification uses no subprocess. Cache
@@ -242,19 +242,23 @@ impl Snapshot {
         // paths that the captured inventory does not cover.
         for p in &self.missing_worktrees {
             if !worktree_missing(p)? {
-                bail!(
+                return Err(error::stale(
                     "a registered worktree that was missing at discovery is available again; \
-                     repeat discovery"
-                );
+                     repeat discovery",
+                ));
             }
         }
         for old in &self.files {
             if *old != file_stamp(&old.path)? {
-                bail!("repository metadata changed after discovery; repeat discovery");
+                return Err(error::stale(
+                    "repository metadata changed after discovery; repeat discovery",
+                ));
             }
         }
         if self.inventory()? != self.inventory_digest {
-            bail!("source paths or ignore rules changed after discovery; repeat discovery");
+            return Err(error::stale(
+                "source paths or ignore rules changed after discovery; repeat discovery",
+            ));
         }
         Ok(())
     }

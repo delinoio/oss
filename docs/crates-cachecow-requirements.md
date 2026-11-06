@@ -185,6 +185,7 @@ Disk exhaustion, permission errors, and other actual preparation failures stop b
 
 - All builds involved in managed cache use must enter through `ccow run` or an activated CacheCow shim that manages that invocation. Concurrent unmanaged calls (including shim bypass and pass-through commands that mutate caches) against managed caches are unsupported and must be documented.
 - Serialize concurrent operations on the same worktree/preset cache by waiting. Independent worktrees can build concurrently.
+- A new or removed path in any worktree, or a change to Git metadata, invalidates the discovery evidence of a command that waited or raced. The command repeats discovery automatically, at most five times, and never runs with stale cache claims. A change to the cache-selection configuration fails the command instead.
 - Coordinate source reads with source builds to obtain a consistent copy.
 - Resolve cache path aliases to apply the same lock, including when different projects or presets target the same cache.
 - Avoid deadlocks when operations have overlapping sources and destinations or cross-select each other's caches.
