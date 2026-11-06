@@ -115,7 +115,7 @@ pub struct Snapshot {
 /// `*fs.PathError` ("op path: cause"), and the I/O cause stays in the chain
 /// for [`crate::error::is_not_found`].
 #[derive(Debug, thiserror::Error)]
-#[error("{op} {path}: {source}")]
+#[error("{op} {path}: {}", crate::error::io_text(.source))]
 pub(crate) struct PathError {
     pub op: &'static str,
     pub path: String,

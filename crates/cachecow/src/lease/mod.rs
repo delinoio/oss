@@ -241,8 +241,11 @@ impl Registry {
     ) -> Result<()> {
         let snapshot = record.clone();
         if let Err(e) = verify(ctx, &snapshot) {
-            return Err(anyhow::Error::new(LeaseError::Unverified)
-                .context(format!("{}: {e:#}", LeaseError::Unverified)));
+            return Err(anyhow::Error::new(LeaseError::Unverified).context(format!(
+                "{}: {}",
+                LeaseError::Unverified,
+                crate::error::chain_text(&e)
+            )));
         }
         self.transaction(ctx, |c| {
             let all = records(c)?;
@@ -539,7 +542,7 @@ impl Session {
                     if is_lease(&e, LeaseError::RegistryBusy) {
                         attempted.remove(&record.id);
                     }
-                    tracing::debug!(lease = %record.id, error = %format!("{e:#}"), "conflicting cache lease remains protected");
+                    tracing::debug!(lease = %record.id, error = %crate::error::chain_text(&e), "conflicting cache lease remains protected");
                 }
             }
         }

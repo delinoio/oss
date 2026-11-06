@@ -21,10 +21,98 @@ impl fmt::Display for Joined {
             if i > 0 {
                 f.write_str("\n")?;
             }
-            write!(f, "{e}")?;
+            f.write_str(&display_text(e))?;
         }
         Ok(())
     }
+}
+
+/// Text of an I/O error. CacheCow diagnostics are English, but the standard
+/// library describes a Windows error code in the user's UI language, for
+/// example Korean on a ko-KR system. On Windows an operating-system error is
+/// therefore described by the en-US system message, in the same
+/// `message (os error N)` shape the standard library uses. A message that the
+/// system cannot provide in English, and every error without an
+/// operating-system code, keeps the standard text. Other platforms always use
+/// the standard text.
+pub fn io_text(error: &std::io::Error) -> String {
+    #[cfg(windows)]
+    if let Some(code) = error.raw_os_error()
+        && let Some(message) = english_system_message(code)
+    {
+        return format!("{message} (os error {code})");
+    }
+    error.to_string()
+}
+
+/// `Display` text of one error in a cause chain, with [`io_text`] for I/O
+/// errors.
+pub fn cause_text(cause: &(dyn std::error::Error + 'static)) -> String {
+    match cause.downcast_ref::<std::io::Error>() {
+        Some(io) => io_text(io),
+        None => cause.to_string(),
+    }
+}
+
+/// `Display` text of the outermost layer of `error`: [`io_text`] when that
+/// layer is an I/O error, and the ordinary text when a context message wraps
+/// it.
+pub fn display_text(error: &anyhow::Error) -> String {
+    let text = error.to_string();
+    match error.downcast_ref::<std::io::Error>() {
+        Some(io) if io.to_string() == text => io_text(io),
+        _ => text,
+    }
+}
+
+/// Every layer of the cause chain, joined by `: ` with repeated text omitted.
+/// Operating-system error text is English (see [`io_text`]).
+pub fn chain_text(error: &anyhow::Error) -> String {
+    let mut text = String::new();
+    for cause in error.chain() {
+        let part = cause_text(cause);
+        if text.is_empty() {
+            text = part;
+        } else if !text.contains(&part) {
+            text.push_str(": ");
+            text.push_str(&part);
+        }
+    }
+    text
+}
+
+/// The en-US description of a Win32 error code, without the trailing line
+/// break that `FormatMessageW` appends. `None` when the system has no English
+/// message for the code.
+#[cfg(windows)]
+fn english_system_message(code: i32) -> Option<String> {
+    use windows_sys::Win32::System::Diagnostics::Debug::{
+        FORMAT_MESSAGE_FROM_SYSTEM, FORMAT_MESSAGE_IGNORE_INSERTS, FormatMessageW,
+    };
+    /// `MAKELANGID(LANG_ENGLISH, SUBLANG_ENGLISH_US)`.
+    const LANGUAGE_ENGLISH_US: u32 = 0x0409;
+    let mut buffer = [0u16; 512];
+    // SAFETY: `buffer` is writable for the `buffer.len()` UTF-16 units passed
+    // as the size, no insert arguments are used
+    // (`FORMAT_MESSAGE_IGNORE_INSERTS`), and the system message table is
+    // the only source.
+    let length = unsafe {
+        FormatMessageW(
+            FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+            std::ptr::null(),
+            code as u32,
+            LANGUAGE_ENGLISH_US,
+            buffer.as_mut_ptr(),
+            buffer.len() as u32,
+            std::ptr::null(),
+        )
+    } as usize;
+    if length == 0 || length > buffer.len() {
+        return None;
+    }
+    let message = String::from_utf16(&buffer[..length]).ok()?;
+    let message = message.trim_end();
+    (!message.is_empty()).then(|| message.to_string())
 }
 
 impl std::error::Error for Joined {}
@@ -142,6 +230,74 @@ mod tests {
         assert!(is(&joined, &Sentinel::Second));
         assert_eq!(find::<Sentinel>(&joined), Some(&Sentinel::Second));
         assert_eq!(joined.to_string(), "plain\nouter");
+    }
+
+    #[test]
+    fn io_errors_without_an_os_code_keep_their_text() {
+        let e = std::io::Error::other("custom failure");
+        assert_eq!(io_text(&e), "custom failure");
+        let e = anyhow::Error::new(e).context("outer");
+        assert_eq!(chain_text(&e), "outer: custom failure");
+        assert_eq!(display_text(&e), "outer");
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn other_platforms_keep_the_standard_os_text() {
+        let e = std::io::Error::from_raw_os_error(2);
+        assert_eq!(io_text(&e), e.to_string());
+    }
+
+    /// The expected text must not depend on the UI language of the machine that
+    /// runs the test: the standard library would describe these codes in
+    /// Korean on a ko-KR system.
+    #[cfg(windows)]
+    #[test]
+    fn windows_os_errors_use_english_system_text() {
+        let os = std::io::Error::from_raw_os_error;
+        assert_eq!(io_text(&os(5)), "Access is denied. (os error 5)");
+        assert_eq!(
+            io_text(&os(112)),
+            "There is not enough space on the disk. (os error 112)"
+        );
+        // A code without a system message keeps the standard text.
+        assert_eq!(io_text(&os(0x7fff_fff0)), os(0x7fff_fff0).to_string());
+
+        let sharing = "The process cannot access the file because it is being used by another \
+                       process. (os error 32)";
+        let chained = anyhow::Error::new(os(32)).context("open cache entry");
+        assert_eq!(chain_text(&chained), format!("open cache entry: {sharing}"));
+        assert_eq!(
+            crate::session::error_text(&chained),
+            format!("open cache entry: {sharing}")
+        );
+        assert_eq!(display_text(&anyhow::Error::new(os(32))), sharing);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_wrapped_path_and_joined_errors_are_english() {
+        let os = std::io::Error::from_raw_os_error;
+        let wrapped = crate::clone::wrap(os(112), "copy cache entry \"a\"");
+        let space = "There is not enough space on the disk. (os error 112)";
+        assert_eq!(
+            wrapped.to_string(),
+            format!("copy cache entry \"a\": {space}")
+        );
+        assert_eq!(chain_text(&wrapped), wrapped.to_string());
+
+        let path = crate::repository::path_error("lstat", "C:\\absent", os(3));
+        assert_eq!(
+            path.to_string(),
+            "lstat C:\\absent: The system cannot find the path specified. (os error 3)"
+        );
+        assert!(is_not_found(&path), "typed I/O cause must stay searchable");
+
+        let joined = join([Some(anyhow::Error::new(os(5))), Some(wrapped)]).unwrap();
+        assert_eq!(
+            joined.to_string(),
+            format!("Access is denied. (os error 5)\ncopy cache entry \"a\": {space}")
+        );
     }
 
     #[test]
