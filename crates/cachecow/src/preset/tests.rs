@@ -77,6 +77,7 @@ struct Fixture {
     argv: Vec<String>,
     env: Vec<String>,
     preset: Option<Id>,
+    shim_dir: String,
     runner: FakeRunner,
 }
 
@@ -88,6 +89,7 @@ impl Fixture {
             env: Some(self.env.clone()),
             preset: self.preset,
             protected: Vec::new(),
+            shim_dir: self.shim_dir.clone(),
             runner: Some(&self.runner),
         }
     }
@@ -123,6 +125,7 @@ fn cargo_fixture() -> Fixture {
         argv: strings(&["cargo", "build"]),
         env: strings(&["PATH=/fixture", "SETTING=secret-value"]),
         preset: None,
+        shim_dir: String::new(),
         runner,
     }
 }
@@ -175,6 +178,37 @@ fn cargo_discovery_and_compatibility() {
         !got.compatibility.compatible(&next.compatibility),
         "ignored settings change"
     );
+}
+
+#[test]
+fn shim_directory_in_path_does_not_change_compatibility() {
+    let mut f = cargo_fixture();
+    let shim = paths::join2(&f.cwd, "state-shims");
+    f.shim_dir = shim.clone();
+    let plain = f.discover().unwrap();
+    // Activating the shims prepends or appends the directory to PATH.
+    for path in [format!("{shim}:/fixture"), format!("/fixture:{shim}")] {
+        f.env = strings(&[&format!("PATH={path}"), "SETTING=secret-value"]);
+        let activated = f.discover().unwrap();
+        assert_eq!(
+            activated.compatibility.settings_digest, plain.compatibility.settings_digest,
+            "PATH={path}"
+        );
+        assert!(plain.compatibility.compatible(&activated.compatibility));
+        assert!(activated.compatibility.compatible(&plain.compatibility));
+    }
+    // Every other PATH change stays visible: tool lookup may differ.
+    f.env = strings(&[
+        &format!("PATH={shim}:/fixture:/other"),
+        "SETTING=secret-value",
+    ]);
+    let other = f.discover().unwrap();
+    assert!(!plain.compatibility.compatible(&other.compatibility));
+    // Without a shim directory in the request the whole PATH is hashed.
+    f.shim_dir = String::new();
+    f.env = strings(&[&format!("PATH={shim}:/fixture"), "SETTING=secret-value"]);
+    let unaware = f.discover().unwrap();
+    assert!(!plain.compatibility.compatible(&unaware.compatibility));
 }
 
 #[test]
@@ -498,6 +532,7 @@ fn native_node_protocol_with_fixture_packages() {
                 env: Some(env.clone()),
                 preset: Some(preset),
                 protected: Vec::new(),
+                shim_dir: String::new(),
                 runner: None,
             },
         )
@@ -727,6 +762,7 @@ fn real_cargo_configured_directories() {
                 env: Some(env.clone()),
                 preset: None,
                 protected: Vec::new(),
+                shim_dir: String::new(),
                 runner: None,
             },
         )

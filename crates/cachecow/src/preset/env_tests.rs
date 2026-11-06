@@ -124,3 +124,63 @@ fn cargo_discovery_rejects_a_mixed_case_compiler_wrapper() {
         "unexpected error: {err}"
     );
 }
+
+#[test]
+fn without_shim_dir_removes_only_the_shim_entry_and_keeps_order() {
+    let shim = "/state/shims";
+    for (path, expected) in [
+        ("/state/shims:/a:/b", "/a:/b"),
+        ("/a:/state/shims:/b", "/a:/b"),
+        ("/a:/b:/state/shims", "/a:/b"),
+        ("/a::/state/shims:/b", "/a::/b"),
+        ("/state/shims", ""),
+    ] {
+        let env = strings(&["KEEP=1", &format!("PATH={path}")]);
+        assert_eq!(
+            without_shim_dir(&env, shim, false),
+            strings(&["KEEP=1", &format!("PATH={expected}")]),
+            "PATH={path}"
+        );
+    }
+}
+
+#[test]
+fn without_shim_dir_leaves_other_environments_unchanged() {
+    let shim = "/state/shims";
+    let env = strings(&[
+        "PATH=/a:/state/shims-other:/state/shims/bin",
+        "OTHER=/state/shims",
+        "NO_SEPARATOR",
+    ]);
+    assert_eq!(without_shim_dir(&env, shim, false), env);
+    assert_eq!(without_shim_dir(&env, "", false), env);
+    let with_shim = strings(&["PATH=/state/shims:/a"]);
+    assert_eq!(without_shim_dir(&with_shim, "", false), with_shim);
+}
+
+#[test]
+fn without_shim_dir_matches_the_path_name_like_the_platform() {
+    let shim = "/state/shims";
+    let env = strings(&["Path=/state/shims:/a"]);
+    assert_eq!(without_shim_dir(&env, shim, true), strings(&["Path=/a"]));
+    assert_eq!(without_shim_dir(&env, shim, false), env);
+    let upper = strings(&["PATH=/STATE/SHIMS:/a"]);
+    assert_eq!(without_shim_dir(&upper, shim, true), strings(&["PATH=/a"]));
+    assert_eq!(without_shim_dir(&upper, shim, false), upper);
+}
+
+#[cfg(unix)]
+#[test]
+fn without_shim_dir_matches_a_symlinked_alias_of_the_shim_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let real = dir.path().join("shims");
+    std::fs::create_dir(&real).unwrap();
+    let alias = dir.path().join("alias");
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    let shim = real.to_string_lossy().into_owned();
+    let env = strings(&[&format!("PATH=/a:{}:/b", alias.to_string_lossy())]);
+    assert_eq!(
+        without_shim_dir(&env, &shim, false),
+        strings(&["PATH=/a:/b"])
+    );
+}

@@ -232,6 +232,11 @@ pub struct Request<'a> {
     pub preset: Option<Id>,
     /// Settings storage, source caches and other forbidden paths.
     pub protected: Vec<String>,
+    /// CacheCow shim directory, or empty when none applies. Its `PATH` entry
+    /// is left out of the settings digest, because tool lookup already
+    /// excludes CacheCow shims; activating the shims must not make a cache
+    /// that an explicit `ccow run` built look incompatible.
+    pub shim_dir: String,
     pub runner: Option<&'a dyn Runner>,
 }
 
@@ -371,6 +376,64 @@ where
     Ok(Option::<T>::deserialize(d)?.unwrap_or_default())
 }
 
+/// Returns `env` without the CacheCow shim directory in its `PATH` entries.
+///
+/// The settings digest hashes the whole environment, and the shim directory
+/// only appears in `PATH` after the user activates the shims. Tool lookup
+/// excludes CacheCow shims, so the directory never selects a different tool.
+/// Leaving it in the digest would make a cache built by an explicit
+/// `ccow run` incompatible with the same command run through an activated
+/// shim, and the reverse. Remaining `PATH` entries keep their order and any
+/// empty entries; an environment without the directory is returned unchanged.
+fn without_shim_dir(env: &[String], shim_dir: &str, ignore_case: bool) -> Vec<String> {
+    if shim_dir.is_empty() {
+        return env.to_vec();
+    }
+    let shim_real = paths::eval_symlinks(shim_dir).ok();
+    let is_shim = |dir: &str| -> bool {
+        if dir.is_empty() {
+            return false;
+        }
+        let same = if ignore_case {
+            dir.eq_ignore_ascii_case(shim_dir)
+        } else {
+            dir == shim_dir
+        };
+        same || (paths::is_abs(dir)
+            && shim_real.is_some()
+            && paths::eval_symlinks(dir).ok() == shim_real)
+    };
+    env.iter()
+        .map(|entry| {
+            let Some((name, value)) = entry.split_once('=') else {
+                return entry.clone();
+            };
+            if !env_name_matches(name, "PATH", ignore_case) {
+                return entry.clone();
+            }
+            let dirs = paths::split_list(value);
+            if !dirs.iter().any(|dir| is_shim(dir)) {
+                return entry.clone();
+            }
+            tracing::debug!("ignoring the CacheCow shim directory in PATH for the settings digest");
+            let kept: Vec<String> = dirs
+                .into_iter()
+                .filter(|dir| !is_shim(dir))
+                .map(|dir| {
+                    // Windows list entries that contain the separator were
+                    // quoted.
+                    if cfg!(windows) && dir.contains(paths::LIST_SEPARATOR) {
+                        format!("\"{dir}\"")
+                    } else {
+                        dir
+                    }
+                })
+                .collect();
+            format!("{name}={}", kept.join(&paths::LIST_SEPARATOR.to_string()))
+        })
+        .collect()
+}
+
 fn current_environment() -> Vec<String> {
     std::env::vars_os()
         .map(|(k, v)| format!("{}={}", k.to_string_lossy(), v.to_string_lossy()))
@@ -469,8 +532,8 @@ pub fn discover(ctx: &Context, request: Request<'_>) -> Result<PresetResult> {
     // reusable caches, but never assumes an unknown setting is irrelevant.
     let root = out.repository.root.clone();
     let normalize = |s: &str| s.replace(root.as_str(), "${WORKTREE}");
-    let mut env: Vec<String> = req
-        .env
+    let digest_env = without_shim_dir(&req.env, &request.shim_dir, ENV_NAMES_IGNORE_CASE);
+    let mut env: Vec<String> = digest_env
         .iter()
         .filter(|entry| {
             let key = entry.split_once('=').map_or(entry.as_str(), |(k, _)| k);
