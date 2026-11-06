@@ -125,16 +125,23 @@ fn cargo_discovery_rejects_a_mixed_case_compiler_wrapper() {
     );
 }
 
+/// Joins `dirs` with the platform `PATH` list separator, so the fixtures
+/// exercise the native list parser on Unix and Windows alike.
+fn path_list(dirs: &[&str]) -> String {
+    dirs.join(&paths::LIST_SEPARATOR.to_string())
+}
+
 #[test]
 fn without_shim_dir_removes_only_the_shim_entry_and_keeps_order() {
     let shim = "/state/shims";
     for (path, expected) in [
-        ("/state/shims:/a:/b", "/a:/b"),
-        ("/a:/state/shims:/b", "/a:/b"),
-        ("/a:/b:/state/shims", "/a:/b"),
-        ("/a::/state/shims:/b", "/a::/b"),
-        ("/state/shims", ""),
+        (&["/state/shims", "/a", "/b"][..], &["/a", "/b"][..]),
+        (&["/a", "/state/shims", "/b"], &["/a", "/b"]),
+        (&["/a", "/b", "/state/shims"], &["/a", "/b"]),
+        (&["/a", "", "/state/shims", "/b"], &["/a", "", "/b"]),
+        (&["/state/shims"], &[]),
     ] {
+        let (path, expected) = (path_list(path), path_list(expected));
         let env = strings(&["KEEP=1", &format!("PATH={path}")]);
         assert_eq!(
             without_shim_dir(&env, shim, false),
@@ -147,24 +154,25 @@ fn without_shim_dir_removes_only_the_shim_entry_and_keeps_order() {
 #[test]
 fn without_shim_dir_leaves_other_environments_unchanged() {
     let shim = "/state/shims";
+    let other = path_list(&["/a", "/state/shims-other", "/state/shims/bin"]);
     let env = strings(&[
-        "PATH=/a:/state/shims-other:/state/shims/bin",
+        &format!("PATH={other}"),
         "OTHER=/state/shims",
         "NO_SEPARATOR",
     ]);
     assert_eq!(without_shim_dir(&env, shim, false), env);
     assert_eq!(without_shim_dir(&env, "", false), env);
-    let with_shim = strings(&["PATH=/state/shims:/a"]);
+    let with_shim = strings(&[&format!("PATH={}", path_list(&["/state/shims", "/a"]))]);
     assert_eq!(without_shim_dir(&with_shim, "", false), with_shim);
 }
 
 #[test]
 fn without_shim_dir_matches_the_path_name_like_the_platform() {
     let shim = "/state/shims";
-    let env = strings(&["Path=/state/shims:/a"]);
+    let env = strings(&[&format!("Path={}", path_list(&["/state/shims", "/a"]))]);
     assert_eq!(without_shim_dir(&env, shim, true), strings(&["Path=/a"]));
     assert_eq!(without_shim_dir(&env, shim, false), env);
-    let upper = strings(&["PATH=/STATE/SHIMS:/a"]);
+    let upper = strings(&[&format!("PATH={}", path_list(&["/STATE/SHIMS", "/a"]))]);
     assert_eq!(without_shim_dir(&upper, shim, true), strings(&["PATH=/a"]));
     assert_eq!(without_shim_dir(&upper, shim, false), upper);
 }
