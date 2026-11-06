@@ -1000,3 +1000,31 @@ fn finish_accepts_record_released_by_verified_recovery() {
         LeaseError::Unverified
     );
 }
+
+/// A state directory that grants another principal access must be refused with
+/// the path, the failed check and a remedy. The error must not claim an
+/// unrelated process-ownership failure.
+#[cfg(windows)]
+#[test]
+fn windows_shared_state_directory_error_is_actionable() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = paths::eval_symlinks(temp.path().to_str().unwrap()).unwrap();
+    let dir = self_dir(&root);
+    let user = crate::winsec::current_user()
+        .unwrap()
+        .to_string_sid()
+        .unwrap();
+    // Current user full control plus read access for Everyone (`WD`).
+    crate::winsec::create_directory(&dir, &format!("D:P(A;OICI;FA;;;{user})(A;OICI;FR;;;WD)"))
+        .unwrap();
+    let Err(error) = Registry::open(&Context::background(), &dir) else {
+        panic!("accepted a state directory that another principal can read");
+    };
+    let text = crate::session::error_text(&error);
+    assert!(
+        text.contains(&dir) && text.contains("not private to the current user"),
+        "{text}"
+    );
+    assert!(text.contains("restrict it to your account"), "{text}");
+    assert!(!text.contains("process-tree ownership"), "{text}");
+}

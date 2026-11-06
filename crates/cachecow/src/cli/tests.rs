@@ -360,3 +360,19 @@ fn look_path_searches_only_the_given_environment() {
     assert!(look_path("source-only-tool", &LookupEnv::from_env(&derived_env)).is_err());
     assert!(look_path("source-only-tool", &LookupEnv::from_env(&source_env)).is_ok());
 }
+
+#[test]
+fn passthrough_remediation_matches_the_failure() {
+    // Exit code 2 is an argument rejection (Windows refuses arguments that are
+    // not valid UTF-8). Its remedy must not talk about the executable.
+    let rejected = passthrough_remediation(2);
+    assert!(rejected.contains("valid UTF-8"), "{rejected}");
+    assert!(!rejected.contains("real executable"), "{rejected}");
+    // Any other code means the real tool could not start.
+    for code in [125, 126, 127] {
+        assert_eq!(
+            passthrough_remediation(code),
+            "Check the real executable and its permissions."
+        );
+    }
+}

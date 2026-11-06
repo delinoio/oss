@@ -25,6 +25,16 @@ use crate::{
     shim, state,
 };
 
+/// How often a command repeats discovery when its evidence goes stale before
+/// the command starts. Every repetition follows a real change in a worktree or
+/// in the cache configuration; the bound stops a storm of changes from
+/// starving the command forever.
+const STALE_DISCOVERY_RETRIES: usize = 5;
+
+fn is_stale(err: &anyhow::Error) -> bool {
+    error::find::<error::StaleDiscovery>(err).is_some()
+}
+
 /// Discovery evidence sent to the supervisor with each plan.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -274,7 +284,7 @@ impl App {
             return Err(bad("run requires -- COMMAND [ARGS...]"));
         }
         let env = environ();
-        let current = self.discover_with(&cwd, argv, env.clone())?;
+        let mut current = self.discover_with(&cwd, argv, env.clone())?;
         if action == "status" || action == "doctor" {
             self.inspect(&current, action == "doctor")?;
             return Ok(0);
@@ -288,19 +298,47 @@ impl App {
         for name in ["processes", "leases"] {
             self.store.directory(name)?;
         }
-        let mut planned = self.plan(action, &current, argv, &env, false);
+        let mut without_source = false;
+        let mut stale_retries = 0;
+        let mut planned = self.plan(action, &current, argv, &env, without_source);
         loop {
             let failure = match planned {
                 Ok((p, c)) => match self.execute(&p, c) {
                     Ok(code) => return Ok(code),
                     Err(err) => {
+                        if is_stale(&err) && stale_retries < STALE_DISCOVERY_RETRIES {
+                            stale_retries += 1;
+                            (current, planned) = self.rediscover(
+                                action,
+                                &cwd,
+                                argv,
+                                &env,
+                                without_source,
+                                stale_retries,
+                            )?;
+                            continue;
+                        }
                         if error::find::<SourceError>(&err).is_none() {
                             return Err(err);
                         }
                         source_unavailable(err)
                     }
                 },
-                Err(e) => e,
+                Err(e) => {
+                    if is_stale(&e) && stale_retries < STALE_DISCOVERY_RETRIES {
+                        stale_retries += 1;
+                        (current, planned) = self.rediscover(
+                            action,
+                            &cwd,
+                            argv,
+                            &env,
+                            without_source,
+                            stale_retries,
+                        )?;
+                        continue;
+                    }
+                    e
+                }
             };
             if error::find::<SourceUnavailable>(&failure).is_none() {
                 return Err(failure);
@@ -323,21 +361,52 @@ impl App {
             };
             let choice = self.answer(prompt)?;
             planned = match choice.as_str() {
-                "1" if action == "run" => self.plan(action, &current, argv, &env, true),
+                "1" if action == "run" => {
+                    without_source = true;
+                    self.plan(action, &current, argv, &env, true)
+                }
                 "2" => {
                     let selected = self.answer("Source worktree: ")?;
                     self.o.source = selected;
+                    without_source = false;
                     self.plan(action, &current, argv, &env, false)
                 }
                 "3" if action == "run" => match self.build_source_first(&current, argv)? {
                     SourceBuild::Failed(code) => return Ok(code),
-                    SourceBuild::Built => self.plan(action, &current, argv, &env, false),
+                    SourceBuild::Built => {
+                        without_source = false;
+                        self.plan(action, &current, argv, &env, false)
+                    }
                     SourceBuild::Skipped => Err(failure),
                 },
                 "4" => return Err(anyhow!("operation cancelled")),
                 _ => Err(failure),
             };
         }
+    }
+
+    /// Repeats discovery and planning after the discovery evidence went stale,
+    /// for example because a file appeared in a worktree while this command
+    /// waited for a lease. The supervisor already refused to use the stale
+    /// claims, so the repeated discovery is the fresh start the contract
+    /// requires; the caller bounds the repetitions.
+    fn rediscover(
+        &self,
+        action: &str,
+        cwd: &str,
+        argv: &[String],
+        env: &[String],
+        without_source: bool,
+        attempt: usize,
+    ) -> Result<(PresetResult, Result<(Plan, process::Command)>)> {
+        tracing::debug!(
+            action,
+            attempt,
+            "discovery evidence went stale; repeating discovery"
+        );
+        let current = self.discover_with(cwd, argv, env.to_vec())?;
+        let planned = self.plan(action, &current, argv, env, without_source);
+        Ok((current, planned))
     }
 
     /// Choice 3: runs the exact requested command in the source after

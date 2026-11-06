@@ -103,6 +103,15 @@ pub struct Response {
         skip_serializing_if = "std::ops::Not::not"
     )]
     pub registry_busy: bool,
+    /// The discovery evidence went stale, for example while the supervisor
+    /// waited for a lease. The client restores [`error::StaleDiscovery`] so it
+    /// can repeat discovery instead of failing.
+    #[serde(
+        rename = "staleDiscovery",
+        default,
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    pub stale_discovery: bool,
 }
 
 impl Response {
@@ -111,6 +120,7 @@ impl Response {
             error: error_text(error),
             source_failure: error::find::<SourceError>(error).is_some(),
             registry_busy: error::is(error, &LeaseError::RegistryBusy),
+            stale_discovery: error::find::<error::StaleDiscovery>(error).is_some(),
             ..Self::default()
         }
     }
@@ -120,6 +130,8 @@ impl Response {
             anyhow::Error::new(SourceError {
                 message: self.error.clone(),
             })
+        } else if self.stale_discovery {
+            error::stale(self.error.clone())
         } else if self.registry_busy {
             anyhow::Error::new(LeaseError::RegistryBusy).context(self.error.clone())
         } else {
@@ -156,17 +168,7 @@ pub struct RecordHooks {
 /// Renders an error with its causes, like Go's wrapped error strings. A cause
 /// whose text is already part of the message is not repeated.
 pub fn error_text(error: &anyhow::Error) -> String {
-    let mut text = String::new();
-    for cause in error.chain() {
-        let part = cause.to_string();
-        if text.is_empty() {
-            text = part;
-        } else if !text.contains(&part) {
-            text.push_str(": ");
-            text.push_str(&part);
-        }
-    }
-    text
+    crate::error::chain_text(error)
 }
 
 /// Replaces `key` in a `KEY=value` environment list.

@@ -10,6 +10,8 @@ Independent worktrees can build concurrently when their actual cache paths are i
 
 CacheCow must coordinate source reads with source builds so copies are consistent. If a source is busy, preparation waits. Overlapping source/destination requests and worktrees that select each other's caches must not deadlock. Use `ccow doctor` or `--verbose` to inspect waiting and lock state rather than deleting locks.
 
+Creating or deleting files in any worktree while a command waits, or while another worktree prepares its cache, does not fail the waiting command: it repeats its discovery automatically, at most five times. A change to the Cargo, Rspack or Rsbuild cache configuration while a command waits still fails the command with exit code 125; run the command again.
+
 ## Watch servers and nested commands
 
 Finite builds, checks, tests, and long-running watch/development servers use the same lifecycle. A cache remains locked for the process tree's lifetime. A watch server used as a source can therefore block copying until it exits.

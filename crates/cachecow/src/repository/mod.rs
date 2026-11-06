@@ -115,7 +115,7 @@ pub struct Snapshot {
 /// `*fs.PathError` ("op path: cause"), and the I/O cause stays in the chain
 /// for [`crate::error::is_not_found`].
 #[derive(Debug, thiserror::Error)]
-#[error("{op} {path}: {source}")]
+#[error("{op} {path}: {}", crate::error::io_text(.source))]
 pub(crate) struct PathError {
     pub op: &'static str,
     pub path: String,
@@ -326,6 +326,29 @@ pub fn select_source(
     }
     if !paths::is_abs(&p) {
         p = paths::join2(&current.cwd, &p);
+    }
+    // Check the path first. Without this, a deleted or mistyped source falls
+    // through to the ownership check, which walks up to the nearest existing
+    // parent and can report a misleading ownership error (for example for a
+    // path below a directory that another user owns).
+    match std::fs::metadata(&p) {
+        Ok(m) if !m.is_dir() => {
+            tracing::debug!(source = %p, ?origin, "source is not a directory");
+            bail!(
+                "source {p} is not a directory; select a checkout of this Git repository with \
+                 --source"
+            );
+        }
+        Ok(_) => {}
+        Err(e) if io_not_found(&e) => {
+            tracing::debug!(source = %p, ?origin, "source path does not exist");
+            bail!(
+                "source {p} does not exist; select an existing checkout of this Git repository \
+                 with --source, or run ccow config unset source to remove a saved source"
+            );
+        }
+        // Other errors, such as a denied permission, surface in discovery.
+        Err(_) => {}
     }
     let r = discover(ctx, &p)?;
     if r.kind == Kind::Bare || r.common_dir != current.common_dir {
