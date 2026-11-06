@@ -285,8 +285,9 @@ pub fn lock(dir: &str) -> Result<Lock> {
     match create_new_private(&p, false) {
         Ok(_) => Ok(Lock(p)),
         Err(e) => Err(anyhow!(
-            "shim installation is locked: open {p}: {e}; if no installer is running, remove {p} \
-             and retry"
+            "shim installation is locked: open {p}: {}; if no installer is running, remove {p} \
+             and retry",
+            crate::error::io_text(&e)
         )),
     }
 }

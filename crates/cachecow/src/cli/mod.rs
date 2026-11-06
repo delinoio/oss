@@ -309,6 +309,19 @@ fn utf8_path_entries(value: &std::ffi::OsStr) -> String {
 /// Error for a managed command whose child argument is not valid UTF-8.
 /// `index` counts the child argv, where `ARG #0` is the command itself. The
 /// value is never printed.
+/// Remediation for a failed shim pass-through. Exit code 2 means the arguments
+/// were rejected before the real tool started (Windows passes text only, so an
+/// argument that is not valid UTF-8 is refused instead of being changed). Any
+/// other code means the real tool could not be started.
+pub(crate) fn passthrough_remediation(code: i32) -> &'static str {
+    if code == 2 {
+        "Pass arguments that are valid UTF-8. Pass-through never changes arguments; to give the \
+         tool other bytes, run it by its full path or remove the CacheCow shim directory from PATH."
+    } else {
+        "Check the real executable and its permissions."
+    }
+}
+
 fn managed_arg_error(index: usize) -> anyhow::Error {
     bad(format!(
         "managed commands require UTF-8 arguments and environment; ARG #{index} is not valid UTF-8"
@@ -820,7 +833,7 @@ impl App {
                 Err((code, e)) => self.fail(&anyhow::Error::new(Failure::new(
                     code,
                     error_text(&e),
-                    "Check the real executable and its permissions.",
+                    passthrough_remediation(code),
                 ))),
             };
         }

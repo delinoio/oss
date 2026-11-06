@@ -6,7 +6,7 @@ use std::{
     io::{self, Write},
 };
 
-use anyhow::{Result, anyhow};
+use anyhow::{Context as _, Result, anyhow};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{lease, paths};
@@ -109,10 +109,21 @@ pub fn read<T: DeserializeOwned>(path: &str) -> Result<T> {
             "state record {path} is empty; delete the file and retry"
         ));
     }
+    // Name the record in every decode failure. A malformed record, or one a
+    // different CacheCow version wrote with fields this version rejects, would
+    // otherwise surface only as a bare parser message. CacheCow never rewrites
+    // such a record, so the user needs the path to inspect or remove it.
+    let undecodable = || {
+        format!(
+            "state record {path} cannot be decoded; CacheCow does not rewrite it, so use a \
+             compatible ccow or repair the file"
+        )
+    };
     let mut de = serde_json::Deserializer::from_slice(&bytes);
-    let value = T::deserialize(&mut de)?;
+    let value = T::deserialize(&mut de).with_context(undecodable)?;
     de.end()
-        .map_err(|_| anyhow!("trailing data in state record"))?;
+        .map_err(|_| anyhow!("trailing data in state record"))
+        .with_context(undecodable)?;
     Ok(value)
 }
 
@@ -221,14 +232,39 @@ mod tests {
         .unwrap();
         assert_eq!(fs::read_to_string(&p).unwrap(), "{\"schemaVersion\":1}");
         fs::write(&p, "{\"schemaVersion\":1}{}").unwrap();
-        assert!(
-            read::<Settings>(&p)
-                .unwrap_err()
-                .to_string()
-                .contains("trailing data")
-        );
+        assert!(format!("{:#}", read::<Settings>(&p).unwrap_err()).contains("trailing data"));
         fs::write(&p, "{\"schemaVersion\":1,\"other\":1}").unwrap();
         assert!(read::<Settings>(&p).is_err());
+    }
+
+    #[test]
+    fn undecodable_records_name_the_file_and_keep_the_cause() {
+        let (_temp, s) = store();
+        let p = paths::join2(&s.root, "record.json");
+        for (content, cause) in [
+            ("{", "EOF while parsing"),
+            ("{\"schemaVersion\":1} junk", "trailing data"),
+            (
+                "{\"schemaVersion\":1,\"future\":true}",
+                "unknown field `future`",
+            ),
+            ("{\"schemaVersion\":\"x\"}", "invalid type"),
+        ] {
+            fs::write(&p, content).unwrap();
+            // Records are private (0600) on Unix; the test file is created
+            // with the umask, so tighten it before reading.
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&p, fs::Permissions::from_mode(0o600)).unwrap();
+            }
+            let text = crate::session::error_text(&read::<Settings>(&p).unwrap_err());
+            assert!(text.contains(&p), "{content}: path missing in {text}");
+            assert!(text.contains("does not rewrite"), "{content}: {text}");
+            assert!(text.contains(cause), "{content}: cause missing in {text}");
+        }
+        // The record itself is never modified by a failed read.
+        assert_eq!(fs::read_to_string(&p).unwrap(), "{\"schemaVersion\":\"x\"}");
     }
 
     #[cfg(unix)]
