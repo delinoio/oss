@@ -47,7 +47,7 @@ ccow shell setup bash
 ccow shell setup zsh
 ```
 
-For PowerShell 7, use `ccow shell setup powershell --file "$PROFILE"`. Use `--yes` for a noninteractive update after reviewing the target and proposed change.
+For PowerShell 7, use `ccow shell setup powershell --file "$PROFILE"`. Use `--yes` for a noninteractive update after reviewing the target and proposed change. Setup creates the profile file but not its directory. A new PowerShell 7 installation can lack that directory. In that case setup stops before it asks for confirmation. Create the directory first, for example with `New-Item -ItemType Directory -Force (Split-Path $PROFILE)`, and run setup again.
 
 Setup must show the target file and proposed change and request confirmation when the file would change. The proposed change is only the CacheCow-owned block: added lines start with `+ `, and the lines of a replaced block start with `- `. CacheCow also notes when it adds a separator line break to a file without a final newline. It never prints other lines of your shell configuration, even with `--yes` or `--json`. If nothing changes, it shows the target and a no-change notice, asks for no confirmation, and does not require `--yes`. Setup adds only a CacheCow-owned block and preserves unrelated content. Repeated setup is idempotent. If automatic file selection is ambiguous, choose the intended shell configuration file with `--file`.
 
