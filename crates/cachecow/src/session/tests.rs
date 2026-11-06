@@ -464,3 +464,21 @@ fn helpers() {
     assert!(response.source_failure);
     assert!(error::find::<SourceError>(&response.failure()).is_some());
 }
+
+#[test]
+fn stale_discovery_crosses_the_supervisor_boundary() {
+    let response = Response::failed(&error::stale("source paths changed; repeat discovery"));
+    assert!(response.stale_discovery);
+    assert!(!response.source_failure);
+    let restored = response.failure();
+    assert!(error::find::<error::StaleDiscovery>(&restored).is_some());
+    assert_eq!(
+        error_text(&restored),
+        "source paths changed; repeat discovery"
+    );
+    // The flag survives the persisted result record and stays absent otherwise.
+    let json = serde_json::to_string(&response).unwrap();
+    assert!(json.contains("\"staleDiscovery\":true"), "{json}");
+    let plain = serde_json::to_string(&Response::failed(&anyhow!("plain"))).unwrap();
+    assert!(!plain.contains("staleDiscovery"), "{plain}");
+}

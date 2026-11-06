@@ -6,7 +6,7 @@
 
 use std::{
     fs,
-    io::{Read, Write},
+    io::{BufRead, Read, Write},
     os::unix::fs::PermissionsExt,
     path::Path,
     process::{Child, Command, Output, Stdio},
@@ -605,6 +605,75 @@ fn executable_contention_and_parent_death() {
     assert!(
         pid <= 1 || unsafe { libc::kill(pid, 0) } != 0,
         "writer survived parent death"
+    );
+}
+
+/// A command that waits for a lease holds discovery evidence from before the
+/// wait. Any new path in any worktree changes that evidence, so the command
+/// must repeat discovery instead of failing once the owner finishes.
+#[test]
+fn waiting_run_repeats_discovery_after_a_worktree_path_appears() {
+    let f = Fixture::new();
+    let release = join(&f.dir, "release");
+    write_file(
+        &join(&f.main, "scenario"),
+        &format!("touch target/ready\nwhile [ ! -f '{release}' ]; do sleep 0.05; done\n"),
+        0o600,
+    );
+    let _owner = spawn_quiet(f.cmd(&f.main, &["run", "--", "cargo", "build"]));
+    wait_file(&join(&f.main, "target/ready"));
+
+    let mut waiter = f.cmd(&f.main, &["run", "--", "cargo", "build"]);
+    waiter
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped());
+    let mut waiter = Background(waiter.spawn().unwrap());
+    let stderr = waiter.0.stderr.take().unwrap();
+    let (lines, notices) = mpsc::channel();
+    let reader = thread::spawn(move || {
+        let mut all = String::new();
+        for line in std::io::BufReader::new(stderr)
+            .lines()
+            .map_while(Result::ok)
+        {
+            all.push_str(&line);
+            all.push('\n');
+            let _ = lines.send(line);
+        }
+        all
+    });
+    // The notice proves that discovery finished and the command now waits.
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        let left = deadline.saturating_duration_since(Instant::now());
+        let line = notices
+            .recv_timeout(left)
+            .expect("the waiting command never reported that it waits");
+        if line.contains("waits until the owner finishes") {
+            break;
+        }
+    }
+
+    write_file(&join(&f.main, "appeared-during-the-wait.txt"), "new", 0o600);
+    write_file(&release, "", 0o600);
+
+    let deadline = Instant::now() + Duration::from_secs(60);
+    let status = loop {
+        if let Some(status) = waiter.0.try_wait().unwrap() {
+            break status;
+        }
+        assert!(Instant::now() < deadline, "waiting command never finished");
+        thread::sleep(Duration::from_millis(50));
+    };
+    let stderr = reader.join().unwrap();
+    assert!(
+        status.success(),
+        "a path that appeared during the wait failed the command: {stderr}"
+    );
+    assert!(
+        !stderr.contains("repeat discovery"),
+        "the stale evidence reached the user: {stderr}"
     );
 }
 

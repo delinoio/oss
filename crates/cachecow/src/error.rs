@@ -50,6 +50,20 @@ pub fn join_result<T>(result: Result<T>, cleanup: Option<anyhow::Error>) -> Resu
     }
 }
 
+/// Discovery evidence that no longer matches the checkout or the cache
+/// configuration, for example because a source file appeared in a worktree
+/// while the command waited for a lease. The evidence is only a validation
+/// token, so a fresh discovery supersedes it and the managed flow repeats
+/// discovery instead of reporting the change to the user.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{0}")]
+pub struct StaleDiscovery(pub String);
+
+/// Builds a [`StaleDiscovery`] error with the given user-facing message.
+pub fn stale(message: impl Into<String>) -> anyhow::Error {
+    anyhow::Error::new(StaleDiscovery(message.into()))
+}
+
 /// Finds the first error of type `T` in the cause chain of `error`, including
 /// the members of [`Joined`] errors at any depth.
 pub fn find<T>(error: &anyhow::Error) -> Option<&T>
