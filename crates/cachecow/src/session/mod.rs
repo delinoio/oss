@@ -156,17 +156,7 @@ pub struct RecordHooks {
 /// Renders an error with its causes, like Go's wrapped error strings. A cause
 /// whose text is already part of the message is not repeated.
 pub fn error_text(error: &anyhow::Error) -> String {
-    let mut text = String::new();
-    for cause in error.chain() {
-        let part = cause.to_string();
-        if text.is_empty() {
-            text = part;
-        } else if !text.contains(&part) {
-            text.push_str(": ");
-            text.push_str(&part);
-        }
-    }
-    text
+    crate::error::chain_text(error)
 }
 
 /// Replaces `key` in a `KEY=value` environment list.

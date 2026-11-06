@@ -105,7 +105,7 @@ pub(crate) type CloneFile<'a> = &'a mut dyn FnMut(&Context, &File, &str) -> Resu
 /// typed cause chain searchable.
 pub(crate) fn wrap(error: impl Into<anyhow::Error>, message: &str) -> anyhow::Error {
     let error = error.into();
-    let text = format!("{message}: {error}");
+    let text = format!("{message}: {}", crate::error::display_text(&error));
     error.context(text)
 }
 
