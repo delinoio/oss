@@ -98,6 +98,41 @@ fn discovery_and_source_precedence() {
 }
 
 #[test]
+fn missing_or_non_directory_source_reports_the_cause() {
+    let (_t, p) = fixture();
+    let current = discover(&ctx(), &p).unwrap();
+    let message = |source: &str| match select_source(&ctx(), &current, source, "") {
+        Ok(_) => panic!("accepted {source}"),
+        Err(e) => format!("{e:#}"),
+    };
+    // Absolute and relative paths that do not exist, including one below a
+    // root-owned directory, must not be reported as an ownership problem.
+    let absolute = if cfg!(windows) {
+        "C:\\ccow-missing-source-fixture\\nope".to_string()
+    } else {
+        "/ccow-missing-source-fixture/nope".to_string()
+    };
+    for missing in [absolute.as_str(), "../deleted-worktree"] {
+        let text = message(missing);
+        assert!(text.contains("does not exist"), "{missing}: {text}");
+        assert!(text.contains("--source"), "{missing}: {text}");
+        assert!(!text.contains("not owned"), "{missing}: {text}");
+    }
+    // A saved source that disappeared gets the same message and recovery hint.
+    let gone = paths::join2(&p, "gone worktree 한");
+    let text = match select_source(&ctx(), &current, "", &gone) {
+        Ok(_) => panic!("accepted a deleted saved source"),
+        Err(e) => format!("{e:#}"),
+    };
+    assert!(text.contains("does not exist") && text.contains("config unset source"));
+    // A regular file is not a worktree.
+    let file = paths::join2(&p, "plain-file");
+    fs::write(&file, "x").unwrap();
+    let text = message(&file);
+    assert!(text.contains("is not a directory"), "{text}");
+}
+
+#[test]
 fn bare_and_protected_paths() {
     let (_t, p) = fixture();
     let t2 = tempfile::tempdir().unwrap();
