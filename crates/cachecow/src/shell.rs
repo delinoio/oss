@@ -417,6 +417,26 @@ fn block(b: &[u8]) -> Result<Option<(usize, usize, bool)>> {
     }
 }
 
+/// Requires the directory of a configuration file that setup will create. The
+/// directory is never created: a profile location chosen by an ambiguous shell
+/// configuration must not create arbitrary directories. A new PowerShell 7
+/// installation has no profile directory until the first profile is written.
+fn require_directory(file: &str) -> Result<()> {
+    let dir = paths::dir(file);
+    match fs::metadata(&dir) {
+        Ok(m) if m.is_dir() => Ok(()),
+        Ok(_) => Err(anyhow!(
+            "the parent {dir} of the shell configuration is not a directory; select another file \
+             with --file"
+        )),
+        Err(e) if e.kind() == io::ErrorKind::NotFound => Err(anyhow!(
+            "the directory {dir} of the shell configuration does not exist; create that directory \
+             or select an existing configuration file with --file"
+        )),
+        Err(e) => Err(e.into()),
+    }
+}
+
 pub fn prepare(kind: Kind, action: Action, path: &str, shim_dir: &str) -> Result<Plan> {
     let abs = paths::abs(path)?;
     let mut p = Plan {
@@ -446,7 +466,14 @@ pub fn prepare(kind: Kind, action: Action, path: &str, shim_dir: &str) -> Result
             p.security = Some(security::FileSecurity::read(&abs)?);
             p.before = fs::read(&abs)?;
         }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {}
+        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+            // Setup creates the file but never its directory. Report that
+            // before the user is asked to confirm a change that cannot be
+            // applied. Removal of an absent file changes nothing.
+            if action == Action::Setup {
+                require_directory(&abs)?;
+            }
+        }
         Err(e) => return Err(e.into()),
     }
     let found = block(&p.before)?;
@@ -653,6 +680,46 @@ mod tests {
                 "absent file created"
             );
         }
+    }
+
+    /// A PowerShell 7 profile directory is absent until the first profile is
+    /// written. Setup must say so at planning time, before any confirmation,
+    /// create nothing, and leave removal of an absent file a no-op.
+    #[test]
+    fn setup_with_a_missing_profile_directory_is_actionable() {
+        let (_t, base) = temp();
+        let missing = paths::join(&[base.as_str(), "PowerShell", "profile.ps1"]);
+        let error = prepare(Kind::PowerShell, Action::Setup, &missing, "")
+            .err()
+            .expect("accepted a missing profile directory");
+        let text = error.to_string();
+        assert!(
+            text.contains(&paths::dir(&missing)) && text.contains("does not exist"),
+            "{text}"
+        );
+        assert!(text.contains("create that directory"), "{text}");
+        assert!(text.contains("--file"), "{text}");
+        assert!(
+            fs::symlink_metadata(paths::dir(&missing)).is_err(),
+            "directory created"
+        );
+
+        let remove = prepare(Kind::PowerShell, Action::Remove, &missing, "").unwrap();
+        assert!(!remove.changed());
+
+        // A parent that is a file is reported separately.
+        let file = paths::join2(&base, "file");
+        fs::write(&file, b"x").unwrap();
+        let under_file = paths::join2(&file, "profile.ps1");
+        let text = prepare(Kind::Bash, Action::Setup, &under_file, "")
+            .err()
+            .expect("accepted a file as the profile directory")
+            .to_string();
+        assert!(text.contains("is not a directory"), "{text}");
+
+        // An existing directory still lets setup create the file.
+        let created = paths::join2(&base, "new-profile");
+        assert!(prepare(Kind::PowerShell, Action::Setup, &created, &base).is_ok());
     }
 
     #[test]

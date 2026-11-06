@@ -54,7 +54,7 @@ Validate same-user/same-repository ownership and resolved paths before mutation.
 
 ## Logging
 
-Use `tracing` or compatible structured logging. English notices go to stderr; child streams remain unchanged. Support ANSI output with a documented opt-out. Doctor/verbose expose safe paths, versions, capability, lock state, and failure causes. Never persist source contents, environment values, or full command arguments. Shell setup and removal notices show only the CacheCow-owned block, never other profile content.
+Use `tracing` or compatible structured logging. English notices go to stderr; child streams remain unchanged. Support ANSI output with a documented opt-out. Doctor/verbose expose safe paths, versions, capability, lock state, and failure causes. Never persist source contents, environment values, or full command arguments. Shell setup and removal notices show only the CacheCow-owned block, never other profile content. Setup creates the selected configuration file but never its directory: when the directory is missing, planning fails before any confirmation with an error that names the directory and says to create it or to select another file with `--file`.
 
 ## Build and Test
 
