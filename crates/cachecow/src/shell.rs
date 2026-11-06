@@ -423,12 +423,18 @@ fn block(b: &[u8]) -> Result<Option<(usize, usize, bool)>> {
 /// installation has no profile directory until the first profile is written.
 fn require_directory(file: &str) -> Result<()> {
     let dir = paths::dir(file);
-    match fs::metadata(&dir) {
-        Ok(m) if m.is_dir() => Ok(()),
-        Ok(_) => Err(anyhow!(
+    // Unix reports a file used as a directory as `NotADirectory`, both for the
+    // configuration file's parent and for any ancestor of that parent.
+    let not_a_directory = || {
+        anyhow!(
             "the parent {dir} of the shell configuration is not a directory; select another file \
              with --file"
-        )),
+        )
+    };
+    match fs::metadata(&dir) {
+        Ok(m) if m.is_dir() => Ok(()),
+        Ok(_) => Err(not_a_directory()),
+        Err(e) if e.kind() == io::ErrorKind::NotADirectory => Err(not_a_directory()),
         Err(e) if e.kind() == io::ErrorKind::NotFound => Err(anyhow!(
             "the directory {dir} of the shell configuration does not exist; create that directory \
              or select an existing configuration file with --file"
@@ -466,7 +472,13 @@ pub fn prepare(kind: Kind, action: Action, path: &str, shim_dir: &str) -> Result
             p.security = Some(security::FileSecurity::read(&abs)?);
             p.before = fs::read(&abs)?;
         }
-        Err(e) if e.kind() == io::ErrorKind::NotFound => {
+        // Unix reports a regular file used as the parent directory as
+        // `NotADirectory`; Windows reports `NotFound`. Setup gives both the same
+        // directory diagnostic, while removal keeps its existing error.
+        Err(e)
+            if e.kind() == io::ErrorKind::NotFound
+                || (action == Action::Setup && e.kind() == io::ErrorKind::NotADirectory) =>
+        {
             // Setup creates the file but never its directory. Report that
             // before the user is asked to confirm a change that cannot be
             // applied. Removal of an absent file changes nothing.
