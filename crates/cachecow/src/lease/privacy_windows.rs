@@ -11,7 +11,6 @@ use std::{
 
 use anyhow::{Result, anyhow};
 
-use super::LeaseError;
 use crate::winsec::{self, Ace, Parts};
 
 const ACCESS_ALLOWED_ACE_TYPE: u8 = 0;
@@ -26,6 +25,17 @@ const INHERIT_FLAGS: u8 = 0x03;
 pub(super) fn state_sddl() -> Result<String> {
     let user = winsec::current_user()?.to_string_sid()?;
     Ok(format!("D:P(A;OICI;FA;;;{user})"))
+}
+
+/// Actionable error for existing state that is not private to the current
+/// user. It names the path, the failed check and the remedy, like the POSIX
+/// check, instead of reporting an unrelated process-ownership failure.
+fn not_private(path: &str, reason: &str) -> anyhow::Error {
+    anyhow!(
+        "lease state {path} is not private to the current user ({reason}); restrict it to your \
+         account (owner and one full-control entry for the current user, inheritance disabled), \
+         or remove it while no ccow command runs so that CacheCow recreates it"
+    )
 }
 
 fn owner_accepted(path: &str) -> Result<bool> {
@@ -55,10 +65,13 @@ pub(super) fn private_dir(path: &str) -> Result<()> {
         return Err(anyhow!("unsafe lease registry directory"));
     }
     if !owner_accepted(path)? {
-        return Err(LeaseError::Unverified.into());
+        return Err(not_private(path, "it has another owner"));
     }
     if !state_directory_private(path)? {
-        return Err(LeaseError::Unverified.into());
+        return Err(not_private(
+            path,
+            "its access control list is not a protected current-user-only list",
+        ));
     }
     Ok(())
 }
@@ -88,7 +101,7 @@ fn open_existing(path: &str) -> Result<fs::File> {
         .open(path)?;
     let info = file.metadata()?;
     if !info.is_file() || info.file_type().is_symlink() {
-        return Err(LeaseError::Unverified.into());
+        return Err(not_private(path, "it is not a regular file"));
     }
     Ok(file)
 }
@@ -113,7 +126,7 @@ pub(super) fn read_private_record(path: &str) -> Result<Vec<u8>> {
 fn check_private_file(path: &str) -> Result<()> {
     let info = fs::symlink_metadata(path)?;
     if !info.is_file() || info.file_type().is_symlink() {
-        return Err(LeaseError::Unverified.into());
+        return Err(not_private(path, "it is not a regular file"));
     }
     let security = winsec::read_security(
         path,
@@ -123,20 +136,28 @@ fn check_private_file(path: &str) -> Result<()> {
             dacl: true,
         },
     )?;
-    let owner = security.owner.ok_or(LeaseError::Unverified)?;
+    let owner = security
+        .owner
+        .ok_or_else(|| not_private(path, "it has no owner"))?;
     if !winsec::accepted_owner(&owner)? {
-        return Err(LeaseError::Unverified.into());
+        return Err(not_private(path, "it has another owner"));
     }
     let user = winsec::current_user()?;
     let Some(dacl) = security.dacl else {
-        return Err(LeaseError::Unverified.into());
+        return Err(not_private(path, "it has no access control list"));
     };
     if dacl.len() != 1 {
-        return Err(LeaseError::Unverified.into());
+        return Err(not_private(
+            path,
+            "its access control list has more than one entry",
+        ));
     }
     let ace = &dacl[0];
     if ace.ace_type != ACCESS_ALLOWED_ACE_TYPE || ace.mask != FILE_ALL_ACCESS || ace.sid != user {
-        return Err(LeaseError::Unverified.into());
+        return Err(not_private(
+            path,
+            "its access control list is not full control for the current user",
+        ));
     }
     Ok(())
 }
