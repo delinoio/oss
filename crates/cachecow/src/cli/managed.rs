@@ -269,6 +269,7 @@ impl App {
                 env: Some(env),
                 preset: Id::parse(&id),
                 protected: vec![self.store.root.clone()],
+                shim_dir: self.shim_dir(),
                 runner: None,
             },
         )

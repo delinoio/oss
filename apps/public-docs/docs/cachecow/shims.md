@@ -63,7 +63,7 @@ Persistent setup applies to new shells. For the current session, use the matchin
 
 ## Tool selection
 
-Each invocation selects the first real executable in PATH after excluding CacheCow shims. Installation does not pin a tool path. Changing PATH or a version-manager selection must affect the next invocation. CacheCow must prevent recursion while preserving rustup toolchain selection, including explicit toolchain arguments.
+Each invocation selects the first real executable in PATH after excluding CacheCow shims. Installation does not pin a tool path. The CacheCow shim directory in PATH does not affect cache compatibility, so a cache built with explicit `ccow run` and the same command through an activated shim can share a source cache. Changing PATH or a version-manager selection must affect the next invocation. CacheCow must prevent recursion while preserving rustup toolchain selection, including explicit toolchain arguments.
 
 A shim preserves the tool's arguments, working directory, stdout, stderr, and exit code. On Unix, a pass-through call delivers non-UTF-8 argument and environment bytes to the real tool unchanged. CacheCow skips `PATH` entries that are not valid UTF-8 when it looks for the real tool, so a tool installed only under such a directory is not found. Tool arguments must not become CacheCow options. Put CacheCow options before `--` in explicit `ccow run`, or use saved configuration. If no real executable exists, diagnostics must explain how to restore one and return command-not-found status 127.
 

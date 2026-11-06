@@ -124,3 +124,87 @@ fn cargo_discovery_rejects_a_mixed_case_compiler_wrapper() {
         "unexpected error: {err}"
     );
 }
+
+/// Joins `dirs` with the platform `PATH` list separator, so the fixtures
+/// exercise the native list parser on Unix and Windows alike.
+fn path_list(dirs: &[&str]) -> String {
+    dirs.join(&paths::LIST_SEPARATOR.to_string())
+}
+
+#[test]
+fn without_shim_dir_removes_only_the_shim_entry_and_keeps_order() {
+    let shim = "/state/shims";
+    for (path, expected) in [
+        (&["/state/shims", "/a", "/b"][..], &["/a", "/b"][..]),
+        (&["/a", "/state/shims", "/b"], &["/a", "/b"]),
+        (&["/a", "/b", "/state/shims"], &["/a", "/b"]),
+        (&["/a", "", "/state/shims", "/b"], &["/a", "", "/b"]),
+        (&["/state/shims"], &[]),
+    ] {
+        let (path, expected) = (path_list(path), path_list(expected));
+        let env = strings(&["KEEP=1", &format!("PATH={path}")]);
+        assert_eq!(
+            without_shim_dir(&env, shim, false),
+            strings(&["KEEP=1", &format!("PATH={expected}")]),
+            "PATH={path}"
+        );
+    }
+}
+
+#[test]
+fn without_shim_dir_leaves_other_environments_unchanged() {
+    let shim = "/state/shims";
+    let other = path_list(&["/a", "/state/shims-other", "/state/shims/bin"]);
+    let env = strings(&[
+        &format!("PATH={other}"),
+        "OTHER=/state/shims",
+        "NO_SEPARATOR",
+    ]);
+    assert_eq!(without_shim_dir(&env, shim, false), env);
+    assert_eq!(without_shim_dir(&env, "", false), env);
+    let with_shim = strings(&[&format!("PATH={}", path_list(&["/state/shims", "/a"]))]);
+    assert_eq!(without_shim_dir(&with_shim, "", false), with_shim);
+}
+
+#[test]
+fn without_shim_dir_matches_the_path_name_like_the_platform() {
+    let shim = "/state/shims";
+    let env = strings(&[&format!("Path={}", path_list(&["/state/shims", "/a"]))]);
+    assert_eq!(without_shim_dir(&env, shim, true), strings(&["Path=/a"]));
+    assert_eq!(without_shim_dir(&env, shim, false), env);
+    let upper = strings(&[&format!("PATH={}", path_list(&["/STATE/SHIMS", "/a"]))]);
+    assert_eq!(without_shim_dir(&upper, shim, true), strings(&["PATH=/a"]));
+    assert_eq!(without_shim_dir(&upper, shim, false), upper);
+}
+
+#[cfg(unix)]
+#[test]
+fn without_shim_dir_matches_a_symlinked_alias_of_the_shim_directory() {
+    let dir = tempfile::tempdir().unwrap();
+    let real = dir.path().join("shims");
+    std::fs::create_dir(&real).unwrap();
+    let alias = dir.path().join("alias");
+    std::os::unix::fs::symlink(&real, &alias).unwrap();
+    let shim = real.to_string_lossy().into_owned();
+    let env = strings(&[&format!("PATH=/a:{}:/b", alias.to_string_lossy())]);
+    assert_eq!(
+        without_shim_dir(&env, &shim, false),
+        strings(&["PATH=/a:/b"])
+    );
+}
+
+#[cfg(windows)]
+#[test]
+fn without_shim_dir_preserves_the_spelling_of_quoted_windows_entries() {
+    let shim = "C:\\State\\shims";
+    let env = strings(&["PATH=\"C:\\Tools;x\";C:\\State\\shims;\"C:\\Tools\";C:\\Windows"]);
+    assert_eq!(
+        without_shim_dir(&env, shim, true),
+        strings(&["PATH=\"C:\\Tools;x\";\"C:\\Tools\";C:\\Windows"])
+    );
+    let quoted_shim = strings(&["PATH=\"C:\\State\\shims\";\"C:\\Tools\""]);
+    assert_eq!(
+        without_shim_dir(&quoted_shim, shim, true),
+        strings(&["PATH=\"C:\\Tools\""])
+    );
+}
