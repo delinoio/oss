@@ -10,6 +10,12 @@ Release tags use:
 binpm@v<semver>
 ```
 
+## npm Packages
+
+Executable npm releases use the same version as the CLI and publish `@delino/binpm` with matching native packages for the six platforms below. Run `npx @delino/binpm --version` to check the installed version. Node.js 24 or later and enabled optional dependencies are required; musl Linux is not supported.
+
+The historical `0.0.0` packages contain no executable. Use a later executable npm version once available, or another method in the [installation guide](./installation).
+
 ## binpm CLI Artifacts
 
 First-party binpm release downloads are provided for:

@@ -326,6 +326,10 @@
       "docs/packages-ccow-distribution-contract.md",
       ".github/workflows/release-ccow.yml",
       "packages/binpm/**",
+      "crates/binpm/Cargo.toml",
+      "LICENSE",
+      "NOTICE",
+      ".github/workflows/release-binpm.yml",
       "docs/packages-binpm-distribution-contract.md",
       ".github/workflows/release-binpm-npm.yml"
     ]

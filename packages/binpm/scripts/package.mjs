@@ -1,203 +1,337 @@
 // SPDX-License-Identifier: Apache-2.0
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
+  chmodSync,
   copyFileSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
-import { execFileSync } from "node:child_process";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
+import { gzipSync, gunzipSync } from "node:zlib";
+import platforms from "../src/platforms.cjs";
 import {
-  LAUNCHER_NAME,
   ensure,
   event,
-  homepage,
   isMain,
-  nativeName,
+  metadata,
   npm,
   packageRoot,
-  placeholderVersion,
+  registry,
   repository,
-  root,
-  targets,
+  revision,
+  sourceText,
+  homepage,
 } from "./common.mjs";
 
-const placeholderReadme = (name) => `# ${name}
-
-This version reserves the \`${name}\` package name on npm. It contains no executable and no code.
-
-The npm launcher for binpm is not published yet. Until it is, install binpm with the methods in the [installation guide](${homepage}/installation).
-`;
-
-// Source-controlled manifests for the placeholder packages. The launcher is
-// listed last so native packages publish first, as the other repository npm
-// distributions do.
-export function placeholderManifests(version = placeholderVersion) {
-  ensure(
-    version === placeholderVersion,
-    `Only the ${placeholderVersion} reservation placeholder can be packaged`,
-  );
-  const common = {
-    version,
-    license: "Apache-2.0",
-    repository: { type: "git", url: repository },
-    homepage,
-    files: ["README.md", "LICENSE"],
-  };
-  return [
-    ...targets.map((target) => ({
-      name: nativeName(target),
-      ...common,
-      description: `Reserved platform package name for binpm on ${target.suffix}`,
-      os: [target.os],
-      cpu: [target.cpu],
-      ...(target.libc ? { libc: [target.libc] } : {}),
-    })),
-    {
-      name: LAUNCHER_NAME,
-      ...common,
-      description: "Reserved package name for the binpm npm launcher",
-    },
-  ];
-}
-
-export const sha512 = (bytes) =>
+const { targets } = platforms;
+const mainName = "@delino/binpm";
+const mainFiles = ["bin/binpm.cjs", "src/launcher.cjs", "src/platforms.cjs"];
+export const integrity = (bytes) =>
   `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
+export const tarballName = (name, version) =>
+  `${name.replace(/^@/u, "").replace("/", "-")}-${version}.tgz`;
 
-export function packPlaceholders(
-  outputDirectory,
-  version = placeholderVersion,
-) {
-  const manifests = placeholderManifests(version);
-  const staging = mkdtempSync(path.join(tmpdir(), "binpm-npm-"));
-  try {
-    mkdirSync(outputDirectory, { recursive: true });
-    const artifacts = manifests.map((manifest) => {
-      const directory = path.join(staging, manifest.name.replace(/\W+/gu, "-"));
-      mkdirSync(directory);
-      writeFileSync(
-        path.join(directory, "package.json"),
-        `${JSON.stringify(manifest, null, 2)}\n`,
-      );
-      writeFileSync(
-        path.join(directory, "README.md"),
-        placeholderReadme(manifest.name),
-      );
-      copyFileSync(path.join(root, "LICENSE"), path.join(directory, "LICENSE"));
-      const [packed] = JSON.parse(
-        npm(
-          [
-            "pack",
-            "--json",
-            "--ignore-scripts",
-            "--pack-destination",
-            path.resolve(outputDirectory),
-          ],
-          { cwd: directory },
-        ),
-      );
-      const bytes = readFileSync(path.join(outputDirectory, packed.filename));
-      return {
-        name: manifest.name,
-        version: manifest.version,
-        filename: packed.filename,
-        integrity: sha512(bytes),
-      };
+export function packageManifest(target, version, sourceRevision) {
+  ensure(
+    /^[a-f0-9]{40}$/u.test(sourceRevision),
+    "Expected an exact source commit",
+  );
+  const manifest = {
+    name: target?.name ?? mainName,
+    version,
+    description: target
+      ? `Native binpm executable for ${target.suffix}`
+      : metadata().description,
+    license: "Apache-2.0",
+    repository: { type: "git", url: repository, directory: "packages/binpm" },
+    gitHead: sourceRevision,
+    publishConfig: { access: "public", registry },
+    homepage,
+    files: [...(target ? [`bin/${target.binary}`] : mainFiles), "NOTICE"],
+  };
+  if (target) {
+    Object.assign(manifest, { os: [target.os], cpu: [target.cpu] });
+    if (target.libc) manifest.libc = [target.libc];
+  } else {
+    Object.assign(manifest, {
+      engines: { node: ">=24" },
+      bin: { binpm: "bin/binpm.cjs" },
+      exports: {},
+      optionalDependencies: Object.fromEntries(
+        targets.map(({ name }) => [name, version]),
+      ),
     });
-    writeFileSync(
-      path.join(outputDirectory, "artifacts.json"),
-      `${JSON.stringify(artifacts, null, 2)}\n`,
-    );
-    for (const artifact of artifacts) event("package", artifact);
-    return artifacts;
-  } finally {
-    rmSync(staging, { recursive: true, force: true });
   }
+  return manifest;
 }
 
-// Read-only: confirms the directory holds exactly the expected tarballs with the
-// recorded integrity and manifests. It never repairs or rewrites an artifact.
-export function verifyPlaceholders(directory, version = placeholderVersion) {
-  const expected = placeholderManifests(version);
-  const artifacts = JSON.parse(
-    readFileSync(path.join(directory, "artifacts.json"), "utf8"),
-  );
-  ensure(
-    artifacts.length === expected.length &&
-      artifacts.every(
-        (artifact, index) => artifact.name === expected[index].name,
-      ),
-    "Artifact list does not match the expected package set",
-  );
-  const tarballs = readdirSync(directory).filter((file) =>
-    file.endsWith(".tgz"),
-  );
-  ensure(
-    tarballs.length === artifacts.length &&
-      artifacts.every(({ filename }) => tarballs.includes(filename)),
-    "Unexpected or missing tarballs",
-  );
-  for (const [index, artifact] of artifacts.entries()) {
-    const file = path.join(directory, artifact.filename);
+export function buildPackage({
+  target,
+  binary,
+  output,
+  sourceRevision = revision(),
+}) {
+  const { version } = metadata();
+  if (target) {
+    ensure(targets.includes(target), "Unknown binary target");
     ensure(
-      sha512(readFileSync(file)) === artifact.integrity,
-      `Integrity mismatch: ${artifact.name}`,
+      target.os === process.platform && target.cpu === process.arch,
+      "Pack and smoke-test each binary on its native OS/architecture",
     );
-    const members = execFileSync("tar", ["-tzf", file], { encoding: "utf8" })
-      .split(/\r?\n/u)
-      .filter(Boolean)
-      .sort();
     ensure(
-      JSON.stringify(members) ===
-        JSON.stringify([
-          "package/LICENSE",
-          "package/README.md",
-          "package/package.json",
-        ]),
-      `Unexpected members in ${artifact.name}`,
-    );
-    const manifest = JSON.parse(
-      execFileSync("tar", ["-xOzf", file, "package/package.json"], {
+      execFileSync(path.resolve(binary), ["--version"], {
         encoding: "utf8",
-      }),
-    );
-    ensure(
-      JSON.stringify(manifest) === JSON.stringify(expected[index]),
-      `Unexpected manifest in ${artifact.name}`,
+      }).trim() === `binpm ${version}`,
+      "Executable/source version mismatch",
     );
   }
-  return artifacts;
+  const directory = path.join(path.resolve(output), target?.suffix ?? "main");
+  rmSync(directory, { recursive: true, force: true });
+  mkdirSync(path.join(directory, "bin"), { recursive: true });
+  writeFileSync(
+    path.join(directory, "README.md"),
+    sourceText("packages/binpm/README.md"),
+  );
+  writeFileSync(path.join(directory, "LICENSE"), sourceText("LICENSE"));
+  if (target) {
+    copyFileSync(
+      path.resolve(binary),
+      path.join(directory, "bin", target.binary),
+    );
+    chmodSync(path.join(directory, "bin", target.binary), 0o755);
+  } else {
+    mkdirSync(path.join(directory, "src"));
+    for (const file of mainFiles)
+      writeFileSync(
+        path.join(directory, file),
+        sourceText(`packages/binpm/${file}`),
+      );
+    chmodSync(path.join(directory, "bin/binpm.cjs"), 0o755);
+  }
+  writeFileSync(path.join(directory, "NOTICE"), sourceText("NOTICE"));
+  const manifest = packageManifest(target, version, sourceRevision);
+  writeFileSync(
+    path.join(directory, "package.json"),
+    JSON.stringify(manifest, null, 2) + "\n",
+  );
+  const destination = path.resolve(output, "tarballs");
+  mkdirSync(destination, { recursive: true });
+  const [packed] = JSON.parse(
+    npm(
+      ["pack", "--json", "--ignore-scripts", "--pack-destination", destination],
+      { cwd: directory },
+    ),
+  );
+  ensure(
+    packed.filename === tarballName(manifest.name, version),
+    "Unexpected npm tarball filename",
+  );
+  const file = path.join(destination, packed.filename);
+  const bytes = readFileSync(file);
+  ensure(integrity(bytes) === packed.integrity, "npm pack integrity mismatch");
+  writeFileSync(
+    file,
+    executableTarball(bytes, target ? `bin/${target.binary}` : "bin/binpm.cjs"),
+  );
+  const artifact = inspectTarball(file, { version, sourceRevision });
+  event("pack", artifact);
+  return artifact;
+}
+
+// npm pack emits short ustar paths for this closed file set. Reject links,
+// extensions, duplicate paths, and oversized archives instead of extracting
+// arbitrary input. This reader is deliberately not a general tar implementation.
+export function tarEntries(bytes) {
+  const tar = gunzipSync(bytes, { maxOutputLength: 64 * 1024 * 1024 });
+  const entries = new Map();
+  const text = (buffer) => buffer.toString("utf8").replace(/\0.*$/su, "");
+  let offset = 0;
+  for (; offset + 512 <= tar.length;) {
+    const header = tar.subarray(offset, offset + 512);
+    if (header.every((value) => value === 0)) break;
+    const checksum = Number.parseInt(text(header.subarray(148, 156)).trim(), 8);
+    ensure(
+      header.reduce(
+        (sum, value, i) => sum + (i >= 148 && i < 156 ? 32 : value),
+        0,
+      ) === checksum,
+      "Invalid tar header checksum",
+    );
+    const prefix = text(header.subarray(345, 500));
+    const name = `${prefix ? `${prefix}/` : ""}${text(header.subarray(0, 100))}`;
+    const size = Number.parseInt(text(header.subarray(124, 136)).trim(), 8);
+    const mode = Number.parseInt(text(header.subarray(100, 108)).trim(), 8);
+    ensure(
+      [0, 48].includes(header[156]) && !entries.has(name),
+      "Unexpected tar entry type or duplicate file",
+    );
+    ensure(
+      Number.isSafeInteger(size) &&
+        size >= 0 &&
+        offset + 512 + size <= tar.length,
+      "Invalid tar entry length",
+    );
+    ensure(
+      name.startsWith("package/") &&
+        !name.split("/").includes("..") &&
+        !name.includes("\\"),
+      "Invalid tar entry path",
+    );
+    entries.set(name.slice(8), {
+      mode,
+      bytes: tar.subarray(offset + 512, offset + 512 + size),
+    });
+    offset += 512 + Math.ceil(size / 512) * 512;
+  }
+  ensure(
+    offset + 1024 <= tar.length &&
+      tar.subarray(offset).every((value) => value === 0),
+    "Invalid tar ending",
+  );
+  return entries;
+}
+
+// NTFS cannot represent Unix execute bits, and npm pack does not always add
+// them to bin entries. Set the generated archive's executable mode before
+// recording its final integrity. Keep this at creation only: verification of
+// downloaded/retry artifacts must reject missing modes without changing bytes.
+export function executableTarball(bytes, executable) {
+  const entries = tarEntries(bytes);
+  ensure(entries.has(executable), "Missing generated executable");
+  const tar = gunzipSync(bytes, { maxOutputLength: 64 * 1024 * 1024 });
+  let offset = 0;
+  for (const [name, entry] of entries) {
+    if (name === executable) {
+      const header = tar.subarray(offset, offset + 512);
+      header.write("0000755\0", 100, 8, "ascii");
+      header.fill(32, 148, 156);
+      const checksum = header.reduce((sum, value) => sum + value, 0);
+      header.write(
+        `${checksum.toString(8).padStart(6, "0")}\0 `,
+        148,
+        8,
+        "ascii",
+      );
+      break;
+    }
+    offset += 512 + Math.ceil(entry.bytes.length / 512) * 512;
+  }
+  return gzipSync(tar, { level: 9 });
+}
+
+export function inspectTarball(file, { version, sourceRevision }) {
+  const bytes = readFileSync(file);
+  const entries = tarEntries(bytes);
+  const manifest = JSON.parse(
+    entries.get("package.json")?.bytes.toString("utf8") ?? "null",
+  );
+  const target = targets.find(({ name }) => name === manifest?.name);
+  ensure(target || manifest?.name === mainName, "Unexpected npm package");
+  const expected = packageManifest(target, version, sourceRevision);
+  ensure(
+    JSON.stringify(manifest) === JSON.stringify(expected),
+    `Package metadata mismatch: ${manifest.name}`,
+  );
+  const expectedFiles = [
+    ...expected.files,
+    "package.json",
+    "README.md",
+    "LICENSE",
+  ].sort();
+  ensure(
+    JSON.stringify([...entries.keys()].sort()) ===
+      JSON.stringify(expectedFiles),
+    "Unexpected package file inventory",
+  );
+  const executable = target ? `bin/${target.binary}` : "bin/binpm.cjs";
+  // NTFS has no POSIX execute bits, and npm may preserve mode 0644 for .exe
+  // payloads packed on Windows. Only Unix executables and the npm bin shim need
+  // the archive execute bits; the Windows loader uses the PE executable itself.
+  ensure(entries.get(executable).bytes.length > 0, "Empty executable");
+  if (target?.os !== platforms.Platform.Windows)
+    ensure(
+      (entries.get(executable).mode & 0o111) === 0o111,
+      "Missing executable mode",
+    );
+  if (!target)
+    for (const file of mainFiles)
+      ensure(
+        entries
+          .get(file)
+          .bytes.equals(Buffer.from(sourceText(`packages/binpm/${file}`))),
+        `Launcher source mismatch: ${file}`,
+      );
+  ensure(
+    entries.get("LICENSE").bytes.equals(Buffer.from(sourceText("LICENSE"))),
+    "License mismatch",
+  );
+  ensure(
+    entries.get("NOTICE").bytes.equals(Buffer.from(sourceText("NOTICE"))),
+    "Notice mismatch",
+  );
+  ensure(
+    entries
+      .get("README.md")
+      .bytes.equals(Buffer.from(sourceText("packages/binpm/README.md"))),
+    "README mismatch",
+  );
+  ensure(
+    path.basename(file) === tarballName(manifest.name, version),
+    "Tarball name mismatch",
+  );
+  return {
+    name: manifest.name,
+    version,
+    revision: sourceRevision,
+    filename: path.basename(file),
+    integrity: integrity(bytes),
+  };
+}
+
+export function verifySet(directory, sourceRevision = revision()) {
+  const { version } = metadata();
+  const expected = [...targets.map(({ name }) => name), mainName];
+  const files = readdirSync(directory).sort();
+  ensure(
+    JSON.stringify(files) ===
+      JSON.stringify(expected.map((name) => tarballName(name, version)).sort()),
+    "Expected exactly seven binpm tarballs",
+  );
+  return expected.map((name) =>
+    inspectTarball(path.join(directory, tarballName(name, version)), {
+      version,
+      sourceRevision,
+    }),
+  );
 }
 
 export function main() {
-  const { values } = parseArgs({
+  const { values, positionals } = parseArgs({
+    allowPositionals: true,
     options: {
-      output: {
-        type: "string",
-        default: path.join(packageRoot, "dist/tarballs"),
-      },
-      version: { type: "string", default: placeholderVersion },
+      target: { type: "string" },
+      binary: { type: "string" },
+      output: { type: "string", default: path.join(packageRoot, "dist") },
     },
   });
-  packPlaceholders(values.output, values.version);
-  verifyPlaceholders(values.output, values.version);
+  ensure(positionals.length === 1, "Expected main, binary, or verify");
+  const [command] = positionals;
+  if (command === "verify")
+    event("verified", { packages: verifySet(values.output) });
+  else if (command === "main") buildPackage({ output: values.output });
+  else if (command === "binary") {
+    const target = targets.find(({ rust }) => rust === values.target);
+    ensure(
+      target && values.binary,
+      "Expected a supported --target and --binary",
+    );
+    buildPackage({ target, binary: values.binary, output: values.output });
+  } else throw new Error("Expected main, binary, or verify");
 }
 
-if (isMain(import.meta.url))
-  try {
-    main();
-  } catch (error) {
-    console.error(
-      JSON.stringify({
-        event: "binpm_npm_package_failed",
-        message: error.message,
-      }),
-    );
-    process.exitCode = 1;
-  }
+if (isMain(import.meta.url)) main();

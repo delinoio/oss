@@ -2,7 +2,7 @@
   "name": "@delino/binpm-source",
   "version": "0.0.0",
   "private": true,
-  "description": "Source workspace for the binpm npm packages (name reservation only)",
+  "description": "Source workspace for the binpm npm packages (native npm distribution)",
   "license": "Apache-2.0",
   "type": "module",
   "engines": {

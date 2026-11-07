@@ -11,11 +11,13 @@ import {
   nativeName,
   packageRoot,
   registry,
+  revision,
+  releaseIdentity,
   targets,
   trustedRepository,
   trustedWorkflow,
 } from "./common.mjs";
-import { verifyPlaceholders } from "./package.mjs";
+import { verifySet } from "./package.mjs";
 
 export async function registryVersion(artifact, request = fetch) {
   const response = await request(
@@ -29,18 +31,16 @@ export async function registryVersion(artifact, request = fetch) {
   );
   const body = await response.json();
   ensure(
-    body.name === artifact.name && body.version === artifact.version,
+    body.name === artifact.name &&
+      body.version === artifact.version &&
+      typeof body.dist?.integrity === "string",
     `Invalid registry metadata for ${artifact.name}`,
   );
   return body;
 }
 
-// Publishes each missing version once, in order, and never overwrites. An
-// existing version is reused without comparing bytes: the 0.0.0 placeholders
-// carry no executable content, and a maintainer's bootstrap upload cannot be
-// byte-identical to a CI upload across npm versions. Remove this exception and
-// compare `dist.integrity` as the other npm distributions do before this
-// package set ships real binaries.
+// Preflight the entire immutable set before any upload, then publish native
+// dependencies before the launcher. Retries must reuse the retained tarballs.
 export async function publishArtifacts(
   artifacts,
   {
@@ -57,7 +57,18 @@ export async function publishArtifacts(
   }
   ensure(typeof publish === "function", "A publisher is required");
   for (const artifact of artifacts) {
+    const existing = await lookup(artifact);
+    ensure(
+      existing === null || existing.dist.integrity === artifact.integrity,
+      `Conflicting published integrity: ${artifact.name}@${artifact.version}`,
+    );
+  }
+  for (const artifact of artifacts) {
     let found = await lookup(artifact);
+    ensure(
+      found === null || found.dist.integrity === artifact.integrity,
+      `Conflicting published integrity: ${artifact.name}@${artifact.version}`,
+    );
     const reused = found !== null;
     if (!reused) {
       await publish(artifact);
@@ -75,8 +86,8 @@ export async function publishArtifacts(
       }
     }
     ensure(
-      found !== null,
-      `Published package was not confirmed: ${artifact.name}@${artifact.version}`,
+      found?.dist.integrity === artifact.integrity,
+      `Published package integrity was not confirmed: ${artifact.name}@${artifact.version}`,
     );
     report("publish", {
       name: artifact.name,
@@ -108,6 +119,8 @@ export function publishTarball(
         "--ignore-scripts",
         "--registry",
         registry,
+        revision,
+        releaseIdentity,
       ],
       { stdio: "inherit" },
     );
@@ -134,7 +147,6 @@ export async function main(env = process.env) {
         default: path.join(packageRoot, "dist/tarballs"),
       },
       publish: { type: "boolean", default: false },
-      bootstrap: { type: "boolean", default: false },
       "print-trust-commands": { type: "boolean", default: false },
     },
   });
@@ -142,46 +154,29 @@ export async function main(env = process.env) {
     console.log(trustCommands().join("\n"));
     return;
   }
-  ensure(
-    !(values.publish && values.bootstrap),
-    "Choose either --publish or --bootstrap",
-  );
-  const artifacts = verifyPlaceholders(values.directory);
+  const sourceRevision = revision();
+  const artifacts = verifySet(values.directory, sourceRevision);
   if (values.publish) {
+    const identity = releaseIdentity(env, artifacts[0].version, sourceRevision);
     ensure(
-      env.GITHUB_ACTIONS === "true" &&
-        env.GITHUB_REPOSITORY === trustedRepository &&
-        env.GITHUB_REF === "refs/heads/main" &&
-        env.GITHUB_WORKFLOW_REF?.includes(
-          `/.github/workflows/${trustedWorkflow}@`,
-        ),
-      "CI publication requires the first-party main release workflow",
+      identity.dry_run === "false" &&
+        env.GITHUB_ACTIONS === "true" &&
+        env.GITHUB_WORKFLOW_REF ===
+          `${trustedRepository}/.github/workflows/${trustedWorkflow}@${env.GITHUB_REF}`,
+      "CI publication requires the exact first-party trusted release workflow",
     );
     ensure(
       env.ACTIONS_ID_TOKEN_REQUEST_URL && env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
       "npm publication requires GitHub Actions OIDC",
     );
   }
-  if (values.bootstrap) {
-    // The first version of a new package cannot use trusted publishing. This
-    // path uses the maintainer's own npm login and is refused in CI.
-    ensure(env.GITHUB_ACTIONS !== "true", "Bootstrap publishing is local only");
-    event("bootstrap_account", { user: npm(["whoami"]).trim() });
-  }
-  const live = values.publish || values.bootstrap;
   await publishArtifacts(artifacts, {
-    dryRun: !live,
+    dryRun: !values.publish,
     publish: (artifact) =>
       publishTarball(artifact, values.directory, {
         provenance: values.publish,
       }),
   });
-  if (values.bootstrap) {
-    event("bootstrap_next_step", {
-      message:
-        "Configure trusted publishers with: node packages/binpm/scripts/publish.mjs --print-trust-commands",
-    });
-  }
 }
 
 if (isMain(import.meta.url))
