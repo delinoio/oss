@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readFileSync, writeFileSync, mkdirSync, lstatSync } from "node:fs";
+import {
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+  mkdirSync,
+  lstatSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -15,12 +21,6 @@ export const sha256 = (bytes) =>
 export const version = JSON.parse(
   readFileSync(path.join(packageRoot, "package.json")),
 ).version;
-const launcherFiles = [
-  "bin/ccow.cjs",
-  "src/launcher.cjs",
-  "src/platforms.cjs",
-  "README.md",
-];
 const source = (file) => readFileSync(path.join(root, file));
 const revision = () =>
   execFileSync("git", ["rev-parse", "HEAD"], {
@@ -66,38 +66,6 @@ export function buildInfo(bytes) {
     "Unexpected embedded build identity fields",
   );
   return info;
-}
-function manifest(id, target, digest) {
-  return {
-    name: target?.name ?? "@delino/ccow",
-    version: id.version,
-    license: "Apache-2.0",
-    gitHead: id.sourceRevision,
-    description: id.fixture
-      ? "TEST FIXTURE ONLY: not a CacheCow release"
-      : "CacheCow native CLI",
-    ...(id.fixture
-      ? { private: true }
-      : { publishConfig: { access: "public" } }),
-    repository: {
-      type: "git",
-      url: "git+https://github.com/delinoio/oss.git",
-      directory: "packages/ccow",
-    },
-    ccow: {
-      fixture: id.fixture,
-      ...(target ? { target: target.suffix, sha256: digest } : {}),
-    },
-    ...(target
-      ? { os: [target.os], cpu: [target.cpu] }
-      : {
-          engines: { node: ">=24" },
-          bin: { ccow: "bin/ccow.cjs" },
-          optionalDependencies: Object.fromEntries(
-            platforms.targets.map((t) => [t.name, id.version]),
-          ),
-        }),
-  };
 }
 const json = (object) => Buffer.from(JSON.stringify(object, null, 2) + "\n");
 const regular = (bytes) => ({ bytes });
@@ -189,20 +157,6 @@ export function packageRelease({
   };
   for (const target of platforms.targets) {
     const bytes = binaryBytes.get(target.suffix);
-    const meta = manifest(id, target, sha256(bytes));
-    const files = {
-      ...licenses,
-      "package.json": regular(json(meta)),
-      [`bin/${target.binary}`]: { bytes, mode: 0o755 },
-    };
-    emit(
-      `delino-ccow-${target.suffix}-${version}.tgz`,
-      Object.fromEntries(
-        Object.entries(files).map(([key, value]) => [`package/${key}`, value]),
-      ),
-      "npm",
-      target,
-    );
     emit(
       `ccow-${version}-${target.suffix}.tar.gz`,
       {
@@ -216,19 +170,6 @@ export function packageRelease({
       target,
     );
   }
-  const main = { ...licenses, "package.json": regular(json(manifest(id))) };
-  for (const file of launcherFiles)
-    main[file] = {
-      bytes: readFileSync(path.join(packageRoot, file)),
-      mode: file.startsWith("bin/") ? 0o755 : 0o644,
-    };
-  emit(
-    `delino-ccow-${version}.tgz`,
-    Object.fromEntries(
-      Object.entries(main).map(([key, value]) => [`package/${key}`, value]),
-    ),
-    "npm",
-  );
   const release = { ...id, artifacts };
   writeFileSync(path.join(output, "release.json"), json(release), {
     flag: "wx",
@@ -242,89 +183,59 @@ export function packageRelease({
   return release;
 }
 
+// The candidate directory holds exactly the versioned native archives plus
+// release.json and SHA256SUMS. Any other file, including a package tarball from
+// the retired npm distribution, is rejected.
 export function verifyRelease(directory, expected) {
   const release = JSON.parse(
     readFileSync(path.join(directory, "release.json")),
   );
   for (const key of ["version", "sourceRevision", "tag", "fixture"])
     assert.equal(release[key], expected[key], `Release ${key} mismatch`);
-  assert.equal(release.artifacts.length, 7);
-  const binaryDigests = new Map();
-  const expectedNames = new Set([
-    `delino-ccow-${version}.tgz`,
-    ...platforms.targets.flatMap((t) => [
-      `delino-ccow-${t.suffix}-${version}.tgz`,
-      `ccow-${version}-${t.suffix}.tar.gz`,
-    ]),
-  ]);
+  assert.deepEqual(
+    Object.keys(release).sort(),
+    ["artifacts", "fixture", "sourceRevision", "tag", "version"],
+    "Unexpected release metadata fields",
+  );
+  assert.equal(release.artifacts.length, platforms.targets.length);
+  const expectedNames = new Set(
+    platforms.targets.map((t) => `ccow-${version}-${t.suffix}.tar.gz`),
+  );
+  assert.deepEqual(
+    readdirSync(directory).sort(),
+    [...expectedNames, "SHA256SUMS", "release.json"].sort(),
+    "Unexpected or missing candidate file",
+  );
   for (const artifact of release.artifacts) {
     assert(
       expectedNames.delete(artifact.name),
       "Unexpected or duplicate artifact",
     );
+    assert.equal(artifact.kind, "native", "Unknown artifact kind");
+    const target = platforms.targets.find((t) => t.suffix === artifact.target);
+    assert(target, "Native target missing");
+    assert.equal(
+      artifact.name,
+      `ccow-${version}-${target.suffix}.tar.gz`,
+      "Artifact identity mismatch",
+    );
     const bytes = readFileSync(path.join(directory, artifact.name));
     assert.equal(sha256(bytes), artifact.sha256, "Artifact checksum mismatch");
     const files = entries(bytes);
-    const target = platforms.targets.find((t) => t.suffix === artifact.target);
-    const native = artifact.kind === "native";
-    assert.equal(
-      artifact.name,
-      native
-        ? `ccow-${version}-${target?.suffix}.tar.gz`
-        : target
-          ? `delino-ccow-${target.suffix}-${version}.tgz`
-          : `delino-ccow-${version}.tgz`,
-      "Artifact identity mismatch",
-    );
-    assert(native || artifact.kind === "npm", "Unknown artifact kind");
-    assert(!native || target, "Native target missing");
-    const prefix = native ? "" : "package/";
-    if (target) {
-      const digest = sha256(
-        files.get(native ? target.binary : `package/bin/${target.binary}`)
-          .bytes,
-      );
-      if (binaryDigests.has(target.suffix))
-        assert.equal(
-          digest,
-          binaryDigests.get(target.suffix),
-          "Native/npm executable mismatch",
-        );
-      binaryDigests.set(target.suffix, digest);
-    }
     for (const file of ["LICENSE", "NOTICE"])
       assert.deepEqual(
-        files.get(prefix + file)?.bytes,
+        files.get(file)?.bytes,
         source(file),
         "License mismatch",
       );
-    if (native) {
-      const meta = JSON.parse(files.get("release.json").bytes);
-      assert.deepEqual(meta, {
-        ...expected,
-        target: target.suffix,
-        sha256: sha256(files.get(target.binary).bytes),
-      });
-      assert.equal(files.get(target.binary).mode, 0o755);
-      assert.equal(files.size, 4);
-    } else {
-      const digest = target
-        ? sha256(files.get(`package/bin/${target.binary}`).bytes)
-        : undefined;
-      assert.deepEqual(
-        JSON.parse(files.get("package/package.json").bytes),
-        manifest(expected, target, digest),
-      );
-      assert.equal(files.size, target ? 4 : 7);
-      if (target)
-        assert.equal(files.get(`package/bin/${target.binary}`).mode, 0o755);
-      else
-        for (const file of launcherFiles)
-          assert.deepEqual(
-            files.get(`package/${file}`)?.bytes,
-            readFileSync(path.join(packageRoot, file)),
-          );
-    }
+    const meta = JSON.parse(files.get("release.json").bytes);
+    assert.deepEqual(meta, {
+      ...expected,
+      target: target.suffix,
+      sha256: sha256(files.get(target.binary).bytes),
+    });
+    assert.equal(files.get(target.binary).mode, 0o755);
+    assert.equal(files.size, 4);
   }
   assert.equal(expectedNames.size, 0);
   assert.equal(

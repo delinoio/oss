@@ -1,26 +1,26 @@
-# CacheCow npm and native distribution
+# CacheCow native distribution
 
 ## Scope
 
-Own `packages/ccow`: distribution tooling and npm package `@delino/ccow`, exposing `ccow`. Native runtime remains owned by `crates/cachecow`.
+Own `packages/ccow`: the private repository tooling that builds, packages and verifies the versioned native `ccow` archives published through GitHub Releases. CacheCow is not distributed through npm: there is no `@delino/ccow*` package, launcher, trusted publishing or npm credential. Native runtime remains owned by `crates/cachecow`.
 
 ## Runtime and Language
 
-The native CLI is the Rust `ccow` binary from `crates/cachecow`. The npm launcher requires Node.js 24+; native Cargo users must be able to use the native archive without Node.js. Repository-owned distribution code and metadata use Apache-2.0.
+The native CLI is the Rust `ccow` binary from `crates/cachecow`. Native archives and native Cargo use require no Node.js. Node.js 24+ is required only by the repository distribution tooling and by the Rspack/Rsbuild discovery hook (`.ccow/discover.cjs`) owned by the command contract. Repository-owned distribution code and metadata use Apache-2.0.
 
 ## Users and Operators
 
-Native CLI and npm users; release maintainers.
+Native CLI users installing from GitHub Releases; release maintainers.
 
 ## Interfaces and Contracts
 
-Publish versioned native archives and checksums through GitHub Releases and installation through `@delino/ccow`. Package dispatch must preserve the native CLI argument, working-directory, stream, and exit-code contracts.
+Publish versioned native archives, `SHA256SUMS` and `release.json` through GitHub Releases under the tag `ccow@v<version>`. This is the only distribution channel. The archive names are `ccow-<version>-<target>.tar.gz` for targets `darwin-arm64`, `linux-x64` and `windows-x64`. Each archive holds exactly `LICENSE`, `NOTICE`, the executable (`ccow`, or `ccow.exe` on Windows, mode 0755) and an archive-level `release.json` that records the version, source revision, tag, fixture flag, target and executable SHA-256. The release-level `release.json` lists the three archives with their SHA-256 digests, and `SHA256SUMS` lists the same digests. Users install by downloading an archive, verifying it against `SHA256SUMS` and placing the executable on PATH, so the native CLI argument, working-directory, stream, and exit-code contracts need no dispatch layer.
 
 Native targets are macOS 15+ arm64/APFS, Linux x64 with an Ubuntu 22.04-equivalent environment on Btrfs and reflink-enabled XFS, and Windows 11 24H2+ x64/ReFS. These are support targets, not claims of existing release artifacts. The release workflow runs no native acceptance on them. Cargo supports 1.99.1+ within 1.x; Rspack/Rsbuild support 2.3.0+ within 2.x.
 
-Installation exposes the CLI. Shim installation and activation remain explicit user choices. No feature flag or rollout cohorts. Rollback reinstalls an earlier version; incompatible settings/records receive recovery guidance without rewriting. No automatic updater, standalone installer script, or Homebrew in the first release.
+Installation exposes the CLI. Shim installation and activation remain explicit user choices. No feature flag or rollout cohorts. Rollback installs an earlier released archive; incompatible settings/records receive recovery guidance without rewriting. No automatic updater, standalone installer script, or Homebrew in the first release.
 
-Archive naming and package internals are owned by the distribution tooling. The dedicated workflow below owns CacheCow publication; it does not extend the repository's selectable release projects.
+Archive internals are owned by the distribution tooling. The dedicated workflow below owns CacheCow publication; it does not extend the repository's selectable release projects.
 
 ## Storage
 
@@ -36,11 +36,11 @@ Keep package/release diagnostics actionable and free of secrets. Record source r
 
 ## Build and Test
 
-CI and the release workflow run distribution fixtures only. They do not run native acceptance, so they do not verify native archive or npm installation on each OS, actual CoW sharing, process-tree behavior, or storage, time and memory measurements. Cross-builds, fixtures and packaged bytes do not prove native behavior. Preserve existing CI platform rules.
+CI and the release workflow run distribution fixtures only. They do not run native acceptance, so they do not verify native archive installation on each OS, actual CoW sharing, process-tree behavior, or storage, time and memory measurements. Cross-builds, fixtures and packaged bytes do not prove native behavior. Preserve existing CI platform rules.
 
 ## Dependencies and Integrations
 
-Consumes the Rust CLI and its shared managed lifecycle. Integrates with npm, GitHub Releases, and consolidated public installation/rollback guides. Support is through GitHub Issues with no response-time SLA.
+Consumes the Rust CLI and its shared managed lifecycle. Integrates with GitHub Releases and consolidated public installation/rollback guides. Support is through GitHub Issues with no response-time SLA.
 
 ## Change Triggers
 
@@ -68,7 +68,7 @@ embeds exactly one marker,
 The candidate job downloads those binaries, and `package.mjs` rejects any binary
 whose marker does not match the requested version, exact source revision,
 target triple and a clean build. It then packages the exact source revision and
-verifies the versioned archives, npm tarballs and checksums. This release-only
+verifies the versioned archives and checksums. This release-only
 macOS build host is not CI allocation. Candidate artifacts
 are identified by source SHA. Every job checks out the immutable dispatch SHA.
 Validation jobs have read-only contents permission. The shared release project
@@ -90,37 +90,31 @@ The `publish` job uses the protected `ccow-release` environment, restricted to
 main with required maintainer approval. Configure the existing
 `DELINO_RELEASE_BOT_CLIENT_ID` variable and `DELINO_RELEASE_BOT_PRIVATE_KEY`
 secret for the `delino-release-bot` installation on `delinoio/oss`. Its short-lived
-repository-scoped token owns tag and GitHub Release writes. `NPM_TOKEN` is an
-npm automation credential scoped to the four `@delino/ccow` packages. Only this
-job receives production credentials, after it verifies the exact candidate
-again. Build and candidate jobs receive no publication credentials. Checkout never
-persists authentication. npm configuration references the token through its
-standard environment placeholder; no credential enters an artifact or argument.
+repository-scoped token owns tag and GitHub Release writes and is the only
+publication credential. Only this job receives it, after it verifies the exact
+candidate again. Build and candidate jobs receive no publication credentials.
+Checkout never persists authentication. The workflow uses no npm token, registry
+configuration or OIDC identity, and no credential enters an artifact or argument.
 
 `scripts/release/ccow-publish.mjs` verifies the clean checkout SHA, requested
-version, non-fixture manifests and checksums before contacting publication
-services. It creates only
+version, non-fixture archives and checksums before contacting publication
+services. Candidate verification rejects any file besides the three archives,
+`release.json` and `SHA256SUMS`. The script creates only
 `ccow@v<version>` at that SHA, resolves bounded annotated tags, and never moves
 an existing tag. GitHub release discovery and asset discovery are paginated;
 duplicate identities, orphan releases, unexpected assets and uncertain reads
 fail before writes. Existing release ownership must match the exact source and
 candidate checksum digest. Asset operations use the pinned release ID.
 
-A new release starts as a draft. Upload native archives, all four npm tarballs,
+A new release starts as a draft. Upload the three native archives,
 `release.json` and `SHA256SUMS`.
 Compare existing assets byte-for-byte; upload only absent draft assets, without
 clobber or deletion. A public release with missing or conflicting assets fails
-closed. Complete asset readback precedes npm publication. Publish the three
-native npm packages before the launcher, using version-specific
-`ccow-v<version>` dist tags. Existing npm versions must match name, version,
-source revision, SHA-512 integrity and downloaded tarball bytes. Never overwrite
-or unpublish a version. After every npm package reads back correctly, publish
-the draft, then promote npm `latest` for native packages before the launcher.
-An older retry never moves `latest` back from a newer stable version. The
+closed. Complete asset readback of the pinned release precedes publication of
+the draft, and the published release and its assets are read back again. The
 monorepo-wide GitHub latest release is unchanged.
 
-GitHub and npm do not provide a shared transaction. A failed run can leave an
-exact tag, partial draft, or some version-specific npm packages. Rerun **failed
+A failed run can leave an exact tag or a partial draft. Rerun **failed
 jobs in the original Actions run** while its candidate artifact remains
 retained. This preserves the dispatch SHA and candidate bytes, even if main has
 advanced. Readback reconciles writes whose
@@ -130,3 +124,13 @@ state and investigate recovery from the exact candidate bytes;
 do not rebuild under the same version and assume byte identity. Conflicts need
 maintainer investigation or a new committed version, never force-pushes or
 asset replacement. No release is published as part of local validation.
+
+## Distribution decision
+
+Version 0.1.0 has never been published to npm, so there is no package to
+deprecate or unpublish. The owner decided that CacheCow ships only versioned
+native archives, `SHA256SUMS` and `release.json` through GitHub Releases. The
+`@delino/ccow` launcher and the three platform packages are not built,
+published or supported, and `packages/ccow` keeps only the native target table,
+archive builder, packaging and verification scripts. A future npm channel needs a
+new owner decision and a new contract.

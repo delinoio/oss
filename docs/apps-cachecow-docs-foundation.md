@@ -18,7 +18,7 @@ The public section is `/cachecow` under `https://oss.delino.io`. Its eight route
 
 Do not invent frontend integration formats, archive names, JSON field names, shell identifiers, or color opt-out syntax before runtime interfaces are finalized. Describe established behavior and explicitly identify details still awaiting integration.
 
-Guides must cover installation and supported environments; preset configuration and persistent-cache integration; source selection and configuration precedence; prepare/run/status/clean/doctor; concurrency and process lifecycle; failure recovery; copy-mode fallback; rollback; performance limitations; and GitHub issue support.
+Guides must cover installation from a GitHub Release native archive (download, verification against `SHA256SUMS`, placing `ccow` on PATH) and supported environments, without describing npm installation or claiming that any archive is published before it is; preset configuration and persistent-cache integration; source selection and configuration precedence; prepare/run/status/clean/doctor; concurrency and process lifecycle; failure recovery; copy-mode fallback; rollback by installing an earlier archive; performance limitations; and GitHub issue support.
 
 Include shim install/list/doctor/uninstall, Bash/Zsh/PowerShell 7 session activation and persistent setup/removal, confirmation and `--yes`, `--file`, current-session guidance, PATH priority, real-tool lookup, rustup selection, bypass, pass-through behavior, nesting, and lock-aware Cargo clean. Explain unsupported aliases/functions, absolute paths, package-manager-local binaries/scripts, and JS API interception, with explicit `ccow run` and frontend configuration alternatives.
 

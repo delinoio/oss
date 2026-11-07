@@ -13,7 +13,7 @@ Prepare independent writable build caches for Git worktrees with filesystem copy
 | Domain   | Canonical path                   | Ownership                                                                                           |
 | -------- | -------------------------------- | --------------------------------------------------------------------------------------------------- |
 | crates   | `crates/cachecow`                | Rust CLI (`ccow`), cache management, presets, shims, shell integration and native process ownership |
-| packages | `packages/ccow`                  | `@delino/ccow` launcher and native distribution tooling                                             |
+| packages | `packages/ccow`                  | Native archive build, packaging and verification tooling (private; no npm package)                  |
 | apps     | `apps/public-docs/docs/cachecow` | Public guides, built and published by public-docs                                                   |
 
 Implementation and packaging do not establish published availability or native acceptance. CI and the release workflow run no native acceptance, and publication is not gated on it.
@@ -22,14 +22,15 @@ Implementation and packaging do not establish published availability or native a
 
 - [Complete requirements](crates-cachecow-requirements.md)
 - [Command foundation](crates-cachecow-foundation.md)
-- [npm and native distribution](packages-ccow-distribution-contract.md)
+- [Native distribution](packages-ccow-distribution-contract.md)
 - [Public documentation](apps-cachecow-docs-foundation.md)
 
 ## Cross-Domain Invariants
 
 - The complete requirements contract retains all product decisions, acceptance criteria, test scenarios, and exclusions. Domain summaries must not weaken them.
 - Preset IDs are `cargo`, `rspack`, and `rsbuild`. Explicit execution and activated shims share managed cache and process behavior.
-- Native Cargo use has no Node.js dependency. npm and frontend integration require Node.js 24+.
+- Native Cargo use and the native release archives have no Node.js dependency. Only the Rspack/Rsbuild frontend integration requires Node.js 24+.
+- CacheCow is distributed only as versioned native archives, `SHA256SUMS` and `release.json` through GitHub Releases. It has no npm package, launcher or npm credential.
 - Repository-owned code and distributions use Apache-2.0. Preserve third-party licenses and notices.
 - Storage is local-only, same-user and same-Git-repository. This is an explicit exception to the default R2 storage approach; it adds no remote service or telemetry.
 - Use UUID v7 when new persisted entities need identifiers; do not introduce entities solely to use UUIDs.
