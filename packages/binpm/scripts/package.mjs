@@ -167,7 +167,7 @@ export function tarEntries(bytes) {
     const size = Number.parseInt(text(header.subarray(124, 136)).trim(), 8);
     const mode = Number.parseInt(text(header.subarray(100, 108)).trim(), 8);
     ensure(
-      [0, 48].includes(header[156]) && !entries.has(name),
+      [0, 48].includes(header[156]) && !entries.has(name.slice(8)),
       "Unexpected tar entry type or duplicate file",
     );
     ensure(

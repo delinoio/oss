@@ -183,6 +183,10 @@ test("package verification rejects payload, license, mode, path and link tamperi
     () => check((files) => [...files, ["link", Buffer.from("bad"), 0o755, 50]]),
     /entry type/u,
   );
+  assert.throws(
+    () => check((files) => [...files, files[0]]),
+    /duplicate file/u,
+  );
   assert.throws(() => tarEntries(Buffer.from("invalid gzip")));
 });
 
