@@ -22,6 +22,8 @@ Only releases whose source contains this package-distribution contract can enter
 
 The native decoder for binpm, cargo-mono, nodeup and with-watch accepts only the executable and, for newly licensed archives, the complete root `LICENSE` and `NOTICE` as fixed regular members. The two text members must appear together and match the source checkout exactly. Authenticated historical executable-only archives remain readable for immutable recovery. Duplicate, link, traversal and unrelated entries remain invalid; extraction returns the unchanged executable bytes.
 
+The archive-license boundary is the merged mainline commit that first added both terms to the legacy release workflows. Compare the authenticated release revision against that retained commit, never a pre-merge worker revision that can disappear after a squash merge. Failed comparisons must stop verification rather than allow executable-only archives.
+
 ## Repository publication
 
 `delino-oss-packages` is the public R2 bucket. `delino-oss-packages-state` is private and stores immutable candidate records, packages, and publication journals. Recreate aptly databases from the recorded package inventory rather than depending on runner caches.
