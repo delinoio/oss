@@ -10,7 +10,7 @@
 
 ## Owning contracts
 
-- [CacheCow npm and native distribution](../docs/packages-ccow-distribution-contract.md)
+- [CacheCow native distribution](../docs/packages-ccow-distribution-contract.md)
 - [binpm npm distribution](../docs/packages-binpm-distribution-contract.md)
 
 - [async-commit-hook API client contract](../docs/packages-async-commit-hook-api-client-contract.md)

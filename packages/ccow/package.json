@@ -1,8 +1,8 @@
 {
-  "name": "@delino/ccow",
+  "name": "ccow-distribution",
   "version": "0.1.0",
   "private": true,
-  "description": "CacheCow native CLI distribution (unreleased)",
+  "description": "CacheCow native archive build and packaging tooling (unreleased; not published to npm)",
   "license": "Apache-2.0",
   "engines": {
     "node": ">=24"

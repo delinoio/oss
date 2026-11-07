@@ -6,7 +6,7 @@ This contract preserves the complete CacheCow product requirements, acceptance c
 
 ## Runtime and Language
 
-Rust CLI (crate `cachecow`, binary `ccow`); native Cargo use requires no Node.js. The npm launcher and frontend integrations require Node.js 24+. See the exact support matrix below.
+Rust CLI (crate `cachecow`, binary `ccow`); native Cargo use and the native release archives require no Node.js. Rspack/Rsbuild frontend integration requires Node.js 24+. The Node.js requirement of the former npm launcher no longer applies (see the Distribution decision). See the exact support matrix below.
 
 ## Users and Operators
 
@@ -34,7 +34,7 @@ The complete acceptance criteria and test scenarios below remain product require
 
 ## Dependencies and Integrations
 
-Git, Cargo, Rspack, Rsbuild, native CoW facilities, supported shells, npm, GitHub Releases, and the consolidated public documentation site.
+Git, Cargo, Rspack, Rsbuild, native CoW facilities, supported shells, GitHub Releases, and the consolidated public documentation site.
 
 ## Change Triggers
 
@@ -90,7 +90,7 @@ CoW is not a compiler cache key algorithm, a shared process heap, or automatic s
   - Linux x64 with Ubuntu 22.04-equivalent environment, Btrfs and reflink-enabled XFS.
   - Windows 11 24H2+, x64, ReFS.
 - Tool support: Cargo 1.99.1 or later within 1.x; Rspack and Rsbuild 2.3.0 or later within 2.x. Older versions and nightly toolchains are outside the first-release support guarantee.
-- npm package: `@delino/ccow`, exposing `ccow`. npm launcher and Rspack/Rsbuild integration require Node.js 24+. Native Cargo usage must not require Node.js.
+- Distribution: versioned native archives, `SHA256SUMS` and `release.json` through GitHub Releases (tag `ccow@v<version>`); no npm package. Rspack/Rsbuild integration requires Node.js 24+. Native Cargo usage and the native archives must not require Node.js. The earlier scope item for the npm package `@delino/ccow` and its Node.js 24+ launcher is superseded; see the Distribution decision.
 - Other filesystems, or cross-volume operations where CoW cannot work, fail by default. Only an explicit `--allow-copy` permits ordinary copying. Report that ordinary copying was used. For a managed command, report it before the command starts, once per run, even if the command later fails or the supervisor ends with an error.
 
 ### Commands and configuration
@@ -222,10 +222,10 @@ Disk exhaustion, permission errors, and other actual preparation failures stop b
 
 ### Distribution, rollback, documentation, and support
 
-- Publish versioned native archives and checksums through GitHub Releases and installation through `@delino/ccow`.
+- Publish versioned native archives, `SHA256SUMS` and `release.json` through GitHub Releases. Users install by downloading the archive for their platform, verifying it against `SHA256SUMS` and placing `ccow` on PATH. There is no npm package or launcher.
 - No feature flag: users opt in through explicit CLI invocation or shim installation and activation. No rollout cohorts or percentages.
-- Roll back by reinstalling a previous version. Do not rewrite settings or records that the running version cannot understand; report recovery guidance.
-- Exclude automatic updates, standalone installer scripts, and Homebrew from the first release.
+- Roll back by installing a previous released archive. Do not rewrite settings or records that the running version cannot understand; report recovery guidance.
+- Exclude automatic updates, standalone installer scripts, Homebrew, and npm packages or launchers from the first release.
 - Support via GitHub Issues with no response-time SLA.
 - Before runtime implementation, onboard the project with a project index and owning domain contracts under `docs/`, update the catalog, and establish canonical implementation/package paths. Use the project/domain templates. Update AGENTS only for ownership or development-rule changes.
 - Add a CacheCow section to `apps/public-docs` covering installation, preset configuration, source selection, concurrency, cleaning, troubleshooting, and performance limitations. Keep internal contracts and implementation details in `docs/`.
@@ -242,7 +242,7 @@ Disk exhaustion, permission errors, and other actual preparation failures stop b
 - [ ] Nested same-session/same-cache invocations reuse locks, different-cache nesting remains managed, and neither path deadlocks or releases protection prematurely.
 - [ ] Shim diagnostics and guides explain real executable selection, PATH priority, bypass, uninstall, and all unsupported interception paths.
 
-- [ ] CacheCow and `ccow` are onboarded with authoritative contracts, Rust implementation, Apache-2.0 licensing, native packages, and `@delino/ccow`.
+- [ ] CacheCow and `ccow` are onboarded with authoritative contracts, Rust implementation, Apache-2.0 licensing, and native release archives.
 - [ ] Every supported preset can identify and prepare its allowed cache paths without changing unrelated source, dependencies, Git metadata, or outputs.
 - [ ] Initial worktree preparation uses the primary checkout or explicit same-repository source; repeat runs preserve the local cache unless replacement is explicitly requested.
 - [ ] Real CoW is demonstrated on APFS, Btrfs, reflink-enabled XFS, and ReFS. Writing or cleaning a derived cache does not modify the source or another worktree.
@@ -285,14 +285,14 @@ Disk exhaustion, permission errors, and other actual preparation failures stop b
 - Verify unsupported filesystem/cross-volume errors, explicit ordinary-copy fallback, and accurate user-visible copy-mode reporting.
 - Verify spaces, Korean/non-ASCII paths, symlinks, internal relative links (including dangling ones and write isolation through copied links), aliases, external and escaping links, junctions, protected-path overlap, and same-user/same-repository boundaries.
 - Verify JSON success/errors, exit-code propagation, unchanged child output, stderr notices, logs without sensitive content, and unsupported record-version handling.
-- Install the native archives and npm package on each supported platform. Verify native Cargo use without Node.js, Node.js 24+ npm/frontend use, and reinstall-based rollback.
+- Install the native archive from a GitHub Release on each supported platform after verifying it against `SHA256SUMS`. Verify native Cargo use without Node.js, Node.js 24+ Rspack/Rsbuild frontend use, and rollback by installing an earlier archive.
 - Preserve source revisions, commands, results, host/filesystem details, and unperformed checks in PR/CI records. Keep runtime acceptance distinct from fixtures and packaging.
 
 ## Out of Scope
 
 - Fish and cmd.exe-specific shell activation, automatic npm/pnpm/yarn script or node_modules/.bin integration, and guaranteed interception of shell aliases/functions, absolute paths, or JS API calls.
 - A separate central cache store, automatic cache publication, saved snapshot catalogs, and snapshot save/list/restore/delete commands.
-- Automatic eviction, automatic updates, standalone installers, and Homebrew.
+- Automatic eviction, automatic updates, standalone installers, Homebrew, and npm distribution.
 - Cross-repository/cross-user sharing, non-Git projects, remote cache transfer/storage, and telemetry.
 - Shared process heaps, guaranteed RAM savings, guaranteed build cache hits, or a fixed performance reduction threshold.
 - node_modules, package download caches, and frontend final outputs.
@@ -314,7 +314,7 @@ The shim extension was decided by the owner after the original PRD: three PATH s
 | CLI experience and interfaces | Answered                       | Owner-approved command/options, prompts, English output, JSON, exit codes, and settings precedence                                           |
 | Data and state                | Answered                       | Existing tool cache locations, worktree retention, current-user records, manual cleanup, no central snapshots                                |
 | Security and privacy          | Answered                       | Same-user/same-repository local boundary, path protection, sensitive-log exclusions, no sandbox or telemetry                                 |
-| Integrations                  | Answered                       | Cargo/Rspack/Rsbuild, Git, OS CoW, npm/native distribution, selected versions and fallback rules                                             |
+| Integrations                  | Answered                       | Cargo/Rspack/Rsbuild, Git, OS CoW, native archive distribution through GitHub Releases, selected versions and fallback rules                 |
 | Feature flag and rollout      | Not applicable                 | Owner explicitly selected no flag; use is opt-in through CLI invocation or shim installation and activation                                  |
 | Operations and rollback       | Answered                       | Process-tree ownership, five-second shutdown, manual version rollback, no automatic updater or support SLA                                   |
 | Observability                 | Answered / contract-determined | Approved doctor/verbose and local errors; structured logs and ANSI opt-out from repository rules                                             |
@@ -325,6 +325,8 @@ The shim extension was decided by the owner after the original PRD: three PATH s
 | Filing                        | Contract-determined            | Current remote is delinoio/oss; repository issue style; no duplicate found; PRD label absent, so no labels added                             |
 
 Acceptance decision: the owner decided not to run native acceptance in CI. The release workflow has no native acceptance job, acceptance gate or acceptance evidence, and the repository has no native acceptance driver. Publication requires only the verified candidate. This supersedes the earlier native release gate.
+
+Distribution decision (2026-11-07): the owner decided that CacheCow drops npm distribution entirely. Version 0.1.0 ships only versioned native archives, `SHA256SUMS` and `release.json` through GitHub Releases (tag `ccow@v<version>`). This supersedes the original scope item for the npm package `@delino/ccow` with a Node.js 24+ launcher, the npm installation and Node.js 24+ launcher criteria, and the npm rollback scenario: they are replaced by the native archive equivalents above (download, verify against `SHA256SUMS`, place `ccow` on PATH, and roll back by installing an earlier archive). Nothing was published to npm, so no package needs deprecation. Native Cargo use never required Node.js; Node.js 24+ remains required only for Rspack/Rsbuild integration. Shim installation and activation, update policy, support and every other gate are unchanged.
 
 Language decision: the first implementation was Go under the repository default-language rule. The owner then decided to port the CLI completely to Rust (`crates/cachecow`, binary `ccow`). This supersedes the original "Implement the CLI in Go" scope item. Persisted record formats, commands, output, exit codes and every acceptance gate remain unchanged by the port.
 

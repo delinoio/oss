@@ -1,4 +1,5 @@
 "use strict";
+// Native target table shared by the build, packaging and verification scripts.
 const targets = Object.freeze(
   [
     {
@@ -22,10 +23,6 @@ const targets = Object.freeze(
       rust: "x86_64-pc-windows-msvc",
       binary: "ccow.exe",
     },
-  ].map((target) =>
-    Object.freeze({ ...target, name: `@delino/ccow-${target.suffix}` }),
-  ),
+  ].map((target) => Object.freeze(target)),
 );
-const selectTarget = (os = process.platform, cpu = process.arch) =>
-  targets.find((target) => target.os === os && target.cpu === cpu);
-module.exports = { targets, selectTarget };
+module.exports = { targets };

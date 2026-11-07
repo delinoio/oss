@@ -44,7 +44,18 @@ test("CacheCow release is manual, main-only and runs no native acceptance", () =
   assert.equal(steps[credentials].with["permission-contents"], "write");
   const publish = steps.at(-1);
   assert.match(publish.run, /ccow-publish.mjs/u);
-  assert.equal(publish.env.NODE_AUTH_TOKEN, "${{ secrets.NPM_TOKEN }}");
+  assert.deepEqual(publish.env, {
+    GH_TOKEN: "${{ steps.release-bot.outputs.token }}",
+    REQUESTED_VERSION: "${{ inputs.version }}",
+  });
+  // CacheCow ships native archives only: no npm credentials, registry or tools.
+  assert.doesNotMatch(
+    JSON.stringify(workflow),
+    /NPM_TOKEN|NODE_AUTH_TOKEN|registry-url|registry\.npmjs|npm (?:publish|dist-tag|install)|id-token/u,
+  );
+  assert.deepEqual(Object.keys(workflow.jobs.publish.permissions ?? {}), [
+    "contents",
+  ]);
   for (const [name, job] of Object.entries(workflow.jobs)) {
     for (const step of job.steps) {
       if (step.uses?.startsWith("actions/checkout@")) {
@@ -92,7 +103,7 @@ test("CacheCow candidates package Rust binaries built on matching hosts", () => 
 test("normal affected CI runs CacheCow distribution tests without native allocation", () => {
   for (const event of Object.values(Event))
     for (const file of [
-      "packages/ccow/src/launcher.cjs",
+      "packages/ccow/src/platforms.cjs",
       "crates/cachecow/src/main.rs",
       "scripts/release/ccow-release-identity.mjs",
       "scripts/release/ccow-publish.mjs",
