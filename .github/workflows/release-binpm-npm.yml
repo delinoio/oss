@@ -46,7 +46,7 @@ jobs:
 
   publish:
     needs: package
-    if: ${{ !inputs.dry_run && vars.BINPM_NPM_PUBLISH_ENABLED == 'true' && github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main' }}
+    if: ${{ !inputs.dry_run && github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main' }}
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -67,6 +67,4 @@ jobs:
           name: binpm-npm-${{ github.sha }}
           path: packages/binpm/dist/tarballs
       - name: Publish exact verified tarballs through OIDC
-        env:
-          BINPM_NPM_PUBLISH_ENABLED: ${{ vars.BINPM_NPM_PUBLISH_ENABLED }}
         run: node packages/binpm/scripts/publish.mjs --publish

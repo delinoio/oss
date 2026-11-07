@@ -27,7 +27,7 @@ test("only the publish job receives the OIDC token and no static npm secret", ()
     "id-token": "write",
   });
   assert.match(publish.if, /!inputs\.dry_run/u);
-  assert.match(publish.if, /vars\.BINPM_NPM_PUBLISH_ENABLED == 'true'/u);
+  assert.doesNotMatch(publish.if, /vars\./u);
   assert.equal(publish.needs, "package");
   const text = readFileSync(".github/workflows/release-binpm-npm.yml", "utf8");
   assert.doesNotMatch(text, /NPM_TOKEN|NODE_AUTH_TOKEN|secrets\./u);

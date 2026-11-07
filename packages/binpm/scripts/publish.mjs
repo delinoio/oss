@@ -127,10 +127,6 @@ export async function main(env = process.env) {
       "CI publication requires the first-party main release workflow",
     );
     ensure(
-      env.BINPM_NPM_PUBLISH_ENABLED === "true",
-      "npm trusted publishing is not enabled",
-    );
-    ensure(
       env.ACTIONS_ID_TOKEN_REQUEST_URL && env.ACTIONS_ID_TOKEN_REQUEST_TOKEN,
       "npm publication requires GitHub Actions OIDC",
     );

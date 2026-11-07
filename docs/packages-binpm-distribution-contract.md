@@ -31,7 +31,7 @@ Generated tarballs and `artifacts.json` live under the ignored `packages/binpm/d
 
 - Every package must use a Trusted Publisher for repository `delinoio/oss` and workflow file `release-binpm-npm.yml`. Do not rename the file or publish from another workflow without updating all seven npm configurations.
 - The workflow uses no npm token and no `NODE_AUTH_TOKEN`. Only the `publish` job gets `id-token: write`, and it runs on `main` in `delinoio/oss` after the package job succeeds.
-- The `BINPM_NPM_PUBLISH_ENABLED` repository variable must be `true` to publish. Dry runs, the default, never publish and never receive an OIDC token.
+- Publication needs no repository variable. It runs only for a manual dispatch with `dry_run: false`, on `main` in `delinoio/oss`. Dry runs, the default, never publish and never receive an OIDC token.
 - The workflow installs npm `11.6.2` before publishing. The OIDC minimum is `11.5.1`.
 - `npm trust` requires an existing package, so trusted publishing cannot publish the first version of a new package name. A maintainer publishes `0.0.0` once with `publish.mjs --bootstrap`, using their own npm login with two-factor authentication. This path is refused in GitHub Actions and publishes without provenance.
 - Existing versions are never overwritten or unpublished.
@@ -57,7 +57,6 @@ A maintainer with publish rights to the `@delino` scope does these steps once, f
 1. Run `node packages/binpm/scripts/package.mjs`.
 2. Run `node packages/binpm/scripts/publish.mjs --bootstrap` while logged in to npm. It publishes the six native packages and then `binpm`.
 3. Run `node packages/binpm/scripts/publish.mjs --print-trust-commands`. Run each printed `npm trust github ...` command with npm `11.15.0` or later.
-4. Set the `BINPM_NPM_PUBLISH_ENABLED` repository variable to `true`.
 
 ## Change Triggers
 
