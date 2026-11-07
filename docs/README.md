@@ -64,7 +64,7 @@ Record new implementation status, validation results and unresolved limits in pu
 
 - [project-binpm.md](project-binpm.md)
 - [crates-binpm-foundation.md](crates-binpm-foundation.md)
-- [packages-binpm-distribution-contract.md](packages-binpm-distribution-contract.md) (`packages/binpm`, npm packages `binpm` and `@delino/binpm-*`, name reservation and trusted publishing)
+- [packages-binpm-distribution-contract.md](packages-binpm-distribution-contract.md) (`packages/binpm`, npm packages `binpm` and `@delino/binpm-*`, native npm launcher, packages and automatic trusted publishing)
 - [apps-binpm-docs-foundation.md](apps-binpm-docs-foundation.md) (`apps/public-docs/docs/binpm`, canonical URL `https://oss.delino.io/binpm`, routes published below `/binpm`: `/`, `/installation`, `/getting-started`, `/commands`, `/local-tooling`, `/cache-and-verification`, `/releases`, `/troubleshooting`, `/reference`)
 
 ### cargo-mono

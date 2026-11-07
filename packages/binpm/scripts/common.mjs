@@ -1,4 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
+import { readFileSync } from "node:fs";
+import platforms from "../src/platforms.cjs";
 import { execFileSync } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,25 +13,11 @@ export const homepage = "https://oss.delino.io/binpm";
 // npm trusted publishing binds a package to one repository and workflow file.
 export const trustedRepository = "delinoio/oss";
 export const trustedWorkflow = "release-binpm-npm.yml";
-// Until the launcher and native packages exist, the only publishable version is
-// the reservation placeholder. Remove this pin when the real packages land.
-export const placeholderVersion = "0.0.0";
-
 // The unscoped `binpm` name is unavailable: npm rejects it because it is too
 // similar to the existing `bin_pm` package. Revisit if npm support grants it.
 export const LAUNCHER_NAME = "@delino/binpm";
 
-// One entry per first-party binpm release target in the release workflow
-// (`release-binpm.yml`). `libc` is set only for Linux, as for the other
-// repository npm distributions.
-export const targets = Object.freeze([
-  { suffix: "darwin-x64", os: "darwin", cpu: "x64" },
-  { suffix: "darwin-arm64", os: "darwin", cpu: "arm64" },
-  { suffix: "win32-x64-msvc", os: "win32", cpu: "x64" },
-  { suffix: "win32-arm64-msvc", os: "win32", cpu: "arm64" },
-  { suffix: "linux-x64-gnu", os: "linux", cpu: "x64", libc: "glibc" },
-  { suffix: "linux-arm64-gnu", os: "linux", cpu: "arm64", libc: "glibc" },
-]);
+export const { targets } = platforms;
 
 export const nativeName = (target) => `@delino/binpm-${target.suffix}`;
 
@@ -65,4 +53,61 @@ export function isMain(url) {
   return (
     process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(url)
   );
+}
+
+// Read canonical LF bytes even on a Windows checkout with core.autocrlf.
+export function sourceText(file) {
+  return readFileSync(path.join(root, file), "utf8").replaceAll("\r\n", "\n");
+}
+
+// Derive every generated npm version directly from Cargo. The private tooling
+// workspace version is not a product version and needs no coordinator bump.
+export function metadata(read = sourceText) {
+  const cargo = read("crates/binpm/Cargo.toml").match(
+    /^\[package\]\s*\n([\s\S]*?)(?=^\[|$(?![\s\S]))/mu,
+  )?.[1];
+  const version = cargo?.match(/^version = "([^"]+)"$/mu)?.[1];
+  ensure(
+    cargo?.includes('name = "binpm"\n') &&
+      /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u.test(version ?? "") &&
+      version !== "0.0.0",
+    "Expected a non-placeholder binpm source version",
+  );
+  return {
+    version,
+    description: "Node-free binary package manager for release assets",
+  };
+}
+
+export function revision() {
+  return execFileSync("git", ["rev-parse", "HEAD"], {
+    cwd: root,
+    encoding: "utf8",
+  }).trim();
+}
+
+export function releaseIdentity(
+  env = process.env,
+  version = metadata().version,
+  commit = revision(),
+) {
+  ensure(
+    env.GITHUB_REPOSITORY === trustedRepository && env.GITHUB_SHA === commit,
+    "Release requires the first-party repository and exact source commit",
+  );
+  ensure(
+    ["push", "workflow_dispatch"].includes(env.GITHUB_EVENT_NAME),
+    "Unsupported release event",
+  );
+  const tag = `refs/tags/binpm@v${version}`;
+  const dryRun =
+    env.GITHUB_EVENT_NAME === "push"
+      ? false
+      : env.REQUESTED_DRY_RUN !== "false";
+  if (env.GITHUB_EVENT_NAME === "push" || !dryRun)
+    ensure(
+      env.GITHUB_REF === tag,
+      "Publication requires the exact binpm version tag",
+    );
+  return { version, revision: commit, dry_run: String(dryRun) };
 }

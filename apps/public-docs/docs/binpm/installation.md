@@ -4,6 +4,26 @@ binpm is distributed as first-party release artifacts. Install flows are designe
 
 These first-party binpm release platforms are narrower than the target tokens binpm understands when it scores third-party release assets. Values such as `freebsd`, `i686`, and `armv7` can appear in target parsing and local override contracts, but the prebuilt binpm installer channels publish only the platforms listed on this page. Build from source when you need to run binpm itself outside the first-party release matrix.
 
+## npm and npx
+
+After the first executable npm release is published, use Node.js 24 or later to run binpm:
+
+```sh
+npx @delino/binpm --help
+npx @delino/binpm x --package github:BurntSushi/ripgrep rg --version
+```
+
+Or install the command globally:
+
+```sh
+npm install --global @delino/binpm
+binpm --version
+```
+
+The package includes a native CLI for macOS, Windows, or glibc Linux on x64 or arm64. Keep npm optional dependencies enabled, and install on the machine where you will run binpm. musl Linux is not supported. Installation needs no lifecycle scripts or separate binary download.
+
+Use the scoped name `@delino/binpm`; the unscoped `binpm` npm name is unavailable. Version `0.0.0` only reserves the name and contains no executable. If npm still resolves that version, use another installation method below until an executable version is published.
+
 ## Homebrew
 
 On macOS and Linux:

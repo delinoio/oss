@@ -362,7 +362,7 @@ Runmoor Homebrew publication follows successful public archive publication throu
 
 ## binpm npm distribution
 
-`release-binpm-npm.yml` is a manual, main-only workflow restricted to `delinoio/oss`. Its `dry_run` input defaults to true. It packages and verifies the binpm npm placeholder tarballs and, only with `dry_run: false`, publishes them through npm trusted publishing without an npm token. It is not a selectable `Release Project` target. The release-contract fixtures run its package tests and workflow-shape test. Follow [the binpm npm contract](packages-binpm-distribution-contract.md).
+`release-binpm-npm.yml` runs automatically on `binpm@v*` tag pushes in `delinoio/oss` and supports manual dispatch with `dry_run: true` by default. It derives npm versions from Cargo, builds six native targets, checks installed npm execution on each host, assembles and verifies seven source-bound tarballs, then publishes six native packages before `@delino/binpm` through trusted publishing. GNU builds retain the digest-pinned compatibility image. Only the publish job gets OIDC; live runs require the exact version tag and workflow source commit, without an enable variable or npm token. Manual development-ref dry runs never publish. Existing registry versions require matching integrity before any write, and retries reuse the retained version/revision artifact. `Release Project` retains version/tag ownership; its binpm tag automatically starts this independent npm workflow. Historical `0.0.0` placeholders remain immutable. Follow [the binpm npm contract](packages-binpm-distribution-contract.md).
 
 ## pnport and clibox native and npm distribution
 
