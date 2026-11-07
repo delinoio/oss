@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createHash } from "node:crypto";
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { reconcile, prepare } from "./ccow-publish.mjs";
+import { reconcile, prepare, transport } from "./ccow-publish.mjs";
 import {
   packageRelease,
   sha256,
@@ -26,23 +26,11 @@ function fixture() {
       ["archive.tgz", Buffer.from("fixture")],
       ["SHA256SUMS", Buffer.from("checksums")],
     ]),
-    packages: ["@delino/ccow-linux-x64", "@delino/ccow"].map((name) => {
-      const bytes = Buffer.from(name);
-      return {
-        name,
-        version,
-        revision,
-        bytes,
-        integrity: `sha512-${createHash("sha512").update(bytes).digest("base64")}`,
-      };
-    }),
   };
   const state = {
     tag: null,
     releases: [],
     assets: [],
-    packages: new Map(),
-    latest: new Map(),
     writes: [],
     next: 1,
   };
@@ -82,28 +70,11 @@ function fixture() {
       write("public");
       state.releases[0].draft = false;
     },
-    package: async (name) => state.packages.get(name) ?? null,
-    tarball: async (name) => state.packages.get(name).bytes,
-    publish: async (item) => {
-      write(`npm:${item.name}`);
-      state.packages.set(item.name, {
-        name: item.name,
-        version,
-        gitHead: revision,
-        bytes: item.bytes,
-        dist: { integrity: item.integrity, tarball: item.name },
-      });
-    },
-    latest: async (name) => state.latest.get(name) ?? null,
-    promote: async (item) => {
-      write(`latest:${item.name}`);
-      state.latest.set(item.name, version);
-    },
   };
   return { plan, api, state };
 }
 
-test("fresh publication orders native packages before launcher and reads back all bytes", async () => {
+test("fresh publication creates tag and draft, uploads assets and reads back all bytes", async () => {
   const { plan, api, state } = fixture();
   assert.equal((await reconcile(plan, api)).status, "published");
   assert.deepEqual(state.writes, [
@@ -111,11 +82,7 @@ test("fresh publication orders native packages before launcher and reads back al
     "draft",
     "asset:archive.tgz",
     "asset:SHA256SUMS",
-    "npm:@delino/ccow-linux-x64",
-    "npm:@delino/ccow",
     "public",
-    "latest:@delino/ccow-linux-x64",
-    "latest:@delino/ccow",
   ]);
   state.writes = [];
   await reconcile(plan, api);
@@ -127,9 +94,7 @@ test("retry reconciles every interruption, including writes whose response was l
     "createTag",
     "createRelease",
     "upload",
-    "publish",
     "publishRelease",
-    "promote",
   ]) {
     for (const after of [false, true]) {
       const { plan, api, state } = fixture();
@@ -142,7 +107,6 @@ test("retry reconciles every interruption, including writes whose response was l
       api[method] = original;
       await reconcile(plan, api);
       assert.equal(state.releases[0].draft, false);
-      assert.equal(state.packages.size, 2);
       assert.equal(new Set(state.assets.map((a) => a.name)).size, 2);
     }
   }
@@ -180,17 +144,8 @@ test("conflicts and uncertain reads prevent all writes", async () => {
     ({ state }) => {
       state.assets.pop();
     },
-    ({ state }) => {
-      state.packages.get("@delino/ccow").gitHead = "b".repeat(40);
-    },
-    ({ state }) => {
-      state.packages.get("@delino/ccow").dist.integrity = "wrong";
-    },
-    ({ state }) => {
-      state.packages.get("@delino/ccow").bytes = Buffer.from("conflict");
-    },
     ({ api }) => {
-      api.package = async () => {
+      api.releases = async () => {
         throw new Error("503");
       };
     },
@@ -210,15 +165,25 @@ test("conflicts and uncertain reads prevent all writes", async () => {
   }
 });
 
-test("partial owned drafts upload only missing assets and newer latest never regresses", async () => {
+test("partial owned drafts upload only missing assets and never clobber or delete", async () => {
   const { plan, api, state } = fixture();
   await reconcile(plan, api);
   state.releases[0].draft = true;
+  const kept = state.assets[0];
   state.assets.pop();
-  state.latest = new Map(plan.packages.map((p) => [p.name, "0.2.0"]));
   state.writes = [];
   await reconcile(plan, api);
   assert.deepEqual(state.writes, ["asset:SHA256SUMS", "public"]);
+  assert.equal(state.assets[0], kept);
+});
+
+test("a public release with missing assets fails closed without writes", async () => {
+  const { plan, api, state } = fixture();
+  await reconcile(plan, api);
+  state.assets.pop();
+  state.writes = [];
+  await assert.rejects(reconcile(plan, api), /missing assets/);
+  assert.deepEqual(state.writes, []);
 });
 
 test("annotated exact tags work; cycles, wrong objects and moved tags fail", async () => {
@@ -241,11 +206,23 @@ test("tag movement during upload stops publication", async () => {
     f.state.tag.sha = "b".repeat(40);
   };
   await assert.rejects(reconcile(f.plan, f.api));
-  assert.equal(f.state.packages.size, 0);
   assert.equal(f.state.releases[0].draft, true);
 });
 
-// Construct synthetic packages explicitly for publication-input testing.
+test("the draft is published only after all assets read back", async () => {
+  const f = fixture();
+  f.api.event = (phase) => f.state.writes.push(`event:${phase}`);
+  const upload = f.api.upload;
+  f.api.upload = async (...args) => {
+    await upload(...args);
+    if (f.state.assets.length === 2) f.state.assets[0].bytes = Buffer.from("x");
+  };
+  await assert.rejects(reconcile(f.plan, f.api), /bytes conflict/);
+  assert.equal(f.state.releases[0].draft, true);
+  assert(!f.state.writes.includes("public"));
+});
+
+// Construct synthetic archives explicitly for publication-input testing.
 // Rewriting fixture metadata here does not run native binaries.
 function candidateFixture(directory) {
   const revision = "a".repeat(40);
@@ -266,16 +243,9 @@ function candidateFixture(directory) {
   release.fixture = false;
   for (const artifact of release.artifacts) {
     const files = entries(readFileSync(path.join(artifacts, artifact.name)));
-    const metaFile =
-      artifact.kind === "npm" ? "package/package.json" : "release.json";
-    const meta = JSON.parse(files.get(metaFile).bytes);
-    if (artifact.kind === "npm") {
-      delete meta.private;
-      meta.publishConfig = { access: "public" };
-      meta.description = "CacheCow native CLI";
-      meta.ccow.fixture = false;
-    } else meta.fixture = false;
-    files.get(metaFile).bytes = Buffer.from(JSON.stringify(meta));
+    const meta = JSON.parse(files.get("release.json").bytes);
+    meta.fixture = false;
+    files.get("release.json").bytes = Buffer.from(JSON.stringify(meta));
     const bytes = archive(Object.fromEntries(files));
     writeFileSync(path.join(artifacts, artifact.name), bytes);
     artifact.sha256 = sha256(bytes);
@@ -298,8 +268,15 @@ test("publication binds the exact revision, version, ref and candidate bytes", (
   try {
     const f = candidateFixture(directory);
     const plan = prepare(f);
-    assert.equal(plan.packages.at(-1).name, "@delino/ccow");
-    assert.equal(plan.assets.size, 9);
+    assert.deepEqual(
+      [...plan.assets.keys()].sort(),
+      [
+        ...platforms.targets.map((t) => `ccow-0.1.0-${t.suffix}.tar.gz`),
+        "SHA256SUMS",
+        "release.json",
+      ].sort(),
+    );
+    assert.equal(plan.packages, undefined);
     assert(!plan.assets.has("native-acceptance.json"));
     for (const mutate of [
       { revision: "b".repeat(40) },
@@ -314,10 +291,19 @@ test("publication binds the exact revision, version, ref and candidate bytes", (
   }
 });
 
-test("transport paginates releases/assets, pins destinations and passes npm paths as argv", async () => {
-  const { transport } = await import("./ccow-publish.mjs");
-  const requests = [],
-    commands = [];
+test("publication rejects npm leftovers in the candidate directory", () => {
+  const directory = mkdtempSync(path.join(tmpdir(), "ccow-publisher-fixture-"));
+  try {
+    const f = candidateFixture(directory);
+    writeFileSync(path.join(f.artifacts, "delino-ccow-0.1.0.tgz"), "npm");
+    assert.throws(() => prepare(f), /Unexpected/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("transport paginates releases/assets and pins destinations without npm operations", async () => {
+  const requests = [];
   const api = transport({
     request: (endpoint, options) => {
       requests.push({ endpoint, options });
@@ -325,10 +311,6 @@ test("transport paginates releases/assets, pins destinations and passes npm path
         return Array.from({ length: 100 }, (_, id) => ({ id }));
       if (endpoint.endsWith("&page=2")) return [{ id: 100 }];
       return {};
-    },
-    spawn: (command, args, options) => {
-      commands.push({ command, args, options });
-      return { status: 0 };
     },
   });
   assert.equal((await api.releases()).length, 101);
@@ -341,47 +323,46 @@ test("transport paginates releases/assets, pins destinations and passes npm path
       data: { ref: "refs/tags/ccow@v0.1.0", sha: "a".repeat(40) },
     },
   });
+  await api.createRelease({
+    tag: "ccow@v0.1.0",
+    revision: "a".repeat(40),
+    version: "0.1.0",
+    marker: "marker",
+  });
+  assert.equal(requests.at(-1).options.data.draft, true);
+  assert.equal(requests.at(-1).options.data.target_commitish, "a".repeat(40));
   await api.upload(7, "archive.tgz", Buffer.from("asset"));
   assert.equal(
     requests.at(-1).endpoint,
     "https://uploads.github.com/repos/delinoio/oss/releases/7/assets?name=archive.tgz",
   );
-  await api.publish({
-    file: "/tmp/path with spaces/package.tgz",
-    version: "0.1.0",
+  await api.publishRelease(7);
+  assert.deepEqual(requests.at(-1).options.data, {
+    draft: false,
+    make_latest: "false",
   });
-  assert.deepEqual(commands[0].args, [
-    "publish",
-    "/tmp/path with spaces/package.tgz",
-    "--access",
-    "public",
-    "--tag",
-    "ccow-v0.1.0",
-    "--registry",
-    "https://registry.npmjs.org",
-    "--ignore-scripts",
-  ]);
-  assert.equal(commands[0].options.shell, undefined);
+  for (const name of ["package", "tarball", "publish", "latest", "promote"])
+    assert.equal(api[name], undefined, `${name} must not exist`);
 });
 
-test("registry absence is only HTTP 404; errors, unsafe tarball URLs and failed writes stop", async () => {
-  const { transport } = await import("./ccow-publish.mjs");
-  let status = 404;
-  const api = transport({
-    fetcher: async () => new Response("{}", { status }),
-    spawn: () => ({ status: 1 }),
-  });
-  assert.equal(await api.package("@delino/ccow", "0.1.0"), null);
-  for (status of [401, 403, 429, 500, 503])
-    await assert.rejects(api.package("@delino/ccow", "0.1.0"));
-  for (const url of [
-    "https://attacker.example/package.tgz",
-    "http://registry.npmjs.org/package.tgz",
-    "https://user:secret@registry.npmjs.org/package.tgz",
-    "https://registry.npmjs.org/package.tgz?token=value",
-  ])
-    await assert.rejects(api.tarball(url));
-  await assert.rejects(
-    api.publish({ file: "/tmp/package.tgz", version: "0.1.0" }),
+test("the executable requires the GitHub release token and ignores npm credentials", () => {
+  const result = spawnSync(
+    process.execPath,
+    [
+      new URL("./ccow-publish.mjs", import.meta.url).pathname,
+      "unused",
+      "0.1.0",
+    ],
+    {
+      env: {
+        PATH: process.env.PATH,
+        GITHUB_REPOSITORY: "delinoio/oss",
+        GITHUB_EVENT_NAME: "workflow_dispatch",
+        NODE_AUTH_TOKEN: "unrelated",
+      },
+      encoding: "utf8",
+    },
   );
+  assert.equal(result.status, 1);
+  assert.doesNotMatch(result.stderr, /npm/iu);
 });

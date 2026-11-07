@@ -4,18 +4,14 @@ import {
   mkdtempSync,
   writeFileSync,
   readFileSync,
-  mkdirSync,
+  readdirSync,
   rmSync,
   symlinkSync,
-  realpathSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { execFileSync, spawnSync } from "node:child_process";
-import { EventEmitter } from "node:events";
 import { gzipSync, gunzipSync } from "node:zlib";
 import platforms from "../src/platforms.cjs";
-import launcher from "../src/launcher.cjs";
 import { archive, entries } from "../scripts/archive.mjs";
 import {
   packageRelease,
@@ -52,13 +48,16 @@ function setup(t) {
     fixture: true,
   };
 }
-test("exact support matrix and unsupported platforms", () => {
+test("exact native support matrix", () => {
   assert.deepEqual(
     platforms.targets.map((t) => t.suffix),
     ["darwin-arm64", "linux-x64", "windows-x64"],
   );
-  assert.equal(platforms.selectTarget("darwin", "x64"), undefined);
-  assert.throws(() => launcher.resolveBinary("unused", null), /Unsupported/);
+  assert.deepEqual(
+    platforms.targets.map((t) => t.binary),
+    ["ccow", "ccow", "ccow.exe"],
+  );
+  assert(platforms.targets.every((t) => t.name === undefined));
 });
 test("native build identity is read from the embedded marker", () => {
   const info = {
@@ -97,10 +96,73 @@ test("native build identity is read from the embedded marker", () => {
     /Malformed/,
   );
 });
-test("fixture dry-run is labeled and private", () => {
+test("fixture dry-run is labeled and produces only native archives", () => {
   const result = dryRun();
   assert.equal(result.fixture, true);
-  assert.equal(result.artifacts.length, 7);
+  assert.equal(result.artifacts.length, 3);
+  assert(result.artifacts.every((a) => a.kind === "native"));
+});
+test("candidates hold only native archives, SHA256SUMS and release.json", (t) => {
+  const options = setup(t);
+  const release = packageRelease(options);
+  assert.deepEqual(
+    readdirSync(options.output).sort(),
+    [
+      ...platforms.targets.map((x) => `ccow-0.1.0-${x.suffix}.tar.gz`),
+      "SHA256SUMS",
+      "release.json",
+    ].sort(),
+  );
+  assert.deepEqual(Object.keys(release).sort(), [
+    "artifacts",
+    "fixture",
+    "sourceRevision",
+    "tag",
+    "version",
+  ]);
+  assert.equal(
+    readFileSync(path.join(options.output, "SHA256SUMS"), "utf8").split("\n")
+      .length,
+    4,
+  );
+  for (const artifact of release.artifacts) {
+    const target = platforms.targets.find((x) => x.suffix === artifact.target);
+    assert.deepEqual(
+      [
+        ...entries(
+          readFileSync(path.join(options.output, artifact.name)),
+        ).keys(),
+      ].sort(),
+      ["LICENSE", "NOTICE", "release.json", target.binary].sort(),
+    );
+  }
+});
+test("verification rejects npm leftovers in the candidate", (t) => {
+  const options = setup(t);
+  const release = packageRelease(options);
+  const expected = identity(revision, true);
+  const tarball = path.join(options.output, "delino-ccow-0.1.0.tgz");
+  writeFileSync(tarball, "retired npm package");
+  assert.throws(() => verifyRelease(options.output, expected), /Unexpected/);
+  rmSync(tarball);
+  const metadata = path.join(options.output, "release.json");
+  writeFileSync(
+    metadata,
+    JSON.stringify({
+      ...release,
+      artifacts: [
+        ...release.artifacts,
+        {
+          name: "delino-ccow-0.1.0.tgz",
+          kind: "npm",
+          sha256: "0".repeat(64),
+        },
+      ],
+    }),
+  );
+  assert.throws(() => verifyRelease(options.output, expected));
+  writeFileSync(metadata, JSON.stringify({ ...release, artifacts: [] }));
+  assert.throws(() => verifyRelease(options.output, expected));
 });
 test("archives verify exact release identity, permissions, checksums and licenses", (t) => {
   const options = setup(t);
@@ -194,110 +256,4 @@ test("archive parser rejects traversal, links, duplicates, and damaged endings",
     /entry/,
   );
   assert.throws(() => entries(gzipSync(raw.subarray(0, 1024))), /ending/);
-});
-test(
-  "npm-installed fixture preserves arguments, cwd, binary streams, exit and signals",
-  { skip: process.platform === "win32" },
-  (t) => {
-    const options = setup(t);
-    packageRelease(options);
-    const target = platforms.selectTarget();
-    assert(target, "Test host is outside the supported matrix");
-    const consumer = path.join(options.root, "consumer");
-    mkdirSync(consumer);
-    execFileSync(
-      "npm",
-      [
-        "install",
-        "--offline",
-        "--ignore-scripts",
-        "--no-audit",
-        "--no-fund",
-        "--package-lock=false",
-        path.join(options.output, "delino-ccow-0.1.0.tgz"),
-        path.join(options.output, `delino-ccow-${target.suffix}-0.1.0.tgz`),
-      ],
-      { cwd: consumer, stdio: "pipe" },
-    );
-    const bin = path.join(consumer, "node_modules/@delino/ccow/bin/ccow.cjs");
-    const result = spawnSync(
-      process.execPath,
-      [bin, "space argument", "한글", "$(literal)", ""],
-      { cwd: consumer, input: Buffer.from([0, 255, 10]) },
-    );
-    assert.equal(result.status, 37);
-    assert.deepEqual(
-      result.stdout,
-      Buffer.concat([
-        Buffer.from(
-          `${realpathSync(consumer)}\nspace argument\n한글\n$(literal)\n\n`,
-        ),
-        Buffer.from([0, 255, 10]),
-      ]),
-    );
-    assert.equal(result.stderr.toString(), "fixture stderr\n");
-    assert.equal(
-      spawnSync(process.execPath, [bin, "signal"], { cwd: consumer }).signal,
-      "SIGTERM",
-    );
-    const main = path.join(consumer, "node_modules/@delino/ccow/package.json");
-    const native = path.join(
-      consumer,
-      `node_modules/${target.name}/package.json`,
-    );
-    const meta = JSON.parse(readFileSync(native));
-    writeFileSync(native, JSON.stringify({ ...meta, version: "0.0.0" }));
-    assert.throws(() => launcher.resolveBinary(main), /identity/);
-    writeFileSync(native, JSON.stringify(meta));
-    writeFileSync(
-      path.join(path.dirname(native), "bin", target.binary),
-      "tampered",
-    );
-    assert.throws(() => launcher.resolveBinary(main), /checksum/);
-  },
-);
-test("Windows console events are not translated into forced termination", async () => {
-  const parent = Object.assign(new EventEmitter(), {
-    versions: { node: "24.0.0" },
-    platform: "win32",
-  });
-  const child = new EventEmitter();
-  const promise = launcher.launch("native.exe", ["a b"], {
-    parent,
-    spawnChild(binary, args, options) {
-      assert.equal(binary, "native.exe");
-      assert.deepEqual(args, ["a b"]);
-      assert.equal(options.stdio, "inherit");
-      assert.equal(options.shell, false);
-      return child;
-    },
-  });
-  parent.emit("SIGINT");
-  parent.emit("SIGBREAK");
-  child.emit("exit", 37, null);
-  assert.deepEqual(await promise, { code: 37, signal: null });
-  assert.equal(parent.listenerCount("SIGINT"), 0);
-});
-test("Node baseline and process replacement use exact argv and environment", async () => {
-  await assert.rejects(
-    launcher.launch("native", [], { parent: { versions: { node: "22.0.0" } } }),
-    /24/,
-  );
-  const env = { SAMPLE: "value" };
-  await assert.rejects(
-    launcher.launch("native", ["a b"], {
-      parent: {
-        versions: { node: "24.0.0" },
-        platform: "linux",
-        env,
-        execve(binary, args, environment) {
-          assert.equal(binary, "native");
-          assert.deepEqual(args, ["native", "a b"]);
-          assert.equal(environment, env);
-          throw new Error("fixture exec");
-        },
-      },
-    }),
-    /fixture exec/,
-  );
 });

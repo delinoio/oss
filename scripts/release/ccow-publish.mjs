@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
 import { spawnSync, execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,15 +10,11 @@ import {
   verifyRelease,
   sha256,
 } from "../../packages/ccow/scripts/package.mjs";
-import { entries } from "../../packages/ccow/scripts/archive.mjs";
 
 const repository = "delinoio/oss";
-const registry = "https://registry.npmjs.org";
-const integrity = (bytes) =>
-  `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
 
 // Only this constructor admits publication inputs. It verifies the exact source
-// and non-fixture packages before any remote operation.
+// and non-fixture native archives before any remote operation.
 export function prepare({ artifacts, revision, version, ref }) {
   const id = releaseIdentity(version, revision, ref);
   const release = verifyRelease(artifacts, identity(revision, false));
@@ -28,31 +23,9 @@ export function prepare({ artifacts, revision, version, ref }) {
       (name) => [name, readFileSync(path.join(artifacts, name))],
     ),
   );
-  const packages = release.artifacts
-    .filter((a) => a.kind === "npm")
-    .map((a) => {
-      const bytes = assets.get(a.name);
-      const manifest = JSON.parse(
-        entries(bytes).get("package/package.json").bytes,
-      );
-      return {
-        name: manifest.name,
-        version,
-        revision,
-        bytes,
-        integrity: integrity(bytes),
-        file: path.resolve(artifacts, a.name),
-      };
-    });
-  // Optional native packages must exist before the launcher becomes installable.
-  packages.sort(
-    (a, b) =>
-      Number(a.name === "@delino/ccow") - Number(b.name === "@delino/ccow"),
-  );
   return {
     ...id,
     assets,
-    packages,
     marker: `CacheCow release\nSource: ${revision}\nCandidate SHA256: ${sha256(assets.get("SHA256SUMS"))}\n`,
   };
 }
@@ -78,25 +51,6 @@ async function exactTag(api, plan, create = false) {
     object.sha,
     plan.revision,
     "Release tag source conflict; never move tags",
-  );
-  return true;
-}
-
-async function checkPackage(api, item) {
-  const existing = await api.package(item.name, item.version);
-  if (!existing) return false;
-  assert.equal(existing.name, item.name, "npm name conflict");
-  assert.equal(existing.version, item.version, "npm version conflict");
-  assert.equal(existing.gitHead, item.revision, "npm source conflict");
-  assert.equal(
-    existing.dist?.integrity,
-    item.integrity,
-    "npm integrity conflict",
-  );
-  assert.deepEqual(
-    await api.tarball(existing.dist.tarball),
-    item.bytes,
-    "npm tarball bytes conflict",
   );
   return true;
 }
@@ -139,8 +93,7 @@ export async function reconcile(plan, api) {
     assert.equal(release.prerelease, false, "Unexpected prerelease");
     await checkAssets(api, release, plan, !release.draft);
   }
-  // Check all immutable remote state before the first write, including npm.
-  for (const item of plan.packages) await checkPackage(api, item);
+  // The preflight above checked all existing remote state before the first write.
   api.event?.("tag-and-draft");
   assert(await exactTag(api, plan, true), "Release tag creation not visible");
   if (!release) release = await api.createRelease(plan);
@@ -155,15 +108,6 @@ export async function reconcile(plan, api) {
     await api.upload(releaseId, name, plan.assets.get(name));
   }
   await checkAssets(api, release, plan, true);
-  api.event?.("npm-reconciliation");
-  for (const item of plan.packages) {
-    assert(await exactTag(api, plan), "Release tag disappeared");
-    if (!(await checkPackage(api, item))) await api.publish(item);
-    assert(
-      await checkPackage(api, item),
-      "npm publication not visible; retry original run",
-    );
-  }
   // Re-read the pinned release, not an untrusted URL or a moving tag lookup.
   release = await api.release(releaseId);
   assert.equal(release.tag_name, plan.tag);
@@ -173,25 +117,12 @@ export async function reconcile(plan, api) {
   assert(await exactTag(api, plan), "Release tag disappeared");
   api.event?.("release-publication");
   if (release.draft) await api.publishRelease(releaseId);
-  assert.equal(
-    (await api.release(releaseId)).draft,
-    false,
-    "Release publication not visible",
-  );
-  // Version-specific npm tags make partial publication safe to resume. Never
-  // regress latest when an older release job is retried after a newer release.
-  for (const item of plan.packages) {
-    assert(await exactTag(api, plan), "Release tag disappeared");
-    assert(await checkPackage(api, item), "npm package disappeared");
-    const latest = await api.latest(item.name);
-    if (latest && newer(latest, plan.version)) continue;
-    if (latest !== plan.version) await api.promote(item);
-    assert.equal(
-      await api.latest(item.name),
-      plan.version,
-      "npm latest readback failed",
-    );
-  }
+  const published = await api.release(releaseId);
+  assert.equal(published.draft, false, "Release publication not visible");
+  assert.equal(published.tag_name, plan.tag);
+  assert.equal(published.body, plan.marker);
+  await checkAssets(api, published, plan, true);
+  assert(await exactTag(api, plan), "Release tag disappeared");
   return {
     revision: plan.revision,
     version: plan.version,
@@ -200,21 +131,8 @@ export async function reconcile(plan, api) {
   };
 }
 
-function newer(a, b) {
-  assert.match(
-    a,
-    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u,
-    "Unexpected npm latest version",
-  );
-  const left = a.split(".").map(BigInt),
-    right = b.split(".").map(BigInt);
-  for (let i = 0; i < 3; i++)
-    if (left[i] !== right[i]) return left[i] > right[i];
-  return false;
-}
-
-// gh owns GitHub authentication. Do not echo child stderr: remote errors and
-// npm diagnostics can contain credentials or private local configuration.
+// gh owns GitHub authentication. Do not echo child stderr: remote errors can
+// contain credentials or private local configuration.
 export function githubRequest(
   endpoint,
   { method = "GET", data, bytes, optional = false, binary = false } = {},
@@ -247,11 +165,7 @@ export function githubRequest(
   return binary ? body : body.length ? JSON.parse(body) : null;
 }
 
-export function transport({
-  request = githubRequest,
-  fetcher = fetch,
-  spawn = spawnSync,
-} = {}) {
+export function transport({ request = githubRequest } = {}) {
   const base = `repos/${repository}`;
   const api = (endpoint, options) => request(`${base}/${endpoint}`, options);
   const pages = async (endpoint) => {
@@ -270,29 +184,6 @@ export function transport({
       all.push(...items);
       if (items.length < 100) return all;
     }
-  };
-  const npmGet = async (suffix) => {
-    const response = await fetcher(`${registry}/${suffix}`, {
-      signal: AbortSignal.timeout(60000),
-      redirect: "error",
-    });
-    if (response.status === 404) return null;
-    assert(response.ok, `npm read failed (${response.status})`);
-    return response.json();
-  };
-  const npm = (args) => {
-    const result = spawn(
-      "npm",
-      [...args, "--registry", registry, "--ignore-scripts"],
-      {
-        stdio: ["ignore", "pipe", "pipe"],
-        timeout: 180000,
-      },
-    );
-    assert(
-      !result.error && result.status === 0,
-      "npm write failed; retry original run to reconcile remote state",
-    );
   };
   return {
     event: (phase) =>
@@ -332,35 +223,6 @@ export function transport({
         method: "PATCH",
         data: { draft: false, make_latest: "false" },
       }),
-    package: (name, version) =>
-      npmGet(`${encodeURIComponent(name)}/${version}`),
-    tarball: async (url) => {
-      const parsed = new URL(url);
-      assert.equal(parsed.origin, registry, "Untrusted npm tarball origin");
-      assert(
-        !parsed.username && !parsed.password && !parsed.hash && !parsed.search,
-      );
-      const response = await fetcher(url, {
-        signal: AbortSignal.timeout(60000),
-        redirect: "error",
-      });
-      assert(response.ok, "npm tarball download failed");
-      return Buffer.from(await response.arrayBuffer());
-    },
-    publish: async (item) =>
-      npm([
-        "publish",
-        item.file,
-        "--access",
-        "public",
-        "--tag",
-        `ccow-v${item.version}`,
-      ]),
-    latest: async (name) =>
-      (await npmGet(`-/package/${encodeURIComponent(name)}/dist-tags`))
-        ?.latest ?? null,
-    promote: async (item) =>
-      npm(["dist-tag", "add", `${item.name}@${item.version}`, "latest"]),
   };
 }
 
@@ -371,10 +233,7 @@ if (
   try {
     assert.equal(process.env.GITHUB_REPOSITORY, repository);
     assert.equal(process.env.GITHUB_EVENT_NAME, "workflow_dispatch");
-    assert(
-      process.env.GH_TOKEN && process.env.NODE_AUTH_TOKEN,
-      "Publication credentials missing",
-    );
+    assert(process.env.GH_TOKEN, "Publication credentials missing");
     const [artifacts, version] = process.argv.slice(2);
     const revision = process.env.GITHUB_SHA;
     assert.equal(
@@ -395,9 +254,9 @@ if (
     });
     console.log(JSON.stringify(await reconcile(plan, transport())));
   } catch {
-    // Never print assertions containing artifact bytes or registry metadata.
+    // Never print assertions containing artifact bytes or remote response metadata.
     console.error(
-      "CacheCow publication failed. Inspect remote identity and rerun the original failed jobs; never replace conflicting tags, assets or npm versions.",
+      "CacheCow publication failed. Inspect remote identity and rerun the original failed jobs; never replace conflicting tags or assets.",
     );
     process.exitCode = 1;
   }

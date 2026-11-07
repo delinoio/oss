@@ -122,7 +122,6 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version-file: .nvmrc
-          registry-url: https://registry.npmjs.org
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: ccow-candidate-${{ github.sha }}
@@ -138,9 +137,8 @@ jobs:
           owner: delinoio
           repositories: oss
           permission-contents: write
-      - name: Reconcile exact GitHub and npm publication
+      - name: Reconcile exact GitHub release publication
         env:
           GH_TOKEN: ${{ steps.release-bot.outputs.token }}
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           REQUESTED_VERSION: ${{ inputs.version }}
         run: node scripts/release/ccow-publish.mjs "$RUNNER_TEMP/ccow-candidate" "$REQUESTED_VERSION"

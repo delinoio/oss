@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 import platforms from "../src/platforms.cjs";
 import { packageRelease } from "./package.mjs";
 
-// These deliberately non-native payloads exercise packaging only. Fixture npm
-// manifests are private, and all release metadata retains fixture: true.
+// These deliberately non-native payloads exercise archive packaging only. All
+// release metadata retains fixture: true.
 export function dryRun() {
   const directory = mkdtempSync(path.join(tmpdir(), "ccow-fixture-"));
   try {
