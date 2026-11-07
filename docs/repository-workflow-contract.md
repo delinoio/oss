@@ -360,6 +360,10 @@ The September 2026 recovery addresses two observed failures: `runmoor@v0.1.1` wa
 
 Runmoor Homebrew publication follows successful public archive publication through `release-runmoor-homebrew.yml`. Its read-only verification/native macOS installation gate precedes fresh tap-only bot credentials. It accepts an exact already-published version/revision on `main` for initial publication or recovery, defaults to a no-write dry run, verifies all eight public asset digests and signatures bound to the release source, and refuses a tap downgrade or changed same-version Formula. Recovery does not rerun the version coordinator or alter release assets. The public formula is macOS 14+ ARM64-only; native tests run in ephemeral CI rather than a developer's Homebrew installation. See the Runmoor command foundation for the complete boundary.
 
+## binpm npm distribution
+
+`release-binpm-npm.yml` is a manual, main-only workflow restricted to `delinoio/oss`. Its `dry_run` input defaults to true. It packages and verifies the binpm npm placeholder tarballs and, only with `dry_run: false` and `BINPM_NPM_PUBLISH_ENABLED=true`, publishes them through npm trusted publishing without an npm token. It is not a selectable `Release Project` target. The release-contract fixtures run its package tests and workflow-shape test. Follow [the binpm npm contract](packages-binpm-distribution-contract.md).
+
 ## pnport and clibox native and npm distribution
 
 Each pnport native CI and exact-source candidate host repeats identical offline filesystem/compiler workloads with cold and warm caches at least five times. Upload numeric time/memory/disk results under a target/revision/attempt-specific artifact name, separately from native package assembly. A failed or incomplete measurement blocks its host job. Development results do not replace reviewed full conformance, minimum-OS or release-build acceptance and never open publication by themselves.

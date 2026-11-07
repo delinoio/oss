@@ -12,11 +12,13 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 
 - `crates/binpm`
 - `apps/public-docs/docs/binpm`
+- `packages/binpm`
 
 ## Domain Contract Documents
 
 - `docs/crates-binpm-foundation.md`
 - `docs/apps-binpm-docs-foundation.md`
+- `docs/packages-binpm-distribution-contract.md`
 
 ## Cross-Domain Invariants
 
@@ -69,6 +71,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 - Frozen local install and `x` may restore missing project-local executables and package records from an existing lockfile plus SHA-256-verified global cache bytes, or by downloading the lockfile's persisted sanitized asset URL and validating the recorded SHA-256, without provider release-list pagination. Frozen restore is reproducible but not offline/cache-only: when the locked URL is same-origin with the recorded GitHub or GitLab provider and a host-scoped token is configured, binpm may attach that runtime-only provider authentication to repair private or expiring assets without persisting credentials or signed URLs. External locked asset URLs never receive provider credentials.
 - `binpm` must not require Node.js, npm, pnpm, yarn, or Bun to install native binary tools.
 - `binpm` release tags use `binpm@v<semver>`.
+- npm distribution is staged. The unscoped `binpm` launcher and the six `@delino/binpm-<suffix>` native packages are reserved with `0.0.0` placeholders and published through npm trusted publishing from `.github/workflows/release-binpm-npm.yml`. The npm packages do not yet provide an `npx binpm` command, and `Release Project` does not publish them. Follow `docs/packages-binpm-distribution-contract.md`.
 - Release automation must publish both standalone prebuilt binaries and archive assets for `linux/amd64`, `linux/arm64`, `darwin/amd64`, `darwin/arm64`, `windows/amd64`, and `windows/arm64`, plus `SHA256SUMS`, `SHA256SUMS.sigstore.json`, and Sigstore bundle sidecars (`*.sigstore.json`) for each artifact.
 - This first-party binpm release matrix is narrower than the broader target parser used for third-party package asset scoring. Target parser support for values such as `freebsd`, `i686`, and `armv7` must not imply first-party binpm prebuilt artifact availability.
 - Direct installers must verify `SHA256SUMS` entries for the selected artifact and must not require `cosign`, download artifact Sigstore sidecars, or run `cosign verify-blob`.
@@ -95,7 +98,7 @@ Provide a Rust-based, Node-free binary package manager for installing and runnin
 
 ## Project requirements
 
-- `binpm` -> `crates/binpm`, `apps/public-docs/docs/binpm`
+- `binpm` -> `crates/binpm`, `apps/public-docs/docs/binpm`, `packages/binpm`
 
 ## Change Policy
 
@@ -114,6 +117,7 @@ Instruction-file updates in this requirement apply only to changes in developmen
 - `docs/README.md`
 - `docs/crates-binpm-foundation.md`
 - `docs/apps-binpm-docs-foundation.md`
+- `docs/packages-binpm-distribution-contract.md`
 
 ## Native Linux packages
 
