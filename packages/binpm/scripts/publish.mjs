@@ -119,8 +119,6 @@ export function publishTarball(
         "--ignore-scripts",
         "--registry",
         registry,
-        revision,
-        releaseIdentity,
       ],
       { stdio: "inherit" },
     );

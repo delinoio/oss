@@ -18,6 +18,7 @@ import launcher from "../src/launcher.cjs";
 import {
   targets,
   metadata,
+  npm,
   releaseIdentity,
   revision,
   sourceText,
@@ -352,14 +353,54 @@ test("registry responses validate identity and integrity; dry runs make no write
     assert.match(command, /--file release-binpm-npm.yml --allow-publish$/u);
 });
 
-test("npm publication preserves terminal output and requests provenance", () => {
-  const calls = [];
-  publishTarball({ name: "test", filename: "test.tgz" }, "/tarballs", {
-    provenance: true,
-    run: (args, options) => calls.push({ args, options }),
+test("npm publication passes the complete literal argv and inherits terminal output", () => {
+  for (const provenance of [false, true]) {
+    const calls = [];
+    publishTarball(
+      { name: "test", filename: "test package.tgz" },
+      "/tarballs",
+      {
+        provenance,
+        run: (args, options) => calls.push({ args, options }),
+      },
+    );
+    assert.deepEqual(calls, [
+      {
+        args: [
+          "publish",
+          path.resolve("/tarballs", "test package.tgz"),
+          "--access",
+          "public",
+          ...(provenance ? ["--provenance"] : []),
+          "--ignore-scripts",
+          "--registry",
+          "https://registry.npmjs.org",
+        ],
+        options: { stdio: "inherit" },
+      },
+    ]);
+  }
+});
+
+test("npm accepts the publish adapter argv in an offline dry-run without registry writes", (t) => {
+  const directory = tempDirectory(t);
+  const artifact = buildPackage({ output: directory });
+  let published;
+  publishTarball(artifact, path.join(directory, "tarballs"), {
+    run: (args, options) => {
+      published = JSON.parse(
+        npm([...args, "--dry-run", "--offline", "--json"], {
+          ...options,
+          stdio: "pipe",
+          cwd: directory,
+        }),
+      );
+    },
   });
-  assert(calls[0].args.includes("--provenance"));
-  assert.deepEqual(calls[0].options, { stdio: "inherit" });
+  const packageResult = published[artifact.name] ?? published;
+  assert.equal(packageResult.name, artifact.name);
+  assert.equal(packageResult.version, version);
+  assert.equal(packageResult.integrity, artifact.integrity);
 });
 
 test("target selection rejects musl/unknown hosts and distinguishes all six binaries", () => {
