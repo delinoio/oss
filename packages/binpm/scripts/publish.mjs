@@ -87,6 +87,37 @@ export async function publishArtifacts(
   }
 }
 
+// Publication inherits the terminal instead of capturing output. A maintainer's
+// account can require publication-time 2FA, and npm only prompts for it or opens
+// its browser approval when stdin and stdout are TTYs. Inheriting also keeps
+// npm's own error output visible in workflow logs.
+export function publishTarball(
+  artifact,
+  directory,
+  { provenance = false, run = npm } = {},
+) {
+  try {
+    run(
+      [
+        "publish",
+        path.resolve(directory, artifact.filename),
+        "--access",
+        "public",
+        // Provenance needs the CI OIDC identity; a local upload cannot sign.
+        ...(provenance ? ["--provenance"] : []),
+        "--ignore-scripts",
+        "--registry",
+        registry,
+      ],
+      { stdio: "inherit" },
+    );
+  } catch {
+    throw new Error(
+      `npm publication failed for ${artifact.name}; inspect npm permissions and rerun using the retained artifacts`,
+    );
+  }
+}
+
 // `npm trust` needs the package to exist, so this follows the first upload.
 export function trustCommands() {
   return [...targets.map(nativeName), LAUNCHER_NAME].map(
@@ -140,25 +171,10 @@ export async function main(env = process.env) {
   const live = values.publish || values.bootstrap;
   await publishArtifacts(artifacts, {
     dryRun: !live,
-    publish: (artifact) => {
-      try {
-        npm([
-          "publish",
-          path.resolve(values.directory, artifact.filename),
-          "--access",
-          "public",
-          // Provenance needs the CI OIDC identity; a local upload cannot sign.
-          ...(values.publish ? ["--provenance"] : []),
-          "--ignore-scripts",
-          "--registry",
-          registry,
-        ]);
-      } catch {
-        throw new Error(
-          `npm publication failed for ${artifact.name}; inspect npm permissions and rerun using the retained artifacts`,
-        );
-      }
-    },
+    publish: (artifact) =>
+      publishTarball(artifact, values.directory, {
+        provenance: values.publish,
+      }),
   });
   if (values.bootstrap) {
     event("bootstrap_next_step", {

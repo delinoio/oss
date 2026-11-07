@@ -33,7 +33,7 @@ Generated tarballs and `artifacts.json` live under the ignored `packages/binpm/d
 - The workflow uses no npm token and no `NODE_AUTH_TOKEN`. Only the `publish` job gets `id-token: write`, and it runs on `main` in `delinoio/oss` after the package job succeeds.
 - Publication needs no repository variable. It runs only for a manual dispatch with `dry_run: false`, on `main` in `delinoio/oss`. Dry runs, the default, never publish and never receive an OIDC token.
 - The workflow installs npm `11.6.2` before publishing. The OIDC minimum is `11.5.1`.
-- `npm trust` requires an existing package, so trusted publishing cannot publish the first version of a new package name. A maintainer publishes `0.0.0` once with `publish.mjs --bootstrap`, using their own npm login with two-factor authentication. This path is refused in GitHub Actions and publishes without provenance.
+- `npm trust` requires an existing package, so trusted publishing cannot publish the first version of a new package name. A maintainer publishes `0.0.0` once with `publish.mjs --bootstrap`, using their own npm login with two-factor authentication. This path is refused in GitHub Actions and publishes without provenance. It runs `npm publish` with the maintainer's terminal attached, because npm can ask for the two-factor approval only on a TTY.
 - Existing versions are never overwritten or unpublished.
 
 ## Logging

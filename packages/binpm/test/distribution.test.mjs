@@ -10,7 +10,11 @@ import {
   placeholderManifests,
   verifyPlaceholders,
 } from "../scripts/package.mjs";
-import { publishArtifacts, trustCommands } from "../scripts/publish.mjs";
+import {
+  publishArtifacts,
+  publishTarball,
+  trustCommands,
+} from "../scripts/publish.mjs";
 
 const tempDirectory = (t) => {
   const directory = mkdtempSync(path.join(tmpdir(), "binpm npm test "));
@@ -125,4 +129,26 @@ test("dry runs never publish and print trusted-publisher commands per package", 
       command,
       /^npm trust github \S+ --repo delinoio\/oss --file release-binpm-npm\.yml --allow-publish$/u,
     );
+});
+
+test("publication inherits the terminal so npm can complete 2FA", () => {
+  const calls = [];
+  const run = (args, options) => calls.push({ args, options });
+  const artifact = { name: "a", filename: "a-0.0.0.tgz" };
+  publishTarball(artifact, "/tarballs", { run });
+  publishTarball(artifact, "/tarballs", { provenance: true, run });
+  assert.equal(calls.length, 2);
+  for (const { options } of calls)
+    assert.deepEqual(options, { stdio: "inherit" });
+  assert(!calls[0].args.includes("--provenance"));
+  assert(calls[1].args.includes("--provenance"));
+  assert.throws(
+    () =>
+      publishTarball(artifact, "/tarballs", {
+        run: () => {
+          throw new Error("EOTP");
+        },
+      }),
+    /npm publication failed for a/u,
+  );
 });
