@@ -29,7 +29,7 @@ test("placeholder set names the launcher and one package per release target", ()
       "@delino/binpm-win32-arm64-msvc",
       "@delino/binpm-linux-x64-gnu",
       "@delino/binpm-linux-arm64-gnu",
-      "binpm",
+      "@delino/binpm",
     ],
   );
   for (const manifest of manifests) {
@@ -60,7 +60,7 @@ test("packaging is verifiable and verification rejects tampering", (t) => {
   const directory = tempDirectory(t);
   const packed = packPlaceholders(directory);
   assert.deepEqual(verifyPlaceholders(directory), packed);
-  writeFileSync(path.join(directory, "binpm-0.0.0.tgz"), "tampered");
+  writeFileSync(path.join(directory, "delino-binpm-0.0.0.tgz"), "tampered");
   assert.throws(() => verifyPlaceholders(directory), /Integrity mismatch/u);
 });
 

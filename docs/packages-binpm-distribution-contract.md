@@ -4,7 +4,7 @@
 
 `packages/binpm` owns the private source workspace that generates the binpm npm packages and their trusted publishing. The Rust CLI stays owned by `crates/binpm`.
 
-The current stage reserves the package names. It publishes version `0.0.0` placeholders and configures trusted publishing. It does not publish a working `npx binpm` command yet.
+The current stage reserves the package names. It publishes version `0.0.0` placeholders and configures trusted publishing. It does not publish a working `npx @delino/binpm` command yet.
 
 ## Runtime and Language
 
@@ -12,11 +12,11 @@ Packaging and release tooling is ESM on the repository's Node.js baseline and us
 
 ## Users and Operators
 
-Release maintainers. The end goal is that JavaScript developers can run `npx binpm <args>`. The binary installs on Node-free hosts stay with the existing direct installers, Homebrew, and `cargo binstall`.
+Release maintainers. The end goal is that JavaScript developers can run `npx @delino/binpm <args>`. The binary installs on Node-free hosts stay with the existing direct installers, Homebrew, and `cargo binstall`.
 
 ## Interfaces and Contracts
 
-- The launcher package is the unscoped `binpm`. It will expose the `binpm` command.
+- The launcher package is `@delino/binpm`. It will expose the `binpm` command, so `npx @delino/binpm` runs it. The unscoped `binpm` name is unavailable: npm rejects it as too similar to the existing `bin_pm` package. A plain `npx binpm` needs npm support to grant the name and is not part of this contract.
 - Native packages are `@delino/binpm-<suffix>` with these suffixes, one for each first-party binpm release target: `darwin-x64`, `darwin-arm64`, `win32-x64-msvc`, `win32-arm64-msvc`, `linux-x64-gnu`, and `linux-arm64-gnu`. Linux packages declare `libc: ["glibc"]`. binpm publishes no musl binary, so no musl package exists.
 - The suffix list in `packages/binpm/scripts/common.mjs` must stay aligned with the target matrix in `release-binpm.yml`.
 - Placeholder packages carry only `package.json`, `README.md`, and the Apache-2.0 `LICENSE`. They have no `bin`, lifecycle script, or dependency. Packaging rejects every version except `0.0.0`.
@@ -52,7 +52,7 @@ Integrates with npm and GitHub Actions OIDC. `Release Project` does not publish 
 
 ### One-time name reservation
 
-A maintainer with publish rights to the `binpm` name and the `@delino` scope does these steps once, from a checkout of the merged workflow:
+A maintainer with publish rights to the `@delino` scope does these steps once, from a checkout of the merged workflow:
 
 1. Run `node packages/binpm/scripts/package.mjs`.
 2. Run `node packages/binpm/scripts/publish.mjs --bootstrap` while logged in to npm. It publishes the six native packages and then `binpm`.

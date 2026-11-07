@@ -15,7 +15,9 @@ export const trustedWorkflow = "release-binpm-npm.yml";
 // the reservation placeholder. Remove this pin when the real packages land.
 export const placeholderVersion = "0.0.0";
 
-export const LAUNCHER_NAME = "binpm";
+// The unscoped `binpm` name is unavailable: npm rejects it because it is too
+// similar to the existing `bin_pm` package. Revisit if npm support grants it.
+export const LAUNCHER_NAME = "@delino/binpm";
 
 // One entry per first-party binpm release target in the release workflow
 // (`release-binpm.yml`). `libc` is set only for Linux, as for the other

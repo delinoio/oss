@@ -3,6 +3,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 import { parseArgs } from "node:util";
 import path from "node:path";
 import {
+  LAUNCHER_NAME,
   ensure,
   event,
   isMain,
@@ -88,7 +89,7 @@ export async function publishArtifacts(
 
 // `npm trust` needs the package to exist, so this follows the first upload.
 export function trustCommands() {
-  return [...targets.map(nativeName), "binpm"].map(
+  return [...targets.map(nativeName), LAUNCHER_NAME].map(
     (name) =>
       `npm trust github ${name} --repo ${trustedRepository} --file ${trustedWorkflow} --allow-publish`,
   );

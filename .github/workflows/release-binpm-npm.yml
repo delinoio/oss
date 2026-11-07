@@ -1,6 +1,6 @@
 name: Release binpm npm
 
-# Publishes the binpm npm packages (`binpm` and `@delino/binpm-*`) through npm
+# Publishes the binpm npm packages (`@delino/binpm` and `@delino/binpm-*`) through npm
 # trusted publishing. The npm Trusted Publisher entry for every package names
 # this exact file, so do not rename it or move publication to another workflow.
 on:
