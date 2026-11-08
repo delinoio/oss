@@ -93,12 +93,14 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
     if !wrapper.is_empty() {
         // Other wrappers may alter compiler arguments or run outside the
         // native owner. Only the tested sccache protocol is supported here.
-        if !cfg!(unix) || paths::base(wrapper) != "sccache" {
+        if !cfg!(unix) {
             bail!(
                 "custom compiler wrappers cannot yet be verified; supported wrapper: \
                  RUSTC_WRAPPER=sccache 0.14.x on Unix"
             );
         }
+        // Identify sccache by its version response below, not its basename:
+        // nested commands inherit the canonical target, which may be renamed.
         // sccache does not dispatch by symlink name. Pin the final binary so
         // cache preparation cannot break an intermediate symlink in a cache.
         let executable = repository::canonical(&resolve_executable(&req.cwd, &req.env, wrapper)?)?;

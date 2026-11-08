@@ -2248,7 +2248,9 @@ fn clone_only_run_prints_no_copy_notice() {
 fn sccache_uses_owned_server_endpoint_across_nested_builds() {
     let mut f = Fixture::new();
     let wrapper = join(&f.bin, "sccache");
-    write_file(&wrapper, "#!/bin/sh\necho 'sccache 0.14.0'\n", 0o700);
+    let binary = join(&f.bin, "sccache-0.14.0");
+    write_file(&binary, "#!/bin/sh\necho 'sccache 0.14.0'\n", 0o700);
+    std::os::unix::fs::symlink(&binary, &wrapper).unwrap();
     f.set_env("RUSTC_WRAPPER", "sccache");
     f.set_env("SCCACHE_SERVER_UDS", "/shared/sccache.sock");
     f.set_env("CCOW_TEST_BIN", BIN);
@@ -2287,4 +2289,9 @@ while [ ! -f target/daemon-pid ]; do sleep 0.01; done
         .parse()
         .unwrap();
     wait_process_gone(pid);
+    // A renamed path does not bypass the sccache identity/version check.
+    write_file(&binary, "#!/bin/sh\necho 'custom 0.14.0'\n", 0o700);
+    f.set_env("RUSTC_WRAPPER", &binary);
+    let (_, err) = f.run(&f.main, 125, &["run", "--", "cargo", "build"]);
+    assert!(err.contains("cannot verify sccache 0.14.x"), "{err}");
 }
