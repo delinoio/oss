@@ -17,10 +17,11 @@ const legacyArchiveProjects = new Set([
   Project.WithWatch,
 ]);
 // This is the first source revision whose legacy archive workflows include both terms.
+// Use the merged mainline commit: a pre-merge worker commit can disappear after squash.
 // Compare the authenticated release revision with this boundary before accepting an
 // executable-only archive; the current checkout is not a historical-release signal.
 export const legacyArchiveTermsRevision =
-  "907167c9bc4ff019a03ea91240b06b7ec755fe15";
+  "cc0f729935685c903c2dabfcf905396471e97076";
 export const Channel = Object.freeze({ Stable: "stable", Preview: "preview" });
 export const Architecture = Object.freeze({ Amd64: "amd64", Arm64: "arm64" });
 export const Mode = Object.freeze({ DryRun: "dry-run", Publish: "publish" });
