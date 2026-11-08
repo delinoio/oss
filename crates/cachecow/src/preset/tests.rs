@@ -22,6 +22,7 @@ struct FakeRunner {
     calls: Mutex<Vec<Call>>,
     version: Mutex<String>,
     metadata: Mutex<String>,
+    compiler: Mutex<String>,
     frontend: Mutex<String>,
 }
 
@@ -47,10 +48,13 @@ impl Runner for FakeRunner {
             return Ok(self.version.lock().unwrap().clone().into_bytes());
         }
         if last == Some("-vV") {
-            return Ok(
+            let compiler = self.compiler.lock().unwrap();
+            return Ok(if compiler.is_empty() {
                 b"rustc 1.99.1 (fixture)\nhost: x86_64-unknown-linux-gnu\nrelease: 1.99.1\n"
-                    .to_vec(),
-            );
+                    .to_vec()
+            } else {
+                compiler.as_bytes().to_vec()
+            });
         }
         if args[0] == "node" {
             return Ok(self.frontend.lock().unwrap().clone().into_bytes());
@@ -216,7 +220,8 @@ fn cargo_rejects_unknown_unsafe_and_unsupported() {
     for version in [
         "cargo 1.99.0",
         "cargo 2.0.0",
-        "cargo 1.100.0-nightly",
+        "cargo 1.99.1-nightly",
+        "cargo 1.100.0-beta",
         "garbage",
     ] {
         let f = cargo_fixture();
@@ -686,7 +691,7 @@ fn semver_rules_match_go() {
     }
 }
 
-/// Uses an installed stable toolchain, not synthetic output.
+/// Uses an installed toolchain, not synthetic output.
 /// `CCOW_TEST_CARGO_TOOLCHAIN` selects an installed rustup toolchain.
 #[test]
 fn real_cargo_configured_directories() {
@@ -701,8 +706,8 @@ fn real_cargo_configured_directories() {
     };
     let text = String::from_utf8_lossy(&version.stdout).into_owned();
     let fields: Vec<&str> = text.split_whitespace().collect();
-    if !version.status.success() || fields.len() < 2 || !supported(fields[1], "1.99.1", "2.0.0") {
-        eprintln!("installed {toolchain} Cargo does not meet the stable floor: {text}");
+    if !version.status.success() || fields.len() < 2 || !cargo::supported_toolchain(fields[1]) {
+        eprintln!("installed {toolchain} Cargo does not meet the supported floor: {text}");
         return;
     }
     let (_dir, p) = project();
@@ -879,4 +884,31 @@ fn frontend_external_cache_alias_retarget() {
         verify_cache_paths(&result).is_err(),
         "retargeted alias retained old claims"
     );
+}
+
+#[test]
+fn nightly_discovery_preserves_selection_and_compiler_identity() {
+    let mut f = cargo_fixture();
+    f.argv.insert(1, "+nightly-2026-09-28".into());
+    FakeRunner::set(&f.runner.version, "cargo 1.101.0-nightly (fixture)");
+    let compiler = |commit| {
+        format!(
+            "rustc 1.101.0-nightly ({commit})\nhost: aarch64-apple-darwin\nrelease: \
+             1.101.0-nightly\n"
+        )
+    };
+    FakeRunner::set(&f.runner.compiler, compiler("first"));
+    let a = f.discover().unwrap();
+    assert!(a.compatibility.verified());
+    for call in f.runner.calls.lock().unwrap().iter() {
+        assert_eq!(call.args[1], "+nightly-2026-09-28");
+    }
+    FakeRunner::set(&f.runner.compiler, compiler("second"));
+    let b = f.discover().unwrap();
+    assert!(!a.compatibility.compatible(&b.compatibility));
+    FakeRunner::set(
+        &f.runner.compiler,
+        "rustc 1.99.1-nightly\nhost: aarch64-apple-darwin\n",
+    );
+    assert!(f.discover().is_err());
 }

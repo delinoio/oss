@@ -38,6 +38,17 @@ struct Package {
     manifest: String,
 }
 
+/// Nightly uses the same metadata contract, but its complete compiler identity
+/// remains part of compatibility so different nightly builds never share
+/// caches. Keep the stable floor strict: a prerelease of the floor is older
+/// than it.
+pub(super) fn supported_toolchain(version: &str) -> bool {
+    match version.strip_suffix("-nightly") {
+        Some(base) => supported(base, "1.99.1", "2.0.0") && base != "1.99.1",
+        None => supported(version, "1.99.1", "2.0.0"),
+    }
+}
+
 fn toml_string(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_default()
 }
@@ -88,8 +99,8 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
     let b = req.runner.output(ctx, &req.cwd, &req.env, &version_args)?;
     let text = String::from_utf8_lossy(&b);
     let words: Vec<&str> = text.split_whitespace().collect();
-    if words.len() < 2 || words[0] != "cargo" || !supported(words[1], "1.99.1", "2.0.0") {
-        bail!("Cargo requires stable 1.99.1 or later within 1.x; select a supported toolchain");
+    if words.len() < 2 || words[0] != "cargo" || !supported_toolchain(words[1]) {
+        bail!("Cargo requires 1.99.1 or later within 1.x; select a supported toolchain");
     }
     out.compatibility.tool_version = words[1].to_string();
     let mut args = prefix.clone();
@@ -171,7 +182,7 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
     }) else {
         bail!(
             "Cargo metadata did not report verified target_directory and build_directory; use a \
-             stable Cargo that reports both fields (no target-dir fallback is safe)"
+             Cargo that reports both fields (no target-dir fallback is safe)"
         );
     };
     // Metadata from a manifest outside this repository must not authorize its
@@ -206,12 +217,11 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
     let text = String::from_utf8_lossy(&b).into_owned();
     let fields: Vec<&str> = text.split_whitespace().collect();
     if fields.len() < 2
-        || !supported(fields[1], "1.99.1", "2.0.0")
+        || !supported_toolchain(fields[1])
         || !text.starts_with("rustc ")
         || !text.contains("\nhost: ")
-        || text.contains("nightly")
     {
-        bail!("cannot verify a stable rustc compiler; check the selected Rust toolchain");
+        bail!("cannot verify the rustc compiler; check the selected Rust toolchain");
     }
     out.compatibility.compiler_version = digest(&text);
     // Hash configuration bytes without storing them. Cargo still decides
