@@ -37,6 +37,6 @@
     "@types/react-dom": "19.2.3",
     "jsdom": "20.0.3",
     "typescript": "5.9.3",
-    "@rstest/core": "0.12.5"
+    "@rstest/core": "0.12.6"
   }
 }
