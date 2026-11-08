@@ -17,6 +17,13 @@ const targets = Object.freeze(
       binary: "ccow",
     },
     {
+      suffix: "linux-arm64",
+      os: "linux",
+      cpu: "arm64",
+      rust: "aarch64-unknown-linux-gnu",
+      binary: "ccow",
+    },
+    {
       suffix: "windows-x64",
       os: "win32",
       cpu: "x64",

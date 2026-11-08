@@ -4,7 +4,7 @@
 
 CacheCow (`ccow`) prepares independent writable build caches for Git worktrees with filesystem copy-on-write (CoW). It supports the intended `cargo`, `rspack`, and `rsbuild` presets.
 
-Published versions will provide native archives, checksums and release metadata through [GitHub Releases](https://github.com/delinoio/oss/releases). CacheCow is not distributed through npm. Check [installation and availability](/cachecow/installation) before installing.
+Published versions will provide Homebrew and APT/DNF installation, plus native archives, checksums and release metadata through [GitHub Releases](https://github.com/delinoio/oss/releases). CacheCow is not distributed through npm. Check [installation and availability](/cachecow/installation) before installing.
 
 ## How it works
 
@@ -14,7 +14,7 @@ CoW can initially share physical disk blocks while keeping writes separate. It d
 
 ## Choose a workflow
 
-- [Installation and availability](/cachecow/installation): native archives, requirements, rollback, and removal.
+- [Installation and availability](/cachecow/installation): Homebrew, APT/DNF, native archives, requirements, rollback, and removal.
 - [Configuration and sources](/cachecow/configuration): Cargo, Rspack, Rsbuild, and source precedence.
 - [Cache lifecycle](/cachecow/cache): explicit commands, preparation, replacement, failures, and manual cleaning.
 - [Concurrency and processes](/cachecow/concurrency): locks, watch servers, cancellation, and safe recovery.

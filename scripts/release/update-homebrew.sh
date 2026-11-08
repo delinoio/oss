@@ -8,7 +8,7 @@ Render and optionally push Homebrew formula/cask updates.
 
 Usage:
   ./scripts/release/update-homebrew.sh \
-    --project <binpm|nodeup|with-watch|pnport|runmoor|clibox> \
+    --project <binpm|nodeup|with-watch|pnport|runmoor|clibox|ccow> \
     --version <semver> \
     [--darwin-amd64-url <url>] [--darwin-amd64-sha256 <sha>] \
     [--darwin-arm64-url <url>] [--darwin-arm64-sha256 <sha>] \
@@ -178,23 +178,26 @@ for (const [index, key] of keys.entries()) rendered = rendered.replaceAll(`__${k
 process.stdout.write(rendered);
 JS
     ;;
-  runmoor)
+  runmoor|ccow)
     if [[ ! "$version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
-      log "runmoor requires an exact stable version"
+      log "$project requires an exact stable version"
       exit 1
     fi
     expected_url="https://github.com/delinoio/oss/releases/download/runmoor@v${version}/runmoor-darwin-arm64.tar.gz"
+    if [ "$project" = ccow ]; then
+      expected_url="https://github.com/delinoio/oss/releases/download/ccow@v${version}/ccow-${version}-darwin-arm64.tar.gz"
+    fi
     if [ "$darwin_arm64_url" != "$expected_url" ] || [[ ! "$darwin_arm64_sha256" =~ ^[a-f0-9]{64}$ ]]; then
-      log "runmoor requires its exact versioned macOS ARM64 release URL and SHA256"
+      log "$project requires its exact versioned macOS ARM64 release URL and SHA256"
       exit 1
     fi
     if [ -n "$darwin_amd64_url$darwin_amd64_sha256$linux_amd64_url$linux_amd64_sha256$linux_arm64_url$linux_arm64_sha256" ]; then
-      log "runmoor Homebrew supports macOS ARM64 only"
+      log "$project Homebrew supports macOS ARM64 only"
       exit 1
     fi
-    destination_path="Formula/runmoor.rb"
+    destination_path="Formula/${project}.rb"
     rendered_file="$(mktemp)"
-    node --input-type=module - "$repo_root/packaging/homebrew/templates/runmoor.rb.tmpl" "$version" "$darwin_arm64_url" "$darwin_arm64_sha256" >"$rendered_file" <<'JS'
+    node --input-type=module - "$repo_root/packaging/homebrew/templates/${project}.rb.tmpl" "$version" "$darwin_arm64_url" "$darwin_arm64_sha256" >"$rendered_file" <<'JS'
 import { readFileSync } from 'node:fs';
 const [template, version, url, sha256] = process.argv.slice(2);
 process.stdout.write(readFileSync(template, 'utf8').replaceAll('__VERSION__', version).replaceAll('__DARWIN_ARM64_URL__', url).replaceAll('__DARWIN_ARM64_SHA256__', sha256));
@@ -292,7 +295,7 @@ else
 fi
 
 mkdir -p "$(dirname -- "$destination_path")"
-if { [ "$project" = "pnport" ] || [ "$project" = "runmoor" ] || [ "$project" = "clibox" ]; } && [ -f "$destination_path" ]; then
+if { [ "$project" = "pnport" ] || [ "$project" = "runmoor" ] || [ "$project" = "clibox" ] || [ "$project" = "ccow" ]; } && [ -f "$destination_path" ]; then
   existing_version="$(sed -nE 's/^  version "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' "$destination_path")"
   if [[ ! "$existing_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
     log "existing $project formula has no single exact version"

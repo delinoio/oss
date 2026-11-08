@@ -638,3 +638,7 @@ The shared protocol breaking check excludes retired TaiRouter (`tairouter.v1` an
 ## labs-site validation
 
 Labs Site source and CI are owned by `delinoio/apps`; see [the boundary](apps-labs-site-foundation.md).
+
+## CacheCow package release
+
+The manual main-only `release-ccow.yml` owns CacheCow publication independently of the shared release-project selector. Follow [CacheCow native distribution](packages-ccow-distribution-contract.md) for versioned archives, retained Sigstore bundles, the protected GitHub publisher, macOS ARM64 Homebrew installation/audit and public readback, and signed stable APT/DNF publication. Both Linux architectures reuse the pinned compatibility build and shared package installation gates. CacheCow package input is `ccow`; its Rust crate/project is `cachecow`. Relevant main source changes select native Linux package validation; PR and affected manual native-package skips remain unchanged. Package installation does not establish native CoW or process-lifecycle acceptance. Preserve existing validation records and native-support limits.

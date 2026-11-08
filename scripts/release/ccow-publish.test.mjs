@@ -1,10 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
 import test from "node:test";
-import { mkdtempSync, writeFileSync, rmSync, readFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  readFileSync,
+} from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { homebrewArguments } from "./ccow-homebrew.mjs";
 import { reconcile, prepare, transport } from "./ccow-publish.mjs";
 import {
   packageRelease,
@@ -365,4 +372,133 @@ test("the executable requires the GitHub release token and ignores npm credentia
   );
   assert.equal(result.status, 1);
   assert.doesNotMatch(result.stderr, /npm/iu);
+});
+
+test("signed publication preserves exact bundles and rejects incomplete signatures", (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "ccow-signed-fixture-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const f = candidateFixture(directory);
+  const signatures = path.join(directory, "signatures");
+  mkdirSync(signatures);
+  const unsigned = prepare(f);
+  const names = [...unsigned.assets.keys()].filter(
+    (name) => name !== "release.json",
+  );
+  const bundle = Buffer.from(
+    JSON.stringify({ mediaType: "fixture", verificationMaterial: {} }),
+  );
+  for (const name of names)
+    writeFileSync(path.join(signatures, `${name}.sigstore.json`), bundle);
+  const plan = prepare({ ...f, signatures });
+  for (const name of names)
+    assert.deepEqual(plan.assets.get(`${name}.sigstore.json`), bundle);
+  assert.equal(plan.assets.size, unsigned.assets.size + names.length);
+  rmSync(path.join(signatures, "SHA256SUMS.sigstore.json"));
+  assert.throws(() => prepare({ ...f, signatures }), /signature files/);
+});
+
+test("Homebrew uses the verified versioned macOS archive without source builds", (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "ccow-brew-fixture-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const f = candidateFixture(directory);
+  const args = homebrewArguments(f.artifacts, f.revision);
+  assert(args.includes("--dry-run"));
+  assert(
+    args.includes(
+      "https://github.com/delinoio/oss/releases/download/ccow@v0.1.0/ccow-0.1.0-darwin-arm64.tar.gz",
+    ),
+  );
+  const result = spawnSync("bash", args, { encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.stdout, /class Ccow < Formula/u);
+  assert.match(result.stdout, /depends_on macos: :sequoia/u);
+  assert.match(result.stdout, /depends_on arch: :arm64/u);
+  assert.doesNotMatch(result.stdout, /__VERSION__|cargo build|system "cargo"/u);
+  assert(
+    !homebrewArguments(f.artifacts, f.revision, true).includes("--dry-run"),
+  );
+  const bad = spawnSync(
+    "bash",
+    args.map((arg) =>
+      arg.replace("/ccow-0.1.0-darwin-arm64.tar.gz", "/wrong.tar.gz"),
+    ),
+    { encoding: "utf8" },
+  );
+  assert.notEqual(bad.status, 0);
+});
+
+test("CacheCow tap retries cannot downgrade or replace a published version", (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "ccow-tap-fixture-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const remote = path.join(directory, "tap.git");
+  const checkout = path.join(directory, "tap");
+  const git = (args, cwd = directory) =>
+    execFileSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  git(["init", "--bare", "--initial-branch=main", remote]);
+  git(["clone", remote, checkout]);
+  git(["config", "user.name", "Fixture"], checkout);
+  git(["config", "user.email", "fixture@example.invalid"], checkout);
+  mkdirSync(path.join(checkout, "Formula"));
+  writeFileSync(
+    path.join(checkout, "Formula/existing.rb"),
+    "preserve other products\n",
+  );
+  git(["add", "Formula/existing.rb"], checkout);
+  git(["commit", "-m", "Existing product fixture"], checkout);
+  git(["push", "origin", "HEAD:main"], checkout);
+  const env = {
+    ...process.env,
+    GH_TOKEN: "fixture",
+    HOMEBREW_TAP_GH_TOKEN: "fixture",
+    RELEASE_BOT_NAME: "Fixture",
+    RELEASE_BOT_EMAIL: "fixture@example.invalid",
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: `url.file://${remote}.insteadOf`,
+    GIT_CONFIG_VALUE_0: "https://github.com/fixture/ccow-tap.git",
+  };
+  const run = (version = "0.2.0", digest = "a".repeat(64)) =>
+    spawnSync(
+      "bash",
+      [
+        "scripts/release/update-homebrew.sh",
+        "--project",
+        "ccow",
+        "--version",
+        version,
+        "--darwin-arm64-url",
+        `https://github.com/delinoio/oss/releases/download/ccow@v${version}/ccow-${version}-darwin-arm64.tar.gz`,
+        "--darwin-arm64-sha256",
+        digest,
+        "--tap-repo",
+        "fixture/ccow-tap",
+      ],
+      { env, encoding: "utf8" },
+    );
+  const first = run();
+  assert.equal(first.status, 0, first.stderr);
+  const published = git(["rev-parse", "main"], remote);
+  const formula = git(["show", "main:Formula/ccow.rb"], remote);
+  const unchanged = () => {
+    assert.equal(git(["rev-parse", "main"], remote), published);
+    assert.equal(git(["show", "main:Formula/ccow.rb"], remote), formula);
+    assert.equal(
+      git(["show", "main:Formula/existing.rb"], remote),
+      "preserve other products\n",
+    );
+  };
+  const same = run();
+  assert.equal(same.status, 0, same.stderr);
+  unchanged();
+  const older = run("0.1.0");
+  assert.notEqual(older.status, 0);
+  assert.match(older.stderr, /refusing ccow Homebrew downgrade/u);
+  unchanged();
+  const conflict = run("0.2.0", "b".repeat(64));
+  assert.notEqual(conflict.status, 0);
+  assert.match(conflict.stderr, /conflicting ccow formula bytes/u);
+  unchanged();
 });

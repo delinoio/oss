@@ -22,8 +22,8 @@ concurrency:
 
 jobs:
   # The Rust CLI builds each native target on a matching GitHub-hosted host with
-  # the pinned toolchain. Ubuntu 22.04 keeps the Linux glibc floor. Compilation
-  # here is not native acceptance; the release workflow runs no acceptance.
+  # the pinned toolchain. Linux uses the pinned compatibility image. Compilation
+  # and package installation checks do not establish native CoW acceptance.
   build:
     if: github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main'
     name: Build native binary (${{ matrix.target }})
@@ -38,6 +38,9 @@ jobs:
           - target: linux-x64
             rust: x86_64-unknown-linux-gnu
             runner: ubuntu-22.04
+          - target: linux-arm64
+            rust: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
           - target: windows-x64
             rust: x86_64-pc-windows-msvc
             runner: windows-latest
@@ -59,7 +62,26 @@ jobs:
         env:
           REQUESTED_VERSION: ${{ inputs.version }}
         run: node scripts/release/ccow-release-identity.mjs "$REQUESTED_VERSION" "$GITHUB_SHA" "$GITHUB_REF"
+      - name: Build Linux with the pinned compatibility image
+        if: runner.os == 'Linux'
+        shell: bash
+        env:
+          RELEASE_TARGET: ${{ matrix.rust }}
+          CCOW_TARGET: ${{ matrix.target }}
+          CCOW_VERSION: ${{ inputs.version }}
+          CCOW_BUILD_REVISION: ${{ github.sha }}
+          CCOW_BUILD_DIRTY: "false"
+        run: |
+          set -euo pipefail
+          image=$(node -p 'JSON.parse(require("node:fs").readFileSync("packaging/linux/pins.json")).rust_image')
+          docker run --rm -v "$PWD:/workspace" -w /workspace \
+            -e CCOW_VERSION -e CCOW_BUILD_REVISION -e CCOW_BUILD_DIRTY \
+            "$image" bash scripts/release/linux-packages/build-rust.sh ccow "$RELEASE_TARGET"
+          sudo chown -R "$(id -u):$(id -g)" target
+          mkdir -p "$RUNNER_TEMP/ccow-binaries/$CCOW_TARGET"
+          cp "target/$RELEASE_TARGET/release/ccow" "$RUNNER_TEMP/ccow-binaries/$CCOW_TARGET/ccow"
       - name: Build native binary with embedded release identity
+        if: runner.os != 'Linux'
         shell: bash
         env:
           CCOW_TARGET: ${{ matrix.target }}
@@ -71,6 +93,9 @@ jobs:
           if-no-files-found: error
 
   candidate:
+    permissions:
+      contents: read
+      id-token: write
     needs: build
     if: github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-22.04
@@ -100,6 +125,19 @@ jobs:
           chmod 0755 "$RUNNER_TEMP"/ccow-binaries/*/ccow*
           node packages/ccow/scripts/package.mjs --binaries "$RUNNER_TEMP/ccow-binaries" --output "$RUNNER_TEMP/ccow-candidate" --revision "$GITHUB_SHA"
           node packages/ccow/scripts/verify.mjs --directory "$RUNNER_TEMP/ccow-candidate" --revision "$GITHUB_SHA"
+      - uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
+      - name: Sign the exact candidate
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/ccow-signatures"
+          for file in "$RUNNER_TEMP/ccow-candidate"/*.tar.gz "$RUNNER_TEMP/ccow-candidate/SHA256SUMS"; do
+            cosign sign-blob --yes --bundle "$RUNNER_TEMP/ccow-signatures/$(basename "$file").sigstore.json" "$file"
+          done
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ccow-signatures-${{ github.sha }}
+          path: ${{ runner.temp }}/ccow-signatures/*
+          if-no-files-found: error
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: ccow-candidate-${{ github.sha }}
@@ -126,8 +164,23 @@ jobs:
         with:
           name: ccow-candidate-${{ github.sha }}
           path: ${{ runner.temp }}/ccow-candidate
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ccow-signatures-${{ github.sha }}
+          path: ${{ runner.temp }}/ccow-signatures
       - name: Verify the exact candidate before credentials
         run: node packages/ccow/scripts/verify.mjs --directory "$RUNNER_TEMP/ccow-candidate" --revision "$GITHUB_SHA"
+      - uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
+      - name: Verify retained signatures before credentials
+        run: |
+          set -euo pipefail
+          for file in "$RUNNER_TEMP/ccow-candidate"/*.tar.gz "$RUNNER_TEMP/ccow-candidate/SHA256SUMS"; do
+            cosign verify-blob --bundle "$RUNNER_TEMP/ccow-signatures/$(basename "$file").sigstore.json" \
+              --certificate-identity 'https://github.com/delinoio/oss/.github/workflows/release-ccow.yml@refs/heads/main' \
+              --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+              --certificate-github-workflow-sha "$GITHUB_SHA" \
+              --certificate-github-workflow-repository delinoio/oss "$file"
+          done
       - name: Create repository release token
         id: release-bot
         uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
@@ -141,4 +194,79 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.release-bot.outputs.token }}
           REQUESTED_VERSION: ${{ inputs.version }}
-        run: node scripts/release/ccow-publish.mjs "$RUNNER_TEMP/ccow-candidate" "$REQUESTED_VERSION"
+        run: node scripts/release/ccow-publish.mjs "$RUNNER_TEMP/ccow-candidate" "$REQUESTED_VERSION" "$RUNNER_TEMP/ccow-signatures"
+
+  homebrew:
+    needs: [candidate, publish]
+    if: ${{ !inputs.dry_run }}
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          lfs: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ccow-candidate-${{ github.sha }}
+          path: ${{ runner.temp }}/ccow-candidate
+      - name: Validate Homebrew installation before tap credentials
+        run: |
+          set -euo pipefail
+          node scripts/release/ccow-homebrew.mjs "$RUNNER_TEMP/ccow-candidate" "$GITHUB_SHA" > "$RUNNER_TEMP/ccow.rb"
+          brew tap-new --no-git delinoio/ccow-validation
+          cp "$RUNNER_TEMP/ccow.rb" "$(brew --repository delinoio/ccow-validation)/Formula/ccow.rb"
+          brew install --formula delinoio/ccow-validation/ccow
+          brew test delinoio/ccow-validation/ccow
+          brew audit --strict delinoio/ccow-validation/ccow
+          ccow --version
+          ccow --help
+          brew uninstall delinoio/ccow-validation/ccow
+          brew untap delinoio/ccow-validation
+      - name: Create Homebrew repository token
+        id: tap-bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.DELINO_RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
+          owner: delinoio
+          repositories: homebrew-tap
+          permission-contents: write
+      - name: Resolve Homebrew bot identity
+        id: tap-identity
+        env:
+          GH_TOKEN: ${{ steps.tap-bot.outputs.token }}
+        run: node scripts/release/project.mjs bot-identity
+      - name: Publish verified Homebrew formula
+        env:
+          GH_TOKEN: ${{ steps.tap-bot.outputs.token }}
+          RELEASE_BOT_NAME: ${{ steps.tap-identity.outputs.name }}
+          RELEASE_BOT_EMAIL: ${{ steps.tap-identity.outputs.email }}
+        run: node scripts/release/ccow-homebrew.mjs "$RUNNER_TEMP/ccow-candidate" "$GITHUB_SHA" publish
+
+      - name: Verify public Homebrew installation
+        run: |
+          set -euo pipefail
+          brew install delinoio/tap/ccow
+          brew test delinoio/tap/ccow
+          ccow --version
+          brew uninstall delinoio/tap/ccow
+
+  linux-packages:
+    needs: [publish]
+    if: ${{ !inputs.dry_run }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/release-linux-packages.yml
+    # Required until actions/runner#4453 is fixed and environment access is verified.
+    secrets: inherit
+    with:
+      project: ccow
+      version: ${{ inputs.version }}
+      revision: ${{ github.sha }}
+      mode: publish

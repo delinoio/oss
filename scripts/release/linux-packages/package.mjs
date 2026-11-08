@@ -247,14 +247,17 @@ export function packageFiles(plan, input, output, signing) {
     "with-watch": "Rerun commands when inputs change",
     runmoor: "Local ephemeral GitHub Actions runners",
     clibox: "Cross-platform developer utilities",
+    ccow: "Copy-on-write build caches for Git worktrees",
   }[plan.project];
   const result = [];
   const license = "Apache-2.0";
   // Preserve upstream declarations and include the complete applicable terms.
   const copyright = path.join(output, "copyright");
+  if (plan.project === "ccow")
+    requireValue(input.notice instanceof Uint8Array, "SOURCE_NOTICE_REQUIRED");
   writeFileSync(
     copyright,
-    `Upstream: https://github.com/delinoio/oss\nSource: ${plan.tag} (${plan.revision})\nDeclared package license: ${license}\n\n${readFileSync(`packaging/linux/licenses/${license}.txt`, "utf8")}\n`,
+    `Upstream: https://github.com/delinoio/oss\nSource: ${plan.tag} (${plan.revision})\nDeclared package license: ${license}\n\n${readFileSync(`packaging/linux/licenses/${license}.txt`, "utf8")}\n${plan.project === "ccow" ? Buffer.from(input.notice).toString("utf8") : ""}`,
   );
   for (const arch of architectures) {
     for (const format of ["deb", "rpm"]) {

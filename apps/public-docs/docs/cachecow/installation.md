@@ -6,7 +6,41 @@
 
 Version 0.1.0 is not yet released. Do not assume a native archive, checksum, or installation path is available because it appears in this guide. The procedures below describe the intended release. Native acceptance and performance measurements remain required before support claims can be made.
 
-CacheCow is distributed only as native archives on [GitHub Releases](https://github.com/delinoio/oss/releases). It is not published to npm, and no npm package installs it.
+CacheCow provides native package-manager installation and native archives on [GitHub Releases](https://github.com/delinoio/oss/releases). The commands below apply only after the selected channel is published and verified. It is not published to npm, and no npm package installs it.
+
+## Homebrew: macOS ARM64
+
+After the first verified Homebrew publication, install on macOS 15 or later with Apple Silicon:
+
+```sh
+brew install delinoio/tap/ccow
+ccow --version
+```
+
+The formula installs the prebuilt executable without Node.js. Intel macOS is not supported by this formula. Homebrew availability is pending for 0.1.0.
+
+## APT: Debian and Ubuntu
+
+APT availability is pending for 0.1.0. After the first verified native package publication, follow [Linux package setup](/linux-packages#verify-the-repository-key) to verify the full key fingerprint and register the stable APT repository. Then install the package named `ccow`:
+
+```sh
+sudo apt-get update
+sudo apt-get install ccow
+ccow --version
+```
+
+The repository supports package installation on amd64 and arm64. APT installs the shared `delino-archive-keyring` dependency for authenticated certificate updates. Package installation checks do not establish CoW filesystem or process-lifecycle support; see the runtime targets below.
+
+## DNF: Fedora and RHEL-compatible systems
+
+DNF availability is pending for 0.1.0. After the first verified native package publication, verify the key and register the stable DNF repository from [Linux package setup](/linux-packages#dnf-stable). Keep both package and repository signature checks enabled. Then run:
+
+```sh
+sudo dnf install ccow
+ccow --version
+```
+
+Neither package manager activates shims, edits shell configuration, or initializes a cache. After installation, run `ccow doctor` inside your project. Native CLI installation does not require Node.js.
 
 ## Native installation
 
@@ -18,7 +52,7 @@ Native archives do not require Node.js. When a release is available:
 4. Extract the archive and put the `ccow` executable in a directory on your PATH. On Windows, use `ccow.exe`.
 5. Run `ccow --version` and `ccow doctor` in your project to inspect the environment before preparing a cache.
 
-Native archives use `ccow-<version>-<target>.tar.gz`, with targets `darwin-arm64`, `linux-x64`, and `windows-x64`. Each archive contains the executable, `LICENSE`, `NOTICE`, and a `release.json` file that records the version, source revision, target, and executable digest. Keep `LICENSE` and `NOTICE` with redistributed copies. These names do not imply that an artifact has been published. No standalone installer, Homebrew installation, or automatic updater is planned for the first release.
+Native archives use `ccow-<version>-<target>.tar.gz`, with targets `darwin-arm64`, `linux-x64`, `linux-arm64`, and `windows-x64`. Each archive contains the executable, `LICENSE`, `NOTICE`, and a `release.json` file that records the version, source revision, target, and executable digest. Keep `LICENSE` and `NOTICE` with redistributed copies. These names do not imply that an artifact has been published. There is no standalone installer or automatic updater. Linux ARM64 archives provide package installation coverage; native CoW acceptance on ARM64 remains unverified.
 
 Installing the CLI does not activate tool shims. [Install and activate shims](/cachecow/shims) separately if you want ordinary tool commands to enter CacheCow.
 
@@ -38,8 +72,31 @@ CoW may be unavailable across volumes or on another filesystem. Preparation must
 
 ## Update, rollback, and removal
 
-Updates are manual. Download and install the archive of the desired published version in the same way. Rollback means installing the archive of an earlier published version in place of the current executable; no earlier CacheCow release is asserted here.
+Update through the channel you used to install:
+
+```sh
+# Homebrew
+brew update
+brew upgrade ccow
+
+# APT
+sudo apt-get update
+sudo apt-get install --only-upgrade delino-archive-keyring ccow
+
+# DNF
+sudo dnf upgrade ccow
+```
+
+For a direct archive installation, download and install the desired published version in the same way. Rollback means installing the archive of an earlier published version in place of the current executable; no earlier CacheCow release is asserted here.
 
 An older version must not rewrite settings or records it cannot understand. If it reports an unsupported record version, use a version that understands those records and follow its recovery guidance. Preserve the records until recovery is understood.
 
-Before removing CacheCow, [remove persistent shell registration and uninstall its shims](/cachecow/shims#remove-activation-and-shims). Then remove only the executable you installed. Cache deletion is a separate, deliberate [clean operation](/cachecow/cache#manual-cleaning); shim uninstall preserves caches and settings.
+Before removing CacheCow, [remove persistent shell registration and uninstall its shims](/cachecow/shims#remove-activation-and-shims). Then remove the package through the same package manager:
+
+```sh
+brew uninstall ccow
+sudo apt-get remove ccow
+sudo dnf remove ccow
+```
+
+Run only the command for your installation channel. For a direct archive installation, remove only the executable you installed. Cache deletion is a separate, deliberate [clean operation](/cachecow/cache#manual-cleaning); shim uninstall preserves caches and settings.

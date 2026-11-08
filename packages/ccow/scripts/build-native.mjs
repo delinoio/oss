@@ -10,7 +10,7 @@ const { values } = parseArgs({
 });
 assert(
   values.output,
-  "Usage: --output <new-directory> [--target darwin-arm64|linux-x64|windows-x64]",
+  "Usage: --output <new-directory> [--target darwin-arm64|linux-x64|linux-arm64|windows-x64]",
 );
 const targets = values.target
   ? platforms.targets.filter((t) => t.suffix === values.target)

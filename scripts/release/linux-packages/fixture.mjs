@@ -1,4 +1,10 @@
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  readFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { identity, Project, architectures, encode, sha256 } from "./model.mjs";
@@ -28,6 +34,7 @@ try {
     });
     const input = {
       epoch: 1700000000,
+      notice: readFileSync("NOTICE"),
       binaries: Object.fromEntries(
         architectures.map((arch) => [
           arch,
