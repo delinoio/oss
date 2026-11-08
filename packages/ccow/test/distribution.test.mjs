@@ -51,11 +51,11 @@ function setup(t) {
 test("exact native support matrix", () => {
   assert.deepEqual(
     platforms.targets.map((t) => t.suffix),
-    ["darwin-arm64", "linux-x64", "windows-x64"],
+    ["darwin-arm64", "linux-x64", "linux-arm64", "windows-x64"],
   );
   assert.deepEqual(
     platforms.targets.map((t) => t.binary),
-    ["ccow", "ccow", "ccow.exe"],
+    ["ccow", "ccow", "ccow", "ccow.exe"],
   );
   assert(platforms.targets.every((t) => t.name === undefined));
 });
@@ -99,7 +99,7 @@ test("native build identity is read from the embedded marker", () => {
 test("fixture dry-run is labeled and produces only native archives", () => {
   const result = dryRun();
   assert.equal(result.fixture, true);
-  assert.equal(result.artifacts.length, 3);
+  assert.equal(result.artifacts.length, 4);
   assert(result.artifacts.every((a) => a.kind === "native"));
 });
 test("candidates hold only native archives, SHA256SUMS and release.json", (t) => {
@@ -123,7 +123,7 @@ test("candidates hold only native archives, SHA256SUMS and release.json", (t) =>
   assert.equal(
     readFileSync(path.join(options.output, "SHA256SUMS"), "utf8").split("\n")
       .length,
-    4,
+    5,
   );
   for (const artifact of release.artifacts) {
     const target = platforms.targets.find((x) => x.suffix === artifact.target);

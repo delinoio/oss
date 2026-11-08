@@ -23,7 +23,9 @@
       "scripts/release/linux-packages*",
       "scripts/release/linux-packages/**",
       "package.json",
-      "pnpm-lock.yaml"
+      "pnpm-lock.yaml",
+      "crates/cachecow/**",
+      "packages/ccow/**"
     ],
     "native": true
   },

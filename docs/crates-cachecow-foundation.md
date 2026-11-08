@@ -6,7 +6,7 @@ Own `crates/cachecow`: the Rust crate `cachecow` and its `ccow` binary, preset d
 
 ## Runtime and Language
 
-Rust, ported from the original Go implementation by owner decision. Use the workspace toolchain pinned in `rust-toolchain`. The crate is a workspace member with `publish = false`; release builds embed SQLite and set `CCOW_VERSION`, `CCOW_BUILD_REVISION` and `CCOW_BUILD_DIRTY`, which the binary exposes in its `ccow-build-info:` identity marker for distribution verification. Native Cargo operation must not depend on Node.js; only the Rspack/Rsbuild discovery hook below requires Node.js 24+. The binary is distributed only as native release archives (see the [distribution contract](packages-ccow-distribution-contract.md)); there is no npm launcher. Supported platforms and tool versions are exactly those in the complete requirements.
+Rust, ported from the original Go implementation by owner decision. Use the workspace toolchain pinned in `rust-toolchain`. The crate is a workspace member with `publish = false`; release builds embed SQLite and set `CCOW_VERSION`, `CCOW_BUILD_REVISION` and `CCOW_BUILD_DIRTY`, which the binary exposes in its `ccow-build-info:` identity marker for distribution verification. Native Cargo operation must not depend on Node.js; only the Rspack/Rsbuild discovery hook below requires Node.js 24+. The binary is distributed as native release archives and native Homebrew/APT/DNF packages (see the [distribution contract](packages-ccow-distribution-contract.md)); there is no npm launcher. Supported platforms and tool versions are exactly those in the complete requirements.
 
 ## Users and Operators
 

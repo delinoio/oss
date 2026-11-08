@@ -4,6 +4,7 @@ This directory contains Homebrew formula/cask templates rendered by `scripts/rel
 
 Supported package identifiers:
 
+- `ccow` (prebuilt formula: macOS 15+ `darwin/arm64` only; availability follows its first verified release)
 - `binpm` (prebuilt formula: `darwin/amd64`, `darwin/arm64`, `linux/amd64`, `linux/arm64`)
 - `nodeup` (prebuilt formula: `darwin/amd64`, `darwin/arm64`, `linux/amd64`, `linux/arm64`)
 - `with-watch` (prebuilt formula: `darwin/amd64`, `darwin/arm64`, `linux/amd64`, `linux/arm64`)

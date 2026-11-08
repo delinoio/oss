@@ -8,7 +8,7 @@ Package installation is verified on x86-64 and ARM64 for Ubuntu 22.04, 24.04 and
 
 **Runmoor's manager runs only on Ubuntu 22.04 or newer on Linux**, on x86-64 or ARM64. Debian, Fedora, UBI, Rocky Linux and AlmaLinux can install the package and display its version, but cannot run the manager.
 
-**Runmoor `0.1.3` native packages are available in stable.** Other CLI examples apply after that CLI’s first verified native package release; check its installation guide for availability. `binpm`, `cargo-mono`, `nodeup`, `with-watch`, `runmoor` and `clibox` all use the stable channel. Preview is reserved and currently has no CLI packages. Package versions use the original CLI version followed by `-1`. Older releases published before native package support are unavailable through these repositories.
+**Runmoor `0.1.3` native packages are available in stable.** Other CLI examples apply after that CLI’s first verified native package release; check its installation guide for availability. `binpm`, `cargo-mono`, `nodeup`, `with-watch`, `runmoor`, `clibox` and `ccow` all use the stable channel. Preview is reserved and currently has no CLI packages. Package versions use the original CLI version followed by `-1`. Older releases published before native package support are unavailable through these repositories.
 
 These APT and DNF repositories do not support Arch Linux or Alpine Linux.
 
@@ -158,3 +158,7 @@ Removing a CLI package preserves its user configuration and data. Stop and unreg
 To stop receiving updates, remove the corresponding `delino.sources` or `delino-preview.sources` from APT's sources directory, or `delino.repo` or `delino-preview.repo` from DNF's repository directory. Remove the Delino APT keyring only when neither Delino source remains registered.
 
 Keep `delino-archive-keyring` updated before a signing key expires. If a machine has been offline through a key change and APT cannot authenticate the repository, repeat the public-key download, full fingerprint check and keyring installation above, then run `apt-get update`. Never disable signature verification to recover.
+
+## CacheCow
+
+CacheCow packages named `ccow` are pending their first verified release. Once available, use the stable registration above, then run `sudo apt-get install ccow` or `sudo dnf install ccow`, followed by `ccow --version`. Package installation on amd64/arm64 does not establish native CoW or process-lifecycle support. See [CacheCow installation](/cachecow/installation) for runtime requirements, Homebrew, updates and removal. Installing a package does not activate tool shims or edit shell configuration.

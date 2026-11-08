@@ -1,8 +1,13 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
+import { entries } from "../../../packages/ccow/scripts/archive.mjs";
+import { buildInfo } from "../../../packages/ccow/scripts/package.mjs";
+
 import {
   architectures,
+  Project,
+  linuxArchiveName,
   log,
   requireValue,
   validateRelease,
@@ -14,6 +19,53 @@ import {
   legacyArchiveTermsRequired,
   legacyArchiveTermsRevision,
 } from "./model.mjs";
+
+// CacheCow archives carry their own closed metadata format. Authenticate the
+// archive with Sigstore first, then check its exact source and executable marker.
+export function extractCacheCowExecutable(bytes, plan, arch, terms) {
+  const files = entries(bytes);
+  requireValue(
+    [...files.keys()].sort().join(",") === "LICENSE,NOTICE,ccow,release.json",
+    "INVALID_ARCHIVE_ENTRY",
+  );
+  for (const name of ["LICENSE", "NOTICE"])
+    requireValue(
+      files.get(name).bytes.equals(terms[name]),
+      "INVALID_ARCHIVE_PAYLOAD",
+    );
+  const binary = files.get("ccow");
+  const target = arch === "amd64" ? "x64" : "arm64";
+  requireValue(
+    binary.mode === 0o755 && binary.bytes.length > 0,
+    "INVALID_ARCHIVE_PAYLOAD",
+  );
+  const expected = {
+    version: plan.version,
+    sourceRevision: plan.revision,
+    fixture: false,
+    tag: plan.tag,
+    target: `linux-${target}`,
+    sha256: sha256(binary.bytes),
+  };
+  const metadata = JSON.parse(files.get("release.json").bytes);
+  requireValue(
+    Object.keys(metadata).length === Object.keys(expected).length &&
+      Object.entries(expected).every(([key, value]) => metadata[key] === value),
+    "INVALID_ARCHIVE_IDENTITY",
+  );
+  const info = buildInfo(binary.bytes);
+  requireValue(
+    info.version === plan.version &&
+      info.revision === plan.revision &&
+      info.dirty === false &&
+      info.target ===
+        (arch === "amd64"
+          ? "x86_64-unknown-linux-gnu"
+          : "aarch64-unknown-linux-gnu"),
+    "INVALID_BUILD_IDENTITY",
+  );
+  return binary.bytes;
+}
 
 export function command(executable, args, options = {}) {
   try {
@@ -106,7 +158,9 @@ export function downloadRelease(plan, output) {
   const sourceFile =
     plan.project === "runmoor"
       ? "cmds/runmoor/internal/runmoor/types.go"
-      : `crates/${plan.project}/Cargo.toml`;
+      : plan.project === Project.CacheCow
+        ? "packages/ccow/package.json"
+        : `crates/${plan.project}/Cargo.toml`;
   const sourceResponse = api(
     `repos/delinoio/oss/contents/${sourceFile}?ref=${plan.revision}`,
   );
@@ -114,7 +168,9 @@ export function downloadRelease(plan, output) {
   const sourceVersion =
     plan.project === "runmoor"
       ? sourceText.match(/^const Version = "([^"]+)"$/mu)?.[1]
-      : sourceText.match(/^version = "([^"]+)"$/mu)?.[1];
+      : plan.project === Project.CacheCow
+        ? JSON.parse(sourceText).version
+        : sourceText.match(/^version = "([^"]+)"$/mu)?.[1];
   requireValue(sourceVersion === plan.version, "SOURCE_VERSION_MISMATCH");
   const workflowResponse = api(
     `repos/delinoio/oss/contents/.github/workflows/release-${plan.project}.yml?ref=${plan.revision}`,
@@ -160,21 +216,38 @@ export function downloadRelease(plan, output) {
   const hashes = {};
   const binaries = {};
   for (const arch of architectures) {
-    const name = `${plan.project}-linux-${arch}.tar.gz`;
+    const name = linuxArchiveName(plan, arch);
     const file = path.join(output, name);
     const bytes = readFileSync(file);
     hashes[arch] = checksumFor(readFileSync(manifest, "utf8"), name);
     requireValue(sha256(bytes) === hashes[arch], "ARCHIVE_CHECKSUM_MISMATCH");
     verifyBundle(file, `${file}.sigstore.json`, plan);
     const executable = path.join(output, `${plan.project}-${arch}`);
-    writeFileSync(executable, extractExecutable(bytes, plan.project, terms), {
-      mode: 0o755,
-    });
+    writeFileSync(
+      executable,
+      plan.project === Project.CacheCow
+        ? extractCacheCowExecutable(bytes, plan, arch, {
+            LICENSE: readSourceFile("LICENSE"),
+            NOTICE: readSourceFile("NOTICE"),
+          })
+        : extractExecutable(bytes, plan.project, terms),
+      {
+        mode: 0o755,
+      },
+    );
     binaries[arch] = {
       file: executable,
       libraries: readElf(executable, arch),
       sha256: sha256(readFileSync(executable)),
     };
   }
-  return { epoch, hashes, binaries, source: sourceIdentity(hashes, plan) };
+  return {
+    epoch,
+    hashes,
+    binaries,
+    source: sourceIdentity(hashes, plan),
+    ...(plan.project === Project.CacheCow
+      ? { notice: readSourceFile("NOTICE") }
+      : {}),
+  };
 }

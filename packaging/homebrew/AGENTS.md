@@ -10,6 +10,8 @@
 
 ## Owning contracts
 
+- [CacheCow native distribution](../../docs/packages-ccow-distribution-contract.md)
+
 - [Runmoor command foundation](../../docs/cmds-runmoor-foundation.md)
 - [clibox Rust foundation](../../docs/crates-clibox-foundation.md)
 - [clibox npm and native distribution](../../docs/packages-clibox-distribution-contract.md)

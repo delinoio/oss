@@ -9,6 +9,7 @@ export const Project = Object.freeze({
   WithWatch: "with-watch",
   Runmoor: "runmoor",
   Clibox: "clibox",
+  CacheCow: "ccow",
 });
 const legacyArchiveProjects = new Set([
   Project.Binpm,
@@ -77,6 +78,11 @@ export function validateIdentity(value) {
   );
   return result;
 }
+export function linuxArchiveName(plan, arch) {
+  return plan.project === Project.CacheCow
+    ? `ccow-${plan.version}-linux-${arch === Architecture.Amd64 ? "x64" : "arm64"}.tar.gz`
+    : `${plan.project}-linux-${arch}.tar.gz`;
+}
 export function validateRelease(release, plan, resolvedRevision) {
   // All seven enrolled CLIs publish stable GitHub releases and native packages.
   // Preview remains a separate reserved suite, never selected by caller input.
@@ -91,8 +97,8 @@ export function validateRelease(release, plan, resolvedRevision) {
     "SHA256SUMS",
     "SHA256SUMS.sigstore.json",
     ...architectures.flatMap((arch) => [
-      `${plan.project}-linux-${arch}.tar.gz`,
-      `${plan.project}-linux-${arch}.tar.gz.sigstore.json`,
+      linuxArchiveName(plan, arch),
+      `${linuxArchiveName(plan, arch)}.sigstore.json`,
     ]),
   ];
   for (const name of expected)

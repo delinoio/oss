@@ -19,6 +19,8 @@ test("CacheCow release is manual, main-only and runs no native acceptance", () =
     "build",
     "candidate",
     "publish",
+    "homebrew",
+    "linux-packages",
   ]);
   assert.doesNotMatch(
     JSON.stringify(workflow),
@@ -51,19 +53,20 @@ test("CacheCow release is manual, main-only and runs no native acceptance", () =
   // CacheCow ships native archives only: no npm credentials, registry or tools.
   assert.doesNotMatch(
     JSON.stringify(workflow),
-    /NPM_TOKEN|NODE_AUTH_TOKEN|registry-url|registry\.npmjs|npm (?:publish|dist-tag|install)|id-token/u,
+    /NPM_TOKEN|NODE_AUTH_TOKEN|registry-url|registry\.npmjs|npm (?:publish|dist-tag|install)/u,
   );
   assert.deepEqual(Object.keys(workflow.jobs.publish.permissions ?? {}), [
     "contents",
   ]);
   for (const [name, job] of Object.entries(workflow.jobs)) {
-    for (const step of job.steps) {
+    for (const step of job.steps ?? []) {
       if (step.uses?.startsWith("actions/checkout@")) {
         assert.equal(step.with.ref, "${{ github.sha }}");
         assert.equal(step.with["persist-credentials"], false);
       }
     }
-    if (name !== "publish") assert(!JSON.stringify(job).includes("secrets."));
+    if (!["publish", "homebrew", "linux-packages"].includes(name))
+      assert(!JSON.stringify(job).includes("secrets."));
   }
 });
 test("CacheCow candidates package Rust binaries built on matching hosts", () => {
@@ -82,7 +85,7 @@ test("CacheCow candidates package Rust binaries built on matching hosts", () => 
   );
   assert.deepEqual(
     build.strategy.matrix.include.map(({ runner }) => runner),
-    ["macos-15", "ubuntu-22.04", "windows-latest"],
+    ["macos-15", "ubuntu-22.04", "ubuntu-24.04-arm", "windows-latest"],
   );
   const toolchain = build.steps.find(({ uses }) =>
     uses?.startsWith("dtolnay/rust-toolchain@"),
@@ -124,4 +127,28 @@ test("normal affected CI runs CacheCow distribution tests without native allocat
     "ci:release-fixtures"
   ].inputs;
   assert(inputs.includes("$TURBO_ROOT$/packages/ccow/**"));
+});
+
+test("CacheCow signs retained candidates and gates native package channels", () => {
+  assert.deepEqual(workflow.jobs.candidate.permissions, {
+    contents: "read",
+    "id-token": "write",
+  });
+  assert.match(JSON.stringify(workflow.jobs.candidate), /cosign sign-blob/u);
+  assert.match(JSON.stringify(workflow.jobs.publish), /ccow-signatures/u);
+  const homebrew = workflow.jobs.homebrew;
+  assert.deepEqual(homebrew.needs, ["candidate", "publish"]);
+  const validation = homebrew.steps.findIndex((step) =>
+    step.run?.includes("brew install"),
+  );
+  const credentials = homebrew.steps.findIndex((step) => step.id === "tap-bot");
+  assert(validation >= 0 && validation < credentials);
+  assert.match(
+    homebrew.steps[validation].run,
+    /brew test delinoio\/ccow-validation\/ccow/u,
+  );
+  assert.equal(homebrew.steps[credentials].with.repositories, "homebrew-tap");
+  assert.equal(workflow.jobs["linux-packages"].with.project, "ccow");
+  for (const name of ["homebrew", "linux-packages"])
+    assert.match(workflow.jobs[name].if, /!inputs.dry_run/u);
 });

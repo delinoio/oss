@@ -31,7 +31,7 @@ test("native publication is gated by installation and confined to its environmen
   );
   assert.equal(workflow.jobs["public-install"].needs, "publish");
 });
-test("all six release workflows wait on native packages without changing release identity", () => {
+test("all seven release workflows wait on native packages without changing release identity", () => {
   for (const project of [
     "binpm",
     "cargo-mono",
@@ -39,6 +39,7 @@ test("all six release workflows wait on native packages without changing release
     "with-watch",
     "runmoor",
     "clibox",
+    "ccow",
   ]) {
     const source = read(`.github/workflows/release-${project}.yml`);
     const release = yaml.load(source);

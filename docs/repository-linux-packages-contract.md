@@ -4,9 +4,9 @@
 
 The CLI release workflows own native APT and DNF distribution at `https://pkgs.oss.delino.io`. `packaging/linux/` owns pinned tools, public repository configuration, and package metadata; `scripts/release/linux-packages*` owns verification, packaging, repository generation, and resumable publication. This contract complements `repository-workflow-contract.md`.
 
-The stable enrollment contract covers binpm, cargo-mono, nodeup, with-watch, runmoor, and clibox. Preview is reserved with no enrolled CLI. The initial rollout, including binpm, was canceled before registry or tag publication. The subsequently requested Runmoor `0.1.3` release has published native packages and passed the complete public installation matrix; other projects retain their own explicit release and verification gates. Enrollment does not imply a package is already published. Both amd64/x86_64 and arm64/aarch64 are required. Arch Linux and Alpine Linux are unsupported. Public package names equal executable names. Version is the exact source SemVer with packaging revision 1. CLI installation owns `/usr/bin/<project>` and package documentation, plus the shared APT keyring dependency described below; it never initializes user configuration, downloads runtimes, registers services, or starts a daemon.
+The stable enrollment contract covers binpm, cargo-mono, nodeup, with-watch, runmoor, clibox, and ccow. Preview is reserved with no enrolled CLI. The initial rollout, including binpm, was canceled before registry or tag publication. The subsequently requested Runmoor `0.1.3` release has published native packages and passed the complete public installation matrix; other projects retain their own explicit release and verification gates. Enrollment does not imply a package is already published. Both amd64/x86_64 and arm64/aarch64 are required. Arch Linux and Alpine Linux are unsupported. Public package names equal executable names. Version is the exact source SemVer with packaging revision 1. CLI installation owns `/usr/bin/<project>` and package documentation, plus the shared APT keyring dependency described below; it never initializes user configuration, downloads runtimes, registers services, or starts a daemon.
 
-All six originating GitHub workflows publish stable releases and feed the stable native repository. Project contracts determine channels; callers cannot choose a channel. Clibox reuses the exact verified GNU npm executable bytes in its two signed GitHub Release archives before entering this common workflow.
+All seven originating GitHub workflows publish stable releases and feed the stable native repository. Project contracts determine channels; callers cannot choose a channel. Clibox reuses the exact verified GNU npm executable bytes in its two signed GitHub Release archives before entering this common workflow.
 
 ## CI validation
 
@@ -42,7 +42,7 @@ Public HTTPS readback retries transient transport errors, HTTP 408/429/5xx respo
 
 The `linux-packages` GitHub Environment owns dedicated R2 object credentials limited to the two buckets and an RSA 4096 OpenPGP signing subkey. Keep the primary secret key and recovery material outside CI. Commit the public certificate and fingerprint only. APT uses a repository-specific Signed-By keyring. PR and dry-run paths use disposable signing identities and cannot consume production secrets or write R2.
 
-Restrict the environment to main and the six CLI release-tag patterns, including `clibox@v*`. Each release caller explicitly uses `secrets: inherit`: without it, the hosted reusable-workflow runner can resolve environment variables but return empty environment secrets (actions/runner#4453). Only the guarded publisher references production credentials; validation and installation jobs do not consume them. Remove this workaround only after the upstream behavior is corrected and protected environment access is verified. Provision the buckets, custom domain, HTTPS and cache rules before enabling production publication. The rollout operator must wait for the exact downstream package publication and public verification after Release Project finishes its asynchronous tag handoff. Recovery retries must target the exact release identity and never modify GitHub tags or existing release assets. If an immutable source tag contains a broken reusable-workflow call, dispatch `release-linux-packages.yml` from main with the already-published project/version/revision and `mode=publish`; it repeats the same verification and installation gates before accessing the protected environment.
+Restrict the environment to main and the seven CLI release-tag patterns, including `clibox@v*`. Each release caller explicitly uses `secrets: inherit`: without it, the hosted reusable-workflow runner can resolve environment variables but return empty environment secrets (actions/runner#4453). Only the guarded publisher references production credentials; validation and installation jobs do not consume them. Remove this workaround only after the upstream behavior is corrected and protected environment access is verified. Provision the buckets, custom domain, HTTPS and cache rules before enabling production publication. The rollout operator must wait for the exact downstream package publication and public verification after Release Project finishes its asynchronous tag handoff. Recovery retries must target the exact release identity and never modify GitHub tags or existing release assets. If an immutable source tag contains a broken reusable-workflow call, dispatch `release-linux-packages.yml` from main with the already-published project/version/revision and `mode=publish`; it repeats the same verification and installation gates before accessing the protected environment.
 
 ## Validation and rollout
 
@@ -52,7 +52,7 @@ Rocky Linux 10 uses the project's `rockylinux/rockylinux:10` image; the separate
 
 Test incorrect identities, checksums, signatures, architectures, dependencies and channels; interrupted uploads; concurrent publication requests; retry without replacement; stale indexes; and partial APT/DNF promotion. Tests use isolated files, keys and object stores. Run workflow syntax/contracts, release fixtures and changed documentation-app tests. Remove generated dist directories before completion.
 
-Relevant main changes to any of the five Rust CLI sources, workspace Cargo inputs, Cargo configuration or Rust toolchain select the native package CI job. Both architectures rebuild against AlmaLinux 9 and pass ELF compatibility inspection on main and manual runs; PRs retain the planned native-package skip described above. Release-time validation still requires both architectures before publication.
+Relevant main changes to any of the six Rust CLI sources, workspace Cargo inputs, Cargo configuration or Rust toolchain select the native package CI job. Both architectures rebuild against AlmaLinux 9 and pass ELF compatibility inspection on main and manual runs; PRs retain the planned native-package skip described above. Release-time validation still requires both architectures before publication.
 
 No release dispatch or retry is authorized by this implementation update. The canceled binpm coordinator left its source version commit on main but created no release tag or public packages. Future explicitly requested releases use the existing coordinator and the same per-project public verification gate. Public documentation must mark unpublished CLI examples as unavailable until their own public installation checks pass.
 
@@ -100,7 +100,7 @@ clibox packages require `ca-certificates` in both formats for OS-trusted HTTPS r
 
 ## Project requirements
 
-- Follow `repository-linux-packages-contract.md` for the six CLI APT/DNF repositories at `https://pkgs.oss.delino.io`. Native package publication is part of each selected CLI release, uses the dedicated `linux-packages` environment, and enrolls binpm, cargo-mono, nodeup, with-watch, runmoor and clibox in stable.
+- Follow `repository-linux-packages-contract.md` for the seven CLI APT/DNF repositories at `https://pkgs.oss.delino.io`. Native package publication is part of each selected CLI release, uses the dedicated `linux-packages` environment, and enrolls binpm, cargo-mono, nodeup, with-watch, runmoor, clibox and ccow in stable.
 
 ## Application integration
 
@@ -112,9 +112,9 @@ clibox packages require `ca-certificates` in both formats for OS-trusted HTTPS r
 
 ## packaging/linux constraints
 
-- This directory owns the six CLI packages, their shared APT keyring package, native repository configuration, and immutable packaging tool/build-image pins.
+- This directory owns the seven CLI packages, their shared APT keyring package, native repository configuration, and immutable packaging tool/build-image pins.
 
-- All six enrolled CLIs use stable; keep the reserved preview suite separate, preserve exact upstream versions, and never enable services or modify a user's configuration from package hooks.
+- All seven enrolled CLIs use stable; keep the reserved preview suite separate, preserve exact upstream versions, and never enable services or modify a user's configuration from package hooks.
 
 - Keep private keys, real credentials, generated package files, and generated repository trees out of Git. Repository-owned `dist` directories are generated and must be removed from the final worktree.
 
@@ -133,3 +133,9 @@ clibox packages require `ca-certificates` in both formats for OS-trusted HTTPS r
 - APT CLI packages depend on `delino-archive-keyring`, which owns `/usr/share/keyrings/delino-packages.gpg` in both suites. Certificate updates require an increased keyring version and preserve all historical signing subkeys. Stage with the current signer for at least 30 days before switching; never replace a certificate and signer together.
 
 - Rust bootstrap executables must use the architecture-specific rustup archive URL and checksum in `pins.json`, verified before execution; disable rustup self-updates.
+
+## CacheCow integration
+
+CacheCow uses package/project input `ccow`, tag `ccow@v<version>` and `release-ccow.yml`; the owning repository project remains `cachecow`. Read its source version from `packages/ccow/package.json`. Linux archives retain the versioned names `ccow-<version>-linux-x64.tar.gz` and `ccow-<version>-linux-arm64.tar.gz`. Verify the manifest and both archive Sigstore bundles against the exact source SHA and originating workflow before decoding. Require exactly the executable, source `LICENSE`, source `NOTICE` and `release.json`, with clean embedded build identity matching source/version/architecture and executable digest. Packages reuse these bytes without rebuilding.
+
+The shared public package name is `ccow` on both architectures. Its Linux source builds use the pinned compatibility image and `crates/cachecow`, with no configuration or shim activation hooks. Package installation, version and help checks do not establish CoW sharing or process-lifecycle acceptance. The main-only CacheCow workflow needs no new release-tag environment allowance. Keep unpublished examples marked unavailable until the complete public installation matrix succeeds.

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 import assert from "node:assert/strict";
 import { spawnSync, execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { releaseIdentity } from "./ccow-release-identity.mjs";
@@ -15,7 +15,7 @@ const repository = "delinoio/oss";
 
 // Only this constructor admits publication inputs. It verifies the exact source
 // and non-fixture native archives before any remote operation.
-export function prepare({ artifacts, revision, version, ref }) {
+export function prepare({ artifacts, revision, version, ref, signatures }) {
   const id = releaseIdentity(version, revision, ref);
   const release = verifyRelease(artifacts, identity(revision, false));
   const assets = new Map(
@@ -23,6 +23,25 @@ export function prepare({ artifacts, revision, version, ref }) {
       (name) => [name, readFileSync(path.join(artifacts, name))],
     ),
   );
+  if (signatures) {
+    const names = [...release.artifacts.map((a) => a.name), "SHA256SUMS"].map(
+      (name) => `${name}.sigstore.json`,
+    );
+    assert.deepEqual(
+      readdirSync(signatures).sort(),
+      names.sort(),
+      "Unexpected signature files",
+    );
+    for (const name of names) {
+      const bytes = readFileSync(path.join(signatures, name));
+      const bundle = JSON.parse(bytes);
+      assert(
+        bundle.mediaType && bundle.verificationMaterial,
+        "Invalid Sigstore bundle",
+      );
+      assets.set(name, bytes);
+    }
+  }
   return {
     ...id,
     assets,
@@ -234,7 +253,8 @@ if (
     assert.equal(process.env.GITHUB_REPOSITORY, repository);
     assert.equal(process.env.GITHUB_EVENT_NAME, "workflow_dispatch");
     assert(process.env.GH_TOKEN, "Publication credentials missing");
-    const [artifacts, version] = process.argv.slice(2);
+    const [artifacts, version, signatures] = process.argv.slice(2);
+    assert(signatures, "Signed release candidate required");
     const revision = process.env.GITHUB_SHA;
     assert.equal(
       execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
@@ -248,6 +268,7 @@ if (
     );
     const plan = prepare({
       artifacts,
+      signatures,
       version,
       revision,
       ref: process.env.GITHUB_REF,
