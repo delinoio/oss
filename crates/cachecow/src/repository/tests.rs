@@ -542,3 +542,42 @@ fn unreadable_worktree_directory_still_fails() {
         assert!(res.is_err(), "accepted unreadable worktree directory");
     }
 }
+
+#[test]
+fn source_location_parent_reuse_preserves_alias_checks() {
+    let t = tempfile::tempdir().unwrap();
+    let root = s(t.path());
+    let real = paths::join2(&root, "real");
+    fs::create_dir(&real).unwrap();
+    for name in ["one", "two"] {
+        fs::write(paths::join2(&real, name), "source").unwrap();
+    }
+    let alias = paths::join2(&root, "alias");
+    symlink(&real, &alias).unwrap();
+    let mut resolver = SourceLocations::default();
+    for name in ["one", "two"] {
+        let path = paths::join2(&alias, name);
+        assert_eq!(resolver.resolve(&path).unwrap(), canonical(&path).unwrap());
+    }
+    assert_eq!(resolver.parents.len(), 1);
+    // Replacing a leaf must still be observed even with a reused parent.
+    let leaf = paths::join2(&alias, "two");
+    fs::remove_file(&leaf).unwrap();
+    let missing = paths::join2(&root, "cache/missing");
+    symlink(&missing, &leaf).unwrap();
+    assert_eq!(
+        resolver.resolve(&leaf).unwrap(),
+        canonical(&missing).unwrap()
+    );
+    // A new validation pass must resolve a retargeted parent from scratch.
+    fs::remove_file(&alias).unwrap();
+    let other = paths::join2(&root, "other");
+    fs::create_dir(&other).unwrap();
+    fs::write(paths::join2(&other, "one"), "other").unwrap();
+    symlink(&other, &alias).unwrap();
+    let path = paths::join2(&alias, "one");
+    assert_eq!(
+        SourceLocations::default().resolve(&path).unwrap(),
+        canonical(&path).unwrap()
+    );
+}

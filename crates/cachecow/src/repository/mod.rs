@@ -483,6 +483,7 @@ impl Info {
                     "-z",
                 ],
             )?;
+            let mut sources = SourceLocations::default();
             for name in files.split('\0') {
                 if name.is_empty() {
                     continue;
@@ -491,13 +492,52 @@ impl Info {
                 if overlaps(&p, &entry) {
                     bail!(TRACKED_OVERLAP);
                 }
-                let source = source_location(&entry, 0)?;
+                let source = sources.resolve(&entry)?;
                 if overlaps(&p, &source) {
                     bail!(TRACKED_OVERLAP);
                 }
             }
         }
         Ok(p)
+    }
+}
+
+/// Reuse parent resolution only within one worktree's validation pass. Large
+/// worktree inventories otherwise resolve the same ancestors for every source
+/// file. Every leaf is still inspected, and links retain the strict resolver.
+/// Nothing is retained across discovery or the subsequent locked validation.
+#[derive(Default)]
+struct SourceLocations {
+    #[cfg(unix)]
+    parents: std::collections::HashMap<String, String>,
+}
+
+impl SourceLocations {
+    fn resolve(&mut self, path: &str) -> Result<String> {
+        #[cfg(unix)]
+        {
+            // Do not infer the working-tree type from Git's index: a tracked
+            // ordinary file can have been replaced by a link into the cache.
+            match std::fs::symlink_metadata(path) {
+                Ok(meta) if meta.is_file() => {
+                    let parent = paths::dir(path);
+                    let resolved = match self.parents.entry(parent) {
+                        std::collections::hash_map::Entry::Occupied(entry) => entry.into_mut(),
+                        std::collections::hash_map::Entry::Vacant(entry) => {
+                            let resolved = canonical(entry.key())?;
+                            entry.insert(resolved)
+                        }
+                    };
+                    return Ok(paths::join2(resolved, &paths::base(path)));
+                }
+                Ok(_) => {}
+                Err(e) if io_not_found(&e) => {}
+                Err(e) => return Err(path_error("lstat", path, e)),
+            }
+        }
+        // Missing entries, links, and directories (including Git submodules)
+        // need full resolution. Windows keeps native reparse-point handling.
+        source_location(path, 0)
     }
 }
 
