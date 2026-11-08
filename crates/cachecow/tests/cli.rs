@@ -237,9 +237,8 @@ fn wait_file(path: &str) {
     panic!("timed out waiting for {path}");
 }
 
-/// Waits until `pid` no longer exists, so the whole fixture coalition is empty
-/// before a test relies on recovery, which tries each lease once per command.
-#[cfg(target_os = "macos")]
+/// Waits until `pid` no longer exists before asserting descendant cleanup
+/// or relying on recovery, which tries each lease once per command.
 fn wait_process_gone(pid: i32) {
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
