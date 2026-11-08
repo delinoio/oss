@@ -2272,7 +2272,7 @@ while [ ! -f target/daemon-pid ]; do sleep 0.01; done
     f.run(&f.main, 0, &["run", "--", "cargo", "build"]);
     assert_eq!(
         fs::read_to_string(join(&f.main, "target/wrapper")).unwrap(),
-        wrapper
+        fs::canonicalize(&wrapper).unwrap().to_str().unwrap()
     );
     let endpoint = fs::read_to_string(join(&f.main, "target/endpoint")).unwrap();
     assert_ne!(endpoint, "/shared/sccache.sock");

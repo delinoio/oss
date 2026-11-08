@@ -99,7 +99,9 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
                  RUSTC_WRAPPER=sccache 0.14.x on Unix"
             );
         }
-        let executable = resolve_executable(&req.cwd, &req.env, wrapper)?;
+        // sccache does not dispatch by symlink name. Pin the final binary so
+        // cache preparation cannot break an intermediate symlink in a cache.
+        let executable = repository::canonical(&resolve_executable(&req.cwd, &req.env, wrapper)?)?;
         let stamps = repository::capture_file_stamps(std::slice::from_ref(&executable))?;
         let bytes = req.runner.output(
             ctx,

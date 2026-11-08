@@ -933,10 +933,15 @@ fn sccache_identity_and_private_transport_compatibility() {
     assert_eq!(
         first.cargo_wrapper,
         Some(CargoWrapper::Sccache {
-            executable: wrapper.clone()
+            executable: repository::canonical(&wrapper).unwrap()
         })
     );
-    assert!(first.inputs.iter().any(|stamp| stamp.path == wrapper));
+    assert!(
+        first
+            .inputs
+            .iter()
+            .any(|stamp| stamp.path == repository::canonical(&wrapper).unwrap())
+    );
     // The pinned spelling and a different session transport must not break
     // nested same-cache admission or source compatibility.
     f.env = first.cargo_wrapper.as_ref().unwrap().environment(&f.env);
@@ -1009,4 +1014,50 @@ fn sccache_rejects_forced_socket_configuration() {
     assert_rejected(&f);
     f.env.retain(|v| !v.starts_with("RUSTC_WRAPPER="));
     f.discover().unwrap();
+}
+
+#[test]
+fn sccache_pins_binary_beyond_cache_symlinks() {
+    let mut f = cargo_fixture();
+    let root = s(f._dir.path());
+    let bin = paths::join2(&root, "bin");
+    let real = paths::join2(&root, "real");
+    let target = paths::join2(&f.cwd, "target");
+    for dir in [&bin, &real, &target] {
+        fs::create_dir(dir).unwrap();
+    }
+    fs::write(paths::join2(&f.cwd, ".gitignore"), "target/\n").unwrap();
+    let executable = paths::join2(&real, "sccache");
+    write_exec(&executable, "#!/bin/sh\necho 'sccache 0.14.0'\n");
+    let intermediate = paths::join2(&target, "sccache");
+    symlink(&executable, &intermediate).unwrap();
+    let wrapper = paths::join2(&bin, "sccache");
+    symlink(&intermediate, &wrapper).unwrap();
+    f.env.push(format!("RUSTC_WRAPPER={wrapper}"));
+    FakeRunner::set(&f.runner.wrapper_version, "sccache 0.14.0");
+    let discovered = f.discover().unwrap();
+    let canonical = repository::canonical(&executable).unwrap();
+    assert_eq!(
+        discovered.cargo_wrapper,
+        Some(CargoWrapper::Sccache {
+            executable: canonical.clone()
+        })
+    );
+    // Simulate replacement/deletion of the managed cache. The original
+    // selection dangles, but both the pinned command and nested discovery work.
+    fs::remove_dir_all(&target).unwrap();
+    assert!(!std::path::Path::new(&wrapper).exists());
+    repository::verify_file_stamps(&discovered.inputs).unwrap();
+    f.env = discovered
+        .cargo_wrapper
+        .as_ref()
+        .unwrap()
+        .environment(&f.env);
+    let output = std::process::Command::new(&canonical)
+        .arg("--version")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let nested = f.discover().unwrap();
+    assert!(discovered.compatibility.compatible(&nested.compatibility));
 }
