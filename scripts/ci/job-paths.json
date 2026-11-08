@@ -327,6 +327,7 @@
       "scripts/release/ccow-*",
       "docs/packages-ccow-distribution-contract.md",
       ".github/workflows/release-ccow.yml",
+      ".github/workflows/recover-ccow-release.yml",
       "packages/binpm/**",
       "crates/binpm/Cargo.toml",
       "LICENSE",

@@ -152,34 +152,64 @@ export async function reconcile(plan, api) {
 
 // gh owns GitHub authentication. Do not echo child stderr: remote errors can
 // contain credentials or private local configuration.
+export class GitHubRequestError extends Error {
+  constructor(code, status, exitStatus) {
+    super(code);
+    this.code = code;
+    this.status = status;
+    this.exitStatus = exitStatus;
+  }
+}
+
 export function githubRequest(
   endpoint,
-  { method = "GET", data, bytes, optional = false, binary = false } = {},
+  {
+    method = "GET",
+    data,
+    bytes,
+    optional = false,
+    binary = false,
+    env = process.env,
+  } = {},
 ) {
   const args = ["api", "--include", "--method", method, endpoint];
   if (binary) args.push("-H", "Accept: application/octet-stream");
   if (bytes)
-    args.push("-H", "Content-Type: application/octet-stream", "--input", "-");
+    // gh streams stdin with chunked encoding unless its length is explicit.
+    // GitHub's release upload endpoint requires a known Content-Length.
+    args.push(
+      "-H",
+      "Content-Type: application/octet-stream",
+      "-H",
+      `Content-Length: ${bytes.length}`,
+      "--input",
+      "-",
+    );
   else if (data !== undefined) args.push("--input", "-");
   const result = spawnSync("gh", args, {
+    env,
     input: bytes ?? (data === undefined ? undefined : JSON.stringify(data)),
     maxBuffer: 256 * 1024 * 1024,
     stdio: ["pipe", "pipe", "pipe"],
   });
-  assert(!result.error, "GitHub transport failed");
+  if (result.error)
+    throw new GitHubRequestError("transport_failure", null, result.status);
   const output = result.stdout;
   const end =
     output.indexOf("\r\n\r\n") >= 0
       ? output.indexOf("\r\n\r\n")
       : output.indexOf("\n\n");
-  assert(end >= 0, "Missing GitHub response headers");
+  if (end < 0)
+    throw new GitHubRequestError(
+      "missing_response_headers",
+      null,
+      result.status,
+    );
   const header = output.subarray(0, end).toString();
   const status = Number(/^HTTP\/\S+ (\d+)/u.exec(header)?.[1]);
   if (optional && status === 404) return null;
-  assert(
-    status >= 200 && status < 300 && result.status === 0,
-    `GitHub request failed (${status})`,
-  );
+  if (!(status >= 200 && status < 300 && result.status === 0))
+    throw new GitHubRequestError("http_failure", status, result.status);
   const body = output.subarray(end + (output[end] === 13 ? 4 : 2));
   return binary ? body : body.length ? JSON.parse(body) : null;
 }
@@ -274,7 +304,16 @@ if (
       ref: process.env.GITHUB_REF,
     });
     console.log(JSON.stringify(await reconcile(plan, transport())));
-  } catch {
+  } catch (error) {
+    if (error instanceof GitHubRequestError)
+      console.error(
+        JSON.stringify({
+          event: "ccow_transport_failure",
+          code: error.code,
+          status: error.status,
+          exitStatus: error.exitStatus,
+        }),
+      );
     // Never print assertions containing artifact bytes or remote response metadata.
     console.error(
       "CacheCow publication failed. Inspect remote identity and rerun the original failed jobs; never replace conflicting tags or assets.",

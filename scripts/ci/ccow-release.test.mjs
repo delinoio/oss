@@ -111,7 +111,10 @@ test("normal affected CI runs CacheCow distribution tests without native allocat
       "scripts/release/ccow-release-identity.mjs",
       "scripts/release/ccow-publish.mjs",
       "scripts/release/ccow-publish.test.mjs",
+      "scripts/release/ccow-recover.mjs",
+      "scripts/release/ccow-transport.test.mjs",
       ".github/workflows/release-ccow.yml",
+      ".github/workflows/recover-ccow-release.yml",
     ]) {
       assert.equal(
         planJobs(event, [file]).jobs["release-contracts"],
@@ -151,4 +154,43 @@ test("CacheCow signs retained candidates and gates native package channels", () 
   assert.equal(workflow.jobs["linux-packages"].with.project, "ccow");
   for (const name of ["homebrew", "linux-packages"])
     assert.match(workflow.jobs[name].if, /!inputs.dry_run/u);
+});
+
+test("CacheCow recovery verifies retained original candidates before release credentials without rebuilding", () => {
+  const recovery = yaml.load(
+    readFileSync(".github/workflows/recover-ccow-release.yml", "utf8"),
+  );
+  assert.deepEqual(Object.keys(recovery.on), ["workflow_dispatch"]);
+  assert.deepEqual(recovery.permissions, { contents: "read", actions: "read" });
+  assert.equal(recovery.concurrency.group, workflow.concurrency.group);
+  const job = recovery.jobs.recover;
+  assert.equal(job.if, workflow.jobs.candidate.if);
+  assert.equal(job.environment, "ccow-release");
+  assert.equal(job["runs-on"], "ubuntu-22.04");
+  const credentials = job.steps.findIndex((s) => s.id === "release-bot");
+  for (const name of [
+    "Resolve the original failed release before credentials",
+    "Verify original candidate bytes before credentials",
+    "Verify original signatures before credentials",
+  ]) {
+    const verification = job.steps.findIndex((s) => s.name === name);
+    assert(verification >= 0 && verification < credentials);
+  }
+  const downloads = job.steps.filter((s) =>
+    s.uses?.startsWith("actions/download-artifact@"),
+  );
+  assert.equal(downloads.length, 2);
+  for (const step of downloads) {
+    assert.equal(step.with["run-id"], "${{ inputs.source_run_id }}");
+    assert.equal(step.with["github-token"], "${{ github.token }}");
+    assert.match(step.with.name, /steps.source.outputs.revision/u);
+  }
+  assert.match(
+    JSON.stringify(job),
+    /certificate-github-workflow-sha.*SOURCE_REVISION/u,
+  );
+  assert.doesNotMatch(
+    JSON.stringify(recovery),
+    /cargo build|build-native|sign-blob|id-token|gh release|gh api|npm publish/u,
+  );
 });

@@ -1,0 +1,82 @@
+name: Recover CacheCow release
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Original failed CacheCow release run with retained signed candidates
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: release-ccow
+  cancel-in-progress: false
+
+jobs:
+  recover:
+    if: github.repository == 'delinoio/oss' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    environment: ccow-release
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+          lfs: true
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version-file: .nvmrc
+      - name: Resolve the original failed release before credentials
+        id: source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: node scripts/release/ccow-recover.mjs resolve "$SOURCE_RUN_ID"
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ccow-candidate-${{ steps.source.outputs.revision }}
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/ccow-candidate
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: ccow-signatures-${{ steps.source.outputs.revision }}
+          run-id: ${{ inputs.source_run_id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/ccow-signatures
+      - name: Verify original candidate bytes before credentials
+        env:
+          SOURCE_REVISION: ${{ steps.source.outputs.revision }}
+        run: node packages/ccow/scripts/verify.mjs --directory "$RUNNER_TEMP/ccow-candidate" --revision "$SOURCE_REVISION"
+      - uses: sigstore/cosign-installer@cad07c2e89fa2edd6e2d7bab4c1aa38e53f76003 # v4.1.1
+      - name: Verify original signatures before credentials
+        env:
+          SOURCE_REVISION: ${{ steps.source.outputs.revision }}
+        run: |
+          set -euo pipefail
+          for file in "$RUNNER_TEMP/ccow-candidate"/*.tar.gz "$RUNNER_TEMP/ccow-candidate/SHA256SUMS"; do
+            cosign verify-blob --bundle "$RUNNER_TEMP/ccow-signatures/$(basename "$file").sigstore.json" \
+              --certificate-identity 'https://github.com/delinoio/oss/.github/workflows/release-ccow.yml@refs/heads/main' \
+              --certificate-oidc-issuer 'https://token.actions.githubusercontent.com' \
+              --certificate-github-workflow-sha "$SOURCE_REVISION" \
+              --certificate-github-workflow-repository delinoio/oss "$file"
+          done
+      - name: Create repository release token
+        id: release-bot
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ vars.DELINO_RELEASE_BOT_CLIENT_ID }}
+          private-key: ${{ secrets.DELINO_RELEASE_BOT_PRIVATE_KEY }}
+          owner: delinoio
+          repositories: oss
+          permission-contents: write
+      - name: Reconcile the original immutable release
+        env:
+          GH_TOKEN: ${{ steps.release-bot.outputs.token }}
+          CCOW_ACTIONS_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: node scripts/release/ccow-recover.mjs publish "$SOURCE_RUN_ID" "$RUNNER_TEMP/ccow-candidate" "$RUNNER_TEMP/ccow-signatures"
