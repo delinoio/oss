@@ -5523,6 +5523,8 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn private_record_compare_and_coverage_handlers_run_a_real_child() {
+        // Force read(2) with cat -v; uutils cat otherwise uses unobserved
+        // splice(2).
         let directory = tempfile::tempdir().unwrap();
         let input = directory.path().join("input.txt");
         fs::write(&input, b"fixture").unwrap();
@@ -5536,6 +5538,7 @@ mod tests {
             trace_path.as_os_str().to_os_string(),
             OsString::from("--"),
             OsString::from("/bin/cat"),
+            OsString::from("-v"),
             input.as_os_str().to_os_string(),
         ])
         .unwrap();
@@ -5578,6 +5581,7 @@ mod tests {
             OsString::from("100"),
             OsString::from("--"),
             OsString::from("/bin/cat"),
+            OsString::from("-v"),
             input.as_os_str().to_os_string(),
         ])
         .unwrap();
@@ -5599,6 +5603,7 @@ mod tests {
             latency_report.as_os_str().to_os_string(),
             OsString::from("--"),
             OsString::from("/bin/cat"),
+            OsString::from("-v"),
             input.as_os_str().to_os_string(),
         ])
         .unwrap();
@@ -5898,6 +5903,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn breakpoint_child_process() {
+        // Break on a read(2), even when the host cat defaults to splice(2).
         let Some(case) = std::env::var_os("CLIBOX_FSPY_BREAK_CHILD") else {
             return;
         };
@@ -5908,6 +5914,7 @@ mod tests {
             OsString::from("input.txt"),
             OsString::from("--"),
             OsString::from("/bin/cat"),
+            OsString::from("-v"),
             OsString::from("input.txt"),
         ])
         .unwrap();
