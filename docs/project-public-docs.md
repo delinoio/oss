@@ -20,7 +20,7 @@ Provide the Rspress-based public documentation site for user-facing product and 
 
 ## Cross-Domain Invariants
 
-- CacheCow owns `apps/public-docs/docs/cachecow` for the `/cachecow` section under the [CacheCow documentation contract](apps-cachecow-docs-foundation.md). Its guides, site-selector entry, sidebar and route validation remain synchronized. Availability notices retain the unreleased boundary.
+- CacheCow owns `apps/public-docs/docs/cachecow` for the `/cachecow` section under the [CacheCow documentation contract](apps-cachecow-docs-foundation.md). Its guides, site-selector entry, sidebar and route validation remain synchronized. Availability notices distinguish published artifacts from native CoW and process-lifecycle acceptance, which remain unverified.
 
 - The root site’s top-level navbar contains no route items. Product pages `cargo-mono` and `with-watch` remain available through the sidebar and documented links.
 

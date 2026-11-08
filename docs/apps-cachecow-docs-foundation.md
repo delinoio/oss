@@ -2,7 +2,7 @@
 
 ## Scope
 
-Own user guides at `apps/public-docs/docs/cachecow`, rendered by the existing public-docs app. Guides distinguish intended unreleased 0.1.0 workflows from published artifacts and verified native support.
+Own user guides at `apps/public-docs/docs/cachecow`, rendered by the existing public-docs app. Guides distinguish published 0.1.0 artifacts and verified installation channels from native CoW and process-lifecycle acceptance, which remain unverified.
 
 ## Runtime and Language
 
@@ -14,7 +14,7 @@ Developers, coding agents, CI operators, and users installing or troubleshooting
 
 ## Interfaces and Contracts
 
-The public section is `/cachecow` under `https://oss.delino.io`. Its eight routes are `/cachecow/`, `/cachecow/installation`, `/cachecow/configuration`, `/cachecow/cache`, `/cachecow/concurrency`, `/cachecow/shims`, `/cachecow/output`, and `/cachecow/troubleshooting`. Register them in the shared route catalog and existing sidebar. The root sidebar provides an entry point without adding navbar items. Every guide includes an unreleased 0.1.0 availability notice.
+The public section is `/cachecow` under `https://oss.delino.io`. Its eight routes are `/cachecow/`, `/cachecow/installation`, `/cachecow/configuration`, `/cachecow/cache`, `/cachecow/concurrency`, `/cachecow/shims`, `/cachecow/output`, and `/cachecow/troubleshooting`. Register them in the shared route catalog and existing sidebar. The root sidebar provides an entry point without adding navbar items. Every guide includes a published 0.1.0 availability notice and states that native CoW and process-lifecycle acceptance remain unverified.
 
 Do not invent frontend integration formats, archive names, JSON field names, shell identifiers, or color opt-out syntax before runtime interfaces are finalized. Describe established behavior and explicitly identify details still awaiting integration.
 

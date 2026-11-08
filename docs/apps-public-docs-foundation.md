@@ -19,7 +19,7 @@
 
 ## Interfaces and Contracts
 
-- CacheCow owns eight guide routes under `/cachecow`, defined by the [CacheCow documentation contract](apps-cachecow-docs-foundation.md). The shared route catalog validates their generated pages and clean links. Existing root and CacheCow sidebars expose the guides without navbar or layout changes. Every guide describes unreleased 0.1.0 workflows and must not imply published artifacts or verified native acceptance.
+- CacheCow owns eight guide routes under `/cachecow`, defined by the [CacheCow documentation contract](apps-cachecow-docs-foundation.md). The shared route catalog validates their generated pages and clean links. Existing root and CacheCow sidebars expose the guides without navbar or layout changes. Every guide states that 0.1.0 is published and that native CoW and process-lifecycle acceptance remain unverified. Installation availability does not establish native support or performance benefits.
 
 - Rspress route, navigation, and sidebar contracts in `apps/public-docs/rspress.config.ts` must remain aligned with this contract. The root site's top-level navbar is intentionally empty; route access remains available through the sidebar and documented links.
 - Documentation sources live in `apps/public-docs/docs`; the production output directory is `apps/public-docs/doc_build` and is not source-controlled.

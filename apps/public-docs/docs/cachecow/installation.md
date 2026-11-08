@@ -1,10 +1,10 @@
 # Installation and availability
 
-> CacheCow 0.1.0 is unreleased. This guide describes intended workflows, not published artifacts or verified native support.
+> CacheCow 0.1.0 is published. Native CoW and process-lifecycle acceptance remain unverified; package installation does not establish native support or performance benefits.
 
 ## Release status
 
-Version 0.1.0 is not yet released. Do not assume a native archive, checksum, or installation path is available because it appears in this guide. The procedures below describe the intended release. Native acceptance and performance measurements remain required before support claims can be made.
+Version 0.1.0 is available as signed native archives on [GitHub Releases](https://github.com/delinoio/oss/releases/tag/ccow%40v0.1.0). Native CoW and process-lifecycle acceptance remain unverified. Native acceptance and performance measurements remain required before support or performance claims can be made.
 
 CacheCow provides native package-manager installation and native archives on [GitHub Releases](https://github.com/delinoio/oss/releases). The commands below apply only after the selected channel is published and verified. It is not published to npm, and no npm package installs it.
 
@@ -44,7 +44,7 @@ Neither package manager activates shims, edits shell configuration, or initializ
 
 ## Native installation
 
-Native archives do not require Node.js. When a release is available:
+Native archives do not require Node.js. To install an archive:
 
 1. Open [GitHub Releases](https://github.com/delinoio/oss/releases) and select the `ccow@v<version>` release.
 2. Download the archive for your OS and architecture, and the release's `SHA256SUMS` file.
@@ -52,7 +52,7 @@ Native archives do not require Node.js. When a release is available:
 4. Extract the archive and put the `ccow` executable in a directory on your PATH. On Windows, use `ccow.exe`.
 5. Run `ccow --version` and `ccow doctor` in your project to inspect the environment before preparing a cache.
 
-Native archives use `ccow-<version>-<target>.tar.gz`, with targets `darwin-arm64`, `linux-x64`, `linux-arm64`, and `windows-x64`. Each archive contains the executable, `LICENSE`, `NOTICE`, and a `release.json` file that records the version, source revision, target, and executable digest. Keep `LICENSE` and `NOTICE` with redistributed copies. These names do not imply that an artifact has been published. There is no standalone installer or automatic updater. Linux ARM64 archives provide package installation coverage; native CoW acceptance on ARM64 remains unverified.
+Native archives use `ccow-<version>-<target>.tar.gz`, with targets `darwin-arm64`, `linux-x64`, `linux-arm64`, and `windows-x64`. Each archive contains the executable, `LICENSE`, `NOTICE`, and a `release.json` file that records the version, source revision, target, and executable digest. Keep `LICENSE` and `NOTICE` with redistributed copies. There is no standalone installer or automatic updater. Linux ARM64 archives provide package installation coverage; native CoW acceptance on ARM64 remains unverified.
 
 Installing the CLI does not activate tool shims. [Install and activate shims](/cachecow/shims) separately if you want ordinary tool commands to enter CacheCow.
 

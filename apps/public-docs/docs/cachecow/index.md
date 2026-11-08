@@ -1,6 +1,6 @@
 # CacheCow
 
-> CacheCow 0.1.0 is unreleased. This guide describes intended workflows, not published artifacts or verified native support.
+> CacheCow 0.1.0 is published. Native CoW and process-lifecycle acceptance remain unverified; package installation does not establish native support or performance benefits.
 
 CacheCow (`ccow`) prepares independent writable build caches for Git worktrees with filesystem copy-on-write (CoW). It supports the intended `cargo`, `rspack`, and `rsbuild` presets.
 
