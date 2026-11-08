@@ -966,3 +966,47 @@ fn sccache_identity_and_private_transport_compatibility() {
             .contains("protected storage")
     );
 }
+
+#[test]
+fn sccache_rejects_forced_socket_configuration() {
+    let mut f = cargo_fixture();
+    let wrapper = paths::join2(&f.cwd, "sccache");
+    write_exec(&wrapper, "wrapper");
+    f.env.push(format!("RUSTC_WRAPPER={wrapper}"));
+    FakeRunner::set(&f.runner.wrapper_version, "sccache 0.14.0");
+    let forced = "[env]\nSCCACHE_SERVER_UDS = { value = '/shared/socket', force = true }\n";
+    let config_dir = paths::join2(&f.cwd, ".cargo");
+    fs::create_dir(&config_dir).unwrap();
+    let config = paths::join2(&config_dir, "config.toml");
+    fs::write(&config, forced).unwrap();
+    let assert_rejected = |f: &Fixture| {
+        assert!(
+            f.discover()
+                .unwrap_err()
+                .to_string()
+                .contains("forces SCCACHE_SERVER_UDS")
+        );
+    };
+    assert_rejected(&f);
+    fs::write(&config, forced.replace("true", "false")).unwrap();
+    f.discover().unwrap();
+    fs::remove_file(&config).unwrap();
+    let home = paths::join2(&f.cwd, "cargo-home");
+    fs::create_dir(&home).unwrap();
+    let home_config = paths::join2(&home, "config.toml");
+    fs::write(&home_config, forced).unwrap();
+    f.env.push(format!("CARGO_HOME={home}"));
+    assert_rejected(&f);
+    fs::remove_file(&home_config).unwrap();
+    let extra = paths::join2(&f.cwd, "extra.toml");
+    fs::write(&extra, forced).unwrap();
+    f.argv.extend(strings(&["--config", &extra]));
+    assert_rejected(&f);
+    f.argv.truncate(2);
+    // A force-only CLI entry can merge with a value in a lower-priority file.
+    f.argv
+        .extend(strings(&["--config", "env.SCCACHE_SERVER_UDS.force=true"]));
+    assert_rejected(&f);
+    f.env.retain(|v| !v.starts_with("RUSTC_WRAPPER="));
+    f.discover().unwrap();
+}

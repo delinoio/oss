@@ -172,7 +172,7 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
                 match key {
                     "--config" => {
                         if value.contains('=') {
-                            validate_config(&value)?;
+                            validate_config(&value, out.cargo_wrapper.is_some())?;
                         }
                         args.extend([key.to_string(), value]);
                     }
@@ -262,7 +262,11 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
     let mut p = req.cwd.clone();
     loop {
         for name in ["config", "config.toml"] {
-            hash_file(&mut configs, &paths::join(&[p.as_str(), ".cargo", name]))?;
+            hash_file(
+                &mut configs,
+                &paths::join(&[p.as_str(), ".cargo", name]),
+                out.cargo_wrapper.is_some(),
+            )?;
         }
         let parent = paths::dir(&p);
         if parent == p {
@@ -272,7 +276,11 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
     }
     let home = cargo_home(req)?;
     for name in ["config", "config.toml"] {
-        hash_file(&mut configs, &paths::join2(&home, name))?;
+        hash_file(
+            &mut configs,
+            &paths::join2(&home, name),
+            out.cargo_wrapper.is_some(),
+        )?;
     }
     // File-form --config can live outside the usual hierarchy.
     for pair in args.windows(2) {
@@ -282,7 +290,7 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
             } else {
                 paths::join2(&req.cwd, &pair[1])
             };
-            hash_file(&mut configs, &p)?;
+            hash_file(&mut configs, &p, out.cargo_wrapper.is_some())?;
         }
     }
     // Preserve configuration position and precedence in the digest, while
@@ -318,19 +326,19 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
     Ok(settings)
 }
 
-fn hash_file(dst: &mut BTreeMap<String, String>, path: &str) -> Result<()> {
+fn hash_file(dst: &mut BTreeMap<String, String>, path: &str, sccache: bool) -> Result<()> {
     let b = match std::fs::read(path) {
         Ok(b) => b,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(_) => bail!("cannot read Cargo configuration; check permissions"),
     };
     let text = String::from_utf8_lossy(&b).into_owned();
-    validate_config(&text)?;
+    validate_config(&text, sccache)?;
     dst.insert(path.to_string(), digest(&text));
     Ok(())
 }
 
-pub(super) fn validate_config(text: &str) -> Result<()> {
+pub(super) fn validate_config(text: &str, sccache: bool) -> Result<()> {
     let Ok(config) = text.parse::<toml::Table>() else {
         bail!("malformed Cargo configuration; correct the TOML file");
     };
@@ -348,6 +356,21 @@ pub(super) fn validate_config(text: &str) -> Result<()> {
         }
     }
     if let Some(toml::Value::Table(env)) = config.get("env") {
+        // Cargo applies forced [env] values after inheriting our private
+        // socket. Reject even partial CLI tables, since configuration merging
+        // can supply the value from another file.
+        if sccache
+            && env
+                .get("SCCACHE_SERVER_UDS")
+                .and_then(|entry| entry.get("force"))
+                .and_then(toml::Value::as_bool)
+                == Some(true)
+        {
+            bail!(
+                "Cargo config forces SCCACHE_SERVER_UDS; remove force=true to preserve the \
+                 private sccache server"
+            );
+        }
         for key in [
             "RUSTC",
             "RUSTUP_TOOLCHAIN",

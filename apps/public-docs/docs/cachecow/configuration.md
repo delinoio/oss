@@ -26,7 +26,7 @@ The next source version supports sccache 0.14.x on macOS and Linux when selected
 
 CacheCow verifies the executable and keeps sccache enabled. Each managed session uses a private sccache server so its compiler processes remain protected by the Cargo cache locks. Nested managed Cargo calls share that server. Existing shared sccache servers remain untouched. Your sccache storage settings remain in effect; CacheCow does not clone or manage sccache's own storage.
 
-For managed builds, CacheCow replaces `SCCACHE_SERVER_UDS` with the session's private socket. It terminates that server and waits for its compiler processes before releasing the cache locks. Updates to the wrapper executable invalidate discovery and cache compatibility. Windows wrapper management, other wrappers, workspace wrappers, and wrappers selected through Cargo configuration or `CARGO_BUILD_RUSTC_WRAPPER` remain unsupported.
+For managed builds, CacheCow replaces `SCCACHE_SERVER_UDS` with the session's private socket. Reject Cargo `[env]` entries that force `SCCACHE_SERVER_UDS`, including file and command-line configuration; remove `force = true` to keep the private server. It terminates that server and waits for its compiler processes before releasing the cache locks. Updates to the wrapper executable invalidate discovery and cache compatibility. Windows wrapper management, other wrappers, workspace wrappers, and wrappers selected through Cargo configuration or `CARGO_BUILD_RUSTC_WRAPPER` remain unsupported.
 
 ## Rspack and Rsbuild configuration
 
