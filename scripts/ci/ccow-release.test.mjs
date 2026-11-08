@@ -164,7 +164,10 @@ test("CacheCow recovery verifies retained original candidates before release cre
   assert.deepEqual(recovery.permissions, { contents: "read", actions: "read" });
   assert.equal(recovery.concurrency.group, workflow.concurrency.group);
   const job = recovery.jobs.recover;
-  assert.equal(job.if, workflow.jobs.candidate.if);
+  assert.equal(
+    job.if,
+    `${workflow.jobs.candidate.if} && inputs.target != 'homebrew'`,
+  );
   assert.equal(job.environment, "ccow-release");
   assert.equal(job["runs-on"], "ubuntu-22.04");
   const credentials = job.steps.findIndex((s) => s.id === "release-bot");
@@ -192,5 +195,45 @@ test("CacheCow recovery verifies retained original candidates before release cre
   assert.doesNotMatch(
     JSON.stringify(recovery),
     /cargo build|build-native|sign-blob|id-token|gh release|gh api|npm publish/u,
+  );
+});
+
+test("Homebrew recovery verifies public bytes and native installation before tap-only credentials", () => {
+  const recovery = yaml.load(
+    readFileSync(".github/workflows/recover-ccow-release.yml", "utf8"),
+  );
+  assert.equal(
+    recovery.on.workflow_dispatch.inputs.target.default,
+    "github-release",
+  );
+  assert.deepEqual(recovery.on.workflow_dispatch.inputs.target.options, [
+    "github-release",
+    "homebrew",
+  ]);
+  const job = recovery.jobs.homebrew;
+  assert.equal(
+    job.if,
+    `${workflow.jobs.candidate.if} && inputs.target == 'homebrew'`,
+  );
+  assert.equal(job["runs-on"], "macos-15");
+  assert.equal(job.environment, "ccow-release");
+  const credentials = job.steps.findIndex((s) => s.id === "tap-bot");
+  for (const name of [
+    "Resolve the original failed release before credentials",
+    "Verify original candidate bytes before credentials",
+    "Verify original signatures before credentials",
+    "Verify complete public release before tap credentials",
+    "Validate Homebrew installation before tap credentials",
+  ]) {
+    const verification = job.steps.findIndex((s) => s.name === name);
+    assert(verification >= 0 && verification < credentials);
+  }
+  assert.equal(job.steps[credentials].with.repositories, "homebrew-tap");
+  assert.match(JSON.stringify(job), /ccow-recover.mjs verify-published/u);
+  assert.match(JSON.stringify(job), /brew audit --strict/u);
+  assert.match(job.steps.at(-1).run, /brew test delinoio\/tap\/ccow/u);
+  assert.doesNotMatch(
+    JSON.stringify(job),
+    /ccow-publish.mjs|release-bot.outputs|cargo build|sign-blob/u,
   );
 });

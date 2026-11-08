@@ -16,7 +16,7 @@ class Ccow < Formula
 
   test do
     assert_equal "ccow #{version}", shell_output("#{bin}/ccow --version").strip
-    assert_match "Usage:", shell_output("#{bin}/ccow --help")
+    assert_match "ccow run [--preset cargo|rspack|rsbuild]", shell_output("#{bin}/ccow --help")
     assert_match "Apache License", (prefix/"LICENSE").read
   end
 end

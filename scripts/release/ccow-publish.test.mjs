@@ -12,7 +12,12 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { homebrewArguments } from "./ccow-homebrew.mjs";
-import { reconcile, prepare, transport } from "./ccow-publish.mjs";
+import {
+  reconcile,
+  prepare,
+  transport,
+  verifyPublished,
+} from "./ccow-publish.mjs";
 import {
   packageRelease,
   sha256,
@@ -94,6 +99,50 @@ test("fresh publication creates tag and draft, uploads assets and reads back all
   state.writes = [];
   await reconcile(plan, api);
   assert.deepEqual(state.writes, []);
+});
+
+test("channel recovery only reads complete public bytes and rejects conflicting state without writes", async () => {
+  const mutations = [
+    ({ state }) => {
+      state.tag = null;
+    },
+    ({ state }) => {
+      state.tag.sha = "b".repeat(40);
+    },
+    ({ state }) => {
+      state.releases = [];
+    },
+    ({ state }) => {
+      state.releases.push({ ...state.releases[0], id: 8 });
+    },
+    ({ state }) => {
+      state.releases[0].draft = true;
+    },
+    ({ state }) => {
+      state.releases[0].prerelease = true;
+    },
+    ({ state }) => {
+      state.releases[0].body = "unowned";
+    },
+    ({ state }) => {
+      state.assets.pop();
+    },
+    ({ state }) => {
+      state.assets[0].bytes = Buffer.from("changed");
+    },
+  ];
+  for (const mutate of [null, ...mutations]) {
+    const f = fixture();
+    await reconcile(f.plan, f.api);
+    f.state.writes = [];
+    if (mutate) {
+      mutate(f);
+      await assert.rejects(verifyPublished(f.plan, f.api));
+    } else {
+      assert.equal((await verifyPublished(f.plan, f.api)).status, "verified");
+    }
+    assert.deepEqual(f.state.writes, []);
+  }
 });
 
 test("retry reconciles every interruption, including writes whose response was lost", async () => {
