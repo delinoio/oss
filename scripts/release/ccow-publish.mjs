@@ -98,6 +98,31 @@ async function checkAssets(api, release, plan, complete) {
   return missing;
 }
 
+// Channel recovery must verify a complete public release without creating or
+// modifying GitHub state, even when its credentials could permit a write.
+export async function verifyPublished(plan, api) {
+  assert(await exactTag(api, plan), "Published release tag missing");
+  const matches = (await api.releases()).filter((r) => r.tag_name === plan.tag);
+  assert.equal(
+    matches.length,
+    1,
+    "Published release identity missing or ambiguous",
+  );
+  const release = await api.release(matches[0].id);
+  assert.equal(release.tag_name, plan.tag);
+  assert.equal(release.body, plan.marker, "Release ownership conflict");
+  assert.equal(release.prerelease, false);
+  assert.equal(release.draft, false, "Release is not public");
+  await checkAssets(api, release, plan, true);
+  assert(await exactTag(api, plan), "Published release tag disappeared");
+  return {
+    revision: plan.revision,
+    version: plan.version,
+    tag: plan.tag,
+    status: "verified",
+  };
+}
+
 // The transport is injected for failure/retry fixtures. The executable always
 // constructs the plan through prepare; fixture packages cannot reach production.
 export async function reconcile(plan, api) {

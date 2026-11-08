@@ -11,12 +11,17 @@ import {
   prepare,
   reconcile,
   transport,
+  verifyPublished,
 } from "./ccow-publish.mjs";
 
 const repository = "delinoio/oss";
 const sourceWorkflow = ".github/workflows/release-ccow.yml";
 const recoveryWorkflow = ".github/workflows/recover-ccow-release.yml";
-export const Mode = Object.freeze({ Resolve: "resolve", Publish: "publish" });
+export const Mode = Object.freeze({
+  Resolve: "resolve",
+  Publish: "publish",
+  VerifyPublished: "verify-published",
+});
 
 export function recoverySource(run, sourcePackage, artifacts, runId) {
   assert.match(runId, /^[1-9][0-9]*$/u);
@@ -131,7 +136,14 @@ if (
       console.log(
         JSON.stringify({ event: "ccow_recovery_publication", ...source }),
       );
-      console.log(JSON.stringify(await reconcile(plan, transport())));
+      console.log(
+        JSON.stringify(
+          await (mode === Mode.VerifyPublished ? verifyPublished : reconcile)(
+            plan,
+            transport(),
+          ),
+        ),
+      );
     }
   } catch (error) {
     if (error instanceof GitHubRequestError)

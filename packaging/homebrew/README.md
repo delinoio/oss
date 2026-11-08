@@ -14,3 +14,5 @@ Supported package identifiers:
 Runmoor uses the signed public release archive without rebuilding it. Its dedicated workflow verifies all release assets and runs native Homebrew installation, tests and audit before obtaining tap publication credentials. Initial publication and recovery can target an existing public version without a new release. See `docs/cmds-runmoor-foundation.md` and this directory's `AGENTS.md` for the contract.
 
 binpm Homebrew packaging is prebuilt-only. The formula consumes binpm release archives and must not add a source build fallback unless `docs/project-binpm.md` and `docs/crates-binpm-foundation.md` define a new distribution contract. Release rendering validates binpm formula URL basenames against the expected archive names before pushing tap updates.
+
+CacheCow's `recover-ccow-release.yml` Homebrew target can finish a failed original release with repaired formula tooling. It verifies the retained signed candidate and complete public release, then installs, tests and audits the formula before tap credentials. Public-tap installation must pass before reporting Homebrew availability. See `docs/packages-ccow-distribution-contract.md`.
