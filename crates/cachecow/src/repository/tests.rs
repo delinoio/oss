@@ -581,3 +581,22 @@ fn source_location_parent_reuse_preserves_alias_checks() {
         canonical(&path).unwrap()
     );
 }
+
+#[test]
+fn cache_validation_checks_all_worktree_workers() {
+    let (_t, p) = fixture();
+    fs::write(paths::join2(&p, ".gitignore"), "target/\n").unwrap();
+    let other = tempfile::tempdir().unwrap();
+    let mut last = String::new();
+    for i in 0..10 {
+        last = s(&other.path().join(format!("work-{i}")));
+        run_git(&p, &["worktree", "add", "--detach", &last]);
+    }
+    let cache = paths::join2(&p, "target");
+    let link = paths::join2(&last, "source-alias");
+    symlink(paths::join2(&cache, "missing"), &link).unwrap();
+    let r = discover(&ctx(), &p).unwrap();
+    assert!(r.validate_cache(&ctx(), &cache, &[]).is_err());
+    fs::remove_file(link).unwrap();
+    r.validate_cache(&ctx(), &cache, &[]).unwrap();
+}

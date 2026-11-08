@@ -443,62 +443,93 @@ impl Info {
             }
         }
         let list = git_string(ctx, &self.root, &["worktree", "list", "--porcelain", "-z"])?;
-        for field in list.split('\0') {
-            let Some(worktree) = field.strip_prefix("worktree ") else {
-                continue;
-            };
-            let q = canonical(worktree)?;
-            if contains(&p, &q) {
-                bail!("cache cannot contain a worktree; configure a dedicated cache directory");
+        let worktrees: Vec<&str> = list
+            .split('\0')
+            .filter_map(|field| field.strip_prefix("worktree "))
+            .collect();
+        // Bound native workers instead of serializing every filesystem read
+        // across hundreds of worktrees. Every registered worktree is checked;
+        // all workers finish before validation can authorize a cache.
+        let workers = std::thread::available_parallelism()
+            .map_or(1, usize::from)
+            .min(8)
+            .min(worktrees.len().max(1));
+        let chunk_size = worktrees.len().div_ceil(workers).max(1);
+        std::thread::scope(|scope| -> Result<()> {
+            let mut handles = Vec::new();
+            for chunk in worktrees.chunks(chunk_size) {
+                let cache = &p;
+                handles.push(std::thread::Builder::new().spawn_scoped(scope, move || {
+                    for worktree in chunk {
+                        ctx.err()?;
+                        self.validate_worktree_cache(ctx, cache, worktree)?;
+                    }
+                    Ok::<(), anyhow::Error>(())
+                })?);
             }
-            if q == self.common_dir {
-                continue; // Bare primary entry has no index or source tree.
+            for handle in handles {
+                handle
+                    .join()
+                    .map_err(|_| anyhow!("cache validation worker failed"))??;
             }
-            for name in [".git", ".ccow"] {
-                let protected_path = canonical(&paths::join2(&q, name))?;
-                if overlaps(&p, &protected_path) {
-                    bail!("cache overlaps worktree metadata or settings");
-                }
-            }
-            if worktree_missing(&q)? {
-                // A missing directory has no files to protect, but a locked
-                // worktree can reappear, so its path stays reserved.
-                if overlaps(&p, &q) {
-                    bail!(
-                        "cache is inside a registered worktree that is missing; run `git worktree \
-                         prune` or select another cache directory"
-                    );
-                }
-                tracing::debug!(worktree = %q, "skipping missing registered worktree");
-                continue;
-            }
-            let files = git_string(
-                ctx,
-                &q,
-                &[
-                    "ls-files",
-                    "--cached",
-                    "--others",
-                    "--exclude-standard",
-                    "-z",
-                ],
-            )?;
-            let mut sources = SourceLocations::default();
-            for name in files.split('\0') {
-                if name.is_empty() {
-                    continue;
-                }
-                let entry = paths::join2(&q, name);
-                if overlaps(&p, &entry) {
-                    bail!(TRACKED_OVERLAP);
-                }
-                let source = sources.resolve(&entry)?;
-                if overlaps(&p, &source) {
-                    bail!(TRACKED_OVERLAP);
-                }
+            Ok(())
+        })?;
+        Ok(p)
+    }
+
+    fn validate_worktree_cache(&self, ctx: &Context, p: &str, worktree: &str) -> Result<()> {
+        let q = canonical(worktree)?;
+        if contains(p, &q) {
+            bail!("cache cannot contain a worktree; configure a dedicated cache directory");
+        }
+        if q == self.common_dir {
+            return Ok(()); // Bare primary entry has no index or source tree.
+        }
+        for name in [".git", ".ccow"] {
+            let protected_path = canonical(&paths::join2(&q, name))?;
+            if overlaps(p, &protected_path) {
+                bail!("cache overlaps worktree metadata or settings");
             }
         }
-        Ok(p)
+        if worktree_missing(&q)? {
+            // A missing directory has no files to protect, but a locked
+            // worktree can reappear, so its path stays reserved.
+            if overlaps(p, &q) {
+                bail!(
+                    "cache is inside a registered worktree that is missing; run `git worktree \
+                     prune` or select another cache directory"
+                );
+            }
+            tracing::debug!(worktree = %q, "skipping missing registered worktree");
+            return Ok(());
+        }
+        let files = git_string(
+            ctx,
+            &q,
+            &[
+                "ls-files",
+                "--cached",
+                "--others",
+                "--exclude-standard",
+                "-z",
+            ],
+        )?;
+        let mut sources = SourceLocations::default();
+        for name in files.split('\0') {
+            if name.is_empty() {
+                continue;
+            }
+            ctx.err()?;
+            let entry = paths::join2(&q, name);
+            if overlaps(p, &entry) {
+                bail!(TRACKED_OVERLAP);
+            }
+            let source = sources.resolve(&entry)?;
+            if overlaps(p, &source) {
+                bail!(TRACKED_OVERLAP);
+            }
+        }
+        Ok(())
     }
 }
 
