@@ -65,6 +65,8 @@ Persistent setup applies to new shells. For the current session, use the matchin
 
 Each invocation selects the first real executable in PATH after excluding CacheCow shims. Installation does not pin a tool path. The CacheCow shim directory in PATH does not affect cache compatibility, so a cache built with explicit `ccow run` and the same command through an activated shim can share a source cache. Changing PATH or a version-manager selection must affect the next invocation. CacheCow must prevent recursion while preserving rustup toolchain selection, including explicit toolchain arguments.
 
+In the next source version, nightly Cargo newer than the 1.99.1 stable floor can also enter managed discovery. This is not available in the published 0.1.0 binary. Nightly must report both cache directories and pass the same configuration checks; unstable `-Z` and `-C` command-line options remain unsupported. Different nightly compiler builds cannot reuse each other's caches. The stable support guarantee is unchanged. Use `cargo +nightly check`, `RUSTUP_TOOLCHAIN`, directory overrides, or a toolchain file as usual.
+
 A shim preserves the tool's arguments, working directory, stdout, stderr, and exit code. On Unix, a pass-through call delivers non-UTF-8 argument and environment bytes to the real tool unchanged. CacheCow skips `PATH` entries that are not valid UTF-8 when it looks for the real tool, so a tool installed only under such a directory is not found. Tool arguments must not become CacheCow options. Put CacheCow options before `--` in explicit `ccow run`, or use saved configuration. If no real executable exists, diagnostics must explain how to restore one and return command-not-found status 127.
 
 ## Managed and pass-through commands

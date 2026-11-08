@@ -97,8 +97,7 @@ impl Compatibility {
         }
         match self.preset {
             Id::Cargo => {
-                supported(&self.tool_version, "1.99.1", "2.0.0")
-                    && self.compiler_version.len() == 64
+                cargo::supported_toolchain(&self.tool_version) && self.compiler_version.len() == 64
             }
             Id::Rspack | Id::Rsbuild => {
                 supported(&self.tool_version, "2.3.0", "3.0.0")
