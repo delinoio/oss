@@ -660,12 +660,14 @@ mod tests {
 
     use super::*;
 
+    // uutils cat can copy with splice(2). Use -v in these fixtures to force
+    // read(2), the operation whose observation and controls they exercise.
     #[test]
     fn observes_real_read_entry_and_completion() {
         let mut input = tempfile::NamedTempFile::new().unwrap();
         input.write_all(b"trace fixture\n").unwrap();
         let mut command = Command::new("/bin/cat");
-        command.arg(input.path()).stdout(Stdio::null());
+        command.arg("-v").arg(input.path()).stdout(Stdio::null());
         let cancelled = AtomicBool::new(false);
         let mut observed_syscalls = HashSet::new();
         let result = trace(&mut command, Limits::default(), &cancelled, |entry| {
@@ -690,7 +692,7 @@ mod tests {
         let root = input.path().parent().unwrap().canonicalize().unwrap();
         let expected = input.path().canonicalize().unwrap();
         let mut command = Command::new("/bin/cat");
-        command.arg(input.path()).stdout(Stdio::null());
+        command.arg("-v").arg(input.path()).stdout(Stdio::null());
         let cancelled = AtomicBool::new(false);
         let mut reads = Vec::new();
         let result = trace(&mut command, Limits::default(), &cancelled, |entry| {
@@ -733,7 +735,7 @@ mod tests {
         let mut command = Command::new("/bin/sh");
         command
             .arg("-c")
-            .arg("cat \"$1\"; :")
+            .arg("cat -v \"$1\"; :")
             .arg("sh")
             .arg(input.path())
             .stdout(Stdio::null());
@@ -764,7 +766,7 @@ mod tests {
         let mut command = Command::new("/bin/sh");
         command
             .arg("-c")
-            .arg("cat \"$1\" >/dev/null & cat \"$1\" >/dev/null & wait")
+            .arg("cat -v \"$1\" >/dev/null & cat -v \"$1\" >/dev/null & wait")
             .arg("sh")
             .arg(input.path())
             .stdout(Stdio::null());

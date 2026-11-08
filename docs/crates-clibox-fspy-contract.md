@@ -94,6 +94,8 @@ Linux and macOS execution report handlers retain signal ownership through encodi
 
 ## Validation
 
+Linux content-read and read-control fixtures use `cat -v` to force `read(2)` with both GNU and uutils coreutils. Plain uutils `cat` can use `splice(2)`, which is outside these selected read observations. Fixture commands must exercise the operation under test; loader reads do not establish a project-file content read.
+
 Native behavior tests must exercise all seven commands and the eight supported targets, including Alpine consumers and pnport regressions where interception changes. Run root `cargo test`, formatting and applicable lint checks, `pnpm --filter @delino/clibox test`, `pnpm --filter @delino/clibox test:package`, and public-docs `pnpm test` when that frontend changes. Package and CI inventories must include the companion crate and affected native sources. Do not count parser, fixture, or macOS-only tests as validation for other native targets.
 
 The macOS owned-group timeout fixture leaves two seconds for injected process startup so its deadline tests a running child and cleanup under loaded CI hosts. Cleanup retries transient process-inspection failures within the fixed graceful and force-confirmation windows, and still fails when liveness cannot be confirmed. A failed initial group signal, including a request racing final caller exit, also proceeds through identity-checked process cleanup and both absence checks within those same windows; persistent denial cannot produce a confirmed-cleanup result. The separate root-executable admission-delay fixture checks timeout before launch.
