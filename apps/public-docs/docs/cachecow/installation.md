@@ -6,22 +6,22 @@
 
 Version 0.1.0 is available as signed native archives on [GitHub Releases](https://github.com/delinoio/oss/releases/tag/ccow%40v0.1.0). Native CoW and process-lifecycle acceptance remain unverified. Native acceptance and performance measurements remain required before support or performance claims can be made.
 
-CacheCow provides native package-manager installation and native archives on [GitHub Releases](https://github.com/delinoio/oss/releases). The commands below apply only after the selected channel is published and verified. It is not published to npm, and no npm package installs it.
+Install CacheCow 0.1.0 with Homebrew on macOS ARM64, or stable APT/DNF packages on Linux amd64 and arm64. Native archives are also available on [GitHub Releases](https://github.com/delinoio/oss/releases/tag/ccow%40v0.1.0). It is not published to npm, and no npm package installs it.
 
 ## Homebrew: macOS ARM64
 
-After the first verified Homebrew publication, install on macOS 15 or later with Apple Silicon:
+Install on macOS 15 or later with Apple Silicon:
 
 ```sh
 brew install delinoio/tap/ccow
 ccow --version
 ```
 
-The formula installs the prebuilt executable without Node.js. Intel macOS is not supported by this formula. Homebrew availability is pending for 0.1.0.
+The formula installs the prebuilt executable without Node.js. Intel macOS is not supported by this formula.
 
 ## APT: Debian and Ubuntu
 
-APT availability is pending for 0.1.0. After the first verified native package publication, follow [Linux package setup](/linux-packages#verify-the-repository-key) to verify the full key fingerprint and register the stable APT repository. Then install the package named `ccow`:
+CacheCow 0.1.0 is available in the stable APT repository. Follow [Linux package setup](/linux-packages#verify-the-repository-key) to verify the full key fingerprint and register the stable APT repository. Then install the package named `ccow`:
 
 ```sh
 sudo apt-get update
@@ -33,7 +33,7 @@ The repository supports package installation on amd64 and arm64. APT installs th
 
 ## DNF: Fedora and RHEL-compatible systems
 
-DNF availability is pending for 0.1.0. After the first verified native package publication, verify the key and register the stable DNF repository from [Linux package setup](/linux-packages#dnf-stable). Keep both package and repository signature checks enabled. Then run:
+CacheCow 0.1.0 is available in the stable DNF repository. Verify the key and register the stable DNF repository from [Linux package setup](/linux-packages#dnf-stable). Keep both package and repository signature checks enabled. Then run:
 
 ```sh
 sudo dnf install ccow
