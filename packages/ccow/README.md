@@ -1,6 +1,6 @@
 # CacheCow distribution tooling
 
-Version 0.1.0 is unreleased. Package fixtures and cross-builds do not establish native support or release availability.
+Version 0.1.0 is published on GitHub Releases. Package fixtures, cross-builds and installation checks do not establish native CoW or process-lifecycle support.
 
 CacheCow ships versioned native archives, `SHA256SUMS`, Sigstore bundles and `release.json` on GitHub Releases (tag `ccow@v<version>`). It is not published to npm. The archives contain an independent `ccow` executable and require no Node.js. This private workspace package holds the repository tooling that builds, packages and verifies those archives.
 

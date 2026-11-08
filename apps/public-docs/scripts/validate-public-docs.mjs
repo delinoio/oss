@@ -136,10 +136,19 @@ for (const [slug, routes] of Object.entries(projectRoutes)) {
     }
     if (slug === "cachecow") {
       if (
-        !/CacheCow 0\.1\.0 is unreleased/iu.test(visibleProjectText(contents))
+        !/CacheCow 0\.1\.0 is published/iu.test(visibleProjectText(contents))
       ) {
         failures.push(
-          `${publicRoute(slug, route)} is missing its unreleased availability notice`,
+          `${publicRoute(slug, route)} is missing its published availability notice`,
+        );
+      }
+      if (
+        !/Native CoW and process-lifecycle acceptance remain unverified/iu.test(
+          visibleProjectText(contents),
+        )
+      ) {
+        failures.push(
+          `${publicRoute(slug, route)} is missing its native acceptance limitation`,
         );
       }
       const sidebar =

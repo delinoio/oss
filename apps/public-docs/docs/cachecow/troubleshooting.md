@@ -1,6 +1,6 @@
 # Troubleshooting and performance
 
-> CacheCow 0.1.0 is unreleased. This guide describes intended workflows, not published artifacts or verified native support.
+> CacheCow 0.1.0 is published. Native CoW and process-lifecycle acceptance remain unverified; package installation does not establish native support or performance benefits.
 
 ## Diagnose before changing state
 
@@ -32,7 +32,7 @@ Do not modify fingerprints or timestamps to manufacture a hit. Compare the resul
 
 ## Measure benefits and costs
 
-No CacheCow performance result is asserted for unreleased 0.1.0. CoW does not share compiler heaps or guarantee shared file page-cache memory. It does not guarantee lower memory use, faster builds, or a fixed percentage of storage savings. Writes after cloning allocate additional blocks; ordinary-copy fallback consumes independent storage.
+No CacheCow performance result is asserted for 0.1.0. CoW does not share compiler heaps or guarantee shared file page-cache memory. It does not guarantee lower memory use, faster builds, or a fixed percentage of storage savings. Writes after cloning allocate additional blocks; ordinary-copy fallback consumes independent storage.
 
 For a useful comparison, measure cold preparation, a warm original build, a cloned-worktree build, and a later build after changing the worktree. Record:
 
