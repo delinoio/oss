@@ -30,7 +30,7 @@
     "jsdom": "20.0.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "@rstest/core": "0.12.5",
+    "@rstest/core": "0.12.6",
     "@rsbuild/plugin-react": "2.0.1"
   }
 }

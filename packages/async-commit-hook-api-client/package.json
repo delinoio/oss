@@ -35,6 +35,6 @@
     "@types/react": "19.2.14",
     "react": "19.2.8",
     "typescript": "5.9.3",
-    "@rstest/core": "0.12.5"
+    "@rstest/core": "0.12.6"
   }
 }
