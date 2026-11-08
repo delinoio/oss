@@ -2244,3 +2244,48 @@ fn clone_only_run_prints_no_copy_notice() {
     let (_, err) = f.run(&f.work, 0, &["run", "--allow-copy", "--", "cargo", "build"]);
     assert_eq!(copy_notices(&err), 0, "stderr={err}");
 }
+
+#[test]
+fn sccache_uses_owned_server_endpoint_across_nested_builds() {
+    let mut f = Fixture::new();
+    let wrapper = join(&f.bin, "sccache");
+    write_file(&wrapper, "#!/bin/sh\necho 'sccache 0.14.0'\n", 0o700);
+    f.set_env("RUSTC_WRAPPER", "sccache");
+    f.set_env("SCCACHE_SERVER_UDS", "/shared/sccache.sock");
+    f.set_env("CCOW_TEST_BIN", BIN);
+    write_file(
+        &join(&f.main, "scenario"),
+        r#"
+if [ -f target/nested ]; then
+    printf '%s' "$SCCACHE_SERVER_UDS" > target/nested-endpoint
+    exit 0
+fi
+touch target/nested
+printf '%s' "$RUSTC_WRAPPER" > target/wrapper
+printf '%s' "$SCCACHE_SERVER_UDS" > target/endpoint
+"$CCOW_TEST_BIN" run -- cargo build || exit $?
+sh -c 'trap "exit 0" TERM; echo $$ > target/daemon-pid; while :; do sleep 1; done' &
+while [ ! -f target/daemon-pid ]; do sleep 0.01; done
+"#,
+        0o600,
+    );
+    f.run(&f.main, 0, &["run", "--", "cargo", "build"]);
+    assert_eq!(
+        fs::read_to_string(join(&f.main, "target/wrapper")).unwrap(),
+        wrapper
+    );
+    let endpoint = fs::read_to_string(join(&f.main, "target/endpoint")).unwrap();
+    assert_ne!(endpoint, "/shared/sccache.sock");
+    assert!(endpoint.ends_with("/ipc.sccache"));
+    assert_eq!(
+        endpoint,
+        fs::read_to_string(join(&f.main, "target/nested-endpoint")).unwrap()
+    );
+    assert!(!Path::new(&endpoint).parent().unwrap().exists());
+    let pid: i32 = fs::read_to_string(join(&f.main, "target/daemon-pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    wait_process_gone(pid);
+}

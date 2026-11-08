@@ -20,6 +20,14 @@ Keep Cargo's configured target-dir and build-dir. CacheCow must manage both, pro
 
 Toolchain selection and build settings must match the source cache. CacheCow must reject reuse when locations or compatibility cannot be verified. It must not change fingerprints or modification times to force a cache hit. Dirty tracked files and untracked files are allowed; Cargo and rustc retain responsibility for rebuilding them correctly.
 
+### sccache
+
+The next source version supports sccache 0.14.x on macOS and Linux when selected with `RUSTC_WRAPPER=sccache` or an explicit path to the `sccache` executable. This support is not in the published 0.1.0 binary.
+
+CacheCow verifies the executable and keeps sccache enabled. Each managed session uses a private sccache server so its compiler processes remain protected by the Cargo cache locks. Nested managed Cargo calls share that server. Existing shared sccache servers remain untouched. Your sccache storage settings remain in effect; CacheCow does not clone or manage sccache's own storage.
+
+For managed builds, CacheCow replaces `SCCACHE_SERVER_UDS` with the session's private socket. It terminates that server and waits for its compiler processes before releasing the cache locks. Updates to the wrapper executable invalidate discovery and cache compatibility. Windows wrapper management, other wrappers, workspace wrappers, and wrappers selected through Cargo configuration or `CARGO_BUILD_RUSTC_WRAPPER` remain unsupported.
+
 ## Rspack and Rsbuild configuration
 
 Configure a persistent cache for the selected project. Only that cache is eligible for CacheCow management. `node_modules`, package download caches, and frontend final output directories are excluded.

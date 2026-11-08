@@ -482,3 +482,29 @@ fn stale_discovery_crosses_the_supervisor_boundary() {
     let plain = serde_json::to_string(&Response::failed(&anyhow!("plain"))).unwrap();
     assert!(!plain.contains("staleDiscovery"), "{plain}");
 }
+
+#[cfg(unix)]
+#[test]
+fn sccache_endpoint_is_private_and_shared_by_nested_commands() {
+    let mut command = Command {
+        sccache: true,
+        env: vec![
+            "RUSTC_WRAPPER=/bin/sccache".into(),
+            "SCCACHE_SERVER_UDS=/shared/server".into(),
+        ],
+        ..Command::default()
+    };
+    isolate_sccache(&mut command, "/tmp/ccow-s-parent/ipc|token").unwrap();
+    assert!(
+        command
+            .env
+            .contains(&"SCCACHE_SERVER_UDS=/tmp/ccow-s-parent/ipc.sccache".into())
+    );
+    let mut nested = command.clone();
+    isolate_sccache(&mut nested, "/tmp/ccow-s-parent/ipc|token").unwrap();
+    assert_eq!(nested.env, command.env);
+    let mut unrelated = command.clone();
+    unrelated.sccache = false;
+    isolate_sccache(&mut unrelated, "unused").unwrap();
+    assert_eq!(unrelated.env, command.env);
+}

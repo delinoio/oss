@@ -588,6 +588,7 @@ impl App {
         let path = paths::abs(&path)?;
         Ok(process::Command {
             noop: false,
+            sccache: false,
             path,
             args: argv.to_vec(),
             dir: cwd.to_string(),

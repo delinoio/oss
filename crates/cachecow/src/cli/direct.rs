@@ -46,6 +46,7 @@ pub(crate) fn direct(
     }
     let command = process::Command {
         noop: false,
+        sccache: false,
         path: path.to_string(),
         args: argv,
         dir: dir.to_string(),

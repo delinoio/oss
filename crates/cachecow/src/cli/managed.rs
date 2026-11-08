@@ -506,6 +506,10 @@ impl App {
         };
         if action == "run" || action == "tool-clean" {
             c = self.command_in(argv, &current.repository.cwd, env)?;
+            if let Some(wrapper) = &current.cargo_wrapper {
+                c.env = wrapper.environment(&c.env);
+                c.sccache = true;
+            }
         }
         p.resources.destinations = paths_of(current);
         let mut claims = Claims {
@@ -638,9 +642,17 @@ impl App {
         Ok(run.exit_code)
     }
 
-    fn execute_nested(&mut self, capability: &str, p: &Plan, c: process::Command) -> Result<i32> {
+    fn execute_nested(
+        &mut self,
+        capability: &str,
+        p: &Plan,
+        mut c: process::Command,
+    ) -> Result<i32> {
         let response = session::nested(&self.ctx, capability, p)?;
         report_copy(&response.result);
+        // Authentication and admission must finish before deriving the private
+        // daemon endpoint from the parent's session capability.
+        session::isolate_sccache(&mut c, capability)?;
         let mut code = 0;
         if !c.noop {
             let mut cmd = process::new_exec_command(&c)?;

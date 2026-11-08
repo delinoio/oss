@@ -23,6 +23,7 @@ struct FakeRunner {
     version: Mutex<String>,
     metadata: Mutex<String>,
     compiler: Mutex<String>,
+    wrapper_version: Mutex<String>,
     frontend: Mutex<String>,
 }
 
@@ -44,6 +45,9 @@ impl Runner for FakeRunner {
             args: args.to_vec(),
         });
         let last = args.last().map(String::as_str);
+        if last == Some("--version") && paths::base(&args[0]) == "sccache" {
+            return Ok(self.wrapper_version.lock().unwrap().clone().into_bytes());
+        }
         if last == Some("--version") {
             return Ok(self.version.lock().unwrap().clone().into_bytes());
         }
@@ -911,4 +915,54 @@ fn nightly_discovery_preserves_selection_and_compiler_identity() {
         "rustc 1.99.1-nightly\nhost: aarch64-apple-darwin\n",
     );
     assert!(f.discover().is_err());
+}
+
+#[test]
+fn sccache_identity_and_private_transport_compatibility() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut f = cargo_fixture();
+    let bin = paths::join2(&f.cwd, "bin");
+    fs::create_dir(&bin).unwrap();
+    let wrapper = paths::join2(&bin, "sccache");
+    fs::write(&wrapper, "wrapper version one").unwrap();
+    fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o700)).unwrap();
+    f.env
+        .extend(strings(&[&format!("PATH={bin}"), "RUSTC_WRAPPER=sccache"]));
+    FakeRunner::set(&f.runner.wrapper_version, "sccache 0.14.0");
+    let first = f.discover().unwrap();
+    assert_eq!(
+        first.cargo_wrapper,
+        Some(CargoWrapper::Sccache {
+            executable: wrapper.clone()
+        })
+    );
+    assert!(first.inputs.iter().any(|stamp| stamp.path == wrapper));
+    // The pinned spelling and a different session transport must not break
+    // nested same-cache admission or source compatibility.
+    f.env = first.cargo_wrapper.as_ref().unwrap().environment(&f.env);
+    f.env
+        .push("SCCACHE_SERVER_UDS=/tmp/ccow-s-example/ipc.sccache".into());
+    let nested = f.discover().unwrap();
+    assert!(first.compatibility.compatible(&nested.compatibility));
+    fs::write(&wrapper, "wrapper version two").unwrap();
+    assert!(verify_file_stamps(&first.inputs).is_err());
+    let changed = f.discover().unwrap();
+    assert!(!first.compatibility.compatible(&changed.compatibility));
+    for version in ["sccache 0.13.0", "sccache 0.15.0", "custom 0.14.0"] {
+        FakeRunner::set(&f.runner.wrapper_version, version);
+        assert!(f.discover().is_err(), "accepted {version}");
+    }
+    FakeRunner::set(&f.runner.wrapper_version, "sccache 0.14.0");
+    let target = paths::join2(&f.cwd, "target");
+    fs::create_dir(&target).unwrap();
+    fs::write(paths::join2(&f.cwd, ".gitignore"), "target/\n").unwrap();
+    let inside = paths::join2(&target, "sccache");
+    fs::copy(&wrapper, &inside).unwrap();
+    f.env = set_env(&f.env, "RUSTC_WRAPPER", &inside);
+    assert!(
+        f.discover()
+            .unwrap_err()
+            .to_string()
+            .contains("protected storage")
+    );
 }

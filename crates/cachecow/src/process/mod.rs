@@ -77,6 +77,13 @@ fn unavailable() -> anyhow::Error {
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Command {
+    /// The Cargo wrapper requires a server inside this native process owner.
+    #[serde(
+        rename = "Sccache",
+        default,
+        skip_serializing_if = "std::ops::Not::not"
+    )]
+    pub sccache: bool,
     /// Runs supervisor hooks without launching user code (prepare and clean).
     #[serde(rename = "Noop")]
     pub noop: bool,

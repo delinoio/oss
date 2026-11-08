@@ -12,7 +12,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::{
-    PresetResult, Resolved, Root, RootKind, digest, env_value, null_default, set_env, supported,
+    CargoWrapper, PresetResult, Resolved, Root, RootKind, digest, env_value, null_default,
+    resolve_executable, set_env, supported,
 };
 use crate::{Context, paths, repository};
 
@@ -76,7 +77,6 @@ fn cargo_home(req: &Resolved<'_>) -> Result<String> {
 pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult) -> Result<Value> {
     for key in [
         "CARGO_BUILD_RUSTC",
-        "RUSTC_WRAPPER",
         "RUSTC_WORKSPACE_WRAPPER",
         "CARGO_BUILD_RUSTC_WRAPPER",
         "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
@@ -87,6 +87,36 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
                  without wrappers"
             );
         }
+    }
+    let wrapper = env_value(&req.env, "RUSTC_WRAPPER");
+    let mut wrapper_identity = None;
+    if !wrapper.is_empty() {
+        // Other wrappers may alter compiler arguments or run outside the
+        // native owner. Only the tested sccache protocol is supported here.
+        if !cfg!(unix) || paths::base(wrapper) != "sccache" {
+            bail!(
+                "custom compiler wrappers cannot yet be verified; supported wrapper: \
+                 RUSTC_WRAPPER=sccache 0.14.x on Unix"
+            );
+        }
+        let executable = resolve_executable(&req.cwd, &req.env, wrapper)?;
+        let stamps = repository::capture_file_stamps(std::slice::from_ref(&executable))?;
+        let bytes = req.runner.output(
+            ctx,
+            &req.cwd,
+            &req.env,
+            &[executable.clone(), "--version".into()],
+        )?;
+        let text = String::from_utf8_lossy(&bytes);
+        let fields: Vec<_> = text.split_whitespace().collect();
+        if fields.len() != 2 || fields[0] != "sccache" || !supported(fields[1], "0.14.0", "0.15.0")
+        {
+            bail!("cannot verify sccache 0.14.x; select a supported RUSTC_WRAPPER");
+        }
+        wrapper_identity =
+            Some(serde_json::json!({"Version": fields[1], "Digest": stamps[0].digest}));
+        out.inputs.extend(stamps);
+        out.cargo_wrapper = Some(CargoWrapper::Sccache { executable });
     }
     let mut prefix = vec![req.argv[0].clone()];
     let mut start = 1;
@@ -171,7 +201,8 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
         args.extend(["--config".to_string(), config]);
     }
     let input_paths = input_paths(req, &args)?;
-    out.inputs = repository::capture_file_stamps(&input_paths)?;
+    out.inputs
+        .extend(repository::capture_file_stamps(&input_paths)?);
     let b = req.runner.output(ctx, &req.cwd, &env, &args)?;
     let meta: Option<Metadata> = serde_json::from_slice(&b).ok();
     let Some(mut meta) = meta.filter(|m| {
@@ -276,11 +307,15 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
         .into_iter()
         .map(|(k, v)| (k.replace(root.as_str(), "${WORKTREE}"), v))
         .collect();
-    Ok(serde_json::json!({
+    let mut settings = serde_json::json!({
         "Configs": normalized,
         "Manifests": manifests,
         "Workspace": relative_project(&root, &meta.workspace),
-    }))
+    });
+    if let Some(wrapper) = wrapper_identity {
+        settings["Wrapper"] = wrapper;
+    }
+    Ok(settings)
 }
 
 fn hash_file(dst: &mut BTreeMap<String, String>, path: &str) -> Result<()> {

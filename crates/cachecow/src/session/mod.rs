@@ -171,6 +171,25 @@ pub fn error_text(error: &anyhow::Error) -> String {
     crate::error::chain_text(error)
 }
 
+/// Use the authenticated session's private directory for the sccache server.
+/// The native owner drains the server and its compiler children before leases
+/// are released. Never connect a managed build to a pre-existing shared daemon.
+pub(crate) fn isolate_sccache(command: &mut Command, capability: &str) -> Result<()> {
+    if !command.sccache {
+        return Ok(());
+    }
+    if !cfg!(unix) {
+        return Err(anyhow!("managed sccache is supported only on Unix"));
+    }
+    let (endpoint, _) = capability.split_once('|').ok_or(AuthError)?;
+    command.env = with_env(
+        &command.env,
+        "SCCACHE_SERVER_UDS",
+        &format!("{endpoint}.sccache"),
+    );
+    Ok(())
+}
+
 /// Replaces `key` in a `KEY=value` environment list.
 pub fn with_env(env: &[String], key: &str, value: &str) -> Vec<String> {
     let prefix = format!("{key}=");
@@ -558,7 +577,9 @@ impl Server {
         getrandom::fill(&mut token).map_err(|e| anyhow!("cannot create session token: {e}"))?;
         let token = hex::encode(token);
         *self.token.lock().unwrap_or_else(PoisonError::into_inner) = token.clone();
-        command.env = with_env(&command.env, ENV, &format!("{endpoint}|{token}"));
+        let capability = format!("{endpoint}|{token}");
+        isolate_sccache(command, &capability)?;
+        command.env = with_env(&command.env, ENV, &capability);
         let closer = listener.closer();
         let in_flight = Arc::new(InFlight::default());
         let server = self.clone();

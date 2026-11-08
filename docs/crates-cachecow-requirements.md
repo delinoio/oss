@@ -175,6 +175,7 @@ Disk exhaustion, permission errors, and other actual preparation failures stop b
 - Rspack and Rsbuild: manage configured persistent caches only.
 - Exclude node_modules, package download caches, and frontend final output directories.
 - In monorepos, identify the project from the current execution directory.
+- On Unix, allow sccache 0.14.x through `RUSTC_WRAPPER` after verifying and stamping its executable. Pin that executable for the child and isolate its daemon inside the native managed session; nested Cargo shares the session socket, and leases remain held until the daemon and compiler descendants exit. Preserve sccache storage settings and existing shared servers. Other custom wrapper sources and Windows wrapper management remain unsupported.
 - Treat differing tool versions, platforms, architectures, or build settings as incompatible. Unknown cache locations or unverified compatibility also prohibit reuse.
 - Dirty and untracked source changes are allowed; the tools must detect the required rebuilds.
 - Preserve Cargo/rustc/Rspack/Rsbuild freshness decisions. Do not manipulate fingerprints or mtimes to force cache hits. If restored caches are invalidated, allow normal rebuilding.
