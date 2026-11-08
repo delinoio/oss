@@ -295,7 +295,7 @@ else
 fi
 
 mkdir -p "$(dirname -- "$destination_path")"
-if { [ "$project" = "pnport" ] || [ "$project" = "runmoor" ] || [ "$project" = "clibox" ]; } && [ -f "$destination_path" ]; then
+if { [ "$project" = "pnport" ] || [ "$project" = "runmoor" ] || [ "$project" = "clibox" ] || [ "$project" = "ccow" ]; } && [ -f "$destination_path" ]; then
   existing_version="$(sed -nE 's/^  version "([0-9]+\.[0-9]+\.[0-9]+)"$/\1/p' "$destination_path")"
   if [[ ! "$existing_version" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]; then
     log "existing $project formula has no single exact version"

@@ -8,7 +8,7 @@ import {
   rmSync,
   readFileSync,
 } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { homebrewArguments } from "./ccow-homebrew.mjs";
@@ -425,4 +425,80 @@ test("Homebrew uses the verified versioned macOS archive without source builds",
     { encoding: "utf8" },
   );
   assert.notEqual(bad.status, 0);
+});
+
+test("CacheCow tap retries cannot downgrade or replace a published version", (t) => {
+  const directory = mkdtempSync(path.join(tmpdir(), "ccow-tap-fixture-"));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const remote = path.join(directory, "tap.git");
+  const checkout = path.join(directory, "tap");
+  const git = (args, cwd = directory) =>
+    execFileSync("git", args, {
+      cwd,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+  git(["init", "--bare", "--initial-branch=main", remote]);
+  git(["clone", remote, checkout]);
+  git(["config", "user.name", "Fixture"], checkout);
+  git(["config", "user.email", "fixture@example.invalid"], checkout);
+  mkdirSync(path.join(checkout, "Formula"));
+  writeFileSync(
+    path.join(checkout, "Formula/existing.rb"),
+    "preserve other products\n",
+  );
+  git(["add", "Formula/existing.rb"], checkout);
+  git(["commit", "-m", "Existing product fixture"], checkout);
+  git(["push", "origin", "HEAD:main"], checkout);
+  const env = {
+    ...process.env,
+    GH_TOKEN: "fixture",
+    HOMEBREW_TAP_GH_TOKEN: "fixture",
+    RELEASE_BOT_NAME: "Fixture",
+    RELEASE_BOT_EMAIL: "fixture@example.invalid",
+    GIT_CONFIG_COUNT: "1",
+    GIT_CONFIG_KEY_0: `url.file://${remote}.insteadOf`,
+    GIT_CONFIG_VALUE_0: "https://github.com/fixture/ccow-tap.git",
+  };
+  const run = (version = "0.2.0", digest = "a".repeat(64)) =>
+    spawnSync(
+      "bash",
+      [
+        "scripts/release/update-homebrew.sh",
+        "--project",
+        "ccow",
+        "--version",
+        version,
+        "--darwin-arm64-url",
+        `https://github.com/delinoio/oss/releases/download/ccow@v${version}/ccow-${version}-darwin-arm64.tar.gz`,
+        "--darwin-arm64-sha256",
+        digest,
+        "--tap-repo",
+        "fixture/ccow-tap",
+      ],
+      { env, encoding: "utf8" },
+    );
+  const first = run();
+  assert.equal(first.status, 0, first.stderr);
+  const published = git(["rev-parse", "main"], remote);
+  const formula = git(["show", "main:Formula/ccow.rb"], remote);
+  const unchanged = () => {
+    assert.equal(git(["rev-parse", "main"], remote), published);
+    assert.equal(git(["show", "main:Formula/ccow.rb"], remote), formula);
+    assert.equal(
+      git(["show", "main:Formula/existing.rb"], remote),
+      "preserve other products\n",
+    );
+  };
+  const same = run();
+  assert.equal(same.status, 0, same.stderr);
+  unchanged();
+  const older = run("0.1.0");
+  assert.notEqual(older.status, 0);
+  assert.match(older.stderr, /refusing ccow Homebrew downgrade/u);
+  unchanged();
+  const conflict = run("0.2.0", "b".repeat(64));
+  assert.notEqual(conflict.status, 0);
+  assert.match(conflict.stderr, /conflicting ccow formula bytes/u);
+  unchanged();
 });
