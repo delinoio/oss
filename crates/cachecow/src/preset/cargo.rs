@@ -12,7 +12,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::{
-    PresetResult, Resolved, Root, RootKind, digest, env_value, null_default, set_env, supported,
+    CargoWrapper, PresetResult, Resolved, Root, RootKind, digest, env_value, null_default,
+    resolve_executable, set_env, supported,
 };
 use crate::{Context, paths, repository};
 
@@ -76,7 +77,6 @@ fn cargo_home(req: &Resolved<'_>) -> Result<String> {
 pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult) -> Result<Value> {
     for key in [
         "CARGO_BUILD_RUSTC",
-        "RUSTC_WRAPPER",
         "RUSTC_WORKSPACE_WRAPPER",
         "CARGO_BUILD_RUSTC_WRAPPER",
         "CARGO_BUILD_RUSTC_WORKSPACE_WRAPPER",
@@ -87,6 +87,40 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
                  without wrappers"
             );
         }
+    }
+    let wrapper = env_value(&req.env, "RUSTC_WRAPPER");
+    let mut wrapper_identity = None;
+    if !wrapper.is_empty() {
+        // Other wrappers may alter compiler arguments or run outside the
+        // native owner. Only the tested sccache protocol is supported here.
+        if !cfg!(unix) {
+            bail!(
+                "custom compiler wrappers cannot yet be verified; supported wrapper: \
+                 RUSTC_WRAPPER=sccache 0.14.x on Unix"
+            );
+        }
+        // Identify sccache by its version response below, not its basename:
+        // nested commands inherit the canonical target, which may be renamed.
+        // sccache does not dispatch by symlink name. Pin the final binary so
+        // cache preparation cannot break an intermediate symlink in a cache.
+        let executable = repository::canonical(&resolve_executable(&req.cwd, &req.env, wrapper)?)?;
+        let stamps = repository::capture_file_stamps(std::slice::from_ref(&executable))?;
+        let bytes = req.runner.output(
+            ctx,
+            &req.cwd,
+            &req.env,
+            &[executable.clone(), "--version".into()],
+        )?;
+        let text = String::from_utf8_lossy(&bytes);
+        let fields: Vec<_> = text.split_whitespace().collect();
+        if fields.len() != 2 || fields[0] != "sccache" || !supported(fields[1], "0.14.0", "0.15.0")
+        {
+            bail!("cannot verify sccache 0.14.x; select a supported RUSTC_WRAPPER");
+        }
+        wrapper_identity =
+            Some(serde_json::json!({"Version": fields[1], "Digest": stamps[0].digest}));
+        out.inputs.extend(stamps);
+        out.cargo_wrapper = Some(CargoWrapper::Sccache { executable });
     }
     let mut prefix = vec![req.argv[0].clone()];
     let mut start = 1;
@@ -142,7 +176,7 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
                 match key {
                     "--config" => {
                         if value.contains('=') {
-                            validate_config(&value)?;
+                            validate_config(&value, out.cargo_wrapper.is_some())?;
                         }
                         args.extend([key.to_string(), value]);
                     }
@@ -171,7 +205,8 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
         args.extend(["--config".to_string(), config]);
     }
     let input_paths = input_paths(req, &args)?;
-    out.inputs = repository::capture_file_stamps(&input_paths)?;
+    out.inputs
+        .extend(repository::capture_file_stamps(&input_paths)?);
     let b = req.runner.output(ctx, &req.cwd, &env, &args)?;
     let meta: Option<Metadata> = serde_json::from_slice(&b).ok();
     let Some(mut meta) = meta.filter(|m| {
@@ -231,7 +266,11 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
     let mut p = req.cwd.clone();
     loop {
         for name in ["config", "config.toml"] {
-            hash_file(&mut configs, &paths::join(&[p.as_str(), ".cargo", name]))?;
+            hash_file(
+                &mut configs,
+                &paths::join(&[p.as_str(), ".cargo", name]),
+                out.cargo_wrapper.is_some(),
+            )?;
         }
         let parent = paths::dir(&p);
         if parent == p {
@@ -241,7 +280,11 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
     }
     let home = cargo_home(req)?;
     for name in ["config", "config.toml"] {
-        hash_file(&mut configs, &paths::join2(&home, name))?;
+        hash_file(
+            &mut configs,
+            &paths::join2(&home, name),
+            out.cargo_wrapper.is_some(),
+        )?;
     }
     // File-form --config can live outside the usual hierarchy.
     for pair in args.windows(2) {
@@ -251,7 +294,7 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
             } else {
                 paths::join2(&req.cwd, &pair[1])
             };
-            hash_file(&mut configs, &p)?;
+            hash_file(&mut configs, &p, out.cargo_wrapper.is_some())?;
         }
     }
     // Preserve configuration position and precedence in the digest, while
@@ -276,26 +319,30 @@ pub(super) fn discover(ctx: &Context, req: &Resolved<'_>, out: &mut PresetResult
         .into_iter()
         .map(|(k, v)| (k.replace(root.as_str(), "${WORKTREE}"), v))
         .collect();
-    Ok(serde_json::json!({
+    let mut settings = serde_json::json!({
         "Configs": normalized,
         "Manifests": manifests,
         "Workspace": relative_project(&root, &meta.workspace),
-    }))
+    });
+    if let Some(wrapper) = wrapper_identity {
+        settings["Wrapper"] = wrapper;
+    }
+    Ok(settings)
 }
 
-fn hash_file(dst: &mut BTreeMap<String, String>, path: &str) -> Result<()> {
+fn hash_file(dst: &mut BTreeMap<String, String>, path: &str, sccache: bool) -> Result<()> {
     let b = match std::fs::read(path) {
         Ok(b) => b,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
         Err(_) => bail!("cannot read Cargo configuration; check permissions"),
     };
     let text = String::from_utf8_lossy(&b).into_owned();
-    validate_config(&text)?;
+    validate_config(&text, sccache)?;
     dst.insert(path.to_string(), digest(&text));
     Ok(())
 }
 
-pub(super) fn validate_config(text: &str) -> Result<()> {
+pub(super) fn validate_config(text: &str, sccache: bool) -> Result<()> {
     let Ok(config) = text.parse::<toml::Table>() else {
         bail!("malformed Cargo configuration; correct the TOML file");
     };
@@ -313,6 +360,21 @@ pub(super) fn validate_config(text: &str) -> Result<()> {
         }
     }
     if let Some(toml::Value::Table(env)) = config.get("env") {
+        // Cargo applies forced [env] values after inheriting our private
+        // socket. Reject even partial CLI tables, since configuration merging
+        // can supply the value from another file.
+        if sccache
+            && env
+                .get("SCCACHE_SERVER_UDS")
+                .and_then(|entry| entry.get("force"))
+                .and_then(toml::Value::as_bool)
+                == Some(true)
+        {
+            bail!(
+                "Cargo config forces SCCACHE_SERVER_UDS; remove force=true to preserve the \
+                 private sccache server"
+            );
+        }
         for key in [
             "RUSTC",
             "RUSTUP_TOOLCHAIN",

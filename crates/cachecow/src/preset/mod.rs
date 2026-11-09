@@ -121,10 +121,31 @@ pub struct CachePath {
     pub canonical: String,
 }
 
+/// Verified Cargo wrapper selected during discovery.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
+pub enum CargoWrapper {
+    Sccache { executable: String },
+}
+
+impl CargoWrapper {
+    pub(crate) fn environment(&self, env: &[String]) -> Vec<String> {
+        match self {
+            Self::Sccache { executable } => set_env(env, "RUSTC_WRAPPER", executable),
+        }
+    }
+}
+
 /// Discovery result. Field names match the Go JSON encoding.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PresetResult {
+    #[serde(
+        rename = "CargoWrapper",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub cargo_wrapper: Option<CargoWrapper>,
     #[serde(rename = "CachePaths")]
     pub cache_paths: Vec<CachePath>,
     #[serde(rename = "Inputs")]
@@ -152,40 +173,7 @@ impl Runner for ExecRunner {
         let Some(argv0) = argv.first() else {
             bail!("discovery command is empty");
         };
-        // Resolve PATH from the supplied child environment, not this process.
-        let executable = if argv0.contains(['/', '\\']) {
-            if paths::is_abs(argv0) {
-                argv0.clone()
-            } else {
-                paths::join2(cwd, argv0)
-            }
-        } else {
-            let mut found = None;
-            for dir in paths::split_list(env_value(env, "PATH")) {
-                if dir.is_empty() {
-                    continue;
-                }
-                let dir = if paths::is_abs(&dir) {
-                    dir
-                } else {
-                    paths::join2(cwd, &dir)
-                };
-                let mut p = paths::join2(&dir, argv0);
-                if cfg!(windows) && !p.to_lowercase().ends_with(".exe") {
-                    p.push_str(".exe");
-                }
-                if std::fs::metadata(&p).is_ok_and(|m| !m.is_dir() && is_executable(&m)) {
-                    found = Some(p);
-                    break;
-                }
-            }
-            found.ok_or_else(|| {
-                anyhow!(
-                    "discovery executable was not found in the child PATH; install the selected \
-                     tool"
-                )
-            })?
-        };
+        let executable = resolve_executable(cwd, env, argv0)?;
         let mut cmd = std::process::Command::new(&executable);
         cmd.args(&argv[1..]).current_dir(cwd).env_clear();
         for entry in env {
@@ -208,6 +196,44 @@ impl Runner for ExecRunner {
         }
         Ok(output.stdout)
     }
+}
+
+/// Resolve once and retain the spelling used to invoke a proxy or symlink.
+fn resolve_executable(cwd: &str, env: &[String], name: &str) -> Result<String> {
+    // Resolve PATH from the supplied child environment, not this process.
+    let executable = if name.contains(['/', '\\']) {
+        if paths::is_abs(name) {
+            name.to_string()
+        } else {
+            paths::join2(cwd, name)
+        }
+    } else {
+        let mut found = None;
+        for dir in paths::split_list(env_value(env, "PATH")) {
+            if dir.is_empty() {
+                continue;
+            }
+            let dir = if paths::is_abs(&dir) {
+                dir
+            } else {
+                paths::join2(cwd, &dir)
+            };
+            let mut p = paths::join2(&dir, name);
+            if cfg!(windows) && !p.to_lowercase().ends_with(".exe") {
+                p.push_str(".exe");
+            }
+            if std::fs::metadata(&p).is_ok_and(|m| !m.is_dir() && is_executable(&m)) {
+                found = Some(p);
+                break;
+            }
+        }
+        found.ok_or_else(|| {
+            anyhow!(
+                "discovery executable was not found in the child PATH; install the selected tool"
+            )
+        })?
+    };
+    Ok(executable)
 }
 
 #[cfg(unix)]
@@ -487,10 +513,16 @@ pub fn discover(ctx: &Context, request: Request<'_>) -> Result<PresetResult> {
     if out.roots.is_empty() {
         bail!("no verified cache roots; configure a supported persistent cache");
     }
+    let mut protected = req.protected.clone();
+    if let Some(CargoWrapper::Sccache { executable }) = &out.cargo_wrapper {
+        // Preparation must not replace the wrapper after its identity was
+        // verified, including an executable reached through a symlink.
+        protected.push(executable.clone());
+    }
     for i in 0..out.roots.len() {
         let p = out
             .repository
-            .validate_cache(ctx, &out.roots[i].path, &req.protected)?;
+            .validate_cache(ctx, &out.roots[i].path, &protected)?;
         out.cache_paths.push(CachePath {
             tool_path: out.roots[i].path.clone(),
             canonical: p.clone(),
@@ -525,12 +557,23 @@ pub fn discover(ctx: &Context, request: Request<'_>) -> Result<PresetResult> {
     // reusable caches, but never assumes an unknown setting is irrelevant.
     let root = out.repository.root.clone();
     let normalize = |s: &str| s.replace(root.as_str(), "${WORKTREE}");
-    let digest_env = without_shim_dir(&req.env, &request.shim_dir, ENV_NAMES_IGNORE_CASE);
+    let wrapper_env = out
+        .cargo_wrapper
+        .as_ref()
+        .map(|wrapper| wrapper.environment(&req.env));
+    let digest_env = without_shim_dir(
+        wrapper_env.as_deref().unwrap_or(&req.env),
+        &request.shim_dir,
+        ENV_NAMES_IGNORE_CASE,
+    );
     let mut env: Vec<String> = digest_env
         .iter()
         .filter(|entry| {
             let key = entry.split_once('=').map_or(entry.as_str(), |(k, _)| k);
             !matches!(key, "CCOW_SESSION" | "PWD" | "OLDPWD" | "SHLVL" | "_")
+                // The supervisor replaces this transport address with a private
+                // per-session socket. It does not select compiler settings.
+                && !(out.cargo_wrapper.is_some() && key == "SCCACHE_SERVER_UDS")
         })
         .map(|entry| normalize(entry))
         .collect();

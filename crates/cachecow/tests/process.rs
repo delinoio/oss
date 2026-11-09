@@ -128,6 +128,7 @@ mod unix_tests {
     fn shell(dir: &str, script: &str) -> Command {
         Command {
             noop: false,
+            sccache: false,
             path: "/bin/sh".into(),
             args: vec!["sh".into(), "-c".into(), script.into()],
             dir: dir.into(),
@@ -275,6 +276,7 @@ mod unix_tests {
         env.push(format!("CCOW_TEST_DIR={dir}"));
         let command = Command {
             noop: false,
+            sccache: false,
             path: exe.clone(),
             args: vec![exe],
             dir: dir.clone(),
@@ -610,6 +612,7 @@ mod unix_tests {
             }
             let command = Command {
                 noop: false,
+                sccache: false,
                 path: path.clone(),
                 args: vec![path],
                 dir: dir.clone(),
@@ -682,6 +685,7 @@ mod unix_tests {
         let mut drained = false;
         let command = Command {
             noop: false,
+            sccache: false,
             path: path.clone(),
             args: vec![path],
             dir: dir.clone(),
@@ -860,6 +864,7 @@ mod windows_tests {
         env.push(format!("CCOW_TREE_DIR={dir}"));
         Command {
             noop: false,
+            sccache: false,
             path: exe.clone(),
             args: vec![exe],
             dir: dir.into(),
@@ -1116,6 +1121,7 @@ mod windows_tests {
             env.push("CCOW_BATCH_CHILD=1".into());
             let mut c = Command {
                 noop: false,
+                sccache: false,
                 path: wrapper.clone(),
                 args: std::iter::once(wrapper.clone())
                     .chain(args.clone())

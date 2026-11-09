@@ -23,6 +23,7 @@ struct FakeRunner {
     version: Mutex<String>,
     metadata: Mutex<String>,
     compiler: Mutex<String>,
+    wrapper_version: Mutex<String>,
     frontend: Mutex<String>,
 }
 
@@ -44,6 +45,9 @@ impl Runner for FakeRunner {
             args: args.to_vec(),
         });
         let last = args.last().map(String::as_str);
+        if last == Some("--version") && paths::base(&args[0]) == "sccache" {
+            return Ok(self.wrapper_version.lock().unwrap().clone().into_bytes());
+        }
         if last == Some("--version") {
             return Ok(self.version.lock().unwrap().clone().into_bytes());
         }
@@ -911,4 +915,149 @@ fn nightly_discovery_preserves_selection_and_compiler_identity() {
         "rustc 1.99.1-nightly\nhost: aarch64-apple-darwin\n",
     );
     assert!(f.discover().is_err());
+}
+
+#[test]
+fn sccache_identity_and_private_transport_compatibility() {
+    use std::os::unix::fs::PermissionsExt;
+    let mut f = cargo_fixture();
+    let bin = paths::join2(&f.cwd, "bin");
+    fs::create_dir(&bin).unwrap();
+    let wrapper = paths::join2(&bin, "sccache");
+    fs::write(&wrapper, "wrapper version one").unwrap();
+    fs::set_permissions(&wrapper, fs::Permissions::from_mode(0o700)).unwrap();
+    f.env
+        .extend(strings(&[&format!("PATH={bin}"), "RUSTC_WRAPPER=sccache"]));
+    FakeRunner::set(&f.runner.wrapper_version, "sccache 0.14.0");
+    let first = f.discover().unwrap();
+    assert_eq!(
+        first.cargo_wrapper,
+        Some(CargoWrapper::Sccache {
+            executable: repository::canonical(&wrapper).unwrap()
+        })
+    );
+    assert!(
+        first
+            .inputs
+            .iter()
+            .any(|stamp| stamp.path == repository::canonical(&wrapper).unwrap())
+    );
+    // The pinned spelling and a different session transport must not break
+    // nested same-cache admission or source compatibility.
+    f.env = first.cargo_wrapper.as_ref().unwrap().environment(&f.env);
+    f.env
+        .push("SCCACHE_SERVER_UDS=/tmp/ccow-s-example/ipc.sccache".into());
+    let nested = f.discover().unwrap();
+    assert!(first.compatibility.compatible(&nested.compatibility));
+    fs::write(&wrapper, "wrapper version two").unwrap();
+    assert!(verify_file_stamps(&first.inputs).is_err());
+    let changed = f.discover().unwrap();
+    assert!(!first.compatibility.compatible(&changed.compatibility));
+    for version in ["sccache 0.13.0", "sccache 0.15.0", "custom 0.14.0"] {
+        FakeRunner::set(&f.runner.wrapper_version, version);
+        assert!(f.discover().is_err(), "accepted {version}");
+    }
+    FakeRunner::set(&f.runner.wrapper_version, "sccache 0.14.0");
+    let target = paths::join2(&f.cwd, "target");
+    fs::create_dir(&target).unwrap();
+    fs::write(paths::join2(&f.cwd, ".gitignore"), "target/\n").unwrap();
+    let inside = paths::join2(&target, "sccache");
+    fs::copy(&wrapper, &inside).unwrap();
+    f.env = set_env(&f.env, "RUSTC_WRAPPER", &inside);
+    assert!(
+        f.discover()
+            .unwrap_err()
+            .to_string()
+            .contains("protected storage")
+    );
+}
+
+#[test]
+fn sccache_rejects_forced_socket_configuration() {
+    let mut f = cargo_fixture();
+    let wrapper = paths::join2(&f.cwd, "sccache");
+    write_exec(&wrapper, "wrapper");
+    f.env.push(format!("RUSTC_WRAPPER={wrapper}"));
+    FakeRunner::set(&f.runner.wrapper_version, "sccache 0.14.0");
+    let forced = "[env]\nSCCACHE_SERVER_UDS = { value = '/shared/socket', force = true }\n";
+    let config_dir = paths::join2(&f.cwd, ".cargo");
+    fs::create_dir(&config_dir).unwrap();
+    let config = paths::join2(&config_dir, "config.toml");
+    fs::write(&config, forced).unwrap();
+    let assert_rejected = |f: &Fixture| {
+        assert!(
+            f.discover()
+                .unwrap_err()
+                .to_string()
+                .contains("forces SCCACHE_SERVER_UDS")
+        );
+    };
+    assert_rejected(&f);
+    fs::write(&config, forced.replace("true", "false")).unwrap();
+    f.discover().unwrap();
+    fs::remove_file(&config).unwrap();
+    let home = paths::join2(&f.cwd, "cargo-home");
+    fs::create_dir(&home).unwrap();
+    let home_config = paths::join2(&home, "config.toml");
+    fs::write(&home_config, forced).unwrap();
+    f.env.push(format!("CARGO_HOME={home}"));
+    assert_rejected(&f);
+    fs::remove_file(&home_config).unwrap();
+    let extra = paths::join2(&f.cwd, "extra.toml");
+    fs::write(&extra, forced).unwrap();
+    f.argv.extend(strings(&["--config", &extra]));
+    assert_rejected(&f);
+    f.argv.truncate(2);
+    // A force-only CLI entry can merge with a value in a lower-priority file.
+    f.argv
+        .extend(strings(&["--config", "env.SCCACHE_SERVER_UDS.force=true"]));
+    assert_rejected(&f);
+    f.env.retain(|v| !v.starts_with("RUSTC_WRAPPER="));
+    f.discover().unwrap();
+}
+
+#[test]
+fn sccache_pins_binary_beyond_cache_symlinks() {
+    let mut f = cargo_fixture();
+    let root = s(f._dir.path());
+    let bin = paths::join2(&root, "bin");
+    let real = paths::join2(&root, "real");
+    let target = paths::join2(&f.cwd, "target");
+    for dir in [&bin, &real, &target] {
+        fs::create_dir(dir).unwrap();
+    }
+    fs::write(paths::join2(&f.cwd, ".gitignore"), "target/\n").unwrap();
+    let executable = paths::join2(&real, "sccache");
+    write_exec(&executable, "#!/bin/sh\necho 'sccache 0.14.0'\n");
+    let intermediate = paths::join2(&target, "sccache");
+    symlink(&executable, &intermediate).unwrap();
+    let wrapper = paths::join2(&bin, "sccache");
+    symlink(&intermediate, &wrapper).unwrap();
+    f.env.push(format!("RUSTC_WRAPPER={wrapper}"));
+    FakeRunner::set(&f.runner.wrapper_version, "sccache 0.14.0");
+    let discovered = f.discover().unwrap();
+    let canonical = repository::canonical(&executable).unwrap();
+    assert_eq!(
+        discovered.cargo_wrapper,
+        Some(CargoWrapper::Sccache {
+            executable: canonical.clone()
+        })
+    );
+    // Simulate replacement/deletion of the managed cache. The original
+    // selection dangles, but both the pinned command and nested discovery work.
+    fs::remove_dir_all(&target).unwrap();
+    assert!(!std::path::Path::new(&wrapper).exists());
+    repository::verify_file_stamps(&discovered.inputs).unwrap();
+    f.env = discovered
+        .cargo_wrapper
+        .as_ref()
+        .unwrap()
+        .environment(&f.env);
+    let output = std::process::Command::new(&canonical)
+        .arg("--version")
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let nested = f.discover().unwrap();
+    assert!(discovered.compatibility.compatible(&nested.compatibility));
 }

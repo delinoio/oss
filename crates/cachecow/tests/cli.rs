@@ -237,9 +237,8 @@ fn wait_file(path: &str) {
     panic!("timed out waiting for {path}");
 }
 
-/// Waits until `pid` no longer exists, so the whole fixture coalition is empty
-/// before a test relies on recovery, which tries each lease once per command.
-#[cfg(target_os = "macos")]
+/// Waits until `pid` no longer exists before asserting descendant cleanup
+/// or relying on recovery, which tries each lease once per command.
 fn wait_process_gone(pid: i32) {
     let deadline = Instant::now() + Duration::from_secs(20);
     while Instant::now() < deadline {
@@ -2243,4 +2242,56 @@ fn clone_only_run_prints_no_copy_notice() {
     write_file(&join(&f.work, "scenario"), "echo CHILD-START >&2\n", 0o600);
     let (_, err) = f.run(&f.work, 0, &["run", "--allow-copy", "--", "cargo", "build"]);
     assert_eq!(copy_notices(&err), 0, "stderr={err}");
+}
+
+#[test]
+fn sccache_uses_owned_server_endpoint_across_nested_builds() {
+    let mut f = Fixture::new();
+    let wrapper = join(&f.bin, "sccache");
+    let binary = join(&f.bin, "sccache-0.14.0");
+    write_file(&binary, "#!/bin/sh\necho 'sccache 0.14.0'\n", 0o700);
+    std::os::unix::fs::symlink(&binary, &wrapper).unwrap();
+    f.set_env("RUSTC_WRAPPER", "sccache");
+    f.set_env("SCCACHE_SERVER_UDS", "/shared/sccache.sock");
+    f.set_env("CCOW_TEST_BIN", BIN);
+    write_file(
+        &join(&f.main, "scenario"),
+        r#"
+if [ -f target/nested ]; then
+    printf '%s' "$SCCACHE_SERVER_UDS" > target/nested-endpoint
+    exit 0
+fi
+touch target/nested
+printf '%s' "$RUSTC_WRAPPER" > target/wrapper
+printf '%s' "$SCCACHE_SERVER_UDS" > target/endpoint
+"$CCOW_TEST_BIN" run -- cargo build || exit $?
+sh -c 'trap "exit 0" TERM; echo $$ > target/daemon-pid; while :; do sleep 1; done' &
+while [ ! -f target/daemon-pid ]; do sleep 0.01; done
+"#,
+        0o600,
+    );
+    f.run(&f.main, 0, &["run", "--", "cargo", "build"]);
+    assert_eq!(
+        fs::read_to_string(join(&f.main, "target/wrapper")).unwrap(),
+        fs::canonicalize(&wrapper).unwrap().to_str().unwrap()
+    );
+    let endpoint = fs::read_to_string(join(&f.main, "target/endpoint")).unwrap();
+    assert_ne!(endpoint, "/shared/sccache.sock");
+    assert!(endpoint.ends_with("/ipc.sccache"));
+    assert_eq!(
+        endpoint,
+        fs::read_to_string(join(&f.main, "target/nested-endpoint")).unwrap()
+    );
+    assert!(!Path::new(&endpoint).parent().unwrap().exists());
+    let pid: i32 = fs::read_to_string(join(&f.main, "target/daemon-pid"))
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    wait_process_gone(pid);
+    // A renamed path does not bypass the sccache identity/version check.
+    write_file(&binary, "#!/bin/sh\necho 'custom 0.14.0'\n", 0o700);
+    f.set_env("RUSTC_WRAPPER", &binary);
+    let (_, err) = f.run(&f.main, 125, &["run", "--", "cargo", "build"]);
+    assert!(err.contains("cannot verify sccache 0.14.x"), "{err}");
 }
