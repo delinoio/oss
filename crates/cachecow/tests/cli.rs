@@ -2295,3 +2295,46 @@ while [ ! -f target/daemon-pid ]; do sleep 0.01; done
     let (_, err) = f.run(&f.main, 125, &["run", "--", "cargo", "build"]);
     assert!(err.contains("cannot verify sccache 0.14.x"), "{err}");
 }
+
+#[test]
+fn cargo_shim_without_a_project_preserves_native_failure() {
+    let mut f = Fixture::new();
+    let shims = install_shims(&mut f);
+    let shim = join(&shims, "cargo");
+    let real = join(&f.bin, "cargo");
+    fs::remove_file(join(&f.main, "Cargo.toml")).unwrap();
+    write_file(
+        &real,
+        "#!/bin/sh\nprintf 'native stdout\\n'\nprintf 'native failure: %s\\n' \"$*\" >&2\nexit \
+         101\n",
+        0o700,
+    );
+    // A wrapper discovery failure must not mask the native no-project error.
+    f.set_env("RUSTC_WRAPPER", "/missing-wrapper");
+    for args in [
+        vec!["check"],
+        vec!["+stable", "check", "--locked"],
+        vec!["clean"],
+    ] {
+        let expected = output(f.command(&real, &f.main, &args));
+        let actual = output(f.command(&shim, &f.main, &args));
+        assert_eq!(actual.status.code(), expected.status.code());
+        assert_eq!(actual.stdout, expected.stdout);
+        assert_eq!(actual.stderr, expected.stderr);
+    }
+    assert!(!exists(&join(&f.main, "target")));
+    // An explicit project selection must still enter discovery even when
+    // there is no default manifest, preserving cache protection.
+    let actual = output(f.command(
+        &shim,
+        &f.main,
+        &["check", "--manifest-path=other/Cargo.toml"],
+    ));
+    assert_eq!(actual.status.code(), Some(125));
+    assert!(!String::from_utf8_lossy(&actual.stderr).contains("native failure"));
+    // Existing malformed manifests also stay managed instead of falling back
+    // merely because discovery failed.
+    write_file(&join(&f.main, "Cargo.toml"), "invalid", 0o600);
+    let actual = output(f.command(&shim, &f.main, &["check"]));
+    assert_eq!(actual.status.code(), Some(125));
+}

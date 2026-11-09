@@ -438,3 +438,41 @@ fn installed_native_entry() {
         assert_eq!(reported, real);
     }
 }
+
+#[test]
+fn missing_cargo_project_requires_unambiguous_absence() {
+    let (_t, root) = temp();
+    let cwd = paths::join2(&root, "nested");
+    fs::create_dir(&cwd).unwrap();
+    assert!(cargo_project_absent(&cwd, &strings(&["check"])));
+    assert!(cargo_project_absent(&cwd, &strings(&["+stable", "check"])));
+    assert!(cargo_project_absent(
+        &cwd,
+        &strings(&["run", "--", "--manifest-path=x"])
+    ));
+    for args in [
+        strings(&["check", "--manifest-path", "other/Cargo.toml"]),
+        strings(&["check", "--manifest-path=other/Cargo.toml"]),
+        strings(&["-C", "other", "check"]),
+        strings(&["-Cother", "check"]),
+        strings(&["-Zscript", "check"]),
+        strings(&["c"]),
+        strings(&["clippy"]),
+    ] {
+        assert!(!cargo_project_absent(&cwd, &args));
+    }
+    // An ancestor manifest counts even outside the current Git checkout.
+    let manifest = paths::join2(&root, "Cargo.toml");
+    fs::write(&manifest, "invalid manifest").unwrap();
+    assert!(!cargo_project_absent(&cwd, &strings(&["check"])));
+    fs::remove_file(&manifest).unwrap();
+    // A non-file entry must not be mistaken for a missing project.
+    fs::create_dir(&manifest).unwrap();
+    assert!(!cargo_project_absent(&cwd, &strings(&["check"])));
+    fs::remove_dir(&manifest).unwrap();
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink("missing", &manifest).unwrap();
+        assert!(!cargo_project_absent(&cwd, &strings(&["check"])));
+    }
+}
