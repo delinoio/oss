@@ -806,6 +806,15 @@ impl App {
         let bypass = env_string("CCOW_BYPASS");
         let mut classification = shim::classify(tool, args, true, &bypass);
         if classification.mode != shim::Mode::Passthrough
+            && tool == shim::Tool::Cargo
+            && shim::cargo_project_absent(&cwd, args)
+        {
+            classification = shim::Classification {
+                mode: shim::Mode::Passthrough,
+                reason: shim::Reason::NoCargoProject,
+            };
+        }
+        if classification.mode != shim::Mode::Passthrough
             && let Err(git_error) = repository::discover(&self.ctx, &cwd)
         {
             let mut dir = cwd.clone();

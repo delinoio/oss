@@ -75,6 +75,8 @@ pub enum Reason {
     Unknown,
     #[serde(rename = "outside-git")]
     OutsideGit,
+    #[serde(rename = "no-cargo-project")]
+    NoCargoProject,
     #[serde(rename = "bypass")]
     Bypass,
 }
@@ -185,4 +187,35 @@ impl std::fmt::Display for ResolveFailure {
 /// Selects the first executable in PATH after excluding CacheCow shims.
 pub fn resolve(tool: Tool, options: &ResolveOptions) -> Result<Resolution, ResolveFailure> {
     resolve::resolve(tool, options)
+}
+
+/// Proves that Cargo's default manifest search has no project to build.
+/// Explicit manifest/directory selection and unstable script modes stay on
+/// the managed path: absence in the current directory says nothing about them.
+pub fn cargo_project_absent(cwd: &str, args: &[String]) -> bool {
+    if args
+        .iter()
+        .take_while(|arg| arg.as_str() != "--")
+        .any(|arg| {
+            // Short aliases can be overridden in Cargo configuration, and
+            // clippy is an external subcommand. Either can select another
+            // project even without a manifest in the default search path.
+            matches!(arg.as_str(), "b" | "c" | "t" | "r" | "d" | "clippy")
+                || arg == "--manifest-path"
+                || arg.starts_with("--manifest-path=")
+                || arg.starts_with("-C")
+                || arg.starts_with("-Z")
+        })
+    {
+        return false;
+    }
+    // Cargo searches beyond the Git root. Treat unreadable or dangling
+    // manifest entries as potentially present, never as permission to bypass.
+    for dir in std::path::Path::new(cwd).ancestors() {
+        match std::fs::symlink_metadata(dir.join("Cargo.toml")) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            _ => return false,
+        }
+    }
+    true
 }
