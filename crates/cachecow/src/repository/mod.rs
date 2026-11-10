@@ -226,6 +226,23 @@ fn ambient_env() -> Vec<(String, String)> {
         .collect()
 }
 
+/// True when the name is one of Git's own environment names.
+///
+/// `case_insensitive` is how the platform reads environment names. Windows
+/// reads them case-insensitively, so `Git_Dir` is the same variable as
+/// `GIT_DIR` there and redirects repository discovery, while off Windows the
+/// two are different variables and Git never reads the mixed-case one
+/// (#4689). The flag is a parameter so the Windows behaviour is testable
+/// anywhere.
+fn is_git_env(name: &str, case_insensitive: bool) -> bool {
+    if case_insensitive {
+        name.get(..4)
+            .is_some_and(|head| head.eq_ignore_ascii_case("GIT_"))
+    } else {
+        name.starts_with("GIT_")
+    }
+}
+
 /// Runs Git for the repository selected by `cwd` only. Ambient `GIT_*`
 /// repository redirection is removed from the environment.
 pub(crate) fn git(ctx: &Context, cwd: &str, args: &[&str]) -> Result<Vec<u8>> {
@@ -234,7 +251,7 @@ pub(crate) fn git(ctx: &Context, cwd: &str, args: &[&str]) -> Result<Vec<u8>> {
     let mut cmd = std::process::Command::new("git");
     cmd.arg("-C").arg(cwd).args(args).env_clear();
     for (k, v) in ambient_env() {
-        if !k.starts_with("GIT_") {
+        if !is_git_env(&k, cfg!(windows)) {
             cmd.env(k, v);
         }
     }
@@ -594,6 +611,9 @@ fn source_location(path: &str, depth: usize) -> Result<String> {
     }
     source_location(&target, depth + 1)
 }
+
+#[cfg(test)]
+pub(crate) mod git_env_tests;
 
 #[cfg(test)]
 pub(crate) mod tests;
